@@ -1,0 +1,49 @@
+---
+name: Feature Request
+about: Suggest an idea for this project
+title: '[FEATURE] '
+labels: ['enhancement', 'needs-triage']
+assignees: ''
+
+---
+
+## Feature Description
+<!-- A clear and concise description of the feature you want -->
+
+## Problem Statement
+<!-- What problem does this feature solve? Is your feature request related to a problem? -->
+<!-- Example: "I'm always frustrated when..." -->
+
+## Proposed Solution
+<!-- How would you like this feature to work? -->
+
+## Component
+<!-- Which part of the system would this affect? -->
+- [ ] Backend (Go API)
+- [ ] Web (React Admin)
+- [ ] Mobile (Android App)
+- [ ] Agent (Printing)
+- [ ] Database/Migrations
+- [ ] Documentation
+
+## Use Case
+<!-- Describe a specific scenario where this feature would be useful -->
+
+## Alternatives Considered
+<!-- Have you thought about alternative solutions or features? -->
+
+## Additional Context
+<!-- Add any other context, screenshots, mockups, or examples about the feature -->
+
+## Priority
+<!-- How important is this feature to you? -->
+- [ ] Critical - Blocking current workflow
+- [ ] High - Would significantly improve workflow
+- [ ] Medium - Nice to have
+- [ ] Low - Minor enhancement
+
+## Willing to Contribute
+<!-- Would you be willing to work on this feature? -->
+- [ ] Yes, I can submit a PR for this
+- [ ] Yes, with guidance
+- [ ] No, just suggesting

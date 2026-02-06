@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Idento</string>
+    
+    <!-- Login -->
+    <string name="login_title">Вход в Idento</string>
+    <string name="login_subtitle">Управление мероприятиями и регистрация</string>
+    <string name="email">Email</string>
+    <string name="password">Пароль</string>
+    <string name="sign_in">Войти</string>
+    <string name="qr_login">Вход по QR</string>
+    <string name="email_placeholder">name@company.com</string>
+    <string name="password_placeholder">Введите ваш пароль</string>
+    
+    <!-- Events -->
+    <string name="events">Мероприятия</string>
+    <string name="no_events">Мероприятия не найдены</string>
+    <string name="attendees">участников</string>
+    <string name="logout">Выход</string>
+    
+    <!-- Check-in -->
+    <string name="checkin">Регистрация</string>
+    <string name="scan_or_enter_code">Отсканируйте или введите код участника</string>
+    <string name="code_placeholder">Введите код…</string>
+    <string name="search">Поиск</string>
+    <string name="checkin_success">Регистрация успешна!</string>
+    <string name="already_checked_in">Уже зарегистрирован</string>
+    <string name="access_blocked">Доступ заблокирован</string>
+    <string name="attendee_not_found">Участник не найден</string>
+    <string name="print_badge">Печать бейджа</string>
+    <string name="scan_with_camera">Сканировать камерой</string>
+    
+    <!-- Common -->
+    <string name="back">Назад</string>
+    <string name="continue_text">Продолжить</string>
+    <string name="error">Ошибка</string>
+    <string name="loading">Загрузка…</string>
+    
+    <!-- Settings -->
+    <string name="settings">Настройки</string>
+    <string name="language">Язык</string>
+    <string name="theme">Тема</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_system">Системная</string>
+    
+    <!-- Permissions -->
+    <string name="camera_permission_required">Требуется разрешение камеры для сканирования QR-кодов</string>
+    <string name="bluetooth_permission_required">Требуется разрешение Bluetooth для печати бейджей</string>
+    <string name="grant_permission">Предоставить разрешение</string>
+    
+    <!-- Fonts & Printing -->
+    <string name="loading_fonts">Загрузка шрифтов…</string>
+    <string name="fonts_loaded">Шрифты загружены</string>
+    <string name="cyrillic_support">Текст с кириллицей автоматически рендерится как изображение для принтеров этикеток</string>
+    <string name="print_error">Ошибка печати</string>
+    <string name="badge_printed">Бейдж напечатан успешно</string>
+</resources>

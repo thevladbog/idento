@@ -1,0 +1,374 @@
+openapi: 3.0.3
+info:
+  title: Idento Hardware Agent API
+  description: |
+    API для локального агента, управляющего принтерами и сканерами.
+    
+    ## Основные возможности:
+    - Управление принтерами (USB, Bluetooth, Network)
+    - Управление сканерами штрих-кодов/QR-кодов
+    - Печать этикеток (ZPL, TSPL, ESC/POS)
+    - Обнаружение USB/COM портов
+    - Тестирование оборудования
+    
+    ## Установка:
+    Агент запускается локально на компьютере с подключенным оборудованием.
+    
+  version: 1.0.0
+  contact:
+    name: Idento Support
+    email: support@idento.app
+  license:
+    name: MIT
+    
+servers:
+  - url: http://localhost:12345
+    description: Local agent (default port)
+
+tags:
+  - name: Health
+    description: Проверка состояния агента
+  - name: Printers
+    description: Управление принтерами
+  - name: Scanners
+    description: Управление сканерами
+  - name: Print
+    description: Печать этикеток
+  - name: Scan
+    description: Сканирование кодов
+
+components:
+  schemas:
+    PrintRequest:
+      type: object
+      required:
+        - printer_name
+        - zpl
+      properties:
+        printer_name:
+          type: string
+          description: Имя принтера из списка доступных
+          example: "Network_192_168_0_245"
+        zpl:
+          type: string
+          description: ZPL команды для печати
+          example: "^XA^FO50,50^ADN,36,20^FDHello World^FS^XZ"
+          
+    PrintResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "sent"
+        message:
+          type: string
+          
+    ScanData:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Отсканированный код
+        time:
+          type: string
+          format: date-time
+          description: Время сканирования
+          
+    NetworkPrinterRequest:
+      type: object
+      required:
+        - name
+        - ip
+      properties:
+        name:
+          type: string
+          description: Имя принтера
+          example: "Network_Office"
+        ip:
+          type: string
+          format: ipv4
+          description: IP адрес принтера
+          example: "192.168.0.245"
+        port:
+          type: integer
+          description: Порт (по умолчанию 9100)
+          default: 9100
+          example: 9100
+          
+    ScannerRequest:
+      type: object
+      required:
+        - port_name
+      properties:
+        port_name:
+          type: string
+          description: Имя COM/USB порта
+          example: "COM3"
+          
+    FontsResponse:
+      type: object
+      properties:
+        built_in:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              type:
+                type: string
+        custom_examples:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+          
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Проверка состояния агента
+      description: Возвращает 200 OK если агент работает
+      responses:
+        '200':
+          description: Агент работает
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                    
+  /printers:
+    get:
+      tags:
+        - Printers
+      summary: Получить список принтеров
+      description: Возвращает все доступные принтеры (USB, Network, Bluetooth)
+      responses:
+        '200':
+          description: Список принтеров
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example:
+                  - "HP_Smart_Tank_790_series"
+                  - "Network_192_168_0_245"
+                  - "Serial_COM3"
+                  
+  /printers/add:
+    post:
+      tags:
+        - Printers
+      summary: Добавить сетевой принтер
+      description: Добавляет принтер по IP адресу для прямой печати через TCP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkPrinterRequest'
+      responses:
+        '200':
+          description: Принтер добавлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  name:
+                    type: string
+                  ip:
+                    type: string
+                  port:
+                    type: integer
+        '400':
+          description: Некорректные данные
+          
+  /printers/{name}/fonts:
+    get:
+      tags:
+        - Printers
+      summary: Получить шрифты принтера
+      description: Запрашивает у принтера список загруженных шрифтов (ZPL)
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Имя принтера
+      responses:
+        '200':
+          description: Информация о шрифтах
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FontsResponse'
+                
+  /printers/fonts:
+    get:
+      tags:
+        - Printers
+      summary: Получить список стандартных ZPL шрифтов
+      description: Возвращает список встроенных шрифтов ZPL и примеры кастомных
+      responses:
+        '200':
+          description: Список шрифтов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FontsResponse'
+                
+  /print:
+    post:
+      tags:
+        - Print
+      summary: Отправить задание на печать
+      description: Печать этикетки с ZPL кодом на выбранном принтере
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintRequest'
+      responses:
+        '200':
+          description: Задание отправлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintResponse'
+        '400':
+          description: Некорректные данные
+          
+  /scanners:
+    get:
+      tags:
+        - Scanners
+      summary: Получить список сканеров
+      description: Возвращает все подключенные и настроенные сканеры
+      responses:
+        '200':
+          description: Список сканеров
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example:
+                  - "Scanner_COM3"
+                  - "Scanner_ttyUSB0"
+                  
+  /scanners/ports:
+    get:
+      tags:
+        - Scanners
+      summary: Получить список доступных портов
+      description: |
+        Сканирует систему и возвращает доступные USB/COM порты для подключения сканеров.
+        
+        ### Поддерживаемые порты:
+        - **Windows**: COM1, COM2, COM3, ...
+        - **Linux**: /dev/ttyUSB0, /dev/ttyACM0, ...
+        - **macOS**: /dev/tty.usbserial-*, /dev/tty.usbmodem*
+      responses:
+        '200':
+          description: Список портов
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+                example:
+                  - "COM3"
+                  - "/dev/ttyUSB0"
+                  
+  /scanners/add:
+    post:
+      tags:
+        - Scanners
+      summary: Добавить COM/USB сканер
+      description: Добавляет сканер на указанном порту
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScannerRequest'
+      responses:
+        '200':
+          description: Сканер добавлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  name:
+                    type: string
+                  port:
+                    type: string
+        '400':
+          description: Некорректные данные
+        '409':
+          description: Сканер уже существует
+        '500':
+          description: Не удалось открыть порт
+          
+  /scan/last:
+    get:
+      tags:
+        - Scan
+      summary: Получить последний отсканированный код
+      description: |
+        Возвращает последний код, отсканированный любым подключенным сканером.
+        Используется для polling при тестировании сканеров.
+      responses:
+        '200':
+          description: Данные последнего сканирования
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanData'
+                
+  /scan/clear:
+    post:
+      tags:
+        - Scan
+      summary: Очистить последний скан
+      description: Сбрасывает буфер последнего отсканированного кода
+      responses:
+        '200':
+          description: Буфер очищен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "cleared"
+

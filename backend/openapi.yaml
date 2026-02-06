@@ -1,0 +1,647 @@
+openapi: 3.0.3
+info:
+  title: Idento Backend API
+  description: |
+    REST API для системы регистрации и чекина участников мероприятий Idento.
+    
+    ## Основные возможности:
+    - Управление мероприятиями
+    - Управление участниками
+    - Чекин участников
+    - Управление пользователями и ролями
+    - Импорт/экспорт данных
+    - Генерация QR-кодов
+    - Шаблоны бейджей
+  version: 1.0.0
+  contact:
+    name: Idento Support
+    email: support@idento.app
+  license:
+    name: MIT
+    
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.idento.app
+    description: Production server
+
+tags:
+  - name: Auth
+    description: Аутентификация и авторизация
+  - name: Events
+    description: Управление мероприятиями
+  - name: Attendees
+    description: Управление участниками
+  - name: Users
+    description: Управление пользователями
+  - name: Staff
+    description: Управление персоналом мероприятий
+  - name: Import/Export
+    description: Импорт и экспорт данных
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token для авторизации. Получается через /api/auth/login
+      
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [admin, manager, staff]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        start_date:
+          type: string
+          format: date-time
+        end_date:
+          type: string
+          format: date-time
+        location:
+          type: string
+        field_schema:
+          type: array
+          items:
+            type: string
+          description: Список полей для участников
+        custom_fields:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          
+    Attendee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        company:
+          type: string
+        position:
+          type: string
+        code:
+          type: string
+          description: Уникальный код участника для чекина
+        checkin_status:
+          type: boolean
+        checked_in_at:
+          type: string
+          format: date-time
+        checked_in_by:
+          type: string
+          format: uuid
+        checked_in_by_email:
+          type: string
+        printed_count:
+          type: integer
+        blocked:
+          type: boolean
+        block_reason:
+          type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+          
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+          
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Вход в систему
+      description: Аутентификация пользователя по email и паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Успешная аутентификация
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Неверные учетные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                
+  /api/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Регистрация нового пользователя
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: Пользователь успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Некорректные данные
+          
+  /api/events:
+    get:
+      tags:
+        - Events
+      summary: Получить список мероприятий
+      description: Возвращает все мероприятия текущего пользователя
+      responses:
+        '200':
+          description: Список мероприятий
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+                  
+    post:
+      tags:
+        - Events
+      summary: Создать новое мероприятие
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                start_date:
+                  type: string
+                  format: date-time
+                end_date:
+                  type: string
+                  format: date-time
+                location:
+                  type: string
+      responses:
+        '201':
+          description: Мероприятие создано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+                
+  /api/events/{id}:
+    get:
+      tags:
+        - Events
+      summary: Получить мероприятие по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Данные мероприятия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+        '404':
+          description: Мероприятие не найдено
+          
+    put:
+      tags:
+        - Events
+      summary: Обновить мероприятие
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Event'
+      responses:
+        '200':
+          description: Мероприятие обновлено
+          
+  /api/events/{id}/attendees:
+    get:
+      tags:
+        - Attendees
+      summary: Получить список участников мероприятия
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список участников
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Attendee'
+                  
+    post:
+      tags:
+        - Attendees
+      summary: Добавить участника
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - first_name
+                - last_name
+                - email
+              properties:
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                company:
+                  type: string
+                position:
+                  type: string
+                custom_fields:
+                  type: object
+      responses:
+        '201':
+          description: Участник добавлен
+          
+  /api/events/{id}/attendees/bulk:
+    post:
+      tags:
+        - Import/Export
+      summary: Массовый импорт участников
+      description: Импорт участников из CSV или JSON
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attendees:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Результат импорта
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: integer
+                  duplicates:
+                    type: integer
+                  errors:
+                    type: integer
+                  duplicate_list:
+                    type: array
+                    items:
+                      type: object
+                      
+  /api/attendees/{id}:
+    get:
+      tags:
+        - Attendees
+      summary: Получить участника по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Данные участника
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attendee'
+                
+    put:
+      tags:
+        - Attendees
+      summary: Обновить участника
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Attendee'
+      responses:
+        '200':
+          description: Участник обновлен
+          
+    delete:
+      tags:
+        - Attendees
+      summary: Удалить участника
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Участник удален
+          
+  /api/attendees/{id}/block:
+    post:
+      tags:
+        - Attendees
+      summary: Заблокировать участника
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Участник заблокирован
+          
+  /api/attendees/{id}/unblock:
+    post:
+      tags:
+        - Attendees
+      summary: Разблокировать участника
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Участник разблокирован
+          
+  /api/attendees/code/{code}:
+    get:
+      tags:
+        - Attendees
+      summary: Найти участника по коду
+      description: Используется для чекина по QR-коду или штрих-коду
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Участник найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attendee'
+        '404':
+          description: Участник не найден
+          
+  /api/users:
+    get:
+      tags:
+        - Users
+      summary: Получить список пользователей
+      responses:
+        '200':
+          description: Список пользователей
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+                  
+    post:
+      tags:
+        - Users
+      summary: Создать пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - role
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, manager, staff]
+      responses:
+        '201':
+          description: Пользователь создан
+          
+  /api/events/{eventId}/staff:
+    get:
+      tags:
+        - Staff
+      summary: Получить персонал мероприятия
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Список персонала
+          
+    post:
+      tags:
+        - Staff
+      summary: Назначить персонал на мероприятие
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Персонал назначен
+

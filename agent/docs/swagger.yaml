@@ -1,0 +1,13 @@
+basePath: /
+host: localhost:12345
+info:
+  contact:
+    email: support@idento.app
+    name: Idento Support
+  description: API для локального агента, управляющего принтерами и сканерами
+  license:
+    name: MIT
+  title: Idento Hardware Agent API
+  version: "1.0"
+paths: {}
+swagger: "2.0"

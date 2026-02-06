@@ -1,0 +1,19 @@
+basePath: /
+host: localhost:8080
+info:
+  contact:
+    email: support@idento.app
+    name: Idento Support
+  description: REST API для системы регистрации и чекина участников мероприятий Idento
+  license:
+    name: MIT
+  title: Idento Backend API
+  version: "1.0"
+paths: {}
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT token (формат: Bearer {token})'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

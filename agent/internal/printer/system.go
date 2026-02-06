@@ -1,0 +1,188 @@
+package printer
+
+import (
+	"fmt"
+	"log"
+	"os/exec"
+	"runtime"
+	"strings"
+)
+
+// DiscoverSystemPrinters finds printers installed in the operating system
+func DiscoverSystemPrinters() ([]string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return discoverMacOSPrinters()
+	case "linux":
+		return discoverLinuxPrinters()
+	case "windows":
+		return discoverWindowsPrinters()
+	default:
+		return nil, fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+// discoverMacOSPrinters discovers printers on macOS using lpstat
+func discoverMacOSPrinters() ([]string, error) {
+	cmd := exec.Command("lpstat", "-p")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute lpstat: %w", err)
+	}
+
+	var printers []string
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		// Format: "printer PrinterName is idle"
+		if strings.HasPrefix(line, "printer ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				printers = append(printers, parts[1])
+			}
+		}
+	}
+
+	return printers, nil
+}
+
+// discoverLinuxPrinters discovers printers on Linux using lpstat (CUPS)
+func discoverLinuxPrinters() ([]string, error) {
+	// Same as macOS - both use CUPS
+	cmd := exec.Command("lpstat", "-p")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute lpstat: %w", err)
+	}
+
+	var printers []string
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "printer ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				printers = append(printers, parts[1])
+			}
+		}
+	}
+
+	return printers, nil
+}
+
+// discoverWindowsPrinters discovers printers on Windows using wmic
+func discoverWindowsPrinters() ([]string, error) {
+	cmd := exec.Command("wmic", "printer", "get", "name")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute wmic: %w", err)
+	}
+
+	var printers []string
+	lines := strings.Split(string(output), "\n")
+	for i, line := range lines {
+		// Skip header and empty lines
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue
+		}
+		name := strings.TrimSpace(line)
+		if name != "Name" && name != "" {
+			printers = append(printers, name)
+		}
+	}
+
+	return printers, nil
+}
+
+// SystemPrinter implements PrinterInterface for system-installed printers
+type SystemPrinter struct {
+	Name string
+}
+
+func NewSystemPrinter(name string) *SystemPrinter {
+	return &SystemPrinter{Name: name}
+}
+
+func (p *SystemPrinter) SendRaw(data []byte) error {
+	log.Printf("[SYSTEM PRINTER: %s] Sending %d bytes", p.Name, len(data))
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin", "linux":
+		// Use lp command on Unix systems
+		cmd = exec.Command("lp", "-d", p.Name, "-o", "raw", "-")
+		cmd.Stdin = strings.NewReader(string(data))
+	case "windows":
+		// For Windows, we'd need to write to a temp file and use print command
+		// Or use a more sophisticated approach with Windows API
+		return fmt.Errorf("direct printing on Windows requires additional implementation")
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[SYSTEM PRINTER: %s] Print failed: %v, output: %s", p.Name, err, string(output))
+		return fmt.Errorf("failed to print: %w", err)
+	}
+
+	log.Printf("[SYSTEM PRINTER: %s] Print job sent successfully", p.Name)
+	return nil
+}
+
+// PrintPDF sends a PDF file to the system printer
+// This is for office/label printers that support PDF
+func (p *SystemPrinter) PrintPDF(pdfData []byte) error {
+	log.Printf("[SYSTEM PRINTER: %s] Printing PDF (%d bytes)", p.Name, len(pdfData))
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin", "linux":
+		// Use lp command without -o raw for PDF
+		cmd = exec.Command("lp", "-d", p.Name, "-")
+		cmd.Stdin = strings.NewReader(string(pdfData))
+	case "windows":
+		// For Windows, write to temp file and use default print command
+		// This requires additional implementation
+		return fmt.Errorf("PDF printing on Windows requires additional implementation")
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("[SYSTEM PRINTER: %s] PDF print failed: %v, output: %s", p.Name, err, string(output))
+		return fmt.Errorf("failed to print PDF: %w", err)
+	}
+
+	log.Printf("[SYSTEM PRINTER: %s] PDF print job sent successfully", p.Name)
+	return nil
+}
+
+// SupportsPDF returns true if the printer supports PDF printing
+func (p *SystemPrinter) SupportsPDF() bool {
+	// System printers generally support PDF
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+}
+
+func (p *SystemPrinter) Status() (string, error) {
+	switch runtime.GOOS {
+	case "darwin", "linux":
+		cmd := exec.Command("lpstat", "-p", p.Name)
+		output, err := cmd.Output()
+		if err != nil {
+			return "Unknown", err
+		}
+		// Parse output to determine status
+		status := string(output)
+		if strings.Contains(status, "idle") {
+			return "Ready", nil
+		} else if strings.Contains(status, "printing") {
+			return "Printing", nil
+		}
+		return "Unknown", nil
+	case "windows":
+		// Windows status check would require WMI query
+		return "Unknown", nil
+	default:
+		return "Unknown", fmt.Errorf("unsupported OS")
+	}
+}

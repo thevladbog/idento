@@ -1,0 +1,18 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "API для локального агента, управляющего принтерами и сканерами",
+        "title": "Idento Hardware Agent API",
+        "contact": {
+            "name": "Idento Support",
+            "email": "support@idento.app"
+        },
+        "license": {
+            "name": "MIT"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:12345",
+    "basePath": "/",
+    "paths": {}
+}

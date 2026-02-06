@@ -1,0 +1,12 @@
+first_name,last_name,email,company,position,badge_type,dietary_restrictions,phone
+John,Doe,john.doe@example.com,Acme Corporation,CEO,VIP,None,+1-555-0101
+Jane,Smith,jane.smith@techcorp.com,Tech Corp,CTO,Speaker,Vegetarian,+1-555-0102
+Alice,Johnson,alice.j@startup.io,Startup Inc,Product Manager,Regular,Vegan,+1-555-0103
+Bob,Williams,bob.w@design.com,Design Studio,Creative Director,Regular,None,+1-555-0104
+Carol,Brown,carol.brown@marketing.net,Marketing Agency,Marketing Director,VIP,Gluten-free,+1-555-0105
+David,Jones,david.jones@finance.com,Finance Group,CFO,Regular,None,+1-555-0106
+Emma,Garcia,emma.garcia@consulting.com,Consulting Firm,Senior Consultant,Speaker,Vegetarian,+1-555-0107
+Frank,Miller,frank.m@tech.io,Tech Solutions,Software Engineer,Regular,None,+1-555-0108
+Grace,Davis,grace.davis@media.com,Media Company,Journalist,Press,Vegan,+1-555-0109
+Henry,Rodriguez,henry.r@education.org,Education Foundation,Director,VIP,None,+1-555-0110
+

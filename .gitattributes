@@ -1,0 +1,88 @@
+# Idento - Git attributes for cross-platform development
+# Ensures consistent line endings across Windows, macOS, and Linux
+
+# Auto detect text files and normalize to LF on checkin
+* text=auto
+
+# Shell scripts must have LF (Unix line endings)
+*.sh text eol=lf
+
+# PowerShell scripts should have CRLF (Windows line endings)
+*.ps1 text eol=crlf
+
+# Batch files should have CRLF (Windows line endings)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Go source files should have LF
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+
+# JavaScript/TypeScript files should have LF
+*.js text eol=lf
+*.jsx text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.json text eol=lf
+*.mjs text eol=lf
+
+# HTML/CSS files should have LF
+*.html text eol=lf
+*.css text eol=lf
+*.scss text eol=lf
+*.sass text eol=lf
+
+# Kotlin files should have LF
+*.kt text eol=lf
+*.kts text eol=lf
+
+# Swift files should have LF
+*.swift text eol=lf
+
+# XML files should have LF
+*.xml text eol=lf
+
+# Makefiles must have LF (they break with CRLF)
+Makefile text eol=lf
+*.mk text eol=lf
+makefile text eol=lf
+
+# YAML files should have LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Markdown files should have LF
+*.md text eol=lf
+
+# SQL files should have LF
+*.sql text eol=lf
+
+# Configuration files
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.editorconfig text eol=lf
+.env* text eol=lf
+
+# Docker files
+Dockerfile text eol=lf
+docker-compose*.yml text eol=lf
+
+# Binary files (don't modify)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.jar binary
+*.apk binary
+*.aab binary
+*.ipa binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary

@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Printer QR Generator - Idento</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        html {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 32px;
+            font-size: 14px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 8px;
+        }
+        
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .radio-option input[type="radio"] {
+            width: auto;
+            cursor: pointer;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 24px;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 32px;
+            padding: 32px;
+            background: #f5f5f5;
+            border-radius: 12px;
+            text-align: center;
+            display: none;
+        }
+        
+        .result.show {
+            display: block;
+        }
+        
+        .qr-image {
+            max-width: 300px;
+            margin: 20px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .qr-image img {
+            width: 100%;
+            display: block;
+        }
+        
+        .info {
+            margin-top: 16px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+        
+        .optional-fields {
+            border-top: 2px dashed #e0e0e0;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+        
+        .optional-label {
+            color: #999;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🖨️ Printer QR Generator</h1>
+        <p class="subtitle">Generate QR codes for quick printer setup in Idento mobile app</p>
+        
+        <form id="printerForm">
+            <div class="form-group">
+                <label>Printer Type *</label>
+                <div class="radio-group">
+                    <label class="radio-option">
+                        <input type="radio" name="printer_type" value="bluetooth" checked>
+                        <span>🔵 Bluetooth</span>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="printer_type" value="ethernet">
+                        <span>🌐 Ethernet</span>
+                    </label>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="name">Printer Name *</label>
+                <input type="text" id="name" placeholder="e.g., Zebra ZD410 Office" required>
+            </div>
+            
+            <!-- Bluetooth Fields -->
+            <div id="bluetoothFields" class="type-fields">
+                <div class="form-group">
+                    <label for="address">MAC Address *</label>
+                    <input type="text" id="address" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$">
+                    <small style="color: #999; font-size: 12px;">Format: AA:BB:CC:DD:EE:FF</small>
+                </div>
+            </div>
+            
+            <!-- Ethernet Fields -->
+            <div id="ethernetFields" class="type-fields" style="display: none;">
+                <div class="form-group">
+                    <label for="ip">IP Address *</label>
+                    <input type="text" id="ip" placeholder="192.168.1.100">
+                </div>
+                
+                <div class="form-group">
+                    <label for="port">Port</label>
+                    <input type="number" id="port" placeholder="9100" value="9100" min="1" max="65535">
+                </div>
+            </div>
+            
+            <!-- Optional Fields -->
+            <div class="optional-fields">
+                <div class="optional-label">Optional Information</div>
+                
+                <div class="form-group">
+                    <label for="model">Printer Model</label>
+                    <input type="text" id="model" placeholder="e.g., ZD410, ZD620">
+                </div>
+                
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <input type="text" id="location" placeholder="e.g., Reception Desk, Office Floor 2">
+                </div>
+            </div>
+            
+            <button type="submit" id="generateBtn">Generate QR Code</button>
+        </form>
+        
+        <div id="error" class="error"></div>
+        
+        <div id="result" class="result">
+            <h2>✅ QR Code Generated!</h2>
+            <div class="qr-image">
+                <img id="qrImage" src="" alt="Printer QR Code">
+            </div>
+            <div class="info" id="printerInfo"></div>
+            <div class="actions">
+                <a id="downloadLink" class="btn-secondary" download="printer-qr.png">📥 Download PNG</a>
+                <button type="button" class="btn-secondary" onclick="printQR()">🖨️ Print</button>
+                <button type="button" class="btn-secondary" onclick="resetForm()">🔄 Generate Another</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('printerForm');
+        const bluetoothFields = document.getElementById('bluetoothFields');
+        const ethernetFields = document.getElementById('ethernetFields');
+        const resultDiv = document.getElementById('result');
+        const errorDiv = document.getElementById('error');
+        const qrImage = document.getElementById('qrImage');
+        const printerInfo = document.getElementById('printerInfo');
+        const downloadLink = document.getElementById('downloadLink');
+        
+        // Toggle fields based on printer type
+        function updateFieldsVisibility() {
+            const printerType = document.querySelector('input[name="printer_type"]:checked').value;
+            console.log('Printer type changed to:', printerType);
+            
+            if (printerType === 'bluetooth') {
+                bluetoothFields.style.display = 'block';
+                ethernetFields.style.display = 'none';
+                // Clear Ethernet fields
+                document.getElementById('ip').value = '';
+            } else {
+                bluetoothFields.style.display = 'none';
+                ethernetFields.style.display = 'block';
+                // Clear Bluetooth fields
+                document.getElementById('address').value = '';
+            }
+        }
+        
+        document.querySelectorAll('input[name="printer_type"]').forEach(radio => {
+            radio.addEventListener('change', updateFieldsVisibility);
+        });
+        
+        // Initialize on load
+        updateFieldsVisibility();
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const printerType = document.querySelector('input[name="printer_type"]:checked').value;
+            const name = document.getElementById('name').value;
+            const model = document.getElementById('model').value;
+            const location = document.getElementById('location').value;
+            
+            const data = {
+                printer_type: printerType,
+                name: name,
+            };
+            
+            if (printerType === 'bluetooth') {
+                data.address = document.getElementById('address').value;
+            } else {
+                data.ip = document.getElementById('ip').value;
+                const port = document.getElementById('port').value;
+                if (port) data.port = parseInt(port);
+            }
+            
+            if (model) data.model = model;
+            if (location) data.location = location;
+            
+            try {
+                document.getElementById('generateBtn').disabled = true;
+                errorDiv.classList.remove('show');
+                
+                const response = await fetch('/api/util/printers/generate-qr', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to generate QR code');
+                }
+                
+                const blob = await response.blob();
+                const imageUrl = URL.createObjectURL(blob);
+                
+                qrImage.src = imageUrl;
+                downloadLink.href = imageUrl;
+                
+                // Set printer info
+                const typeLabel = printerType === 'bluetooth' ? 'Bluetooth' : 'Ethernet';
+                const address = printerType === 'bluetooth' 
+                    ? data.address 
+                    : `${data.ip}:${data.port || 9100}`;
+                
+                let infoHtml = `<strong>${name}</strong><br>${typeLabel} (${address})`;
+                if (model) infoHtml += `<br>Model: ${model}`;
+                if (location) infoHtml += `<br>Location: ${location}`;
+                
+                printerInfo.innerHTML = infoHtml;
+                
+                resultDiv.classList.add('show');
+                
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.add('show');
+            } finally {
+                document.getElementById('generateBtn').disabled = false;
+            }
+        });
+        
+        function printQR() {
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Print Printer QR</title>
+                    <style>
+                        body {
+                            display: flex;
+                            justify-content: center;
+                            align-items: center;
+                            min-height: 100vh;
+                            margin: 0;
+                            font-family: Arial;
+                        }
+                        .print-content {
+                            text-align: center;
+                        }
+                        img {
+                            max-width: 400px;
+                        }
+                        h2 {
+                            margin-top: 20px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-content">
+                        <img src="${qrImage.src}">
+                        <h2>${document.getElementById('name').value}</h2>
+                        <p>${printerInfo.textContent}</p>
+                    </div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            setTimeout(() => {
+                printWindow.print();
+            }, 250);
+        }
+        
+        function resetForm() {
+            form.reset();
+            resultDiv.classList.remove('show');
+            errorDiv.classList.remove('show');
+        }
+    </script>
+</body>
+</html>

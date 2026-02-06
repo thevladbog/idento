@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📚 Documentation
+    url: https://github.com/thevladbog/idento/blob/main/DEVELOPMENT.md
+    about: Check the development documentation for setup and troubleshooting
+  - name: 💬 Discussions
+    url: https://github.com/thevladbog/idento/discussions
+    about: Ask questions and discuss ideas with the community

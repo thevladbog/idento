@@ -1,0 +1,56 @@
+---
+name: Bug Report
+about: Create a report to help us improve
+title: '[BUG] '
+labels: ['bug', 'needs-triage']
+assignees: ''
+
+---
+
+## Bug Description
+<!-- A clear and concise description of what the bug is -->
+
+## Environment
+- **OS**: <!-- e.g., Windows 11, macOS 14, Ubuntu 22.04 -->
+- **Go Version**: <!-- run: go version -->
+- **Node Version**: <!-- run: node --version -->
+- **Docker Version**: <!-- run: docker --version -->
+- **Browser** (if web issue): <!-- e.g., Chrome 120, Safari 17 -->
+
+## Component
+<!-- Which part of the system is affected? -->
+- [ ] Backend (Go API)
+- [ ] Web (React Admin)
+- [ ] Mobile (Android App)
+- [ ] Agent (Printing)
+- [ ] Database/Migrations
+- [ ] Docker/Infrastructure
+- [ ] Documentation
+
+## Steps to Reproduce
+1. Go to '...'
+2. Click on '...'
+3. Scroll down to '...'
+4. See error
+
+## Expected Behavior
+<!-- What should happen -->
+
+## Actual Behavior
+<!-- What actually happens -->
+
+## Screenshots/Logs
+<!-- If applicable, add screenshots or paste relevant logs -->
+```
+# Backend logs
+logs/backend.log content here
+
+# Or Docker logs
+docker logs idento_db
+```
+
+## Additional Context
+<!-- Any other information about the problem -->
+
+## Possible Solution
+<!-- Optional: Suggest a fix or reason for the bug -->

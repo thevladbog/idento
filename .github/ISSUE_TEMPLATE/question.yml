@@ -1,0 +1,33 @@
+---
+name: Question / Help
+about: Ask a question or get help with Idento
+title: '[QUESTION] '
+labels: ['question']
+assignees: ''
+
+---
+
+## Question
+<!-- What do you need help with? -->
+
+## Context
+<!-- What are you trying to do? What have you tried so far? -->
+
+## Environment
+- **OS**: <!-- e.g., Windows 11, macOS 14, Ubuntu 22.04 -->
+- **Component**: <!-- Backend, Web, Mobile, Agent, or General -->
+
+## What I've Tried
+<!-- What steps have you already taken to solve this? -->
+- 
+- 
+
+## Documentation Checked
+<!-- Have you checked the documentation? -->
+- [ ] [README.md](https://github.com/thevladbog/idento/blob/main/README.md)
+- [ ] [DEVELOPMENT.md](https://github.com/thevladbog/idento/blob/main/DEVELOPMENT.md)
+- [ ] [Project docs/](https://github.com/thevladbog/idento/tree/main/docs)
+- [ ] [Existing issues](https://github.com/thevladbog/idento/issues)
+
+## Additional Information
+<!-- Any other details that might help us answer your question -->

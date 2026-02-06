@@ -1,0 +1,83 @@
+# Environment and secrets
+.env
+*.local
+local.properties
+google-services.json
+*.jks
+*.keystore
+
+# Logs and runtime artifacts
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+/vendor/
+/backend/idento-backend
+/backend/cmd/create_super_admin/create_super_admin
+/backend/cmd/mark_migrations/mark_migrations
+/backend/cmd/migrate/migrate
+/agent/main
+/agent/idento-agent
+
+# Node
+node_modules/
+web/dist
+web/dist-ssr
+
+# Mobile - Android
+mobile/android-app/build/
+mobile/android-app/.gradle/
+mobile/android-app/local.properties
+mobile/android-app/.externalNativeBuild
+mobile/android-app/.cxx/
+mobile/shared/build/
+*.apk
+*.aab
+*.ap_
+
+# Mobile - iOS
+mobile/iosApp/Pods/
+mobile/iosApp/build/
+*.ipa
+*.xcuserstate
+*.xcuserdatad/
+
+# IDE and editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.hprof
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gradle
+.gradle/
+
+# Root build output (Makefile build-backend / build-agent)
+/build/
+
+# Lint and temp
+lint/
+*.tmp
+*.temp
+.cache/

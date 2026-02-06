@@ -1,0 +1,28 @@
+{
+  "name": "Idento - Event Check-in System",
+  "short_name": "Idento",
+  "description": "Professional event check-in and badge printing system",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#00935e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/idento-en-letter.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/idento-ru-letter.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity", "utilities"],
+  "lang": "en-US",
+  "dir": "ltr"
+}
+

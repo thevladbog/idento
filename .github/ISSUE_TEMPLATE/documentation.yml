@@ -1,0 +1,35 @@
+---
+name: Documentation Issue
+about: Report missing, unclear, or incorrect documentation
+title: '[DOCS] '
+labels: ['documentation', 'needs-triage']
+assignees: ''
+
+---
+
+## Documentation Issue
+<!-- What's wrong with the documentation? -->
+
+## Location
+<!-- Where is the problematic documentation? -->
+- **File**: <!-- e.g., README.md, DEVELOPMENT.md, docs/TESTING_GUIDE.md -->
+- **Section**: <!-- e.g., "Quick Start", "Windows Setup" -->
+- **URL**: <!-- If applicable -->
+
+## Issue Type
+- [ ] Missing information
+- [ ] Incorrect information
+- [ ] Unclear explanation
+- [ ] Outdated content
+- [ ] Typo/Grammar
+- [ ] Code example doesn't work
+- [ ] Other
+
+## Current Documentation
+<!-- Quote or describe the current documentation -->
+
+## Suggested Improvement
+<!-- How should it be improved? -->
+
+## Additional Context
+<!-- Any other information about the documentation issue -->
