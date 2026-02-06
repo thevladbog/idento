@@ -1,35 +1,74 @@
----
 name: Documentation Issue
-about: Report missing, unclear, or incorrect documentation
-title: '[DOCS] '
-labels: ['documentation', 'needs-triage']
-assignees: ''
+description: Report missing, unclear, or incorrect documentation
+title: "[DOCS] "
+labels: ["documentation", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve our documentation!
 
----
+  - type: textarea
+    id: issue
+    attributes:
+      label: Documentation Issue
+      description: What's wrong with the documentation?
+      placeholder: Describe the documentation issue...
+    validations:
+      required: true
 
-## Documentation Issue
-<!-- What's wrong with the documentation? -->
+  - type: input
+    id: file
+    attributes:
+      label: File
+      description: Which file has the issue?
+      placeholder: e.g., README.md, DEVELOPMENT.md, docs/TESTING_GUIDE.md
+    validations:
+      required: true
 
-## Location
-<!-- Where is the problematic documentation? -->
-- **File**: <!-- e.g., README.md, DEVELOPMENT.md, docs/TESTING_GUIDE.md -->
-- **Section**: <!-- e.g., "Quick Start", "Windows Setup" -->
-- **URL**: <!-- If applicable -->
+  - type: input
+    id: section
+    attributes:
+      label: Section
+      description: Which section or heading?
+      placeholder: e.g., "Quick Start", "Windows Setup"
 
-## Issue Type
-- [ ] Missing information
-- [ ] Incorrect information
-- [ ] Unclear explanation
-- [ ] Outdated content
-- [ ] Typo/Grammar
-- [ ] Code example doesn't work
-- [ ] Other
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What kind of documentation issue is this?
+      options:
+        - Missing information
+        - Incorrect information
+        - Unclear explanation
+        - Outdated content
+        - Typo/Grammar
+        - Code example doesn't work
+        - Other
+    validations:
+      required: true
 
-## Current Documentation
-<!-- Quote or describe the current documentation -->
+  - type: textarea
+    id: current
+    attributes:
+      label: Current Documentation
+      description: Quote or describe the current documentation
+      placeholder: |
+        The current docs say...
+      render: markdown
 
-## Suggested Improvement
-<!-- How should it be improved? -->
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested Improvement
+      description: How should it be improved?
+      placeholder: It should say...
+    validations:
+      required: true
 
-## Additional Context
-<!-- Any other information about the documentation issue -->
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other information about this documentation issue

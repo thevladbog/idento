@@ -1,56 +1,115 @@
----
 name: Bug Report
-about: Create a report to help us improve
-title: '[BUG] '
-labels: ['bug', 'needs-triage']
-assignees: ''
+description: Create a report to help us improve Idento
+title: "[BUG] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
 
----
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe the bug...
+    validations:
+      required: true
 
-## Bug Description
-<!-- A clear and concise description of what the bug is -->
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system is affected?
+      options:
+        - Backend (Go API)
+        - Web (React Admin)
+        - Mobile (Android App)
+        - Agent (Printing)
+        - Database/Migrations
+        - Docker/Infrastructure
+        - Documentation
+        - Other
+    validations:
+      required: true
 
-## Environment
-- **OS**: <!-- e.g., Windows 11, macOS 14, Ubuntu 22.04 -->
-- **Go Version**: <!-- run: go version -->
-- **Node Version**: <!-- run: node --version -->
-- **Docker Version**: <!-- run: docker --version -->
-- **Browser** (if web issue): <!-- e.g., Chrome 120, Safari 17 -->
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      description: What OS are you using?
+      placeholder: e.g., Windows 11, macOS 14, Ubuntu 22.04
+    validations:
+      required: true
 
-## Component
-<!-- Which part of the system is affected? -->
-- [ ] Backend (Go API)
-- [ ] Web (React Admin)
-- [ ] Mobile (Android App)
-- [ ] Agent (Printing)
-- [ ] Database/Migrations
-- [ ] Docker/Infrastructure
-- [ ] Documentation
+  - type: input
+    id: go-version
+    attributes:
+      label: Go Version
+      description: Run `go version` and paste the output
+      placeholder: e.g., go version go1.25.0 darwin/arm64
 
-## Steps to Reproduce
-1. Go to '...'
-2. Click on '...'
-3. Scroll down to '...'
-4. See error
+  - type: input
+    id: node-version
+    attributes:
+      label: Node Version
+      description: Run `node --version` and paste the output
+      placeholder: e.g., v20.10.0
 
-## Expected Behavior
-<!-- What should happen -->
+  - type: input
+    id: browser
+    attributes:
+      label: Browser (if web issue)
+      placeholder: e.g., Chrome 120, Safari 17, Firefox 121
 
-## Actual Behavior
-<!-- What actually happens -->
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this bug?
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
 
-## Screenshots/Logs
-<!-- If applicable, add screenshots or paste relevant logs -->
-```
-# Backend logs
-logs/backend.log content here
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: Describe what you expected...
+    validations:
+      required: true
 
-# Or Docker logs
-docker logs idento_db
-```
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happens?
+      placeholder: Describe what actually happened...
+    validations:
+      required: true
 
-## Additional Context
-<!-- Any other information about the problem -->
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Screenshots
+      description: If applicable, add logs or screenshots
+      placeholder: |
+        Paste logs here or attach screenshots
+      render: shell
 
-## Possible Solution
-<!-- Optional: Suggest a fix or reason for the bug -->
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any other information about the problem
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Possible Solution
+      description: (Optional) Suggest a fix or reason for the bug

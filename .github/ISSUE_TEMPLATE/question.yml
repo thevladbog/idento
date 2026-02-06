@@ -1,33 +1,77 @@
----
 name: Question / Help
-about: Ask a question or get help with Idento
-title: '[QUESTION] '
-labels: ['question']
-assignees: ''
+description: Ask a question or get help with Idento
+title: "[QUESTION] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, please check:
+        - [README.md](https://github.com/thevladbog/idento/blob/main/README.md)
+        - [DEVELOPMENT.md](https://github.com/thevladbog/idento/blob/main/DEVELOPMENT.md)
+        - [Existing issues](https://github.com/thevladbog/idento/issues)
 
----
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What do you need help with?
+      placeholder: Describe your question...
+    validations:
+      required: true
 
-## Question
-<!-- What do you need help with? -->
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to do? What have you tried so far?
+      placeholder: I'm trying to... I've already tried...
+    validations:
+      required: true
 
-## Context
-<!-- What are you trying to do? What have you tried so far? -->
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: e.g., Windows 11, macOS 14, Ubuntu 22.04
 
-## Environment
-- **OS**: <!-- e.g., Windows 11, macOS 14, Ubuntu 22.04 -->
-- **Component**: <!-- Backend, Web, Mobile, Agent, or General -->
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of the system?
+      options:
+        - Backend
+        - Web
+        - Mobile
+        - Agent
+        - General
+        - Setup/Installation
+        - Other
 
-## What I've Tried
-<!-- What steps have you already taken to solve this? -->
-- 
-- 
+  - type: textarea
+    id: tried
+    attributes:
+      label: What I've Tried
+      description: What steps have you already taken?
+      placeholder: |
+        - Checked README.md
+        - Ran `make help`
+        - ...
 
-## Documentation Checked
-<!-- Have you checked the documentation? -->
-- [ ] [README.md](https://github.com/thevladbog/idento/blob/main/README.md)
-- [ ] [DEVELOPMENT.md](https://github.com/thevladbog/idento/blob/main/DEVELOPMENT.md)
-- [ ] [Project docs/](https://github.com/thevladbog/idento/tree/main/docs)
-- [ ] [Existing issues](https://github.com/thevladbog/idento/issues)
+  - type: checkboxes
+    id: docs-checked
+    attributes:
+      label: Documentation Checked
+      description: Have you checked the documentation?
+      options:
+        - label: README.md
+        - label: DEVELOPMENT.md
+        - label: Project docs/
+        - label: Existing issues
 
-## Additional Information
-<!-- Any other details that might help us answer your question -->
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Information
+      description: Any other details that might help us answer your question
