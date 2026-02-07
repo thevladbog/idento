@@ -62,7 +62,7 @@ fun ZoneSelectScreen(
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
-                    imageVector = Icons.Default.Settings,
+                    imageVector = Icons.Default.Search,
                     contentDescription = Strings.scanZoneQR
                 )
             }

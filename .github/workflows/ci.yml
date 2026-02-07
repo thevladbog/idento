@@ -58,7 +58,7 @@ jobs:
       - name: Lint backend
         uses: golangci/golangci-lint-action@v4
         with:
-          version: v2.0.0
+          version: v1.61
           install-mode: goinstall
           working-directory: backend
           args: --timeout=5m ./internal/...
@@ -66,7 +66,7 @@ jobs:
       - name: Lint agent
         uses: golangci/golangci-lint-action@v4
         with:
-          version: v2.0.0
+          version: v1.61
           install-mode: goinstall
           working-directory: agent
           args: --timeout=5m ./...
