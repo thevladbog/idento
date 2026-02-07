@@ -127,7 +127,7 @@ func (p *SystemPrinter) SendRaw(data []byte) error {
 	switch runtime.GOOS {
 	case "darwin", "linux":
 		// Use lp command on Unix systems
-		cmd = exec.Command("lp", "-d", name, "-o", "raw", "-")
+		cmd = exec.Command("lp", "-d", name, "-o", "raw", "-") // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		cmd.Stdin = strings.NewReader(string(data))
 	case "windows":
 		// For Windows, we'd need to write to a temp file and use print command
@@ -161,7 +161,7 @@ func (p *SystemPrinter) PrintPDF(pdfData []byte) error {
 	switch runtime.GOOS {
 	case "darwin", "linux":
 		// Use lp command without -o raw for PDF
-		cmd = exec.Command("lp", "-d", name, "-")
+		cmd = exec.Command("lp", "-d", name, "-") // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		cmd.Stdin = strings.NewReader(string(pdfData))
 	case "windows":
 		// For Windows, write to temp file and use default print command
@@ -194,7 +194,7 @@ func (p *SystemPrinter) Status() (string, error) {
 	}
 	switch runtime.GOOS {
 	case "darwin", "linux":
-		cmd := exec.Command("lpstat", "-p", name)
+		cmd := exec.Command("lpstat", "-p", name) // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		output, err := cmd.Output()
 		if err != nil {
 			return "Unknown", err

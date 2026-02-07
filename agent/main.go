@@ -339,14 +339,6 @@ paths:
                     example: "cleared"
 `
 
-func getConfigPath() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "agent_config.json"
-	}
-	return filepath.Join(homeDir, ".idento", "agent_config.json")
-}
-
 // getConfigDir returns the absolute path to ~/.idento for os.Root-scoped config access.
 func getConfigDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
