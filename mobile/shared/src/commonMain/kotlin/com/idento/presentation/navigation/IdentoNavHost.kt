@@ -84,6 +84,8 @@ fun IdentoNavHost(
                 eventId = eventId,
                 eventName = eventName,
                 selectedAttendeeId = selectedAttendeeId,
+                zoneId = null,  // Default to null for legacy mode
+                eventDay = null, // Default to null for legacy mode
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToAttendeesList = {
                     navController.navigate(Screen.AttendeesList.createRoute(eventId))

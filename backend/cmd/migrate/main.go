@@ -55,9 +55,9 @@ func main() {
 	// Filter and sort .up.sql files
 	var migrationFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" && 
-		   entry.Name() != "seed.sql" &&
-		   strings.HasSuffix(entry.Name(), ".up.sql") {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" &&
+			entry.Name() != "seed.sql" &&
+			strings.HasSuffix(entry.Name(), ".up.sql") {
 			migrationFiles = append(migrationFiles, entry.Name())
 		}
 	}
@@ -72,7 +72,7 @@ func main() {
 
 		// Check if already applied
 		var exists bool
-		err := pool.QueryRow(context.Background(), 
+		err := pool.QueryRow(context.Background(),
 			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version).Scan(&exists)
 		if err != nil {
 			log.Fatalf("Failed to check migration status: %v", err)
@@ -97,7 +97,7 @@ func main() {
 		}
 
 		// Record migration
-		_, err = pool.Exec(context.Background(), 
+		_, err = pool.Exec(context.Background(),
 			`INSERT INTO schema_migrations (version) VALUES ($1)`, version)
 		if err != nil {
 			log.Fatalf("Failed to record migration %s: %v", version, err)
@@ -108,4 +108,3 @@ func main() {
 
 	log.Printf("🎉 All migrations applied successfully!")
 }
-
