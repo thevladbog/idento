@@ -2,6 +2,7 @@ package handler
 
 import (
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -47,13 +48,18 @@ func (h *Handler) GetTenantStats(c echo.Context) error {
 // GetAllUsersSuper returns list of all users across all tenants
 func (h *Handler) GetAllUsersSuper(c echo.Context) error {
 	// Pagination
-	page, _ := strconv.Atoi(c.QueryParam("page"))
-	if page < 1 {
-		page = 1
+	page := 1
+	if pageStr := c.QueryParam("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
 	}
-	pageSize, _ := strconv.Atoi(c.QueryParam("page_size"))
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 50
+
+	pageSize := 50
+	if pageSizeStr := c.QueryParam("page_size"); pageSizeStr != "" {
+		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 && ps <= 100 {
+			pageSize = ps
+		}
 	}
 	offset := (page - 1) * pageSize
 
@@ -113,7 +119,12 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 
 	// Update fields
 	if req.PlanID != nil {
-		planID := uuid.MustParse(*req.PlanID)
+		planID, err := uuid.Parse(*req.PlanID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "Invalid plan ID format",
+			})
+		}
 		sub.PlanID = &planID
 	}
 	if req.Status != nil {
@@ -141,10 +152,12 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 	// Log admin action
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	_ = h.Store.LogAdminAction(c.Request().Context(), adminID, "update_subscription", "subscription", sub.ID, map[string]interface{}{
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_subscription", "subscription", sub.ID, map[string]interface{}{
 		"old": oldSub,
 		"new": sub,
-	})
+	}); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
 
 	return c.JSON(http.StatusOK, sub)
 }
@@ -181,9 +194,11 @@ func (h *Handler) CreateSubscriptionPlan(c echo.Context) error {
 	// Log admin action
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	_ = h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	})
+	}); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
 
 	return c.JSON(http.StatusCreated, plan)
 }
@@ -215,9 +230,11 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	// Log admin action
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	_ = h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	})
+	}); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
 
 	return c.JSON(http.StatusOK, plan)
 }
@@ -271,11 +288,24 @@ func (h *Handler) GetSystemAnalytics(c echo.Context) error {
 
 // GetAuditLog returns admin audit log
 func (h *Handler) GetAuditLog(c echo.Context) error {
-	limit, _ := strconv.Atoi(c.QueryParam("limit"))
-	if limit == 0 {
-		limit = 50
+	const maxLimit = 100
+	limit := 50
+	if limitStr := c.QueryParam("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			if l > maxLimit {
+				limit = maxLimit
+			} else {
+				limit = l
+			}
+		}
 	}
-	offset, _ := strconv.Atoi(c.QueryParam("offset"))
+
+	offset := 0
+	if offsetStr := c.QueryParam("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
 
 	filters := make(map[string]interface{})
 

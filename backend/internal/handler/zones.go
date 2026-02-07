@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -400,7 +401,14 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	}
 
 	// 7. Check if already checked in today
-	existing, _ := h.Store.CheckAttendeeZoneCheckin(ctx, attendee.ID, zone.ID, req.EventDay)
+	existing, err := h.Store.CheckAttendeeZoneCheckin(ctx, attendee.ID, zone.ID, req.EventDay)
+	if err != nil {
+		log.Printf("Failed to check existing zone checkin: %v", err)
+		return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{
+			Success: false,
+			Error:   "Failed to verify check-in status",
+		})
+	}
 	if existing != nil {
 		return c.JSON(http.StatusOK, models.ZoneCheckInResponse{
 			Success:         true,
@@ -431,15 +439,20 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	}
 
 	// 9. Log usage
-	event, _ := h.Store.GetEventByID(ctx, zone.EventID)
+	event, err := h.Store.GetEventByID(ctx, zone.EventID)
+	if err != nil {
+		log.Printf("Failed to get event for logging: %v", err)
+	}
 	if event != nil {
-		_ = h.Store.LogUsage(ctx, &models.UsageLog{
+		if err := h.Store.LogUsage(ctx, &models.UsageLog{
 			TenantID:     event.TenantID,
 			ResourceType: "zone_checkin",
 			ResourceID:   &checkin.ID,
 			Action:       "created",
 			Quantity:     1,
-		})
+		}); err != nil {
+			log.Printf("Failed to log usage: %v", err)
+		}
 	}
 
 	return c.JSON(http.StatusOK, models.ZoneCheckInResponse{
@@ -496,7 +509,10 @@ func (h *Handler) GetAttendeeZoneHistory(c echo.Context) error {
 	// Enrich with zone details
 	var history []models.MovementHistoryEntry
 	for _, checkin := range checkins {
-		zone, _ := h.Store.GetEventZoneByID(ctx, checkin.ZoneID)
+		zone, err := h.Store.GetEventZoneByID(ctx, checkin.ZoneID)
+		if err != nil {
+			log.Printf("Failed to get zone details: %v", err)
+		}
 
 		entry := models.MovementHistoryEntry{
 			ZoneCheckin: checkin,

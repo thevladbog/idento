@@ -62,7 +62,7 @@ fun ZoneSelectScreen(
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
-                    imageVector = Icons.Default.QrCode,
+                    imageVector = Icons.Default.Search,
                     contentDescription = Strings.scanZoneQR
                 )
             }
@@ -208,12 +208,12 @@ private fun ZoneCard(
                     StatItem(
                         label = Strings.today,
                         value = zone.todayCheckins.toString(),
-                        icon = Icons.Default.Today
+                        icon = Icons.Default.DateRange
                     )
                     StatItem(
                         label = Strings.total,
                         value = zone.totalCheckins.toString(),
-                        icon = Icons.Default.Group
+                        icon = Icons.Default.CheckCircle
                     )
                     StatItem(
                         label = Strings.unique,
@@ -230,7 +230,7 @@ private fun ZoneCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Schedule,
+                        imageVector = Icons.Default.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -277,9 +277,9 @@ private fun StatItem(
 
 private fun getZoneIcon(zoneType: String): androidx.compose.ui.graphics.vector.ImageVector {
     return when (zoneType) {
-        "registration" -> Icons.Default.AppRegistration
+        "registration" -> Icons.Default.Check
         "vip" -> Icons.Default.Star
-        "workshop" -> Icons.Default.Business
+        "workshop" -> Icons.Default.Build
         else -> Icons.Default.LocationOn
     }
 }

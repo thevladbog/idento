@@ -54,7 +54,10 @@ func (s *PGStore) RunMigrations() error {
 	// Find migrations directory
 	migrationsDir := "migrations"
 	if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-		wd, _ := os.Getwd()
+		wd, wdErr := os.Getwd()
+		if wdErr != nil {
+			return fmt.Errorf("failed to get working directory: %w", wdErr)
+		}
 		migrationsDir = filepath.Join(wd, "migrations")
 		if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
 			migrationsDir = filepath.Join(wd, "../migrations")
@@ -78,6 +81,20 @@ func (s *PGStore) RunMigrations() error {
 	}
 	sort.Strings(migrationFiles)
 
+	absDir, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("migrations dir: %w", err)
+	}
+	root, err := os.OpenRoot(absDir)
+	if err != nil {
+		return fmt.Errorf("open migrations root: %w", err)
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close migrations root: %v", closeErr)
+		}
+	}()
+
 	appliedCount := 0
 	for _, filename := range migrationFiles {
 		// Extract version from filename (e.g., "000001_init_schema.up.sql" -> "000001")
@@ -96,9 +113,8 @@ func (s *PGStore) RunMigrations() error {
 			continue
 		}
 
-		// Read and execute migration
-		path := filepath.Join(migrationsDir, filename)
-		content, err := os.ReadFile(path)
+		// Read and execute migration (os.Root scopes access to migrations dir)
+		content, err := root.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", filename, err)
 		}
@@ -508,16 +524,16 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 
 // API Keys methods
 func (s *PGStore) CreateAPIKey(ctx context.Context, apiKey *models.APIKey) error {
-	query := `INSERT INTO api_keys (id, event_id, name, key_hash, key_preview, expires_at, created_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO api_keys (id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 	_, err := s.db.Exec(ctx, query,
-		apiKey.ID, apiKey.EventID, apiKey.Name, apiKey.KeyHash, apiKey.KeyPreview, apiKey.ExpiresAt, apiKey.CreatedAt,
+		apiKey.ID, apiKey.EventID, apiKey.Name, apiKey.KeyHash, apiKey.KeyHashBcrypt, apiKey.KeyPreview, apiKey.ExpiresAt, apiKey.CreatedAt,
 	)
 	return err
 }
 
 func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.APIKey, error) {
-	query := `SELECT id, event_id, name, key_hash, key_preview, expires_at, last_used_at, revoked_at, created_at
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
 			  FROM api_keys
 			  WHERE event_id = $1
 			  ORDER BY created_at DESC`
@@ -531,7 +547,7 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 	var keys []*models.APIKey
 	for rows.Next() {
 		var key models.APIKey
-		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyPreview,
+		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
 			&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -541,13 +557,13 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 }
 
 func (s *PGStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.APIKey, error) {
-	query := `SELECT id, event_id, name, key_hash, key_preview, expires_at, last_used_at, revoked_at, created_at
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
 			  FROM api_keys
 			  WHERE key_hash = $1`
 
 	var key models.APIKey
 	err := s.db.QueryRow(ctx, query, keyHash).Scan(
-		&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyPreview,
+		&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
 		&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {
@@ -557,6 +573,32 @@ func (s *PGStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.
 		return nil, err
 	}
 	return &key, nil
+}
+
+// GetActiveAPIKeys returns all non-revoked, non-expired API keys (with key_hash_bcrypt set) for verification.
+func (s *PGStore) GetActiveAPIKeys(ctx context.Context) ([]*models.APIKey, error) {
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
+			  FROM api_keys
+			  WHERE revoked_at IS NULL
+			    AND (expires_at IS NULL OR expires_at > NOW())
+			    AND key_hash_bcrypt IS NOT NULL`
+
+	rows, err := s.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*models.APIKey
+	for rows.Next() {
+		var key models.APIKey
+		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
+			&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, &key)
+	}
+	return keys, nil
 }
 
 func (s *PGStore) RevokeAPIKey(ctx context.Context, id uuid.UUID) error {
@@ -743,7 +785,9 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		}
 
 		if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
-			_ = json.Unmarshal(settingsJSON, &t.Settings)
+			if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
+				log.Printf("Failed to unmarshal tenant settings: %v", err)
+			}
 		}
 
 		tws.Tenant = &t
@@ -801,27 +845,38 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	}
 
 	if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
-		_ = json.Unmarshal(settingsJSON, &t.Settings)
+		if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tenant settings: %w", err)
+		}
 	}
 
 	tws.Tenant = &t
 
 	// Get subscription
-	sub, _ := s.GetSubscriptionByTenantID(ctx, tenantID)
+	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subscription: %w", err)
+	}
 	tws.Subscription = sub
 
 	// Count users
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1`, tenantID).Scan(&tws.UsersCount)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1`, tenantID).Scan(&tws.UsersCount); err != nil {
+		return nil, fmt.Errorf("failed to count users: %w", err)
+	}
 
 	// Count events
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events WHERE tenant_id = $1 AND deleted_at IS NULL`, tenantID).Scan(&tws.EventsCount)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events WHERE tenant_id = $1 AND deleted_at IS NULL`, tenantID).Scan(&tws.EventsCount); err != nil {
+		return nil, fmt.Errorf("failed to count events: %w", err)
+	}
 
 	// Count attendees
-	_ = s.db.QueryRow(ctx, `
+	if err := s.db.QueryRow(ctx, `
 		SELECT COUNT(*) FROM attendees a
 		INNER JOIN events e ON a.event_id = e.id
 		WHERE e.tenant_id = $1 AND a.deleted_at IS NULL AND e.deleted_at IS NULL
-	`, tenantID).Scan(&tws.AttendeesCount)
+	`, tenantID).Scan(&tws.AttendeesCount); err != nil {
+		return nil, fmt.Errorf("failed to count attendees: %w", err)
+	}
 
 	return &tws, nil
 }
@@ -829,8 +884,14 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 // Subscription Plans
 
 func (s *PGStore) CreateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error {
-	limitsJSON, _ := json.Marshal(plan.Limits)
-	featuresJSON, _ := json.Marshal(plan.Features)
+	limitsJSON, err := json.Marshal(plan.Limits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal limits: %w", err)
+	}
+	featuresJSON, err := json.Marshal(plan.Features)
+	if err != nil {
+		return fmt.Errorf("failed to marshal features: %w", err)
+	}
 
 	query := `INSERT INTO subscription_plans 
 	          (name, slug, tier, description, price_monthly, price_yearly, limits, features, is_active, is_public, sort_order)
@@ -864,19 +925,22 @@ func (s *PGStore) GetSubscriptionPlans(ctx context.Context, includeInactive bool
 		var p models.SubscriptionPlan
 		var limitsJSON, featuresJSON []byte
 
-		err := rows.Scan(
+		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Slug, &p.Tier, &p.Description, &p.PriceMonthly, &p.PriceYearly,
 			&limitsJSON, &featuresJSON, &p.IsActive, &p.IsPublic, &p.SortOrder, &p.CreatedAt, &p.UpdatedAt,
-		)
-		if err != nil {
+		); err != nil {
 			return nil, err
 		}
 
 		if len(limitsJSON) > 0 {
-			_ = json.Unmarshal(limitsJSON, &p.Limits)
+			if err := json.Unmarshal(limitsJSON, &p.Limits); err != nil {
+				log.Printf("Failed to unmarshal limits: %v", err)
+			}
 		}
 		if len(featuresJSON) > 0 {
-			_ = json.Unmarshal(featuresJSON, &p.Features)
+			if err := json.Unmarshal(featuresJSON, &p.Features); err != nil {
+				log.Printf("Failed to unmarshal features: %v", err)
+			}
 		}
 
 		plans = append(plans, &p)
@@ -902,36 +966,52 @@ func (s *PGStore) GetSubscriptionPlanByID(ctx context.Context, id uuid.UUID) (*m
 	}
 
 	if len(limitsJSON) > 0 {
-		_ = json.Unmarshal(limitsJSON, &p.Limits)
+		if err := json.Unmarshal(limitsJSON, &p.Limits); err != nil {
+			fmt.Printf("Failed to unmarshal limits: %v\n", err)
+		}
 	}
 	if len(featuresJSON) > 0 {
-		_ = json.Unmarshal(featuresJSON, &p.Features)
+		if err := json.Unmarshal(featuresJSON, &p.Features); err != nil {
+			fmt.Printf("Failed to unmarshal features: %v\n", err)
+		}
 	}
 
 	return &p, nil
 }
 
 func (s *PGStore) UpdateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error {
-	limitsJSON, _ := json.Marshal(plan.Limits)
-	featuresJSON, _ := json.Marshal(plan.Features)
+	limitsJSON, err := json.Marshal(plan.Limits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal limits: %w", err)
+	}
+	featuresJSON, err := json.Marshal(plan.Features)
+	if err != nil {
+		return fmt.Errorf("failed to marshal features: %w", err)
+	}
 
 	query := `UPDATE subscription_plans 
 	          SET name = $1, slug = $2, tier = $3, description = $4, price_monthly = $5, price_yearly = $6,
 	              limits = $7, features = $8, is_active = $9, is_public = $10, sort_order = $11, updated_at = NOW()
 	          WHERE id = $12`
 
-	_, err := s.db.Exec(ctx, query,
+	_, execErr := s.db.Exec(ctx, query,
 		plan.Name, plan.Slug, plan.Tier, plan.Description, plan.PriceMonthly, plan.PriceYearly,
 		limitsJSON, featuresJSON, plan.IsActive, plan.IsPublic, plan.SortOrder, plan.ID,
 	)
-	return err
+	return execErr
 }
 
 // Subscriptions
 
 func (s *PGStore) CreateSubscription(ctx context.Context, sub *models.Subscription) error {
-	customLimitsJSON, _ := json.Marshal(sub.CustomLimits)
-	customFeaturesJSON, _ := json.Marshal(sub.CustomFeatures)
+	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom limits: %w", err)
+	}
+	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom features: %w", err)
+	}
 
 	query := `INSERT INTO subscriptions 
 	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date, 
@@ -975,10 +1055,14 @@ func (s *PGStore) GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.U
 	}
 
 	if len(customLimitsJSON) > 0 && string(customLimitsJSON) != "null" {
-		_ = json.Unmarshal(customLimitsJSON, &sub.CustomLimits)
+		if err := json.Unmarshal(customLimitsJSON, &sub.CustomLimits); err != nil {
+			fmt.Printf("Failed to unmarshal custom limits: %v\n", err)
+		}
 	}
 	if len(customFeaturesJSON) > 0 && string(customFeaturesJSON) != "null" {
-		_ = json.Unmarshal(customFeaturesJSON, &sub.CustomFeatures)
+		if err := json.Unmarshal(customFeaturesJSON, &sub.CustomFeatures); err != nil {
+			fmt.Printf("Failed to unmarshal custom features: %v\n", err)
+		}
 	}
 
 	if spID != nil {
@@ -989,10 +1073,14 @@ func (s *PGStore) GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.U
 		plan.Tier = *spTier
 
 		if len(spLimits) > 0 {
-			_ = json.Unmarshal(spLimits, &plan.Limits)
+			if err := json.Unmarshal(spLimits, &plan.Limits); err != nil {
+				log.Printf("Failed to unmarshal plan limits: %v", err)
+			}
 		}
 		if len(spFeatures) > 0 {
-			_ = json.Unmarshal(spFeatures, &plan.Features)
+			if err := json.Unmarshal(spFeatures, &plan.Features); err != nil {
+				log.Printf("Failed to unmarshal plan features: %v", err)
+			}
 		}
 
 		sub.Plan = &plan
@@ -1002,8 +1090,14 @@ func (s *PGStore) GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.U
 }
 
 func (s *PGStore) UpdateSubscription(ctx context.Context, sub *models.Subscription) error {
-	customLimitsJSON, _ := json.Marshal(sub.CustomLimits)
-	customFeaturesJSON, _ := json.Marshal(sub.CustomFeatures)
+	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom limits: %w", err)
+	}
+	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom features: %w", err)
+	}
 
 	query := `UPDATE subscriptions 
 	          SET plan_id = $1, status = $2, end_date = $3, trial_end_date = $4,
@@ -1011,12 +1105,12 @@ func (s *PGStore) UpdateSubscription(ctx context.Context, sub *models.Subscripti
 	              last_payment_date = $8, next_billing_date = $9, admin_notes = $10, updated_at = NOW()
 	          WHERE id = $11`
 
-	_, err := s.db.Exec(ctx, query,
+	_, execErr := s.db.Exec(ctx, query,
 		sub.PlanID, sub.Status, sub.EndDate, sub.TrialEndDate,
 		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod,
 		sub.LastPaymentDate, sub.NextBillingDate, sub.AdminNotes, sub.ID,
 	)
-	return err
+	return execErr
 }
 
 func (s *PGStore) GetExpiringSubscriptions(ctx context.Context, days int) ([]*models.Subscription, error) {
@@ -1048,10 +1142,14 @@ func (s *PGStore) GetExpiringSubscriptions(ctx context.Context, days int) ([]*mo
 		}
 
 		if len(customLimitsJSON) > 0 {
-			_ = json.Unmarshal(customLimitsJSON, &sub.CustomLimits)
+			if err := json.Unmarshal(customLimitsJSON, &sub.CustomLimits); err != nil {
+				log.Printf("Failed to unmarshal custom limits: %v", err)
+			}
 		}
 		if len(customFeaturesJSON) > 0 {
-			_ = json.Unmarshal(customFeaturesJSON, &sub.CustomFeatures)
+			if err := json.Unmarshal(customFeaturesJSON, &sub.CustomFeatures); err != nil {
+				log.Printf("Failed to unmarshal custom features: %v", err)
+			}
 		}
 
 		subs = append(subs, &sub)
@@ -1063,7 +1161,10 @@ func (s *PGStore) GetExpiringSubscriptions(ctx context.Context, days int) ([]*mo
 // Usage Tracking
 
 func (s *PGStore) LogUsage(ctx context.Context, log *models.UsageLog) error {
-	metadataJSON, _ := json.Marshal(log.Metadata)
+	metadataJSON, err := json.Marshal(log.Metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
 
 	query := `INSERT INTO usage_logs (tenant_id, resource_type, resource_id, action, quantity, metadata)
 	          VALUES ($1, $2, $3, $4, $5, $6)
@@ -1110,13 +1211,21 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 	var maxLimit float64
 	if sub.CustomLimits != nil {
 		if val, ok := sub.CustomLimits[limitType]; ok {
-			maxLimit = val.(float64)
+			if floatVal, ok := val.(float64); ok {
+				maxLimit = floatVal
+			} else {
+				return false, 0, 0, fmt.Errorf("invalid custom limit type for %s", limitType)
+			}
 		}
 	}
 
 	if maxLimit == 0 && sub.Plan != nil && sub.Plan.Limits != nil {
 		if val, ok := sub.Plan.Limits[limitType]; ok {
-			maxLimit = val.(float64)
+			if floatVal, ok := val.(float64); ok {
+				maxLimit = floatVal
+			} else {
+				return false, 0, 0, fmt.Errorf("invalid plan limit type for %s", limitType)
+			}
 		}
 	}
 
@@ -1129,19 +1238,23 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 	var current int
 	switch limitType {
 	case "events_per_month":
-		_ = s.db.QueryRow(ctx, `
+		if err := s.db.QueryRow(ctx, `
 			SELECT COUNT(*) FROM events 
 			WHERE tenant_id = $1 AND deleted_at IS NULL 
 			  AND created_at >= date_trunc('month', NOW())
-		`, tenantID).Scan(&current)
+		`, tenantID).Scan(&current); err != nil {
+			return false, 0, 0, fmt.Errorf("failed to count events: %w", err)
+		}
 	case "attendees_per_event":
 		// This should be checked per event, not tenant-wide
 		// Implementation depends on context
 		current = 0
 	case "users":
-		_ = s.db.QueryRow(ctx, `
+		if err := s.db.QueryRow(ctx, `
 			SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1
-		`, tenantID).Scan(&current)
+		`, tenantID).Scan(&current); err != nil {
+			return false, 0, 0, fmt.Errorf("failed to count users: %w", err)
+		}
 	}
 
 	allowed := current < int(maxLimit)
@@ -1151,13 +1264,16 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 // Audit
 
 func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}) error {
-	changesJSON, _ := json.Marshal(changes)
+	changesJSON, err := json.Marshal(changes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal changes: %w", err)
+	}
 
 	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes)
 	          VALUES ($1, $2, $3, $4, $5)`
 
-	_, err := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON)
-	return err
+	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON)
+	return execErr
 }
 
 func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error) {
@@ -1174,27 +1290,31 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 
 	var logs []*models.AdminAuditLog
 	for rows.Next() {
-		var log models.AdminAuditLog
+		var auditLog models.AdminAuditLog
 		var changesJSON []byte
 
 		err := rows.Scan(
-			&log.ID, &log.AdminUserID, &log.Action, &log.TargetType, &log.TargetID,
-			&changesJSON, &log.IPAddress, &log.UserAgent, &log.CreatedAt,
+			&auditLog.ID, &auditLog.AdminUserID, &auditLog.Action, &auditLog.TargetType, &auditLog.TargetID,
+			&changesJSON, &auditLog.IPAddress, &auditLog.UserAgent, &auditLog.CreatedAt,
 		)
 		if err != nil {
 			return nil, 0, err
 		}
 
 		if len(changesJSON) > 0 {
-			_ = json.Unmarshal(changesJSON, &log.Changes)
+			if err := json.Unmarshal(changesJSON, &auditLog.Changes); err != nil {
+				log.Printf("Failed to unmarshal changes: %v", err)
+			}
 		}
 
-		logs = append(logs, &log)
+		logs = append(logs, &auditLog)
 	}
 
 	// Get total count
 	var total int
-	_ = s.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_audit_log`).Scan(&total)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_audit_log`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("get audit log total count: %w", err)
+	}
 
 	return logs, total, nil
 }

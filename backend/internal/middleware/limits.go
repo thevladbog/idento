@@ -14,7 +14,18 @@ import (
 func CheckLimits(s store.Store, resourceType string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			claims := c.Get("user").(*models.JWTCustomClaims)
+			user := c.Get("user")
+			if user == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "Unauthorized",
+				})
+			}
+			claims, ok := user.(*models.JWTCustomClaims)
+			if !ok {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "Invalid token claims",
+				})
+			}
 
 			tenantID, err := uuid.Parse(claims.TenantID)
 			if err != nil {

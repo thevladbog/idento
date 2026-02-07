@@ -12,7 +12,18 @@ import (
 func SuperAdminOnly(s store.Store) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			claims := c.Get("user").(*models.JWTCustomClaims)
+			user := c.Get("user")
+			if user == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "Unauthorized",
+				})
+			}
+			claims, ok := user.(*models.JWTCustomClaims)
+			if !ok {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "Invalid token claims",
+				})
+			}
 
 			userID, err := uuid.Parse(claims.UserID)
 			if err != nil {
@@ -22,8 +33,8 @@ func SuperAdminOnly(s store.Store) echo.MiddlewareFunc {
 			}
 
 			// Проверяем флаг super_admin из базы
-			user, err := s.GetUserByID(c.Request().Context(), userID)
-			if err != nil || user == nil || !user.IsSuperAdmin {
+			dbUser, userErr := s.GetUserByID(c.Request().Context(), userID)
+			if userErr != nil || dbUser == nil || !dbUser.IsSuperAdmin {
 				return c.JSON(http.StatusForbidden, map[string]string{
 					"error": "Super admin access required",
 				})

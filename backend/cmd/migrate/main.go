@@ -13,8 +13,10 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	godotenv.Load("../../.env")
+	// Load environment variables (optional; ignore if .env missing)
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Print("No .env file or load error (using defaults): ", err)
+	}
 
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
@@ -55,15 +57,25 @@ func main() {
 	// Filter and sort .up.sql files
 	var migrationFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" && 
-		   entry.Name() != "seed.sql" &&
-		   strings.HasSuffix(entry.Name(), ".up.sql") {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" &&
+			entry.Name() != "seed.sql" &&
+			strings.HasSuffix(entry.Name(), ".up.sql") {
 			migrationFiles = append(migrationFiles, entry.Name())
 		}
 	}
 	sort.Strings(migrationFiles)
 
 	log.Printf("Found %d migrations", len(migrationFiles))
+
+	absDir, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		log.Fatalf("Migrations dir: %v", err)
+	}
+	root, err := os.OpenRoot(absDir)
+	if err != nil {
+		log.Fatalf("OpenRoot migrations: %v", err)
+	}
+	defer root.Close()
 
 	// Apply migrations in order
 	for _, filename := range migrationFiles {
@@ -72,7 +84,7 @@ func main() {
 
 		// Check if already applied
 		var exists bool
-		err := pool.QueryRow(context.Background(), 
+		err := pool.QueryRow(context.Background(),
 			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`, version).Scan(&exists)
 		if err != nil {
 			log.Fatalf("Failed to check migration status: %v", err)
@@ -83,9 +95,8 @@ func main() {
 			continue
 		}
 
-		// Read and execute migration
-		path := filepath.Join(migrationsDir, filename)
-		content, err := os.ReadFile(path)
+		// Read and execute migration (os.Root scopes access to migrations dir)
+		content, err := root.ReadFile(filename)
 		if err != nil {
 			log.Fatalf("Failed to read migration %s: %v", filename, err)
 		}
@@ -97,7 +108,7 @@ func main() {
 		}
 
 		// Record migration
-		_, err = pool.Exec(context.Background(), 
+		_, err = pool.Exec(context.Background(),
 			`INSERT INTO schema_migrations (version) VALUES ($1)`, version)
 		if err != nil {
 			log.Fatalf("Failed to record migration %s: %v", version, err)
@@ -108,4 +119,3 @@ func main() {
 
 	log.Printf("🎉 All migrations applied successfully!")
 }
-

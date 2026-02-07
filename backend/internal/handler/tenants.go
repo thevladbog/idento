@@ -2,6 +2,7 @@ package handler
 
 import (
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -24,7 +25,14 @@ func (h *Handler) GetUserTenants(c echo.Context) error {
 	// Add role information for each tenant
 	tenantsWithRoles := make([]map[string]interface{}, 0, len(tenants))
 	for _, tenant := range tenants {
-		role, _ := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenant.ID)
+		role, err := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenant.ID)
+		if err != nil {
+			// Log the error but default to viewer role to avoid failing the entire request
+			// This is more lenient than GetTenant which returns 403, as we're listing
+			// all tenants the user belongs to and want to show them with minimal permissions
+			log.Printf("Warning: Failed to get role for user %s in tenant %s: %v. Defaulting to viewer", userID, tenant.ID, err)
+			role = "viewer"
+		}
 		tenantsWithRoles = append(tenantsWithRoles, map[string]interface{}{
 			"id":            tenant.ID,
 			"name":          tenant.Name,

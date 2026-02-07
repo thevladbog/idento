@@ -4,9 +4,23 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"regexp"
 	"runtime"
 	"strings"
 )
+
+// safePrinterName allows only chars safe for lp/lpstat args (no shell or path injection).
+var safePrinterName = regexp.MustCompile(`^[a-zA-Z0-9 _-]+$`)
+
+func sanitizePrinterNameForExec(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("printer name is empty")
+	}
+	if !safePrinterName.MatchString(name) {
+		return "", fmt.Errorf("printer name contains invalid characters: %q", name)
+	}
+	return name, nil
+}
 
 // DiscoverSystemPrinters finds printers installed in the operating system
 func DiscoverSystemPrinters() ([]string, error) {
@@ -104,11 +118,16 @@ func NewSystemPrinter(name string) *SystemPrinter {
 func (p *SystemPrinter) SendRaw(data []byte) error {
 	log.Printf("[SYSTEM PRINTER: %s] Sending %d bytes", p.Name, len(data))
 
+	name, err := sanitizePrinterNameForExec(p.Name)
+	if err != nil {
+		return err
+	}
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin", "linux":
 		// Use lp command on Unix systems
-		cmd = exec.Command("lp", "-d", p.Name, "-o", "raw", "-")
+		cmd = exec.Command("lp", "-d", name, "-o", "raw", "-") // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		cmd.Stdin = strings.NewReader(string(data))
 	case "windows":
 		// For Windows, we'd need to write to a temp file and use print command
@@ -133,11 +152,16 @@ func (p *SystemPrinter) SendRaw(data []byte) error {
 func (p *SystemPrinter) PrintPDF(pdfData []byte) error {
 	log.Printf("[SYSTEM PRINTER: %s] Printing PDF (%d bytes)", p.Name, len(pdfData))
 
+	name, err := sanitizePrinterNameForExec(p.Name)
+	if err != nil {
+		return err
+	}
+
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin", "linux":
 		// Use lp command without -o raw for PDF
-		cmd = exec.Command("lp", "-d", p.Name, "-")
+		cmd = exec.Command("lp", "-d", name, "-") // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		cmd.Stdin = strings.NewReader(string(pdfData))
 	case "windows":
 		// For Windows, write to temp file and use default print command
@@ -164,9 +188,13 @@ func (p *SystemPrinter) SupportsPDF() bool {
 }
 
 func (p *SystemPrinter) Status() (string, error) {
+	name, err := sanitizePrinterNameForExec(p.Name)
+	if err != nil {
+		return "Unknown", err
+	}
 	switch runtime.GOOS {
 	case "darwin", "linux":
-		cmd := exec.Command("lpstat", "-p", p.Name)
+		cmd := exec.Command("lpstat", "-p", name) // #nosec G204 -- name validated by sanitizePrinterNameForExec
 		output, err := cmd.Output()
 		if err != nil {
 			return "Unknown", err

@@ -6,6 +6,7 @@ import com.idento.data.storage.OfflineDatabase
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.datetime.Clock
 
 /**
  * Repository for offline check-in management
@@ -32,7 +33,8 @@ class OfflineCheckInRepository(
                 is ApiResult.Error -> {
                     // If failed, save offline
                     saveOfflineCheckIn(request)
-                    ApiResult.Error("Saved offline: ${result.message}")
+                    val errorMessage = "Saved offline: ${result.message ?: "Sync failed"}"
+                    ApiResult.Error(Exception(errorMessage), message = errorMessage)
                 }
                 is ApiResult.Loading -> ApiResult.Loading
             }
@@ -51,7 +53,7 @@ class OfflineCheckInRepository(
             attendeeCode = request.attendeeCode,
             zoneId = request.zoneId,
             eventDay = request.eventDay,
-            checkedInAt = System.currentTimeMillis()
+            checkedInAt = Clock.System.now().toEpochMilliseconds()
         )
         return offlineDatabase.savePendingCheckIn(pending)
     }
@@ -88,7 +90,8 @@ class OfflineCheckInRepository(
             }
             is ApiResult.Error -> {
                 // Update attempt count
-                ApiResult.Error(result.message ?: "Sync failed")
+                val errorMessage = result.message ?: "Sync failed"
+                ApiResult.Error(Exception(errorMessage), message = errorMessage)
             }
             is ApiResult.Loading -> ApiResult.Loading
         }

@@ -1,7 +1,8 @@
 ---
-alwaysApply: true
+description: Kotlin and Android (Compose) conventions for Idento mobile
+globs: mobile/**
+alwaysApply: false
 ---
-
 
 You are a Senior Kotlin programmer with experience in the Android framework and a preference for clean programming and design patterns.
 
@@ -100,28 +101,22 @@ Generate code, corrections, and refactorings that comply with the basic principl
   - see repositories if you need to organize code into repositories
 - Use repository pattern for data persistence
   - see cache if you need to cache data
-- Use MVI pattern to manage state and events in viewmodels and trigger and render them in activities / fragments
+- Use MVI pattern to manage state and events in ViewModels and render them in Compose screens
   - see keepAlive if you need to keep the state alive
-- Use Auth Activity to manage authentication flow
-  - Splash Screen
-  - Login
-  - Register
-  - Forgot Password
-  - Verify Email
-- Use Navigation Component to manage navigation between activities/fragments
-- Use MainActivity to manage the main navigation
-  - Use BottomNavigationView to manage the bottom navigation
-  - Home
-  - Profile
+- Use Jetpack Compose for all UI; do not use XML layouts or Fragments
+- Use Compose Navigation for navigation between screens
+- Use MainActivity as the single activity; main navigation includes:
+  - Events
+  - Check-in
+  - Attendees
+  - Template (badge editor)
+  - Scanner (QR / Bluetooth scanner settings)
   - Settings
-  - Patients
-  - Appointments
-- Use ViewBinding to manage views
-- Use Flow / LiveData to manage UI state
-- Use xml and fragments instead of jetpack compose
-- Use Material 3 for the UI
-- Use ConstraintLayout for layouts
+- Use Flow or StateFlow for UI state in ViewModels
+- Use Material 3 for the UI (Theme, components)
+- Use Hilt for dependency injection
+
 ### Testing
 
-- Use the standard widget testing for flutter
-- Use integration tests for each api module.   
+- Use JUnit for unit tests and Compose testing (e.g. createComposeRule) for UI tests
+- Use integration tests for each API module   

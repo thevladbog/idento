@@ -437,12 +437,12 @@ func main() {
 	e.GET("/openapi.yaml", func(c echo.Context) error {
 		return c.Blob(http.StatusOK, "text/yaml", []byte(backendOpenAPISpec))
 	})
-	
+
 	// Printer QR Generator UI
 	e.GET("/printer-qr", func(c echo.Context) error {
 		return c.File("templates/printer_qr_generator.html")
 	})
-	
+
 	// Scalar UI (modern API documentation)
 	e.GET("/docs", func(c echo.Context) error {
 		return c.HTML(http.StatusOK, `

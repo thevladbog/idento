@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -42,7 +44,12 @@ func (h *Handler) Register(c echo.Context) error {
 
 	// 2. Check if user with this email already exists
 	existingUser, err := h.Store.GetUserByEmail(c.Request().Context(), req.Email)
-	if err != nil && existingUser == nil {
+	if err != nil {
+		// Database error occurred
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check user"})
+	}
+
+	if existingUser == nil {
 		// User doesn't exist, create new one
 		// 2a. Hash Password
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
@@ -81,7 +88,12 @@ func (h *Handler) Register(c echo.Context) error {
 	}
 
 	// 5. Get all user's tenants for response
-	tenants, _ := h.Store.GetUserTenants(c.Request().Context(), existingUser.ID)
+	tenants, err := h.Store.GetUserTenants(c.Request().Context(), existingUser.ID)
+	if err != nil {
+		// Log error but continue with empty list
+		log.Printf("Failed to get user tenants: %v", err)
+		tenants = []*models.Tenant{}
+	}
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"token":   token,
@@ -170,10 +182,10 @@ func generateTokenForTenant(user *models.User, tenantID string, role string) (st
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	// Get secret from env
+	// Get secret from env - fail if not set for security
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		secret = "idento_secret_key_change_me"
+		return "", fmt.Errorf("JWT_SECRET environment variable not set")
 	}
 
 	return token.SignedString([]byte(secret))

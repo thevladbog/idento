@@ -2,6 +2,7 @@ package handler
 
 import (
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -76,13 +77,16 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 	}
 
 	// Log usage (best-effort, do not fail request)
-	_ = h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
+	if err := h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
 		TenantID:     tenantID,
 		ResourceType: "attendee",
 		ResourceID:   &attendee.ID,
 		Action:       "created",
 		Quantity:     1,
-	})
+	}); err != nil {
+		// Log error but don't fail the request
+		log.Printf("Failed to log usage: %v", err)
+	}
 
 	return c.JSON(http.StatusCreated, attendee)
 }

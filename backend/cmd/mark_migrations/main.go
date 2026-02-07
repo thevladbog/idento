@@ -10,7 +10,9 @@ import (
 )
 
 func main() {
-	godotenv.Load("../../.env")
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Print("No .env file or load error (using defaults): ", err)
+	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://idento:idento_password@localhost:5432/idento_db"

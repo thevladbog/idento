@@ -14,9 +14,9 @@ sealed class Screen(val route: String) {
         fun createRoute(eventId: String, eventDay: String) = 
             "zone_select/$eventId/$eventDay"
     }
-    data object Checkin : Screen("checkin/{eventId}/{eventName}/{zoneId}/{eventDay}") {
-        fun createRoute(eventId: String, eventName: String, zoneId: String, eventDay: String) = 
-            "checkin/$eventId/$eventName/$zoneId/$eventDay"
+    data object Checkin : Screen("checkin/{eventId}/{eventName}") {
+        fun createRoute(eventId: String, eventName: String) = 
+            "checkin/$eventId/$eventName"
     }
     data object AttendeesList : Screen("attendees/{eventId}") {
         fun createRoute(eventId: String) = "attendees/$eventId"

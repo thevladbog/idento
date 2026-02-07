@@ -63,6 +63,8 @@ fun CheckinScreen(
     eventId: String,
     eventName: String,
     selectedAttendeeId: String? = null,
+    zoneId: String? = null,  // Added for zone check-in
+    eventDay: String? = null, // Added for multi-day events
     viewModel: CheckinViewModel = koinInject(),
     onNavigateBack: () -> Unit = {},
     onNavigateToAttendeesList: () -> Unit = {},

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -181,11 +182,14 @@ class HardwareScannerService @Inject constructor(
             }
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(scannerReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(scannerReceiver, intentFilter)
-        }
+        // RECEIVER_EXPORTED so external scanner apps (DataWedge, etc.) can deliver broadcasts.
+        // handleScanIntent validates action and manufacturer-specific extraction to limit surface.
+        ContextCompat.registerReceiver(
+            context,
+            scannerReceiver,
+            intentFilter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
         
         isReceiverRegistered = true
     }

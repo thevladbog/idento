@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"idento/backend/internal/middleware"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -29,18 +30,22 @@ func (h *Handler) CreateAPIKey(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expiration date must be in the future"})
 	}
 
-	// Generate API key
-	plainKey, keyHash := middleware.GenerateAPIKey()
+	// Generate API key (plain key, SHA256 for lookup, bcrypt for verification)
+	plainKey, keyHash, keyHashBcrypt, err := middleware.GenerateAPIKey()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate API key"})
+	}
 	keyPreview := plainKey[:8] + "..." // Store only first 8 characters for display
 
 	apiKey := &models.APIKey{
-		ID:         uuid.New(),
-		EventID:    eventID,
-		Name:       req.Name,
-		KeyHash:    keyHash,
-		KeyPreview: keyPreview,
-		ExpiresAt:  req.ExpiresAt,
-		CreatedAt:  time.Now(),
+		ID:            uuid.New(),
+		EventID:       eventID,
+		Name:          req.Name,
+		KeyHash:       keyHash,
+		KeyHashBcrypt: &keyHashBcrypt,
+		KeyPreview:    keyPreview,
+		ExpiresAt:     req.ExpiresAt,
+		CreatedAt:     time.Now(),
 	}
 
 	if err := h.Store.CreateAPIKey(context.Background(), apiKey); err != nil {
@@ -109,11 +114,11 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 	}
 
 	// Track import results
-	var created, updated, failed int
+	var created, failed int
 	var errors []string
 
 	for idx, data := range req.Data {
-		// Extract standard fields
+		// Extract standard fields with type assertions
 		firstName, _ := data["first_name"].(string)
 		lastName, _ := data["last_name"].(string)
 		email, _ := data["email"].(string)
@@ -182,14 +187,13 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 	// Update event field schema if new fields were added
 	if err := h.Store.UpdateEvent(context.Background(), event); err != nil {
 		// Log error but don't fail the import
-		fmt.Printf("Warning: Failed to update event field schema: %v\n", err)
+		log.Printf("Warning: Failed to update event field schema: %v", err)
 	}
 
 	response := map[string]interface{}{
 		"message": "Import completed",
 		"results": map[string]interface{}{
 			"created": created,
-			"updated": updated,
 			"failed":  failed,
 			"total":   len(req.Data),
 		},

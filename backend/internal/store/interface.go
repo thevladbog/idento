@@ -50,6 +50,7 @@ type Store interface {
 	CreateAPIKey(ctx context.Context, apiKey *models.APIKey) error
 	GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.APIKey, error)
 	GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.APIKey, error)
+	GetActiveAPIKeys(ctx context.Context) ([]*models.APIKey, error)
 	RevokeAPIKey(ctx context.Context, id uuid.UUID) error
 	UpdateAPIKeyLastUsed(ctx context.Context, id uuid.UUID) error
 

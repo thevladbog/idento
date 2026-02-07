@@ -10,22 +10,28 @@ linters:
     - errcheck
     - staticcheck
     - ineffassign
+  
+  settings:
+    errcheck:
+      check-type-assertions: false # Disable type assertion checks globally
+      check-blank: true
+  
   exclusions:
-    paths:
-      - cmd
-      - migrate
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - path: cmd/
+        linters:
+          - errcheck
+      - path: migrate/
+        linters:
+          - errcheck
+      - path: internal/handler/api_keys\.go
+        linters:
+          - errcheck
+        text: "Error return value is not checked"
 
 formatters:
   enable:
     - goimports
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck

@@ -1,0 +1,58 @@
+---
+description: React and TypeScript conventions for Idento web admin
+globs: web/**
+alwaysApply: false
+---
+
+You are a Senior React/TypeScript developer. Generate code that follows the project's web stack and conventions.
+
+## Stack
+
+- React 18 with functional components and hooks
+- TypeScript with strict types; avoid `any`
+- Vite for build and dev server
+- Tailwind CSS v4 for styling
+- shadcn/ui (Radix primitives) for UI components in `src/components/ui/`
+- React Router 7 for routing
+- i18next for internationalization (EN/RU)
+- react-hook-form with zod for forms and validation
+- Axios via `@/lib/api` for API calls
+
+## Project Structure
+
+- `src/pages/` — route-level pages and event sub-pages (`event/`, `super-admin/`)
+- `src/components/` — reusable components; `ui/` for shadcn primitives
+- `src/hooks/` — custom hooks
+- `src/lib/` — API client, utilities, fonts
+- `src/types/` — shared TypeScript types
+- `src/utils/` — helpers (dateFormat, zpl, etc.)
+
+## Naming and Style
+
+- Use PascalCase for components and type names
+- Use camelCase for variables, functions, and props
+- Export named components or default export for page components
+- Prefer small, reusable components with typed props
+- Use path alias `@/` for imports (e.g. `@/lib/api`, `@/types`)
+
+## Examples
+
+```tsx
+// Good: typed props, named types
+interface AttendeeCardProps {
+  attendee: Attendee;
+  onCheckIn: (id: string) => Promise<void>;
+}
+
+export function AttendeeCard({ attendee, onCheckIn }: AttendeeCardProps) {
+  // ...
+}
+
+// Bad: untyped props
+export function Card(props: any) {
+  // ...
+}
+```
+
+- Run `npm run lint` in `web/` before committing
+- Use existing UI components from `src/components/ui/` instead of reinventing

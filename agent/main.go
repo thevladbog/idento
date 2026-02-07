@@ -339,47 +339,70 @@ paths:
                     example: "cleared"
 `
 
-func getConfigPath() string {
+// getConfigDir returns the absolute path to ~/.idento for os.Root-scoped config access.
+func getConfigDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return "agent_config.json"
+		return "", err
 	}
-	return filepath.Join(homeDir, ".idento", "agent_config.json")
+	configDir := filepath.Join(homeDir, ".idento")
+	absDir, err := filepath.Abs(configDir)
+	if err != nil {
+		return "", err
+	}
+	return absDir, nil
 }
 
 func loadConfig() (*AgentConfig, error) {
-	configPath := getConfigPath()
-	data, err := os.ReadFile(configPath)
+	configDir, err := getConfigDir()
+	if err != nil {
+		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+	}
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
+		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close config root: %v", closeErr)
+		}
+	}()
+	data, err := root.ReadFile("agent_config.json")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
 		}
 		return nil, err
 	}
-
 	var config AgentConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
-
 	return &config, nil
 }
 
 func saveConfig(config *AgentConfig) error {
-	configPath := getConfigPath()
-
-	// Ensure directory exists
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	configDir, err := getConfigDir()
+	if err != nil {
 		return err
 	}
-
+	if err := os.MkdirAll(configDir, 0750); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close config root: %v", closeErr)
+		}
+	}()
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(configPath, data, 0644)
+	return root.WriteFile("agent_config.json", data, 0600)
 }
 
 func main() {
@@ -494,12 +517,27 @@ func main() {
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Idento Agent is running"))
+		if _, err := w.Write([]byte("Idento Agent is running")); err != nil {
+			log.Printf("Failed to write health response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
 		printers := pm.ListPrinters()
-		_ = json.NewEncoder(w).Encode(printers)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(printers)
+		if err != nil {
+			log.Printf("Failed to marshal printers response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write printers response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/printers/add", func(w http.ResponseWriter, r *http.Request) {
@@ -564,11 +602,13 @@ func main() {
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status":  "added",
 			"name":    req.Name,
 			"address": fmt.Sprintf("%s:%d", req.IP, req.Port),
-		})
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/print", func(w http.ResponseWriter, r *http.Request) {
@@ -619,7 +659,9 @@ func main() {
 
 		log.Println("Print job completed successfully ✓")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "printed"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "printed"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// PDF Print endpoint
@@ -676,7 +718,9 @@ func main() {
 
 		log.Println("PDF print job completed successfully ✓")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "printed"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "printed"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// Get printer fonts endpoint (general reference)
@@ -701,7 +745,20 @@ func main() {
 			},
 			"note": "For custom fonts, enter the exact name as loaded in your printer. Use ^WD* command to query printer for loaded fonts. Or use /printers/{name}/fonts to query a specific printer.",
 		}
-		_ = json.NewEncoder(w).Encode(fonts)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(fonts)
+		if err != nil {
+			log.Printf("Failed to marshal fonts response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write fonts response: %v", err)
+		}
 	})
 
 	// Query specific printer for fonts
@@ -774,13 +831,38 @@ func main() {
 			}
 		}
 
-		_ = json.NewEncoder(w).Encode(fonts)
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(fonts)
+		if err != nil {
+			log.Printf("Failed to marshal fonts response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write fonts response: %v", err)
+		}
 	})
 
 	// Scanner endpoints
 	mux.HandleFunc("/scanners", func(w http.ResponseWriter, r *http.Request) {
 		scanners := sm.ListScanners()
-		_ = json.NewEncoder(w).Encode(scanners)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(scanners)
+		if err != nil {
+			log.Printf("Failed to marshal scanners response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write scanners response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scanners/ports", func(w http.ResponseWriter, r *http.Request) {
@@ -788,7 +870,9 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to discover scanner ports: %v", err)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode([]string{})
+			if encErr := json.NewEncoder(w).Encode([]string{}); encErr != nil {
+				log.Printf("Failed to encode empty response: %v", encErr)
+			}
 			return
 		}
 
@@ -798,7 +882,9 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ports)
+		if err := json.NewEncoder(w).Encode(ports); err != nil {
+			log.Printf("Failed to encode ports response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scan/last", func(w http.ResponseWriter, r *http.Request) {
@@ -811,7 +897,19 @@ func main() {
 			"time": lastScanTime,
 		}
 
-		_ = json.NewEncoder(w).Encode(response)
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(response)
+		if err != nil {
+			log.Printf("Failed to marshal scan response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write scan response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scan/clear", func(w http.ResponseWriter, r *http.Request) {
@@ -826,7 +924,9 @@ func main() {
 		scanDataMutex.Unlock()
 
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "cleared"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scanners/add", func(w http.ResponseWriter, r *http.Request) {
@@ -852,7 +952,12 @@ func main() {
 		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
 
 		// Check if scanner already exists
-		existingScanner, _ := sm.GetScanner(scannerName)
+		existingScanner, err := sm.GetScanner(scannerName)
+		if err != nil {
+			log.Printf("Failed to check existing scanner: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to check existing scanner: %v", err), http.StatusInternalServerError)
+			return
+		}
 		if existingScanner != nil {
 			http.Error(w, "Scanner already exists", http.StatusConflict)
 			return
@@ -880,23 +985,27 @@ func main() {
 
 		log.Printf("Added scanner: %s (%s)", scannerName, req.PortName)
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "added",
 			"name":   scannerName,
 			"port":   req.PortName,
-		})
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// OpenAPI spec endpoint
 	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/yaml")
-		_, _ = w.Write([]byte(openapiSpec))
+		if _, err := w.Write([]byte(openapiSpec)); err != nil {
+			log.Printf("Failed to write OpenAPI spec: %v", err)
+		}
 	})
 
 	// Scalar UI (modern API documentation)
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`
+		if _, err := w.Write([]byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -909,7 +1018,9 @@ func main() {
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>
-		`))
+		`)); err != nil {
+			log.Printf("Failed to write docs page: %v", err)
+		}
 	})
 
 	// Setup CORS to allow requests from localhost web app
@@ -936,7 +1047,15 @@ func main() {
 	}
 	fmt.Printf("========================================\n\n")
 
-	if err := http.ListenAndServe(":"+*port, handler); err != nil {
+	server := &http.Server{
+		Addr:              ":" + *port,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
