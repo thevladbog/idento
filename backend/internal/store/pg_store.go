@@ -99,9 +99,21 @@ func (s *PGStore) RunMigrations() error {
 			continue
 		}
 
-		// Read and execute migration
+		// Read and execute migration (validate path to prevent directory traversal)
 		path := filepath.Join(migrationsDir, filename)
-		content, err := os.ReadFile(path)
+		absRoot, err := filepath.Abs(migrationsDir)
+		if err != nil {
+			return fmt.Errorf("migrations dir: %w", err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("migration path: %w", err)
+		}
+		rel, err := filepath.Rel(absRoot, absPath)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			return fmt.Errorf("invalid migration path: %s", filename)
+		}
+		content, err := os.ReadFile(absPath)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", filename, err)
 		}

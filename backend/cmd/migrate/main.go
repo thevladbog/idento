@@ -13,8 +13,10 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	godotenv.Load("../../.env")
+	// Load environment variables (optional; ignore if .env missing)
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Print("No .env file or load error (using defaults): ", err)
+	}
 
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
@@ -83,9 +85,21 @@ func main() {
 			continue
 		}
 
-		// Read and execute migration
+		// Read and execute migration (validate path to prevent directory traversal)
 		path := filepath.Join(migrationsDir, filename)
-		content, err := os.ReadFile(path)
+		absRoot, err := filepath.Abs(migrationsDir)
+		if err != nil {
+			log.Fatalf("Migrations dir: %v", err)
+		}
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			log.Fatalf("Migration path: %v", err)
+		}
+		rel, err := filepath.Rel(absRoot, absPath)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			log.Fatalf("Invalid migration path: %s", filename)
+		}
+		content, err := os.ReadFile(absPath)
 		if err != nil {
 			log.Fatalf("Failed to read migration %s: %v", filename, err)
 		}
