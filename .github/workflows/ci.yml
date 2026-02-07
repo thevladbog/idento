@@ -56,20 +56,20 @@ jobs:
       # Use official golangci-lint action for better performance and caching
       # install-mode: goinstall builds from source to match project's Go version
       - name: Lint backend
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v1.61
           install-mode: goinstall
           working-directory: backend
-          args: --timeout=5m ./internal/...
+          args: ./internal/...
       
       - name: Lint agent
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v1.61
           install-mode: goinstall
           working-directory: agent
-          args: --timeout=5m ./...
+          args: ./...
       
       - name: Summary
         if: always()
