@@ -511,16 +511,16 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 
 // API Keys methods
 func (s *PGStore) CreateAPIKey(ctx context.Context, apiKey *models.APIKey) error {
-	query := `INSERT INTO api_keys (id, event_id, name, key_hash, key_preview, expires_at, created_at)
-			  VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	query := `INSERT INTO api_keys (id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, created_at)
+			  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 	_, err := s.db.Exec(ctx, query,
-		apiKey.ID, apiKey.EventID, apiKey.Name, apiKey.KeyHash, apiKey.KeyPreview, apiKey.ExpiresAt, apiKey.CreatedAt,
+		apiKey.ID, apiKey.EventID, apiKey.Name, apiKey.KeyHash, apiKey.KeyHashBcrypt, apiKey.KeyPreview, apiKey.ExpiresAt, apiKey.CreatedAt,
 	)
 	return err
 }
 
 func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.APIKey, error) {
-	query := `SELECT id, event_id, name, key_hash, key_preview, expires_at, last_used_at, revoked_at, created_at
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
 			  FROM api_keys
 			  WHERE event_id = $1
 			  ORDER BY created_at DESC`
@@ -534,7 +534,7 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 	var keys []*models.APIKey
 	for rows.Next() {
 		var key models.APIKey
-		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyPreview,
+		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
 			&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -544,13 +544,13 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 }
 
 func (s *PGStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.APIKey, error) {
-	query := `SELECT id, event_id, name, key_hash, key_preview, expires_at, last_used_at, revoked_at, created_at
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
 			  FROM api_keys
 			  WHERE key_hash = $1`
 
 	var key models.APIKey
 	err := s.db.QueryRow(ctx, query, keyHash).Scan(
-		&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyPreview,
+		&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
 		&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt,
 	)
 	if err == pgx.ErrNoRows {

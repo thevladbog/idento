@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type contextKey string
@@ -29,17 +30,22 @@ func APIKeyAuth(s store.Store) echo.MiddlewareFunc {
 				})
 			}
 
-			// Hash the provided key to compare with stored hash
-			hasher := sha256.New()
-			hasher.Write([]byte(apiKey))
-			keyHash := hex.EncodeToString(hasher.Sum(nil))
-
-			// Lookup key in database
-			key, err := s.GetAPIKeyByHash(context.Background(), keyHash)
+			// Lookup key: SHA256 used only for indexed lookup; verification uses bcrypt when key_hash_bcrypt is set.
+			lookupHash := sha256Hex(apiKey)
+			key, err := s.GetAPIKeyByHash(context.Background(), lookupHash)
 			if err != nil {
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "Invalid API key",
 				})
+			}
+
+			// Verify with bcrypt when stored (new keys); legacy keys matched by lookup hash.
+			if key.KeyHashBcrypt != nil {
+				if err := bcrypt.CompareHashAndPassword([]byte(*key.KeyHashBcrypt), []byte(apiKey)); err != nil {
+					return c.JSON(http.StatusUnauthorized, map[string]string{
+						"error": "Invalid API key",
+					})
+				}
 			}
 
 			// Check if key is revoked
@@ -85,22 +91,25 @@ func GetEventIDFromContext(c echo.Context) (uuid.UUID, error) {
 	return eventUUID, nil
 }
 
-// Generate a new API key (plain text) and its hash
-func GenerateAPIKey() (plainKey string, keyHash string, err error) {
-	// Generate random bytes for the key
+// sha256Hex returns SHA256(plain) as hex; used only for indexed lookup, not for verification.
+func sha256Hex(plain string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(plain))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// GenerateAPIKey returns a new API key (plain text), its lookup hash (SHA256), and bcrypt hash for verification.
+func GenerateAPIKey() (plainKey string, keyHash string, keyHashBcrypt string, err error) {
 	keyBytes := make([]byte, 32)
 	_, err = rand.Read(keyBytes)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-
-	// Convert to hex string for plain key
 	plainKey = hex.EncodeToString(keyBytes)
-
-	// Hash the plain key
-	hasher := sha256.New()
-	hasher.Write([]byte(plainKey))
-	keyHash = hex.EncodeToString(hasher.Sum(nil))
-
-	return plainKey, keyHash, nil
+	keyHash = sha256Hex(plainKey)
+	keyHashBcryptBytes, err := bcrypt.GenerateFromPassword([]byte(plainKey), bcrypt.DefaultCost)
+	if err != nil {
+		return "", "", "", err
+	}
+	return plainKey, keyHash, string(keyHashBcryptBytes), nil
 }

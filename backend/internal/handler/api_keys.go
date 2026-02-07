@@ -30,21 +30,22 @@ func (h *Handler) CreateAPIKey(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expiration date must be in the future"})
 	}
 
-	// Generate API key
-	plainKey, keyHash, err := middleware.GenerateAPIKey()
+	// Generate API key (plain key, SHA256 for lookup, bcrypt for verification)
+	plainKey, keyHash, keyHashBcrypt, err := middleware.GenerateAPIKey()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate API key"})
 	}
 	keyPreview := plainKey[:8] + "..." // Store only first 8 characters for display
 
 	apiKey := &models.APIKey{
-		ID:         uuid.New(),
-		EventID:    eventID,
-		Name:       req.Name,
-		KeyHash:    keyHash,
-		KeyPreview: keyPreview,
-		ExpiresAt:  req.ExpiresAt,
-		CreatedAt:  time.Now(),
+		ID:            uuid.New(),
+		EventID:       eventID,
+		Name:          req.Name,
+		KeyHash:       keyHash,
+		KeyHashBcrypt: &keyHashBcrypt,
+		KeyPreview:    keyPreview,
+		ExpiresAt:     req.ExpiresAt,
+		CreatedAt:     time.Now(),
 	}
 
 	if err := h.Store.CreateAPIKey(context.Background(), apiKey); err != nil {
