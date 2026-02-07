@@ -56,18 +56,16 @@ jobs:
       # Use official golangci-lint action for better performance and caching
       # install-mode: goinstall builds from source to match project's Go version
       - name: Lint backend
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.61
-          install-mode: goinstall
+          version: v1.61.0
           working-directory: backend
           args: ./internal/...
       
       - name: Lint agent
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.61
-          install-mode: goinstall
+          version: v1.61.0
           working-directory: agent
           args: ./...
       
