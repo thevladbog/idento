@@ -15,12 +15,7 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
-
-formatters:
-  enable:
-    - goimports
-
-issues:
+  
   exclusions:
     rules:
       - path: _test\.go
@@ -32,3 +27,7 @@ issues:
       - path: migrate/
         linters:
           - errcheck
+
+formatters:
+  enable:
+    - goimports
