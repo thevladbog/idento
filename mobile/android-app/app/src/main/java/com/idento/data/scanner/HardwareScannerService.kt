@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -181,11 +182,13 @@ class HardwareScannerService @Inject constructor(
             }
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(scannerReceiver, intentFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            context.registerReceiver(scannerReceiver, intentFilter)
-        }
+        // Используем ContextCompat для совместимости с Android U (14+)
+        ContextCompat.registerReceiver(
+            context,
+            scannerReceiver,
+            intentFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         
         isReceiverRegistered = true
     }
