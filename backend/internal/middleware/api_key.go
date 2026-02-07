@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"idento/backend/internal/store"
 	"net/http"
 	"time"
@@ -55,7 +57,11 @@ func APIKeyAuth(s store.Store) echo.MiddlewareFunc {
 			}
 
 			// Update last used timestamp (async, don't block request)
-			go func() { _ = s.UpdateAPIKeyLastUsed(context.Background(), key.ID) }()
+			go func() {
+				if err := s.UpdateAPIKeyLastUsed(context.Background(), key.ID); err != nil {
+					fmt.Printf("Failed to update API key last used: %v\n", err)
+				}
+			}()
 
 			// Store event_id in context for later use
 			c.Set(string(EventIDKey), key.EventID)
@@ -72,35 +78,29 @@ func GetEventIDFromContext(c echo.Context) (uuid.UUID, error) {
 		return uuid.Nil, echo.NewHTTPError(http.StatusInternalServerError, "Event ID not found in context")
 	}
 
-	return eventID.(uuid.UUID), nil
+	eventUUID, ok := eventID.(uuid.UUID)
+	if !ok {
+		return uuid.Nil, echo.NewHTTPError(http.StatusInternalServerError, "Invalid event ID type in context")
+	}
+	return eventUUID, nil
 }
 
 // Generate a new API key (plain text) and its hash
-func GenerateAPIKey() (plainKey, hash string) {
-	// Generate a random UUID as the key
-	plainKey = uuid.New().String()
+func GenerateAPIKey() (plainKey string, keyHash string, err error) {
+	// Generate random bytes for the key
+	keyBytes := make([]byte, 32)
+	_, err = rand.Read(keyBytes)
+	if err != nil {
+		return "", "", err
+	}
 
-	// Hash it for storage
+	// Convert to hex string for plain key
+	plainKey = hex.EncodeToString(keyBytes)
+
+	// Hash the plain key
 	hasher := sha256.New()
 	hasher.Write([]byte(plainKey))
-	hash = hex.EncodeToString(hasher.Sum(nil))
+	keyHash = hex.EncodeToString(hasher.Sum(nil))
 
-	return plainKey, hash
-}
-
-// CORS middleware for public API endpoints
-func PublicCORS() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			c.Response().Header().Set("Access-Control-Allow-Origin", "*")
-			c.Response().Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-			c.Response().Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
-
-			if c.Request().Method == "OPTIONS" {
-				return c.NoContent(http.StatusNoContent)
-			}
-
-			return next(c)
-		}
-	}
+	return plainKey, keyHash, nil
 }

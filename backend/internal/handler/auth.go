@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"idento/backend/internal/models"
 	"net/http"
 	"os"
@@ -81,7 +82,12 @@ func (h *Handler) Register(c echo.Context) error {
 	}
 
 	// 5. Get all user's tenants for response
-	tenants, _ := h.Store.GetUserTenants(c.Request().Context(), existingUser.ID)
+	tenants, err := h.Store.GetUserTenants(c.Request().Context(), existingUser.ID)
+	if err != nil {
+		// Log error but continue with empty list
+		fmt.Printf("Failed to get user tenants: %v\n", err)
+		tenants = []*models.Tenant{}
+	}
 
 	return c.JSON(http.StatusCreated, map[string]interface{}{
 		"token":   token,

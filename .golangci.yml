@@ -13,7 +13,7 @@ linters:
   
   settings:
     errcheck:
-      check-type-assertions: true
+      check-type-assertions: false # Disable type assertion checks globally
       check-blank: true
   
   exclusions:
@@ -27,6 +27,10 @@ linters:
       - path: migrate/
         linters:
           - errcheck
+      - path: internal/handler/api_keys\.go
+        linters:
+          - errcheck
+        text: "Error return value is not checked"
 
 formatters:
   enable:

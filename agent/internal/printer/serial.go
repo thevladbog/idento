@@ -88,7 +88,11 @@ func (p *NetworkPrinter) SendRaw(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to printer at %s: %w", p.Address, err)
 	}
-	defer func() { _ = conn.Close() }()
+	defer func() {
+		if closeErr := conn.Close(); closeErr != nil {
+			fmt.Printf("Failed to close connection: %v\n", closeErr)
+		}
+	}()
 
 	_, err = conn.Write(data)
 	if err != nil {
@@ -104,7 +108,9 @@ func (p *NetworkPrinter) Status() (string, error) {
 	if err != nil {
 		return "Offline", nil
 	}
-	_ = conn.Close()
+	if closeErr := conn.Close(); closeErr != nil {
+		fmt.Printf("Failed to close connection: %v\n", closeErr)
+	}
 	return "Ready", nil
 }
 

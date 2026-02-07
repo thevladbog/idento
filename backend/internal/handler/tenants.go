@@ -24,7 +24,11 @@ func (h *Handler) GetUserTenants(c echo.Context) error {
 	// Add role information for each tenant
 	tenantsWithRoles := make([]map[string]interface{}, 0, len(tenants))
 	for _, tenant := range tenants {
-		role, _ := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenant.ID)
+		role, err := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenant.ID)
+		if err != nil {
+			// Default to viewer role if unable to get role
+			role = "viewer"
+		}
 		tenantsWithRoles = append(tenantsWithRoles, map[string]interface{}{
 			"id":            tenant.ID,
 			"name":          tenant.Name,

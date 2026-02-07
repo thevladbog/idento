@@ -83,13 +83,15 @@ func (h *Handler) CreateUser(c echo.Context) error {
 	}
 
 	// Log usage
-	_ = h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
+	if err := h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
 		TenantID:     tenantID,
 		ResourceType: "user",
 		ResourceID:   &newUser.ID,
 		Action:       "created",
 		Quantity:     1,
-	})
+	}); err != nil {
+		fmt.Printf("Failed to log usage: %v\n", err)
+	}
 
 	return c.JSON(http.StatusCreated, newUser)
 }
@@ -116,7 +118,10 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 	}
 
 	// Verify same tenant
-	currentTenantID, _ := uuid.Parse(currentUser.TenantID)
+	currentTenantID, err := uuid.Parse(currentUser.TenantID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")
+	}
 	if targetUser.TenantID != currentTenantID {
 		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
 	}
@@ -144,7 +149,10 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 // AssignStaffToEvent assigns a staff user to an event
 func (h *Handler) AssignStaffToEvent(c echo.Context) error {
 	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, _ := uuid.Parse(user.TenantID)
+	tenantID, err := uuid.Parse(user.TenantID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")
+	}
 
 	// Only admin and manager can assign staff
 	if user.Role != "admin" && user.Role != "manager" {
@@ -182,7 +190,10 @@ func (h *Handler) AssignStaffToEvent(c echo.Context) error {
 	}
 
 	// Create assignment
-	assignedBy, _ := uuid.Parse(user.UserID)
+	assignedBy, err := uuid.Parse(user.UserID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
+	}
 	assignment := &models.EventStaff{
 		ID:         uuid.New(),
 		EventID:    eventUUID,
@@ -201,7 +212,10 @@ func (h *Handler) AssignStaffToEvent(c echo.Context) error {
 // GetEventStaff returns staff assigned to an event
 func (h *Handler) GetEventStaff(c echo.Context) error {
 	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, _ := uuid.Parse(user.TenantID)
+	tenantID, err := uuid.Parse(user.TenantID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")
+	}
 
 	eventID := c.Param("event_id")
 	eventUUID, err := uuid.Parse(eventID)

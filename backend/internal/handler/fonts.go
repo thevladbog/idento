@@ -48,7 +48,12 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 
 	user := c.Get("user").(*jwt.Token)
 	claims := user.Claims.(jwt.MapClaims)
-	userID, _ := uuid.Parse(claims["user_id"].(string))
+	userID, err := uuid.Parse(claims["user_id"].(string))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Invalid user ID",
+		})
+	}
 
 	// Check license acceptance
 	licenseAccepted := c.FormValue("license_accepted")
@@ -118,7 +123,11 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 			"error": "Failed to read font file",
 		})
 	}
-	defer func() { _ = src.Close() }()
+	defer func() {
+		if closeErr := src.Close(); closeErr != nil {
+			fmt.Printf("Failed to close file: %v\n", closeErr)
+		}
+	}()
 
 	data, err := io.ReadAll(src)
 	if err != nil {

@@ -30,7 +30,10 @@ func (h *Handler) CreateAPIKey(c echo.Context) error {
 	}
 
 	// Generate API key
-	plainKey, keyHash := middleware.GenerateAPIKey()
+	plainKey, keyHash, err := middleware.GenerateAPIKey()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate API key"})
+	}
 	keyPreview := plainKey[:8] + "..." // Store only first 8 characters for display
 
 	apiKey := &models.APIKey{
@@ -113,7 +116,7 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 	var errors []string
 
 	for idx, data := range req.Data {
-		// Extract standard fields
+		// Extract standard fields with type assertions
 		firstName, _ := data["first_name"].(string)
 		lastName, _ := data["last_name"].(string)
 		email, _ := data["email"].(string)

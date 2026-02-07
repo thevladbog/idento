@@ -169,7 +169,9 @@ func (m *Manager) ListScanners() []string {
 func (m *Manager) RemoveScanner(name string) error {
 	scanner, ok := m.scanners[name]
 	if ok {
-		_ = scanner.Close()
+		if closeErr := scanner.Close(); closeErr != nil {
+			fmt.Printf("Failed to close scanner: %v\n", closeErr)
+		}
 		delete(m.scanners, name)
 	}
 	return nil

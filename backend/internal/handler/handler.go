@@ -109,9 +109,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.DELETE("/events/:event_id/fonts/:font_id", h.DeleteEventFont)
 	api.GET("/fonts/:id/file", h.GetFontFile) // Public font file endpoint
 
-	// Public API endpoints (with API key authentication and CORS)
+	// Public API endpoints (with API key authentication)
 	public := e.Group("/api/public")
-	public.Use(middleware.PublicCORS())
 	public.POST("/import", h.ExternalImport, middleware.APIKeyAuth(h.Store))
 
 	// Super Admin routes

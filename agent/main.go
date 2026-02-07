@@ -494,12 +494,17 @@ func main() {
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("Idento Agent is running"))
+		if _, err := w.Write([]byte("Idento Agent is running")); err != nil {
+			log.Printf("Failed to write health response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
 		printers := pm.ListPrinters()
-		_ = json.NewEncoder(w).Encode(printers)
+		if err := json.NewEncoder(w).Encode(printers); err != nil {
+			log.Printf("Failed to encode printers response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/printers/add", func(w http.ResponseWriter, r *http.Request) {
@@ -564,11 +569,13 @@ func main() {
 		}
 
 		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status":  "added",
 			"name":    req.Name,
 			"address": fmt.Sprintf("%s:%d", req.IP, req.Port),
-		})
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/print", func(w http.ResponseWriter, r *http.Request) {
@@ -619,7 +626,9 @@ func main() {
 
 		log.Println("Print job completed successfully ✓")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "printed"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "printed"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// PDF Print endpoint
@@ -676,7 +685,9 @@ func main() {
 
 		log.Println("PDF print job completed successfully ✓")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "printed"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "printed"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// Get printer fonts endpoint (general reference)
@@ -701,7 +712,10 @@ func main() {
 			},
 			"note": "For custom fonts, enter the exact name as loaded in your printer. Use ^WD* command to query printer for loaded fonts. Or use /printers/{name}/fonts to query a specific printer.",
 		}
-		_ = json.NewEncoder(w).Encode(fonts)
+		if err := json.NewEncoder(w).Encode(fonts); err != nil {
+			log.Printf("Failed to encode fonts response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	// Query specific printer for fonts
@@ -774,13 +788,19 @@ func main() {
 			}
 		}
 
-		_ = json.NewEncoder(w).Encode(fonts)
+		if err := json.NewEncoder(w).Encode(fonts); err != nil {
+			log.Printf("Failed to encode fonts response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	// Scanner endpoints
 	mux.HandleFunc("/scanners", func(w http.ResponseWriter, r *http.Request) {
 		scanners := sm.ListScanners()
-		_ = json.NewEncoder(w).Encode(scanners)
+		if err := json.NewEncoder(w).Encode(scanners); err != nil {
+			log.Printf("Failed to encode scanners response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/scanners/ports", func(w http.ResponseWriter, r *http.Request) {
@@ -788,7 +808,9 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to discover scanner ports: %v", err)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode([]string{})
+			if encErr := json.NewEncoder(w).Encode([]string{}); encErr != nil {
+				log.Printf("Failed to encode empty response: %v", encErr)
+			}
 			return
 		}
 
@@ -798,7 +820,9 @@ func main() {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ports)
+		if err := json.NewEncoder(w).Encode(ports); err != nil {
+			log.Printf("Failed to encode ports response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scan/last", func(w http.ResponseWriter, r *http.Request) {
@@ -811,7 +835,10 @@ func main() {
 			"time": lastScanTime,
 		}
 
-		_ = json.NewEncoder(w).Encode(response)
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/scan/clear", func(w http.ResponseWriter, r *http.Request) {
@@ -826,7 +853,9 @@ func main() {
 		scanDataMutex.Unlock()
 
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "cleared"}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	mux.HandleFunc("/scanners/add", func(w http.ResponseWriter, r *http.Request) {
@@ -852,7 +881,10 @@ func main() {
 		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
 
 		// Check if scanner already exists
-		existingScanner, _ := sm.GetScanner(scannerName)
+		existingScanner, err := sm.GetScanner(scannerName)
+		if err != nil {
+			log.Printf("Failed to check existing scanner: %v", err)
+		}
 		if existingScanner != nil {
 			http.Error(w, "Scanner already exists", http.StatusConflict)
 			return
@@ -880,23 +912,27 @@ func main() {
 
 		log.Printf("Added scanner: %s (%s)", scannerName, req.PortName)
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "added",
 			"name":   scannerName,
 			"port":   req.PortName,
-		})
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
 	})
 
 	// OpenAPI spec endpoint
 	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/yaml")
-		_, _ = w.Write([]byte(openapiSpec))
+		if _, err := w.Write([]byte(openapiSpec)); err != nil {
+			log.Printf("Failed to write OpenAPI spec: %v", err)
+		}
 	})
 
 	// Scalar UI (modern API documentation)
 	mux.HandleFunc("/docs", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte(`
+		if _, err := w.Write([]byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -909,7 +945,9 @@ func main() {
     <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>
-		`))
+		`)); err != nil {
+			log.Printf("Failed to write docs page: %v", err)
+		}
 	})
 
 	// Setup CORS to allow requests from localhost web app
