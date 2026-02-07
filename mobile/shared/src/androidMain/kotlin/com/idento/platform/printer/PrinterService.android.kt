@@ -1,6 +1,7 @@
 package com.idento.platform.printer
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
@@ -46,6 +47,7 @@ actual class BluetoothPrinterService(private val context: Context) {
         }
     }
     
+    @SuppressLint("MissingPermission")
     actual suspend fun getPairedPrinters(): Result<List<BluetoothPrinterDevice>> = withContext(Dispatchers.IO) {
         runCatching {
             if (!hasBluetoothPermissions()) {
@@ -63,6 +65,7 @@ actual class BluetoothPrinterService(private val context: Context) {
         }
     }
     
+    @SuppressLint("MissingPermission")
     actual suspend fun connect(address: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             if (!hasBluetoothPermissions()) {
