@@ -33,7 +33,7 @@ class OfflineCheckInRepository(
                 is ApiResult.Error -> {
                     // If failed, save offline
                     saveOfflineCheckIn(request)
-                    val errorMessage = "Saved offline: ${result.message}"
+                    val errorMessage = "Saved offline: ${result.message ?: "Sync failed"}"
                     ApiResult.Error(Exception(errorMessage), message = errorMessage)
                 }
                 is ApiResult.Loading -> ApiResult.Loading

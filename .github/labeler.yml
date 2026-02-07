@@ -1,0 +1,28 @@
+# Auto-label PRs by changed paths (Labeler v6 syntax)
+# https://github.com/marketplace/actions/labeler
+
+backend:
+  - changed-files:
+      any-glob-to-any-file: backend/**
+
+agent:
+  - changed-files:
+      any-glob-to-any-file: agent/**
+
+web:
+  - changed-files:
+      any-glob-to-any-file: web/**
+
+mobile:
+  - changed-files:
+      any-glob-to-any-file: mobile/**
+
+documentation:
+  - changed-files:
+      any-glob-to-any-file:
+        - docs/**
+        - "**/*.md"
+
+ci:
+  - changed-files:
+      any-glob-to-any-file: .github/**

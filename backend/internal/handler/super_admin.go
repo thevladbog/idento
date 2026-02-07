@@ -119,7 +119,12 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 
 	// Update fields
 	if req.PlanID != nil {
-		planID := uuid.MustParse(*req.PlanID)
+		planID, err := uuid.Parse(*req.PlanID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "Invalid plan ID format",
+			})
+		}
 		sub.PlanID = &planID
 	}
 	if req.Status != nil {

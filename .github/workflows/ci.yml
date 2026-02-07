@@ -74,6 +74,37 @@ jobs:
           echo "## Go Lint Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Backend and Agent linting completed" >> $GITHUB_STEP_SUMMARY
 
+  # Gosec security scanner (backend + agent)
+  gosec:
+    name: Gosec Security (Backend & Agent)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+          cache-dependency-path: |
+            backend/go.sum
+            agent/go.sum
+      - name: Run Gosec (backend)
+        uses: securego/gosec@master
+        with:
+          args: ./...
+        working-directory: backend
+      - name: Run Gosec (agent)
+        uses: securego/gosec@master
+        with:
+          args: ./...
+        working-directory: agent
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Gosec Security Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Backend and Agent security scan completed" >> $GITHUB_STEP_SUMMARY
+
   # Test Go code with coverage and race detection
   test-go:
     name: Test Go (Coverage & Race Detection)

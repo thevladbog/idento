@@ -113,7 +113,7 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 	}
 
 	// Track import results
-	var created, updated, failed int
+	var created, failed int
 	var errors []string
 
 	for idx, data := range req.Data {
@@ -193,7 +193,6 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 		"message": "Import completed",
 		"results": map[string]interface{}{
 			"created": created,
-			"updated": updated,
 			"failed":  failed,
 			"total":   len(req.Data),
 		},

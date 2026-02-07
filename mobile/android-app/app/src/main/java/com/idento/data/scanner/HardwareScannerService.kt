@@ -182,12 +182,13 @@ class HardwareScannerService @Inject constructor(
             }
         }
         
-        // Используем ContextCompat для совместимости с Android U (14+)
+        // RECEIVER_EXPORTED so external scanner apps (DataWedge, etc.) can deliver broadcasts.
+        // handleScanIntent validates action and manufacturer-specific extraction to limit surface.
         ContextCompat.registerReceiver(
             context,
             scannerReceiver,
             intentFilter,
-            ContextCompat.RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_EXPORTED
         )
         
         isReceiverRegistered = true

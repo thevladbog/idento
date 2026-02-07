@@ -1274,7 +1274,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 	// Get total count
 	var total int
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_audit_log`).Scan(&total); err != nil {
-		log.Printf("Failed to get total count: %v", err)
+		return nil, 0, fmt.Errorf("get audit log total count: %w", err)
 	}
 
 	return logs, total, nil
