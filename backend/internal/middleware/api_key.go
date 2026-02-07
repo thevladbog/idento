@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
+	"idento/backend/internal/models"
 	"idento/backend/internal/store"
 	"log"
 	"net/http"
@@ -30,22 +30,24 @@ func APIKeyAuth(s store.Store) echo.MiddlewareFunc {
 				})
 			}
 
-			// Lookup key: SHA256 used only for indexed lookup; verification uses bcrypt when key_hash_bcrypt is set.
-			lookupHash := sha256Hex(apiKey)
-			key, err := s.GetAPIKeyByHash(context.Background(), lookupHash)
+			// Lookup by loading active keys and verifying with bcrypt only (no SHA256 on sensitive data).
+			activeKeys, err := s.GetActiveAPIKeys(context.Background())
 			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{
+					"error": "Failed to verify API key",
+				})
+			}
+			var key *models.APIKey
+			for _, k := range activeKeys {
+				if k.KeyHashBcrypt != nil && bcrypt.CompareHashAndPassword([]byte(*k.KeyHashBcrypt), []byte(apiKey)) == nil {
+					key = k
+					break
+				}
+			}
+			if key == nil {
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "Invalid API key",
 				})
-			}
-
-			// Verify with bcrypt when stored (new keys); legacy keys matched by lookup hash.
-			if key.KeyHashBcrypt != nil {
-				if err := bcrypt.CompareHashAndPassword([]byte(*key.KeyHashBcrypt), []byte(apiKey)); err != nil {
-					return c.JSON(http.StatusUnauthorized, map[string]string{
-						"error": "Invalid API key",
-					})
-				}
 			}
 
 			// Check if key is revoked
@@ -91,25 +93,19 @@ func GetEventIDFromContext(c echo.Context) (uuid.UUID, error) {
 	return eventUUID, nil
 }
 
-// sha256Hex returns SHA256(plain) as hex; used only for indexed lookup, not for verification.
-func sha256Hex(plain string) string {
-	hasher := sha256.New()
-	hasher.Write([]byte(plain))
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-// GenerateAPIKey returns a new API key (plain text), its lookup hash (SHA256), and bcrypt hash for verification.
-func GenerateAPIKey() (plainKey string, keyHash string, keyHashBcrypt string, err error) {
+// GenerateAPIKey returns a new API key (plain text), a unique placeholder for key_hash, and bcrypt hash for verification.
+// No SHA256 is used on the key; verification is bcrypt-only via GetActiveAPIKeys.
+func GenerateAPIKey() (plainKey string, keyHashPlaceholder string, keyHashBcrypt string, err error) {
 	keyBytes := make([]byte, 32)
 	_, err = rand.Read(keyBytes)
 	if err != nil {
 		return "", "", "", err
 	}
 	plainKey = hex.EncodeToString(keyBytes)
-	keyHash = sha256Hex(plainKey)
+	keyHashPlaceholder = "bcrypt:" + uuid.New().String()
 	keyHashBcryptBytes, err := bcrypt.GenerateFromPassword([]byte(plainKey), bcrypt.DefaultCost)
 	if err != nil {
 		return "", "", "", err
 	}
-	return plainKey, keyHash, string(keyHashBcryptBytes), nil
+	return plainKey, keyHashPlaceholder, string(keyHashBcryptBytes), nil
 }

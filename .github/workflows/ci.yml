@@ -93,15 +93,13 @@ jobs:
           cache-dependency-path: |
             backend/go.sum
             agent/go.sum
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
       - name: Run Gosec (backend)
-        uses: securego/gosec@master
-        with:
-          args: ./...
+        run: gosec ./...
         working-directory: backend
       - name: Run Gosec (agent)
-        uses: securego/gosec@master
-        with:
-          args: ./...
+        run: gosec ./...
         working-directory: agent
       - name: Summary
         if: always()

@@ -562,6 +562,32 @@ func (s *PGStore) GetAPIKeyByHash(ctx context.Context, keyHash string) (*models.
 	return &key, nil
 }
 
+// GetActiveAPIKeys returns all non-revoked, non-expired API keys (with key_hash_bcrypt set) for verification.
+func (s *PGStore) GetActiveAPIKeys(ctx context.Context) ([]*models.APIKey, error) {
+	query := `SELECT id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, last_used_at, revoked_at, created_at
+			  FROM api_keys
+			  WHERE revoked_at IS NULL
+			    AND (expires_at IS NULL OR expires_at > NOW())
+			    AND key_hash_bcrypt IS NOT NULL`
+
+	rows, err := s.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keys []*models.APIKey
+	for rows.Next() {
+		var key models.APIKey
+		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
+			&key.ExpiresAt, &key.LastUsedAt, &key.RevokedAt, &key.CreatedAt); err != nil {
+			return nil, err
+		}
+		keys = append(keys, &key)
+	}
+	return keys, nil
+}
+
 func (s *PGStore) RevokeAPIKey(ctx context.Context, id uuid.UUID) error {
 	query := `UPDATE api_keys SET revoked_at = NOW() WHERE id = $1`
 	_, err := s.db.Exec(ctx, query, id)
