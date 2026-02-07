@@ -347,39 +347,70 @@ func getConfigPath() string {
 	return filepath.Join(homeDir, ".idento", "agent_config.json")
 }
 
+// getConfigDir returns the absolute path to ~/.idento for os.Root-scoped config access.
+func getConfigDir() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	configDir := filepath.Join(homeDir, ".idento")
+	absDir, err := filepath.Abs(configDir)
+	if err != nil {
+		return "", err
+	}
+	return absDir, nil
+}
+
 func loadConfig() (*AgentConfig, error) {
-	configPath := getConfigPath()
-	data, err := os.ReadFile(configPath)
+	configDir, err := getConfigDir()
+	if err != nil {
+		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+	}
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
+		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close config root: %v", closeErr)
+		}
+	}()
+	data, err := root.ReadFile("agent_config.json")
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
 		}
 		return nil, err
 	}
-
 	var config AgentConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
-
 	return &config, nil
 }
 
 func saveConfig(config *AgentConfig) error {
-	configPath := getConfigPath()
-
-	// Ensure directory exists
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	configDir, err := getConfigDir()
+	if err != nil {
 		return err
 	}
-
+	if err := os.MkdirAll(configDir, 0750); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(configDir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close config root: %v", closeErr)
+		}
+	}()
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(configPath, data, 0644)
+	return root.WriteFile("agent_config.json", data, 0600)
 }
 
 func main() {
@@ -1024,7 +1055,15 @@ func main() {
 	}
 	fmt.Printf("========================================\n\n")
 
-	if err := http.ListenAndServe(":"+*port, handler); err != nil {
+	server := &http.Server{
+		Addr:              ":" + *port,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

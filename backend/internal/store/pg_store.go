@@ -89,7 +89,11 @@ func (s *PGStore) RunMigrations() error {
 	if err != nil {
 		return fmt.Errorf("open migrations root: %w", err)
 	}
-	defer root.Close()
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close migrations root: %v", closeErr)
+		}
+	}()
 
 	appliedCount := 0
 	for _, filename := range migrationFiles {
