@@ -213,7 +213,7 @@ private fun ZoneCard(
                     StatItem(
                         label = Strings.total,
                         value = zone.totalCheckins.toString(),
-                        icon = Icons.Default.Person
+                        icon = Icons.Default.CheckCircle
                     )
                     StatItem(
                         label = Strings.unique,

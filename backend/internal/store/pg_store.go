@@ -747,7 +747,7 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 
 		if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
 			if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
-				fmt.Printf("Failed to unmarshal tenant settings: %v\n", err)
+				log.Printf("Failed to unmarshal tenant settings: %v", err)
 			}
 		}
 
@@ -807,7 +807,7 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 
 	if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
 		if err := json.Unmarshal(settingsJSON, &t.Settings); err != nil {
-			fmt.Printf("Failed to unmarshal tenant settings: %v\n", err)
+			return nil, fmt.Errorf("failed to unmarshal tenant settings: %w", err)
 		}
 	}
 
@@ -816,18 +816,18 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	// Get subscription
 	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
 	if err != nil {
-		fmt.Printf("Failed to get subscription: %v\n", err)
+		return nil, fmt.Errorf("failed to get subscription: %w", err)
 	}
 	tws.Subscription = sub
 
 	// Count users
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1`, tenantID).Scan(&tws.UsersCount); err != nil {
-		fmt.Printf("Failed to count users: %v\n", err)
+		return nil, fmt.Errorf("failed to count users: %w", err)
 	}
 
 	// Count events
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM events WHERE tenant_id = $1 AND deleted_at IS NULL`, tenantID).Scan(&tws.EventsCount); err != nil {
-		fmt.Printf("Failed to count events: %v\n", err)
+		return nil, fmt.Errorf("failed to count events: %w", err)
 	}
 
 	// Count attendees
@@ -836,7 +836,7 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 		INNER JOIN events e ON a.event_id = e.id
 		WHERE e.tenant_id = $1 AND a.deleted_at IS NULL AND e.deleted_at IS NULL
 	`, tenantID).Scan(&tws.AttendeesCount); err != nil {
-		fmt.Printf("Failed to count attendees: %v\n", err)
+		return nil, fmt.Errorf("failed to count attendees: %w", err)
 	}
 
 	return &tws, nil
@@ -895,12 +895,12 @@ func (s *PGStore) GetSubscriptionPlans(ctx context.Context, includeInactive bool
 
 		if len(limitsJSON) > 0 {
 			if err := json.Unmarshal(limitsJSON, &p.Limits); err != nil {
-				fmt.Printf("Failed to unmarshal limits: %v\n", err)
+				log.Printf("Failed to unmarshal limits: %v", err)
 			}
 		}
 		if len(featuresJSON) > 0 {
 			if err := json.Unmarshal(featuresJSON, &p.Features); err != nil {
-				fmt.Printf("Failed to unmarshal features: %v\n", err)
+				log.Printf("Failed to unmarshal features: %v", err)
 			}
 		}
 
@@ -1035,12 +1035,12 @@ func (s *PGStore) GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.U
 
 		if len(spLimits) > 0 {
 			if err := json.Unmarshal(spLimits, &plan.Limits); err != nil {
-				fmt.Printf("Failed to unmarshal plan limits: %v\n", err)
+				log.Printf("Failed to unmarshal plan limits: %v", err)
 			}
 		}
 		if len(spFeatures) > 0 {
 			if err := json.Unmarshal(spFeatures, &plan.Features); err != nil {
-				fmt.Printf("Failed to unmarshal plan features: %v\n", err)
+				log.Printf("Failed to unmarshal plan features: %v", err)
 			}
 		}
 
@@ -1104,12 +1104,12 @@ func (s *PGStore) GetExpiringSubscriptions(ctx context.Context, days int) ([]*mo
 
 		if len(customLimitsJSON) > 0 {
 			if err := json.Unmarshal(customLimitsJSON, &sub.CustomLimits); err != nil {
-				fmt.Printf("Failed to unmarshal custom limits: %v\n", err)
+				log.Printf("Failed to unmarshal custom limits: %v", err)
 			}
 		}
 		if len(customFeaturesJSON) > 0 {
 			if err := json.Unmarshal(customFeaturesJSON, &sub.CustomFeatures); err != nil {
-				fmt.Printf("Failed to unmarshal custom features: %v\n", err)
+				log.Printf("Failed to unmarshal custom features: %v", err)
 			}
 		}
 
@@ -1251,30 +1251,30 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 
 	var logs []*models.AdminAuditLog
 	for rows.Next() {
-		var log models.AdminAuditLog
+		var auditLog models.AdminAuditLog
 		var changesJSON []byte
 
 		err := rows.Scan(
-			&log.ID, &log.AdminUserID, &log.Action, &log.TargetType, &log.TargetID,
-			&changesJSON, &log.IPAddress, &log.UserAgent, &log.CreatedAt,
+			&auditLog.ID, &auditLog.AdminUserID, &auditLog.Action, &auditLog.TargetType, &auditLog.TargetID,
+			&changesJSON, &auditLog.IPAddress, &auditLog.UserAgent, &auditLog.CreatedAt,
 		)
 		if err != nil {
 			return nil, 0, err
 		}
 
 		if len(changesJSON) > 0 {
-			if err := json.Unmarshal(changesJSON, &log.Changes); err != nil {
-				fmt.Printf("Failed to unmarshal changes: %v\n", err)
+			if err := json.Unmarshal(changesJSON, &auditLog.Changes); err != nil {
+				log.Printf("Failed to unmarshal changes: %v", err)
 			}
 		}
 
-		logs = append(logs, &log)
+		logs = append(logs, &auditLog)
 	}
 
 	// Get total count
 	var total int
 	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_audit_log`).Scan(&total); err != nil {
-		fmt.Printf("Failed to get total count: %v\n", err)
+		log.Printf("Failed to get total count: %v", err)
 	}
 
 	return logs, total, nil

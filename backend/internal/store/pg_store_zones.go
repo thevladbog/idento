@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"idento/backend/internal/models"
+	"log"
 	"time"
 
 	"github.com/google/uuid"
@@ -250,7 +251,7 @@ func (s *PGStore) BulkUpdateZoneAccessRules(ctx context.Context, zoneID uuid.UUI
 	}
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && rbErr != pgx.ErrTxClosed {
-			fmt.Printf("Failed to rollback transaction: %v\n", rbErr)
+			log.Printf("Failed to rollback transaction: %v", rbErr)
 		}
 	}()
 

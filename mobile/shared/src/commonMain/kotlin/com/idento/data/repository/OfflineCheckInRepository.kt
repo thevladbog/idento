@@ -6,6 +6,7 @@ import com.idento.data.storage.OfflineDatabase
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.datetime.Clock
 
 /**
  * Repository for offline check-in management
@@ -52,7 +53,7 @@ class OfflineCheckInRepository(
             attendeeCode = request.attendeeCode,
             zoneId = request.zoneId,
             eventDay = request.eventDay,
-            checkedInAt = System.currentTimeMillis()
+            checkedInAt = Clock.System.now().toEpochMilliseconds()
         )
         return offlineDatabase.savePendingCheckIn(pending)
     }

@@ -1,4 +1,5 @@
 ---
+description: Go backend and agent conventions (Echo, Clean Architecture)
 globs: agent/*,backend/*
 alwaysApply: false
 ---

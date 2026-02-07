@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -85,7 +85,7 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 		Quantity:     1,
 	}); err != nil {
 		// Log error but don't fail the request
-		fmt.Printf("Failed to log usage: %v\n", err)
+		log.Printf("Failed to log usage: %v", err)
 	}
 
 	return c.JSON(http.StatusCreated, attendee)

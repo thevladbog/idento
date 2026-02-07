@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"idento/backend/internal/middleware"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -185,7 +186,7 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 	// Update event field schema if new fields were added
 	if err := h.Store.UpdateEvent(context.Background(), event); err != nil {
 		// Log error but don't fail the import
-		fmt.Printf("Warning: Failed to update event field schema: %v\n", err)
+		log.Printf("Warning: Failed to update event field schema: %v", err)
 	}
 
 	response := map[string]interface{}{

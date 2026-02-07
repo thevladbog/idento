@@ -5,8 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"idento/backend/internal/store"
+	"log"
 	"net/http"
 	"time"
 
@@ -59,7 +59,7 @@ func APIKeyAuth(s store.Store) echo.MiddlewareFunc {
 			// Update last used timestamp (async, don't block request)
 			go func() {
 				if err := s.UpdateAPIKeyLastUsed(context.Background(), key.ID); err != nil {
-					fmt.Printf("Failed to update API key last used: %v\n", err)
+					log.Printf("Failed to update API key last used: %v", err)
 				}
 			}()
 

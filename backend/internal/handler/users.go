@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"time"
 
@@ -90,7 +91,7 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		Action:       "created",
 		Quantity:     1,
 	}); err != nil {
-		fmt.Printf("Failed to log usage: %v\n", err)
+		log.Printf("Failed to log usage: %v", err)
 	}
 
 	return c.JSON(http.StatusCreated, newUser)

@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"fmt"
 	"idento/backend/internal/models"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -151,7 +151,7 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		"old": oldSub,
 		"new": sub,
 	}); err != nil {
-		fmt.Printf("Failed to log admin action: %v\n", err)
+		log.Printf("Failed to log admin action: %v", err)
 	}
 
 	return c.JSON(http.StatusOK, sub)
@@ -192,7 +192,7 @@ func (h *Handler) CreateSubscriptionPlan(c echo.Context) error {
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
 	}); err != nil {
-		fmt.Printf("Failed to log admin action: %v\n", err)
+		log.Printf("Failed to log admin action: %v", err)
 	}
 
 	return c.JSON(http.StatusCreated, plan)
@@ -228,7 +228,7 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
 	}); err != nil {
-		fmt.Printf("Failed to log admin action: %v\n", err)
+		log.Printf("Failed to log admin action: %v", err)
 	}
 
 	return c.JSON(http.StatusOK, plan)
@@ -283,10 +283,15 @@ func (h *Handler) GetSystemAnalytics(c echo.Context) error {
 
 // GetAuditLog returns admin audit log
 func (h *Handler) GetAuditLog(c echo.Context) error {
+	const maxLimit = 100
 	limit := 50
 	if limitStr := c.QueryParam("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
+			if l > maxLimit {
+				limit = maxLimit
+			} else {
+				limit = l
+			}
 		}
 	}
 

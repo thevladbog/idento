@@ -501,9 +501,19 @@ func main() {
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
 		printers := pm.ListPrinters()
-		if err := json.NewEncoder(w).Encode(printers); err != nil {
-			log.Printf("Failed to encode printers response: %v", err)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(printers)
+		if err != nil {
+			log.Printf("Failed to marshal printers response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write printers response: %v", err)
 		}
 	})
 
@@ -712,9 +722,19 @@ func main() {
 			},
 			"note": "For custom fonts, enter the exact name as loaded in your printer. Use ^WD* command to query printer for loaded fonts. Or use /printers/{name}/fonts to query a specific printer.",
 		}
-		if err := json.NewEncoder(w).Encode(fonts); err != nil {
-			log.Printf("Failed to encode fonts response: %v", err)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(fonts)
+		if err != nil {
+			log.Printf("Failed to marshal fonts response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write fonts response: %v", err)
 		}
 	})
 
@@ -788,18 +808,37 @@ func main() {
 			}
 		}
 
-		if err := json.NewEncoder(w).Encode(fonts); err != nil {
-			log.Printf("Failed to encode fonts response: %v", err)
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(fonts)
+		if err != nil {
+			log.Printf("Failed to marshal fonts response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write fonts response: %v", err)
 		}
 	})
 
 	// Scanner endpoints
 	mux.HandleFunc("/scanners", func(w http.ResponseWriter, r *http.Request) {
 		scanners := sm.ListScanners()
-		if err := json.NewEncoder(w).Encode(scanners); err != nil {
-			log.Printf("Failed to encode scanners response: %v", err)
+
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(scanners)
+		if err != nil {
+			log.Printf("Failed to marshal scanners response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write scanners response: %v", err)
 		}
 	})
 
@@ -835,9 +874,18 @@ func main() {
 			"time": lastScanTime,
 		}
 
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			log.Printf("Failed to encode response: %v", err)
+		// Marshal response to bytes first to avoid partial writes on error
+		data, err := json.Marshal(response)
+		if err != nil {
+			log.Printf("Failed to marshal scan response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write(data); err != nil {
+			log.Printf("Failed to write scan response: %v", err)
 		}
 	})
 
@@ -884,6 +932,8 @@ func main() {
 		existingScanner, err := sm.GetScanner(scannerName)
 		if err != nil {
 			log.Printf("Failed to check existing scanner: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to check existing scanner: %v", err), http.StatusInternalServerError)
+			return
 		}
 		if existingScanner != nil {
 			http.Error(w, "Scanner already exists", http.StatusConflict)

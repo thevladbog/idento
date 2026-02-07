@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"idento/backend/internal/models"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -46,9 +47,49 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 		})
 	}
 
-	user := c.Get("user").(*jwt.Token)
-	claims := user.Claims.(jwt.MapClaims)
-	userID, err := uuid.Parse(claims["user_id"].(string))
+	// Safely extract user from context
+	userToken := c.Get("user")
+	if userToken == nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "Unauthorized",
+		})
+	}
+
+	token, ok := userToken.(*jwt.Token)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "Invalid token",
+		})
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{
+			"error": "Invalid token claims",
+		})
+	}
+
+	// Safely extract user_id from claims
+	userIDValue, exists := claims["user_id"]
+	if !exists {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Missing user_id in token",
+		})
+	}
+
+	var userIDStr string
+	switch v := userIDValue.(type) {
+	case string:
+		userIDStr = v
+	case float64:
+		userIDStr = fmt.Sprintf("%.0f", v)
+	default:
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Invalid user_id format",
+		})
+	}
+
+	userID, err := uuid.Parse(userIDStr)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid user ID",
@@ -125,7 +166,7 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 	}
 	defer func() {
 		if closeErr := src.Close(); closeErr != nil {
-			fmt.Printf("Failed to close file: %v\n", closeErr)
+			log.Printf("Failed to close file: %v", closeErr)
 		}
 	}()
 
