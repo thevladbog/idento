@@ -67,6 +67,16 @@ func main() {
 
 	log.Printf("Found %d migrations", len(migrationFiles))
 
+	absDir, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		log.Fatalf("Migrations dir: %v", err)
+	}
+	root, err := os.OpenRoot(absDir)
+	if err != nil {
+		log.Fatalf("OpenRoot migrations: %v", err)
+	}
+	defer root.Close()
+
 	// Apply migrations in order
 	for _, filename := range migrationFiles {
 		// Extract version from filename
@@ -85,21 +95,8 @@ func main() {
 			continue
 		}
 
-		// Read and execute migration (validate path to prevent directory traversal)
-		path := filepath.Join(migrationsDir, filename)
-		absRoot, err := filepath.Abs(migrationsDir)
-		if err != nil {
-			log.Fatalf("Migrations dir: %v", err)
-		}
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			log.Fatalf("Migration path: %v", err)
-		}
-		rel, err := filepath.Rel(absRoot, absPath)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			log.Fatalf("Invalid migration path: %s", filename)
-		}
-		content, err := os.ReadFile(absPath)
+		// Read and execute migration (os.Root scopes access to migrations dir)
+		content, err := root.ReadFile(filename)
 		if err != nil {
 			log.Fatalf("Failed to read migration %s: %v", filename, err)
 		}

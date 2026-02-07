@@ -81,6 +81,16 @@ func (s *PGStore) RunMigrations() error {
 	}
 	sort.Strings(migrationFiles)
 
+	absDir, err := filepath.Abs(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("migrations dir: %w", err)
+	}
+	root, err := os.OpenRoot(absDir)
+	if err != nil {
+		return fmt.Errorf("open migrations root: %w", err)
+	}
+	defer root.Close()
+
 	appliedCount := 0
 	for _, filename := range migrationFiles {
 		// Extract version from filename (e.g., "000001_init_schema.up.sql" -> "000001")
@@ -99,21 +109,8 @@ func (s *PGStore) RunMigrations() error {
 			continue
 		}
 
-		// Read and execute migration (validate path to prevent directory traversal)
-		path := filepath.Join(migrationsDir, filename)
-		absRoot, err := filepath.Abs(migrationsDir)
-		if err != nil {
-			return fmt.Errorf("migrations dir: %w", err)
-		}
-		absPath, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("migration path: %w", err)
-		}
-		rel, err := filepath.Rel(absRoot, absPath)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			return fmt.Errorf("invalid migration path: %s", filename)
-		}
-		content, err := os.ReadFile(absPath)
+		// Read and execute migration (os.Root scopes access to migrations dir)
+		content, err := root.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", filename, err)
 		}
