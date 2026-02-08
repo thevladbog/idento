@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://github.com/thevladbog/idento/web/public/idento-ru-full.svg" alt="Логотип Idento" width="200"/>
+  <img src="https://raw.githubusercontent.com/thevladbog/idento/main/web/public/idento-ru-full.svg" alt="Логотип Idento" width="200"/>
   
   # Idento - Система Регистрации на Мероприятиях
   

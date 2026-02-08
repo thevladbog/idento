@@ -126,8 +126,7 @@ export default function CheckinFullscreenPage() {
       if (
         inputRef.current &&
         !inputRef.current.contains(target) &&
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(target)
+        (!suggestionsRef.current || !suggestionsRef.current.contains(target))
       ) {
         setShowSuggestions(false);
       }

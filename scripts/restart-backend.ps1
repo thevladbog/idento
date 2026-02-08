@@ -73,8 +73,16 @@ Stop-ProcessByPort -Port 8008
 $BackendPath = Join-Path $ProjectRoot "..\backend"
 $BackendLog = Join-Path $LogsDir "backend.log"
 $BackendErrLog = Join-Path $LogsDir "backend.error.log"
+$BackendBinary = Join-Path $BackendPath "backend.exe"
 
-$BackendJob = Start-Process -FilePath "go" -ArgumentList "run", "main.go" -WorkingDirectory $BackendPath -WindowStyle Hidden -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErrLog -PassThru
+Write-Info "Building backend binary..."
+& go build -o $BackendBinary
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Backend build failed. Check output above."
+    exit 1
+}
+
+$BackendJob = Start-Process -FilePath $BackendBinary -WorkingDirectory $BackendPath -WindowStyle Hidden -RedirectStandardOutput $BackendLog -RedirectStandardError $BackendErrLog -PassThru
 
 Start-Sleep -Seconds 2
 $BackendProcess = Get-Process -Id $BackendJob.Id -ErrorAction SilentlyContinue

@@ -320,8 +320,14 @@ paths:
                       type: string
                       example: "usb"
                 example:
-                  - "COM3"
-                  - "/dev/ttyUSB0"
+                  - port_name: "COM3"
+                    display_name: "COM3"
+                    device_type: "serial"
+                    transport: "usb"
+                  - port_name: "/dev/ttyUSB0"
+                    display_name: "/dev/ttyUSB0"
+                    device_type: "serial"
+                    transport: "usb"
                   
   /scanners/add:
     post:

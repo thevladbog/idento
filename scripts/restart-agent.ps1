@@ -76,8 +76,16 @@ Stop-ProcessByPort -Port 3000
 $AgentPath = Join-Path $ProjectRoot "..\agent"
 $AgentLog = Join-Path $LogsDir "agent.log"
 $AgentErrLog = Join-Path $LogsDir "agent.error.log"
+$AgentBinary = Join-Path $AgentPath "idento-agent.exe"
 
-$AgentJob = Start-Process -FilePath "go" -ArgumentList "run", "main.go" -WorkingDirectory $AgentPath -WindowStyle Hidden -RedirectStandardOutput $AgentLog -RedirectStandardError $AgentErrLog -PassThru
+Write-Info "Building agent binary..."
+& go build -o $AgentBinary
+if ($LASTEXITCODE -ne 0) {
+  Write-Error "Agent build failed. Check output above."
+  exit 1
+}
+
+$AgentJob = Start-Process -FilePath $AgentBinary -WorkingDirectory $AgentPath -WindowStyle Hidden -RedirectStandardOutput $AgentLog -RedirectStandardError $AgentErrLog -PassThru
 
 Start-Sleep -Seconds 2
 $AgentProcess = Get-Process -Id $AgentJob.Id -ErrorAction SilentlyContinue

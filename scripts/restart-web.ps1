@@ -49,17 +49,31 @@ function Stop-ProcessByPort {
     }
 }
 
+function Stop-ProcessTree {
+    param([int]$Pid)
+    $children = Get-CimInstance Win32_Process -Filter "ParentProcessId=$Pid" -ErrorAction SilentlyContinue
+    foreach ($child in $children) {
+        Stop-ProcessTree -Pid $child.ProcessId
+    }
+    try {
+        $proc = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+        if ($proc) {
+            Stop-Process -Id $Pid -Force -ErrorAction SilentlyContinue
+            Write-Success "Stopped process $Pid ($($proc.ProcessName))"
+        }
+    }
+    catch {
+        Write-Warning "Failed to stop PID $Pid"
+    }
+}
+
 $existing = Get-Pids
 while ($existing.Count -lt 3) { $existing += "" }
 
 $webPid = $existing[1]
 if ($webPid -match '^\d+$') {
     try {
-        $proc = Get-Process -Id $webPid -ErrorAction SilentlyContinue
-        if ($proc) {
-            Stop-Process -Id $webPid -Force
-            Write-Success "Stopped web process $webPid ($($proc.ProcessName))"
-        }
+        Stop-ProcessTree -Pid $webPid
     }
     catch {
         Write-Warning "Web PID $webPid not found"
@@ -85,7 +99,9 @@ if (-not (Test-Path $WebNodeModules)) {
     }
 }
 
-$WebJob = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "chcp 65001 > nul & set NO_COLOR=1 & set FORCE_COLOR=0 & npm run dev" -WorkingDirectory $WebPath -WindowStyle Hidden -RedirectStandardOutput $WebLog -RedirectStandardError $WebErrLog -PassThru
+$env:NO_COLOR = "1"
+$env:FORCE_COLOR = "0"
+$WebJob = Start-Process -FilePath "npm" -ArgumentList "run", "dev" -WorkingDirectory $WebPath -WindowStyle Hidden -RedirectStandardOutput $WebLog -RedirectStandardError $WebErrLog -PassThru
 
 Start-Sleep -Seconds 2
 $WebProcess = Get-Process -Id $WebJob.Id -ErrorAction SilentlyContinue

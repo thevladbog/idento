@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { Layout } from "@/components/Layout";
@@ -142,23 +142,6 @@ export default function EquipmentSettingsPage() {
     }
   };
 
-  useEffect(() => {
-    if (agentStatus !== "connected") {
-      setScanners([]);
-      setAvailablePorts([]);
-      return;
-    }
-
-    if (scannerType === "usb") {
-      fetchScanners();
-      fetchAvailablePorts();
-      return;
-    }
-
-    setScanners([]);
-    setAvailablePorts([]);
-  }, [agentStatus, scannerType]);
-
   const fetchPrinters = async () => {
     try {
       const printerList = await agentApi.getPrinters();
@@ -179,14 +162,14 @@ export default function EquipmentSettingsPage() {
     }
   };
 
-  const fetchScanners = async () => {
+  const fetchScanners = useCallback(async () => {
     try {
       const scannerList = await agentApi.getScanners();
       setScanners(scannerList);
     } catch (error) {
       console.error("Failed to fetch scanners", error);
     }
-  };
+  }, []);
 
   const checkCameraPermission = async () => {
     if (navigator.permissions) {
@@ -281,7 +264,7 @@ export default function EquipmentSettingsPage() {
     }
   };
 
-  const fetchAvailablePorts = async () => {
+  const fetchAvailablePorts = useCallback(async () => {
     setIsLoadingPorts(true);
     try {
       const ports = await agentApi.getAvailablePorts();
@@ -296,7 +279,24 @@ export default function EquipmentSettingsPage() {
     } finally {
       setIsLoadingPorts(false);
     }
-  };
+  }, [comScannerPort]);
+
+  useEffect(() => {
+    if (agentStatus !== "connected") {
+      setScanners([]);
+      setAvailablePorts([]);
+      return;
+    }
+
+    if (scannerType === "usb") {
+      fetchScanners();
+      fetchAvailablePorts();
+      return;
+    }
+
+    setScanners([]);
+    setAvailablePorts([]);
+  }, [agentStatus, fetchAvailablePorts, fetchScanners, scannerType]);
 
   const addComScanner = async () => {
     if (!comScannerPort) {
