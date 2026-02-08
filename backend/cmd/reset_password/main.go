@@ -7,10 +7,15 @@ import (
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
+	if err := godotenv.Load(".env"); err != nil {
+		log.Print("No .env file or load error (using defaults): ", err)
+	}
+
 	if len(os.Args) < 3 {
 		log.Fatalf("Usage: reset_password <email> <password>")
 	}
@@ -20,7 +25,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		log.Fatalf("DATABASE_URL is not set")
+		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)

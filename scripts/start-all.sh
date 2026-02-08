@@ -33,6 +33,9 @@ else
     echo -e "${GREEN}✅ Database already seeded${NC}"
 fi
 
+# Create logs directory if it doesn't exist
+mkdir -p "$PROJECT_ROOT/logs"
+
 # Start Backend
 echo -e "${GREEN}🔧 Starting Go Backend...${NC}"
 cd "$PROJECT_ROOT/backend"
@@ -57,9 +60,6 @@ go run main.go > "$PROJECT_ROOT/logs/agent.log" 2>&1 &
 AGENT_PID=$!
 echo -e "${BLUE}Agent PID: $AGENT_PID${NC}"
 
-# Create logs directory if it doesn't exist
-mkdir -p "$PROJECT_ROOT/logs"
-
 # Save PIDs to file for easy stopping
 echo "$BACKEND_PID" > "$PROJECT_ROOT/logs/pids.txt"
 echo "$WEB_PID" >> "$PROJECT_ROOT/logs/pids.txt"
@@ -71,7 +71,7 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo -e "${GREEN}📊 Services:${NC}"
 echo -e "   🌐 Web:        http://localhost:5173"
-echo -e "   🔧 Backend:    http://localhost:8080"
+echo -e "   🔧 Backend:    http://localhost:8008"
 echo -e "   🖨️  Agent:      http://localhost:3000"
 echo -e "   🗄️  PgAdmin:    http://localhost:50050"
 echo -e "      Email:     admin@admin.com"

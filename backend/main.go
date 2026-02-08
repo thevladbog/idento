@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -393,6 +394,15 @@ func main() {
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
+		appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APP_ENV")))
+		if appEnv == "" {
+			appEnv = strings.ToLower(strings.TrimSpace(os.Getenv("GO_ENV")))
+		}
+		isDev := appEnv == "development" || appEnv == "local" || appEnv == "dev"
+		if !isDev {
+			log.Fatal("DATABASE_URL is required outside development/local environments")
+		}
+		log.Println("Warning: DATABASE_URL not set; using local development default")
 		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
 	}
 

@@ -24,21 +24,23 @@ if (Test-Path $PidsFile) {
                     Stop-Process -Id $ProcessId -Force
                     Write-Success "Stopped process $ProcessId ($($Process.ProcessName))"
                 }
-            } catch {
+            }
+            catch {
                 Write-Warning "Process $ProcessId not found (might have already stopped)"
             }
         }
     }
     
     Remove-Item $PidsFile -ErrorAction SilentlyContinue
-} else {
+}
+else {
     Write-Warning "No PIDs file found. Processes might not have been started via start-all.ps1"
 }
 
 # Fallback: stop processes by known dev ports if still running
 $PortsToStop = @(8008, 5173, 3000)
 foreach ($Port in $PortsToStop) {
-    $netstatLines = netstat -ano | findstr ":$Port"
+    $netstatLines = netstat -ano | findstr ":$Port" | findstr "LISTENING"
     foreach ($line in $netstatLines) {
         $parts = $line -split "\s+"
         if ($parts.Length -ge 5) {
@@ -50,7 +52,8 @@ foreach ($Port in $PortsToStop) {
                         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
                         Write-Success "Stopped process $procId ($($proc.ProcessName)) on port $Port"
                     }
-                } catch {
+                }
+                catch {
                     Write-Warning "Failed to stop PID $procId on port $Port"
                 }
             }
@@ -65,7 +68,8 @@ docker compose stop
 
 if ($LASTEXITCODE -eq 0) {
     Write-Success "Docker services stopped (containers preserved)"
-} else {
+}
+else {
     Write-Warning "Docker services might not have been running"
 }
 

@@ -191,7 +191,7 @@ idento/
 - **Developer Guide**: [DEVELOPMENT.md](./DEVELOPMENT.md) — detailed instructions for development on Windows, macOS, and Linux
 - **Project Documentation**: [docs/](./docs/) — setup guides, testing, migrations, and implementation status
 - **CI/CD**: [.github/CI.md](./.github/CI.md) — pipeline and checks information
-- **API Docs**: http://localhost:8008/api/docs (after startup)
+- **API Docs**: http://localhost:8008/docs (after startup)
 
 ## 🎨 Features
 

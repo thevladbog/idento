@@ -104,8 +104,8 @@ $$ language 'plpgsql';
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_event_zones_updated_at') THEN
-        CREATE TRIGGER update_event_zones_updated_at BEFORE UPDATE ON event_zones
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+        EXECUTE 'CREATE TRIGGER update_event_zones_updated_at BEFORE UPDATE ON event_zones
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()';
     END IF;
 END;
 $$;
@@ -113,8 +113,8 @@ $$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_attendee_zone_access_updated_at') THEN
-        CREATE TRIGGER update_attendee_zone_access_updated_at BEFORE UPDATE ON attendee_zone_access
-            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+        EXECUTE 'CREATE TRIGGER update_attendee_zone_access_updated_at BEFORE UPDATE ON attendee_zone_access
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()';
     END IF;
 END;
 $$;

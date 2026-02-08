@@ -22,7 +22,7 @@ if (Test-Path $GradlewBat) {
     .\gradlew.bat lint
 } elseif (Test-Path $GradlewSh) {
     if (Get-Command bash -ErrorAction SilentlyContinue) {
-        bash .\gradlew lint
+        bash ./gradlew lint
     } else {
         Write-Error "gradlew.bat not found and bash is unavailable to run ./gradlew"
         Write-Info "Install Git Bash or use WSL, or add gradlew.bat to mobile/android-app"

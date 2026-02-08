@@ -60,8 +60,16 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 # Install golangci-lint
-Write-Info "Installing golangci-lint..."
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+if (Get-Command go -ErrorAction SilentlyContinue) {
+    if (-not (Get-Command golangci-lint -ErrorAction SilentlyContinue)) {
+        Write-Info "Installing golangci-lint..."
+        go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    } else {
+        Write-Success "golangci-lint already installed"
+    }
+} else {
+    Write-Warning "Go is not available in the current session. Restart your terminal and re-run to install golangci-lint."
+}
 
 # Optional: Install Make
 $installMake = Read-Host "Do you want to install Make? (y/N)"

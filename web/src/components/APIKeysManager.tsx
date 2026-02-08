@@ -102,7 +102,8 @@ export function APIKeysManager({ eventId }: APIKeysManagerProps) {
   };
 
   const getApiUrl = () => {
-    return `${window.location.origin.replace(':5173', ':8008')}/api/public/import`;
+    const apiBaseUrl = (api.defaults.baseURL ?? import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+    return `${apiBaseUrl}/api/public/import`;
   };
 
   return (

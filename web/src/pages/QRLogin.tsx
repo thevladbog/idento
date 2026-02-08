@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
+import api from '@/lib/api';
 import { QrCode, Loader } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,7 +24,7 @@ export default function QRLoginPage() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:8008/auth/login-qr', {
+      const response = await api.post('/auth/login-qr', {
         qr_token: qrToken.trim(),
       });
 

@@ -38,9 +38,8 @@ func (h *Handler) Register(c echo.Context) error {
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	req.Password = strings.TrimSpace(req.Password)
 	req.TenantName = strings.TrimSpace(req.TenantName)
-	if req.Email == "" || req.Password == "" || req.TenantName == "" {
+	if req.Email == "" || req.TenantName == "" || len(req.Password) == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
@@ -117,8 +116,7 @@ func (h *Handler) Login(c echo.Context) error {
 	}
 
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	req.Password = strings.TrimSpace(req.Password)
-	if req.Email == "" || req.Password == "" {
+	if req.Email == "" || len(req.Password) == 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 

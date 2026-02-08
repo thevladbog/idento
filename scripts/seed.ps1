@@ -28,7 +28,8 @@ if (-not $DbPort) {
     $ErrorActionPreference = $prevErrorAction
     if ($LASTEXITCODE -eq 0 -and $portOutput) {
         $DbPort = ($portOutput -split ':')[-1].Trim()
-    } else {
+    }
+    else {
         $DbPort = "5438"
     }
 }
@@ -40,6 +41,12 @@ for ($i = 0; $i -lt 15; $i++) {
         break
     }
     Start-Sleep -Seconds 2
+}
+
+docker exec idento_db pg_isready -U idento -d idento_db > $null 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Database is not ready after waiting"
+    exit 1
 }
 
 # Run migrations
@@ -76,7 +83,8 @@ if (Test-Path $SeedFile) {
         $usersCountRaw = & docker exec idento_db psql -U idento -d idento_db -t -A -c "SELECT COUNT(*) FROM users;" 2>$null
         if ([int]$usersCountRaw -gt 0) {
             Write-Success "Seed data loaded successfully"
-        } else {
+        }
+        else {
             Write-Error "Seed completed but no users were inserted"
             exit 1
         }
@@ -96,15 +104,26 @@ if (-not $env:IDENTO_SKIP_PASSWORD_RESET) {
     try {
         $prevLocation = Get-Location
         Set-Location $ProjectRoot
-        go run .\backend\cmd\reset_password admin@test.com password | Out-Null
-        go run .\backend\cmd\reset_password manager@test.com password | Out-Null
-    } finally {
+        $adminOutput = go run .\backend\cmd\reset_password admin@test.com password 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Password reset failed for admin@test.com (exit code: $LASTEXITCODE): $adminOutput"
+            exit 1
+        }
+
+        $managerOutput = go run .\backend\cmd\reset_password manager@test.com password 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Password reset failed for manager@test.com (exit code: $LASTEXITCODE): $managerOutput"
+            exit 1
+        }
+    }
+    finally {
         if ($prevLocation) {
             Set-Location $prevLocation
         }
     }
 
     Write-Info "You can now log in with: admin@test.com / password"
-} else {
+}
+else {
     Write-Info "Password reset skipped (IDENTO_SKIP_PASSWORD_RESET is set)"
 }
