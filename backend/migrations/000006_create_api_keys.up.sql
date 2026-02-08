@@ -12,10 +12,10 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 -- Index for quick lookup by key_hash
-CREATE INDEX idx_api_keys_key_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
 
 -- Index for event_id
-CREATE INDEX idx_api_keys_event_id ON api_keys(event_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_event_id ON api_keys(event_id);
 
 -- Index for finding active keys
-CREATE INDEX idx_api_keys_active ON api_keys(event_id, revoked_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(event_id, revoked_at) WHERE revoked_at IS NULL;

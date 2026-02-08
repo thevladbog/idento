@@ -34,7 +34,7 @@ info:
   license:
     name: MIT
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8008
     description: Local development
   - url: https://api.idento.app
     description: Production
@@ -393,7 +393,7 @@ func main() {
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://idento:idento_password@localhost:5432/idento_db"
+		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
 	}
 
 	// Initialize Store
@@ -464,7 +464,7 @@ func main() {
 	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8008"
 	}
 	e.Logger.Fatal(e.Start(":" + port))
 }

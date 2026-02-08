@@ -30,4 +30,6 @@ function Test-CommandExists {
     return $?
 }
 
-Export-ModuleMember -Function Write-Success, Write-Info, Write-Warning, Write-Error, Get-ProjectRoot, Test-CommandExists
+if ($MyInvocation.PSScriptRoot -and $MyInvocation.InvocationName -ne '.') {
+    Export-ModuleMember -Function Write-Success, Write-Info, Write-Warning, Write-Error, Get-ProjectRoot, Test-CommandExists
+}

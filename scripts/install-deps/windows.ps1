@@ -4,7 +4,7 @@
 # Import utility functions
 . "$PSScriptRoot\..\common\colors.ps1"
 
-Write-Info "🔧 Installing Idento development dependencies on Windows..."
+Write-Info "Installing Idento development dependencies on Windows..."
 Write-Warning "This script will install: Go, Node.js, Docker Desktop, and golangci-lint"
 Write-Warning ""
 
@@ -21,7 +21,7 @@ if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-Write-Success "✅ Chocolatey found"
+Write-Success "Chocolatey found"
 
 # Check and install Go
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
@@ -29,7 +29,7 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     choco install golang -y
 } else {
     $goVersion = go version
-    Write-Success "✅ Go already installed: $goVersion"
+    Write-Success "Go already installed: $goVersion"
 }
 
 # Check and install Node.js
@@ -38,16 +38,16 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     choco install nodejs -y
 } else {
     $nodeVersion = node --version
-    Write-Success "✅ Node.js already installed: $nodeVersion"
+    Write-Success "Node.js already installed: $nodeVersion"
 }
 
 # Check and install Docker Desktop
-if (-not (Get-Command docker -ErrorAction SilentlyContinure)) {
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Info "Installing Docker Desktop..."
     choco install docker-desktop -y
-    Write-Warning "⚠️  Docker Desktop requires a system restart to complete installation"
+    Write-Warning "Docker Desktop requires a system restart to complete installation"
 } else {
-    Write-Success "✅ Docker already installed"
+    Write-Success "Docker already installed"
 }
 
 # Check and install Git
@@ -56,7 +56,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     choco install git -y
 } else {
     $gitVersion = git --version
-    Write-Success "✅ Git already installed: $gitVersion"
+    Write-Success "Git already installed: $gitVersion"
 }
 
 # Install golangci-lint
@@ -70,7 +70,7 @@ if ($installMake -eq 'y' -or $installMake -eq 'Y') {
     choco install make -y
 }
 
-Write-Success "`n🎉 Installation complete!"
+Write-Success "`nInstallation complete!"
 Write-Info ""
 Write-Info "Next steps:"
 Write-Host "  1. Restart your terminal (or computer if Docker was installed)"

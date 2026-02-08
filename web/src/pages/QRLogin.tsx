@@ -24,7 +24,7 @@ export default function QRLoginPage() {
     setError('');
 
     try {
-      const response = await axios.post('http://localhost:8080/auth/login-qr', {
+      const response = await axios.post('http://localhost:8008/auth/login-qr', {
         qr_token: qrToken.trim(),
       });
 

@@ -461,12 +461,12 @@ docker logs idento_db
 ```
 
 **Port conflicts:**
-- Backend: 8080
+- Backend: 8008
 - Web: 5173
 - Agent: 3000
-- PostgreSQL: 5432
+- PostgreSQL: 5438
 - Redis: 6379
-- PgAdmin: 5050
+- PgAdmin: 50050
 
 Stop other services using these ports or change ports in `docker-compose.yml` and `.env`.
 

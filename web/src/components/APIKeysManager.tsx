@@ -102,7 +102,7 @@ export function APIKeysManager({ eventId }: APIKeysManagerProps) {
   };
 
   const getApiUrl = () => {
-    return `${window.location.origin.replace(':5173', ':8080')}/api/public/import`;
+    return `${window.location.origin.replace(':5173', ':8008')}/api/public/import`;
   };
 
   return (

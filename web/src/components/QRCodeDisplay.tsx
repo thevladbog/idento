@@ -21,7 +21,7 @@ export function QRCodeDisplay({ attendee }: QRCodeDisplayProps) {
   const [isOpen, setIsOpen] = useState(false);
   
   // Construct QR image URL
-  const qrImageUrl = `http://localhost:8080/api/attendees/${attendee.id}/qr`;
+  const qrImageUrl = `http://localhost:8008/api/attendees/${attendee.id}/qr`;
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>

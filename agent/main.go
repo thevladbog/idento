@@ -410,6 +410,8 @@ func main() {
 	useMock := flag.Bool("mock", false, "Use mock printers instead of real hardware")
 	flag.Parse()
 
+	log.SetOutput(os.Stdout)
+
 	// Initialize Printer Manager
 	pm := printer.NewManager()
 

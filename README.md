@@ -89,11 +89,13 @@ The command automatically:
 ### System Access
 
 🌐 **Web Admin**: http://localhost:5173  
-🔑 **Login**: `admin@test.com` / `password123`
+🔑 **Login**: `admin@test.com` / `password`
 
-🔧 **Backend API**: http://localhost:8080  
+🔧 **Backend API**: http://localhost:8008  
 🖨️ **Printing Agent**: http://localhost:3000  
-🗄️ **PgAdmin**: http://localhost:5050 (`admin@idento.com` / `admin`)
+🗄️ **PgAdmin**: http://localhost:50050 (`admin@idento.com` / `admin`)
+
+Tip: set `IDENTO_SKIP_PASSWORD_RESET=1` to skip resetting test passwords during `make dev`.
 
 ### Stopping
 
@@ -106,6 +108,8 @@ bash scripts/stop-all.sh
 
 # Or via Make (all platforms)
 make docker-down
+
+# Note: stop-all preserves containers/volumes; docker-down removes them.
 ```
 
 ## 📖 How to Use
@@ -187,7 +191,7 @@ idento/
 - **Developer Guide**: [DEVELOPMENT.md](./DEVELOPMENT.md) — detailed instructions for development on Windows, macOS, and Linux
 - **Project Documentation**: [docs/](./docs/) — setup guides, testing, migrations, and implementation status
 - **CI/CD**: [.github/CI.md](./.github/CI.md) — pipeline and checks information
-- **API Docs**: http://localhost:8080/api/docs (after startup)
+- **API Docs**: http://localhost:8008/api/docs (after startup)
 
 ## 🎨 Features
 
@@ -275,20 +279,20 @@ See [DEVELOPMENT.md](./DEVELOPMENT.md) for:
 
 **Upload CSV**:
 ```bash
-curl -X POST http://localhost:8080/api/events/{event_id}/attendees/bulk \
+curl -X POST http://localhost:8008/api/events/{event_id}/attendees/bulk \
   -H "Authorization: Bearer {token}" \
   -F "file=@examples/sample-attendees.csv"
 ```
 
 **Generate Codes**:
 ```bash
-curl -X POST http://localhost:8080/api/events/{event_id}/attendees/generate-codes \
+curl -X POST http://localhost:8008/api/events/{event_id}/attendees/generate-codes \
   -H "Authorization: Bearer {token}"
 ```
 
 **Export CSV**:
 ```bash
-curl -X GET http://localhost:8080/api/events/{event_id}/attendees/export \
+curl -X GET http://localhost:8008/api/events/{event_id}/attendees/export \
   -H "Authorization: Bearer {token}" \
   --output attendees.csv
 ```

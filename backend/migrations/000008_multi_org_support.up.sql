@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS user_tenants (
     UNIQUE(user_id, tenant_id)
 );
 
-CREATE INDEX idx_user_tenants_user_id ON user_tenants(user_id);
-CREATE INDEX idx_user_tenants_tenant_id ON user_tenants(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_tenants_user_id ON user_tenants(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_tenants_tenant_id ON user_tenants(tenant_id);
 
 -- Migrate existing user-tenant relationships
 INSERT INTO user_tenants (user_id, tenant_id, role, joined_at)
