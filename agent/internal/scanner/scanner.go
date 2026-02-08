@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.bug.st/serial"
@@ -17,6 +19,27 @@ type Scanner struct {
 	BaudRate   int
 	serialPort serial.Port
 	callbacks  []func(string)
+	closeOnce  sync.Once
+	closed     uint32
+}
+
+// PortInfo describes a serial/COM port available for scanner usage.
+type PortInfo struct {
+	PortName     string `json:"port_name"`
+	DisplayName  string `json:"display_name,omitempty"`
+	DeviceType   string `json:"device_type,omitempty"`
+	Transport    string `json:"transport,omitempty"`
+	VendorID     string `json:"vendor_id,omitempty"`
+	ProductID    string `json:"product_id,omitempty"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Product      string `json:"product,omitempty"`
+	SerialNumber string `json:"serial_number,omitempty"`
+}
+
+// Info describes an active scanner managed by the agent.
+type Info struct {
+	Name     string `json:"name"`
+	PortName string `json:"port_name"`
 }
 
 // NewScanner creates a new scanner instance
@@ -46,6 +69,9 @@ func (s *Scanner) Open() error {
 	if err != nil {
 		return fmt.Errorf("failed to open scanner port %s: %w", s.Port, err)
 	}
+	if err := port.SetReadTimeout(150 * time.Millisecond); err != nil {
+		log.Printf("[SCANNER: %s] Failed to set read timeout: %v", s.Name, err)
+	}
 
 	s.serialPort = port
 	log.Printf("[SCANNER: %s] Opened on port %s at %d baud", s.Name, s.Port, s.BaudRate)
@@ -58,10 +84,14 @@ func (s *Scanner) Open() error {
 
 // Close closes the scanner connection
 func (s *Scanner) Close() error {
-	if s.serialPort != nil {
-		return s.serialPort.Close()
-	}
-	return nil
+	var err error
+	s.closeOnce.Do(func() {
+		atomic.StoreUint32(&s.closed, 1)
+		if s.serialPort != nil {
+			err = s.serialPort.Close()
+		}
+	})
+	return err
 }
 
 // listen continuously reads from the scanner
@@ -72,36 +102,80 @@ func (s *Scanner) listen() {
 
 	reader := bufio.NewReader(s.serialPort)
 	buffer := ""
+	lastByte := time.Time{}
+	var bufferMu sync.Mutex
+	flushBuffer := func() {
+		bufferMu.Lock()
+		if buffer == "" {
+			bufferMu.Unlock()
+			return
+		}
+		scannedData := strings.TrimSpace(buffer)
+		buffer = ""
+		bufferMu.Unlock()
+		if scannedData == "" {
+			return
+		}
+
+		log.Printf("[SCANNER: %s] Scanned: %s", s.Name, scannedData)
+
+		// Trigger callbacks
+		for _, callback := range s.callbacks {
+			go callback(scannedData)
+		}
+	}
+
+	flushTicker := time.NewTicker(50 * time.Millisecond)
+	defer flushTicker.Stop()
+	flushDone := make(chan struct{})
+	defer close(flushDone)
+
+	go func() {
+		for {
+			select {
+			case <-flushDone:
+				return
+			case <-flushTicker.C:
+				if atomic.LoadUint32(&s.closed) == 1 {
+					return
+				}
+				bufferMu.Lock()
+				idle := !lastByte.IsZero() && buffer != "" && time.Since(lastByte) >= 80*time.Millisecond
+				bufferMu.Unlock()
+				if idle {
+					flushBuffer()
+				}
+			}
+		}
+	}()
 
 	for {
-		data, err := reader.ReadString('\n')
+		b, err := reader.ReadByte()
 		if err != nil {
+			if atomic.LoadUint32(&s.closed) == 1 {
+				return
+			}
+			if timeoutErr, ok := err.(interface{ Timeout() bool }); ok && timeoutErr.Timeout() {
+				continue
+			}
+			if strings.Contains(err.Error(), "multiple Read calls return no data or error") {
+				continue
+			}
 			log.Printf("[SCANNER: %s] Read error: %v", s.Name, err)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
-		// Scanners typically send data ending with CR/LF
-		data = strings.TrimSpace(data)
-		if data == "" {
+		// Scanners typically send data ending with CR/LF.
+		if b == '\n' || b == '\r' {
+			flushBuffer()
 			continue
 		}
 
-		// Accumulate data (some scanners send in chunks)
-		buffer += data
-
-		// If we have a complete scan (contains expected delimiter or sufficient length)
-		if len(buffer) > 0 {
-			scannedData := buffer
-			buffer = ""
-
-			log.Printf("[SCANNER: %s] Scanned: %s", s.Name, scannedData)
-
-			// Trigger callbacks
-			for _, callback := range s.callbacks {
-				go callback(scannedData)
-			}
-		}
+		bufferMu.Lock()
+		buffer += string(b)
+		lastByte = time.Now()
+		bufferMu.Unlock()
 	}
 }
 
@@ -110,14 +184,14 @@ func (s *Scanner) OnScan(callback func(string)) {
 	s.callbacks = append(s.callbacks, callback)
 }
 
-// DiscoverScanners finds available COM/serial ports for scanners
-func DiscoverScanners() ([]string, error) {
+// DiscoverScanners finds available COM/serial ports for scanners.
+func DiscoverScanners() ([]PortInfo, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get ports list: %w", err)
 	}
 
-	var scannerPorts []string
+	var scannerPorts []PortInfo
 	for _, port := range ports {
 		// Filter for typical scanner ports
 		// COM ports on Windows: COM1, COM2, etc.
@@ -128,7 +202,19 @@ func DiscoverScanners() ([]string, error) {
 			strings.Contains(port, "ttyACM") ||
 			strings.Contains(port, "usbserial") ||
 			strings.Contains(port, "usbmodem") {
-			scannerPorts = append(scannerPorts, port)
+			info := PortInfo{
+				PortName:   port,
+				DeviceType: "serial",
+			}
+			if strings.Contains(port, "ttyUSB") || strings.Contains(port, "usbserial") || strings.Contains(port, "usbmodem") {
+				info.Transport = "usb"
+			}
+			if info.Transport != "" {
+				info.DisplayName = fmt.Sprintf("%s (%s)", port, info.Transport)
+			} else {
+				info.DisplayName = port
+			}
+			scannerPorts = append(scannerPorts, info)
 		}
 	}
 
@@ -150,12 +236,9 @@ func (m *Manager) AddScanner(name string, scanner *Scanner) {
 	m.scanners[name] = scanner
 }
 
-func (m *Manager) GetScanner(name string) (*Scanner, error) {
+func (m *Manager) GetScanner(name string) (*Scanner, bool) {
 	scanner, ok := m.scanners[name]
-	if !ok {
-		return nil, fmt.Errorf("scanner not found: %s", name)
-	}
-	return scanner, nil
+	return scanner, ok
 }
 
 func (m *Manager) ListScanners() []string {
@@ -164,6 +247,14 @@ func (m *Manager) ListScanners() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+func (m *Manager) ListScannerInfos() []Info {
+	infos := make([]Info, 0, len(m.scanners))
+	for name, s := range m.scanners {
+		infos = append(infos, Info{Name: name, PortName: s.Port})
+	}
+	return infos
 }
 
 func (m *Manager) RemoveScanner(name string) error {
