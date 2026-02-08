@@ -687,6 +687,7 @@ func main() {
 				}
 			}
 
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "exists",
@@ -730,6 +731,7 @@ func main() {
 		sm.AddScanner(scannerName, s)
 
 		log.Printf("Added scanner: %s (%s)", scannerName, req.PortName)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "added",
