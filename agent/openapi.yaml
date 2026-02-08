@@ -382,10 +382,10 @@ paths:
                     type: string
                   port:
                     type: string
-        '409':
-          description: Сканер уже существует
+        '404':
+          description: Сканер не найден
         '500':
-          description: Не удалось открыть порт
+          description: Не удалось сохранить конфигурацию
           
   /scan/last:
     get:

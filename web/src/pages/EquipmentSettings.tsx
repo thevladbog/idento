@@ -320,8 +320,9 @@ export default function EquipmentSettingsPage() {
     return `TEST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
   };
 
-  const startScannerTest = async () => {
-    if (!selectedScanner) {
+  const startScannerTest = async (scannerName?: string) => {
+    const targetScanner = scannerName ?? selectedScanner;
+    if (!targetScanner) {
       toast.error(t("selectScannerFirst"));
       return;
     }
@@ -754,7 +755,7 @@ export default function EquipmentSettingsPage() {
                             variant="outline"
                             onClick={() => {
                               setSelectedScanner(scannerInfo.name);
-                              startScannerTest();
+                              startScannerTest(scannerInfo.name);
                             }}
                           >
                             <ScanLine className="w-4 h-4 mr-1" />

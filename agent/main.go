@@ -287,7 +287,7 @@ func main() {
 		config, err := loadConfig()
 		if err != nil {
 			log.Printf("Warning: Failed to load config: %v", err)
-			config = &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}
+			config = defaultConfig()
 		}
 
 		// Check if printer already exists in config
