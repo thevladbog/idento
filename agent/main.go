@@ -37,12 +37,22 @@ type AgentConfig struct {
 }
 
 func loadOpenAPISpec() ([]byte, error) {
+	root, err := os.OpenRoot(".")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close openapi root: %v", closeErr)
+		}
+	}()
+
 	candidatePaths := []string{
 		filepath.Join("agent", "openapi.yaml"),
 		"openapi.yaml",
 	}
 	for _, path := range candidatePaths {
-		data, err := os.ReadFile(path)
+		data, err := root.ReadFile(path)
 		if err == nil {
 			return data, nil
 		}
@@ -667,16 +677,16 @@ func main() {
 				break
 			}
 		}
-		if !allowListed {
-			config.ScannerPorts = append(config.ScannerPorts, req.PortName)
-			if err := saveConfig(config); err != nil {
-				log.Printf("Failed to save scanner allow-list: %v", err)
-				http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
-				return
-			}
-		}
-
 		if _, ok := sm.GetScanner(scannerName); ok {
+			if !allowListed {
+				config.ScannerPorts = append(config.ScannerPorts, req.PortName)
+				if err := saveConfig(config); err != nil {
+					log.Printf("Failed to save scanner allow-list: %v", err)
+					http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+					return
+				}
+			}
+
 			w.WriteHeader(http.StatusOK)
 			if err := json.NewEncoder(w).Encode(map[string]interface{}{
 				"status": "exists",
@@ -705,6 +715,17 @@ func main() {
 			log.Printf("Failed to open scanner %s: %v", scannerName, err)
 			http.Error(w, fmt.Sprintf("Failed to open scanner: %v", err), http.StatusInternalServerError)
 			return
+		}
+		if !allowListed {
+			config.ScannerPorts = append(config.ScannerPorts, req.PortName)
+			if err := saveConfig(config); err != nil {
+				log.Printf("Failed to save scanner allow-list: %v", err)
+				if closeErr := s.Close(); closeErr != nil {
+					log.Printf("Failed to close scanner %s after config save failure: %v", scannerName, closeErr)
+				}
+				http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+				return
+			}
 		}
 		sm.AddScanner(scannerName, s)
 
@@ -763,6 +784,7 @@ func main() {
 			return
 		}
 
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "removed",

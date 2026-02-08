@@ -76,8 +76,11 @@ $BackendErrLog = Join-Path $LogsDir "backend.error.log"
 $BackendBinary = Join-Path $BackendPath "backend.exe"
 
 Write-Info "Building backend binary..."
+Push-Location $BackendPath
 & go build -o $BackendBinary
-if ($LASTEXITCODE -ne 0) {
+$buildExitCode = $LASTEXITCODE
+Pop-Location
+if ($buildExitCode -ne 0) {
     Write-Error "Backend build failed. Check output above."
     exit 1
 }

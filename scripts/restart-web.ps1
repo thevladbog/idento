@@ -91,9 +91,11 @@ $WebErrLog = Join-Path $LogsDir "web.error.log"
 $WebNodeModules = Join-Path $WebPath "node_modules"
 if (-not (Test-Path $WebNodeModules)) {
     Write-Warning "Web dependencies not found. Installing..."
-    Set-Location $WebPath
+    Push-Location $WebPath
     npm ci
-    if ($LASTEXITCODE -ne 0) {
+    $installExitCode = $LASTEXITCODE
+    Pop-Location
+    if ($installExitCode -ne 0) {
         Write-Error "Failed to install web dependencies"
         exit 1
     }

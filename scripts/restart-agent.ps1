@@ -69,9 +69,8 @@ else {
   Write-Warning "Agent PID not found in logs\pids.txt"
 }
 
-# Fallback stop by port if needed (agent default is 12345; legacy scripts show 3000)
+# Fallback stop by port if needed (agent default is 12345)
 Stop-ProcessByPort -Port 12345
-Stop-ProcessByPort -Port 3000
 
 $AgentPath = Join-Path $ProjectRoot "..\agent"
 $AgentLog = Join-Path $LogsDir "agent.log"
@@ -79,8 +78,11 @@ $AgentErrLog = Join-Path $LogsDir "agent.error.log"
 $AgentBinary = Join-Path $AgentPath "idento-agent.exe"
 
 Write-Info "Building agent binary..."
+Push-Location $AgentPath
 & go build -o $AgentBinary
-if ($LASTEXITCODE -ne 0) {
+$buildExitCode = $LASTEXITCODE
+Pop-Location
+if ($buildExitCode -ne 0) {
   Write-Error "Agent build failed. Check output above."
   exit 1
 }
