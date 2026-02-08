@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
 import { Layout } from "@/components/Layout";
@@ -32,6 +32,7 @@ import {
   Wifi,
   Bluetooth,
   Usb,
+  Keyboard,
   RefreshCw,
   CheckCircle,
   XCircle,
@@ -39,6 +40,7 @@ import {
   ScanLine,
 } from "lucide-react";
 import { agentApi } from "@/lib/agent";
+import type { ScannerInfo, ScannerPort } from "@/lib/agent";
 import { toast } from "sonner";
 
 interface PrinterDevice {
@@ -58,9 +60,9 @@ export default function EquipmentSettingsPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Scanner settings
-  const [scanners, setScanners] = useState<string[]>([]);
+  const [scanners, setScanners] = useState<ScannerInfo[]>([]);
   const [scannerType, setScannerType] = useState<
-    "camera" | "usb" | "bluetooth"
+    "camera" | "usb" | "bluetooth" | "keyboard"
   >("camera");
   const [cameraPermission, setCameraPermission] = useState<
     "granted" | "denied" | "prompt"
@@ -73,7 +75,7 @@ export default function EquipmentSettingsPage() {
   // COM Scanner settings
   const [comScannerPort, setComScannerPort] = useState("");
   const [selectedScanner, setSelectedScanner] = useState<string>("");
-  const [availablePorts, setAvailablePorts] = useState<string[]>([]);
+  const [availablePorts, setAvailablePorts] = useState<ScannerPort[]>([]);
   const [isLoadingPorts, setIsLoadingPorts] = useState(false);
 
   // Scanner test
@@ -84,6 +86,21 @@ export default function EquipmentSettingsPage() {
     "waiting" | "success" | "fail" | null
   >(null);
   const testIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const portMetadataByName = useMemo(() => {
+    return new Map(availablePorts.map((port) => [port.port_name, port]));
+  }, [availablePorts]);
+
+  const formatPortMeta = (port: ScannerPort) => {
+    const parts: string[] = [];
+    if (port.device_type) {
+      parts.push(port.device_type);
+    }
+    if (port.transport) {
+      parts.push(port.transport);
+    }
+    return parts.join(" • ");
+  };
 
   useEffect(() => {
     checkAgentStatus();
@@ -120,8 +137,6 @@ export default function EquipmentSettingsPage() {
       await agentApi.checkHealth();
       setAgentStatus("connected");
       fetchPrinters();
-      fetchScanners();
-      fetchAvailablePorts();
     } catch {
       setAgentStatus("disconnected");
     }
@@ -147,14 +162,14 @@ export default function EquipmentSettingsPage() {
     }
   };
 
-  const fetchScanners = async () => {
+  const fetchScanners = useCallback(async () => {
     try {
       const scannerList = await agentApi.getScanners();
       setScanners(scannerList);
     } catch (error) {
       console.error("Failed to fetch scanners", error);
     }
-  };
+  }, []);
 
   const checkCameraPermission = async () => {
     if (navigator.permissions) {
@@ -249,14 +264,14 @@ export default function EquipmentSettingsPage() {
     }
   };
 
-  const fetchAvailablePorts = async () => {
+  const fetchAvailablePorts = useCallback(async () => {
     setIsLoadingPorts(true);
     try {
       const ports = await agentApi.getAvailablePorts();
       const validPorts = Array.isArray(ports) ? ports : [];
       setAvailablePorts(validPorts);
       if (validPorts.length > 0 && !comScannerPort) {
-        setComScannerPort(validPorts[0]);
+        setComScannerPort(validPorts[0].port_name);
       }
     } catch (error) {
       console.error("Failed to fetch available ports", error);
@@ -264,7 +279,24 @@ export default function EquipmentSettingsPage() {
     } finally {
       setIsLoadingPorts(false);
     }
-  };
+  }, [comScannerPort]);
+
+  useEffect(() => {
+    if (agentStatus !== "connected") {
+      setScanners([]);
+      setAvailablePorts([]);
+      return;
+    }
+
+    if (scannerType === "usb") {
+      fetchScanners();
+      fetchAvailablePorts();
+      return;
+    }
+
+    setScanners([]);
+    setAvailablePorts([]);
+  }, [agentStatus, fetchAvailablePorts, fetchScanners, scannerType]);
 
   const addComScanner = async () => {
     if (!comScannerPort) {
@@ -288,8 +320,9 @@ export default function EquipmentSettingsPage() {
     return `TEST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
   };
 
-  const startScannerTest = async () => {
-    if (!selectedScanner) {
+  const startScannerTest = async (scannerName?: string) => {
+    const targetScanner = scannerName ?? selectedScanner;
+    if (!targetScanner) {
       toast.error(t("selectScannerFirst"));
       return;
     }
@@ -530,7 +563,9 @@ export default function EquipmentSettingsPage() {
                 <Select
                   value={scannerType}
                   onValueChange={(v: string) =>
-                    setScannerType(v as "camera" | "usb" | "bluetooth")
+                    setScannerType(
+                      v as "camera" | "usb" | "bluetooth" | "keyboard"
+                    )
                   }
                 >
                   <SelectTrigger>
@@ -553,6 +588,12 @@ export default function EquipmentSettingsPage() {
                       <div className="flex items-center gap-2">
                         <Bluetooth className="w-4 h-4" />
                         {t("bluetoothScanner")}
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="keyboard">
+                      <div className="flex items-center gap-2">
+                        <Keyboard className="w-4 h-4" />
+                        {t("keyboardScanner")}
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -604,6 +645,12 @@ export default function EquipmentSettingsPage() {
                 </div>
               )}
 
+              {scannerType === "keyboard" && (
+                <div className="p-3 bg-muted rounded-lg text-sm text-muted-foreground">
+                  {t("keyboardScannerDesc")}
+                </div>
+              )}
+
               {/* Add COM Scanner */}
               {scannerType === "usb" && agentStatus === "connected" && (
                 <div className="pt-4 border-t space-y-3">
@@ -633,10 +680,20 @@ export default function EquipmentSettingsPage() {
                         </SelectTrigger>
                         <SelectContent>
                           {availablePorts.map((port) => (
-                            <SelectItem key={port} value={port}>
+                            <SelectItem
+                              key={port.port_name}
+                              value={port.port_name}
+                            >
                               <div className="flex items-center gap-2">
                                 <Usb className="w-4 h-4" />
-                                {port}
+                                <div className="flex flex-col">
+                                  <span>{port.display_name || port.port_name}</span>
+                                  {formatPortMeta(port) && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {formatPortMeta(port)}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </SelectItem>
                           ))}
@@ -666,18 +723,29 @@ export default function EquipmentSettingsPage() {
                 <div className="space-y-3 pt-4 border-t">
                   <Label>{t("detectedScanners")}</Label>
                   <div className="space-y-2">
-                    {scanners.map((scannerName) => (
+                    {scanners.map((scannerInfo) => {
+                      const portInfo = scannerInfo.port_name
+                        ? portMetadataByName.get(scannerInfo.port_name)
+                        : undefined;
+                      return (
                       <div
-                        key={scannerName}
+                        key={scannerInfo.name}
                         className="flex items-center justify-between p-3 border rounded-lg"
                       >
                         <div className="flex items-center gap-3">
                           <Usb className="w-5 h-5 text-muted-foreground" />
                           <div>
-                            <div className="font-medium">{scannerName}</div>
+                            <div className="font-medium">{scannerInfo.name}</div>
                             <div className="text-xs text-muted-foreground">
-                              COM/Serial
+                              {portInfo?.display_name ||
+                                scannerInfo.port_name ||
+                                t("serialScanner")}
                             </div>
+                            {portInfo && formatPortMeta(portInfo) && (
+                              <div className="text-xs text-muted-foreground">
+                                {formatPortMeta(portInfo)}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -686,16 +754,43 @@ export default function EquipmentSettingsPage() {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              setSelectedScanner(scannerName);
-                              startScannerTest();
+                              setSelectedScanner(scannerInfo.name);
+                              startScannerTest(scannerInfo.name);
                             }}
                           >
                             <ScanLine className="w-4 h-4 mr-1" />
                             {t("test")}
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              if (!scannerInfo.port_name) {
+                                toast.error(t("portNameRequired"));
+                                return;
+                              }
+                              try {
+                                await agentApi.removeComScanner(
+                                  scannerInfo.port_name
+                                );
+                                toast.success(t("scannerRemoved"));
+                                await fetchScanners();
+                                await fetchAvailablePorts();
+                              } catch (error) {
+                                console.error(
+                                  "Failed to remove COM scanner",
+                                  error
+                                );
+                                toast.error(t("failedToRemoveScanner"));
+                              }
+                            }}
+                          >
+                            {t("remove")}
+                          </Button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -719,6 +814,7 @@ export default function EquipmentSettingsPage() {
             <ul>
               <li>{t("scannerSetupStep1")}</li>
               <li>{t("scannerSetupStep2")}</li>
+              <li>{t("scannerSetupStep3")}</li>
             </ul>
           </CardContent>
         </Card>

@@ -12,6 +12,23 @@ export interface PrintPDFRequest {
   pdf_base64: string; // Base64 encoded PDF
 }
 
+export interface ScannerPort {
+  port_name: string;
+  display_name?: string;
+  device_type?: string;
+  transport?: string;
+  vendor_id?: string;
+  product_id?: string;
+  manufacturer?: string;
+  product?: string;
+  serial_number?: string;
+}
+
+export interface ScannerInfo {
+  name: string;
+  port_name?: string;
+}
+
 export const agentApi = {
   checkHealth: async () => {
     try {
@@ -66,11 +83,19 @@ export const agentApi = {
 
   getScanners: async () => {
     try {
-      const response = await axios.get<string[]>(`${AGENT_URL}/scanners`);
-      return response.data;
+      const response = await axios.get<ScannerInfo[] | string[]>(
+        `${AGENT_URL}/scanners`
+      );
+      if (!Array.isArray(response.data)) {
+        return [] as ScannerInfo[];
+      }
+      if (response.data.length > 0 && typeof response.data[0] === "string") {
+        return (response.data as string[]).map((name) => ({ name }));
+      }
+      return response.data as ScannerInfo[];
     } catch (error) {
       console.error("Failed to fetch scanners", error);
-      return [];
+      return [] as ScannerInfo[];
     }
   },
 
@@ -154,6 +179,18 @@ export const agentApi = {
     }
   },
 
+  removeComScanner: async (portName: string) => {
+    try {
+      const response = await axios.post(`${AGENT_URL}/scanners/remove`, {
+        port_name: portName,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Failed to remove COM scanner", error);
+      throw error;
+    }
+  },
+
   testScanner: async (scannerId: string) => {
     try {
       const response = await axios.post(
@@ -168,11 +205,23 @@ export const agentApi = {
 
   getAvailablePorts: async () => {
     try {
-      const response = await axios.get<string[]>(`${AGENT_URL}/scanners/ports`);
-      return response.data;
+      const response = await axios.get<ScannerPort[] | string[]>(
+        `${AGENT_URL}/scanners/ports`
+      );
+      if (!Array.isArray(response.data)) {
+        return [] as ScannerPort[];
+      }
+      if (response.data.length > 0 && typeof response.data[0] === "string") {
+        return (response.data as string[]).map((port) => ({
+          port_name: port,
+          display_name: port,
+          device_type: "serial",
+        }));
+      }
+      return response.data as ScannerPort[];
     } catch (error) {
       console.error("Failed to fetch available ports", error);
-      return [];
+      return [] as ScannerPort[];
     }
   },
 };

@@ -1,0 +1,86 @@
+schema: spec-driven
+
+context: |
+  ## Project
+  Idento — event check-in system with badge printing, QR codes, and offline mobile support.
+  Monorepo with four services: backend, agent, web, mobile.
+
+  ## Tech Stack
+
+  ### backend/ — Go 1.25
+  - Framework: Echo v4, Clean Architecture (handler → store → models)
+  - Database: PostgreSQL 16 (pgx/v5, UUIDs, TIMESTAMPTZ, JSONB custom fields, soft deletes)
+  - Cache/sessions: Redis 7
+  - Auth: JWT (golang-jwt/v5), API key auth for external integrations, QR token login
+  - API: REST, JSON, OpenAPI 3.0.3; routes: /auth (public), /api (JWT), /api/public (API key), /api/super-admin
+  - Migrations: sequential numbered SQL files in backend/migrations/
+  - Linting: golangci-lint v2 (.golangci.yml at repo root)
+  - Port: 8008
+
+  ### agent/ — Go 1.25
+  - Lightweight HTTP server (net/http + cors), no framework
+  - Serial communication: go.bug.st/serial for COM/USB ports
+  - Printer protocols: ZPL, TSPL, ESC/POS
+  - Scanner management: port discovery, allow-list persistence, active scanner tracking
+  - OpenAPI 3.0.3; local-only, no auth
+  - Port: 12345
+
+  ### web/ — React 18 + TypeScript
+  - Build: Vite 5, TypeScript ~5.6 (strict)
+  - CSS: Tailwind CSS v4, tailwind-merge, tailwindcss-animate
+  - Components: shadcn/ui (Radix primitives), lucide-react icons
+  - Routing: React Router DOM v7
+  - Forms: react-hook-form + Zod v4
+  - HTTP: Axios with JWT interceptors (src/lib/api.ts)
+  - i18n: i18next + react-i18next (EN, RU)
+  - Canvas/badges: Konva + react-konva
+  - Linting: ESLint 9 flat config (typescript-eslint, react-hooks)
+  - Path alias: @/ → ./src/
+  - Port: 5173
+
+  ### mobile/ — Kotlin Multiplatform
+  - Android: compileSdk 35, minSdk 26, Jetpack Compose (Material 3), Compose Navigation
+  - DI: Hilt (Dagger) v2.54 with KSP
+  - Networking: Retrofit 2.11 + OkHttp 4.12 + Gson
+  - Local DB: Room v2.6 (offline-first)
+  - Scanning: CameraX 1.4 + ML Kit Barcode Scanning
+  - Architecture: Clean Architecture, MVI, Flow/StateFlow
+  - KMP shared module in mobile/shared/
+
+  ## Conventions
+  - Commits: type(scope): description — types: feat, fix, docs, style, refactor, test, chore
+  - Go: gofmt, goimports, explicit error handling, interface-driven, table-driven tests
+  - TypeScript: functional components, typed props, no `any`, PascalCase components, camelCase vars
+  - Kotlin: SOLID, composition over inheritance, MVI state, Compose-only UI, Arrange-Act-Assert tests
+  - IDs: UUID v4 everywhere
+  - API errors: {"error": "message"}
+
+  ## Infrastructure
+  - Docker Compose: PostgreSQL 16 (port 5438), Redis 7 (port 6379), PgAdmin (port 50050)
+  - CI: GitHub Actions with path filters — Go lint+test+build, web typecheck+lint+build, mobile Gradle lint
+  - Go workspace: go.work with ./agent and ./backend
+  - Run `make lint` and `make test` before committing Go changes
+  - Run `npm run lint` and `npx tsc --noEmit` before committing web changes
+
+rules:
+  proposal:
+    - Start with Why (problem/pain), then What Changes (concrete actions), then Capabilities (new/modified), then Impact (affected services and runtime behavior)
+    - Identify all affected services in the monorepo (backend, agent, web, mobile) and list them in Impact
+    - Keep concise — no implementation details, no code snippets
+  specs:
+    - Use Purpose → Requirements → Requirement → Scenario structure
+    - Write requirements with SHALL/MUST/MAY (RFC 2119 language)
+    - Write scenarios in Given/When/Then format (omit Given when context is obvious)
+    - One spec file per capability; name the capability in kebab-case
+    - Include graceful error handling and edge-case scenarios
+  design:
+    - Reference specific files and packages from the codebase (e.g. internal/scanner/manager.go, src/pages/EquipmentSettings.tsx)
+    - Follow existing architecture — Clean Architecture for Go and mobile, component-based for web
+    - Note API contract changes in OpenAPI terms (paths, methods, request/response shapes)
+    - Include database migration details when schema changes are needed (table, columns, constraints, indexes)
+  tasks:
+    - Group tasks by service or logical area (e.g. "Agent Configuration", "Web UI", "Backend API")
+    - Each task is a single checkbox item — actionable, independently testable
+    - Order tasks respecting dependencies (config/models first, then API, then UI)
+    - Include OpenAPI spec updates, i18n keys, and migration files as explicit tasks when relevant
+    - Keep task count reasonable — 10-20 tasks per change

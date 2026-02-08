@@ -171,7 +171,7 @@ paths:
                 example:
                   - "HP_Smart_Tank_790_series"
                   - "Network_192_168_0_245"
-                  - "Serial_COM3"
+                  - "Office_Printer"
                   
   /printers/add:
     post:
@@ -266,7 +266,7 @@ paths:
       tags:
         - Scanners
       summary: Получить список сканеров
-      description: Возвращает все подключенные и настроенные сканеры
+      description: Возвращает активные сканеры, которые сейчас открыты агентом
       responses:
         '200':
           description: Список сканеров
@@ -275,10 +275,15 @@ paths:
               schema:
                 type: array
                 items:
-                  type: string
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    port_name:
+                      type: string
                 example:
-                  - "Scanner_COM3"
-                  - "Scanner_ttyUSB0"
+                  - name: "Scanner_COM3"
+                    port_name: "COM3"
                   
   /scanners/ports:
     get:
@@ -300,10 +305,29 @@ paths:
               schema:
                 type: array
                 items:
-                  type: string
+                  type: object
+                  properties:
+                    port_name:
+                      type: string
+                      example: "COM3"
+                    display_name:
+                      type: string
+                      example: "COM3"
+                    device_type:
+                      type: string
+                      example: "serial"
+                    transport:
+                      type: string
+                      example: "usb"
                 example:
-                  - "COM3"
-                  - "/dev/ttyUSB0"
+                  - port_name: "COM3"
+                    display_name: "COM3"
+                    device_type: "serial"
+                    transport: "usb"
+                  - port_name: "/dev/ttyUSB0"
+                    display_name: "/dev/ttyUSB0"
+                    device_type: "serial"
+                    transport: "usb"
                   
   /scanners/add:
     post:
@@ -333,10 +357,35 @@ paths:
                     type: string
         '400':
           description: Некорректные данные
-        '409':
-          description: Сканер уже существует
+  /scanners/remove:
+    post:
+      tags:
+        - Scanners
+      summary: Удалить COM/USB сканер
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScannerRequest'
+      responses:
+        '200':
+          description: Сканер удален
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  name:
+                    type: string
+                  port:
+                    type: string
+        '404':
+          description: Сканер не найден
         '500':
-          description: Не удалось открыть порт
+          description: Не удалось сохранить конфигурацию
           
   /scan/last:
     get:

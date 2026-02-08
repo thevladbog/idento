@@ -66,6 +66,7 @@ export default function CheckinFullscreenPage() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredAttendees, setFilteredAttendees] = useState<Attendee[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Checkin settings
   const [showSettings, setShowSettings] = useState(false);
@@ -112,12 +113,20 @@ export default function CheckinFullscreenPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- react to lastScan only
   }, [lastScan]);
 
+  useEffect(() => {
+    if (!scanResult) {
+      inputRef.current?.focus();
+    }
+  }, [scanResult, scanMode]);
+
   // Close suggestions when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
         inputRef.current &&
-        !inputRef.current.contains(event.target as Node)
+        !inputRef.current.contains(target) &&
+        (!suggestionsRef.current || !suggestionsRef.current.contains(target))
       ) {
         setShowSuggestions(false);
       }
@@ -610,7 +619,10 @@ export default function CheckinFullscreenPage() {
       >
         {!scanResult ? (
           /* Search Mode */
-          <Card className="w-full max-w-4xl p-8">
+          <Card
+            className="w-full max-w-4xl p-8"
+            onClick={() => inputRef.current?.focus()}
+          >
             <div className="text-center mb-8">
               <Search className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
               <h2 className="text-3xl font-bold mb-2">
@@ -639,11 +651,15 @@ export default function CheckinFullscreenPage() {
                 }}
                 className="pl-14 text-2xl h-16"
                 autoFocus
+                ref={inputRef}
               />
 
               {/* Autocomplete dropdown */}
               {showSuggestions && filteredAttendees.length > 0 && (
-                <Card className="absolute top-full left-0 right-0 mt-2 z-50 max-h-96 overflow-y-auto shadow-lg">
+                <Card
+                  ref={suggestionsRef}
+                  className="absolute top-full left-0 right-0 mt-2 z-50 max-h-96 overflow-y-auto shadow-lg"
+                >
                   <div className="p-2 space-y-1">
                     {filteredAttendees.map((attendee) => (
                       <div

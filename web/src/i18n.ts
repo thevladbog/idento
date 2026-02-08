@@ -449,6 +449,7 @@ i18n
           ipAddress: "IP Address (e.g., 192.168.1.100)",
           port: "Port (default: 9100)",
           add: "Add",
+          remove: "Remove",
           ipAddressRequired: "IP address is required",
           printerAdded: "Printer added successfully",
           failedToAddPrinter: "Failed to add printer",
@@ -456,6 +457,12 @@ i18n
           deviceCamera: "Device Camera",
           usbScanner: "USB Scanner",
           bluetoothScanner: "Bluetooth Scanner",
+          keyboardScanner: "Keyboard Scanner",
+          keyboardScannerDesc:
+            "Keyboard scanners act as a keyboard input. Keep the check-in field focused.",
+          serialScanner: "COM/Serial",
+          scannerRemoved: "Scanner removed successfully",
+          failedToRemoveScanner: "Failed to remove scanner",
           cameraPermission: "Camera Permission",
           granted: "Granted",
           denied: "Denied",
@@ -476,6 +483,8 @@ i18n
           scannerSetupStep1: "For camera scanning, grant camera permissions",
           scannerSetupStep2:
             "For USB/Bluetooth scanners, connect and configure in your system settings",
+          scannerSetupStep3:
+            "For keyboard scanners, focus the check-in field and scan",
           detectedScanners: "Detected COM Scanners",
 
           // API Keys
@@ -1208,6 +1217,7 @@ i18n
           ipAddress: "IP адрес (например, 192.168.1.100)",
           port: "Порт (по умолчанию: 9100)",
           add: "Добавить",
+          remove: "Удалить",
           ipAddressRequired: "IP адрес обязателен",
           printerAdded: "Принтер успешно добавлен",
           failedToAddPrinter: "Не удалось добавить принтер",
@@ -1215,6 +1225,12 @@ i18n
           deviceCamera: "Камера устройства",
           usbScanner: "USB сканер",
           bluetoothScanner: "Bluetooth сканер",
+          keyboardScanner: "Клавиатурный сканер",
+          keyboardScannerDesc:
+            "Клавиатурный сканер работает как ввод с клавиатуры. Держите фокус на поле чекина.",
+          serialScanner: "COM/Serial",
+          scannerRemoved: "Сканер удален",
+          failedToRemoveScanner: "Не удалось удалить сканер",
           cameraPermission: "Разрешение камеры",
           granted: "Разрешено",
           denied: "Отказано",
@@ -1235,6 +1251,8 @@ i18n
           scannerSetupStep1: "Для сканирования камерой предоставьте разрешения",
           scannerSetupStep2:
             "Для USB/Bluetooth сканеров подключите и настройте в системных настройках",
+          scannerSetupStep3:
+            "Для клавиатурного сканера держите фокус на поле чекина",
           detectedScanners: "Обнаруженные COM сканеры",
 
           // API Keys

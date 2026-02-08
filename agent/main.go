@@ -33,311 +33,35 @@ type NetworkPrinterConfig struct {
 
 type AgentConfig struct {
 	NetworkPrinters []NetworkPrinterConfig `json:"network_printers"`
+	ScannerPorts    []string               `json:"scanner_ports"`
 }
 
-const openapiSpec = `openapi: 3.0.3
-info:
-  title: Idento Hardware Agent API
-  description: |
-    API для локального агента, управляющего принтерами и сканерами штрих-кодов/QR-кодов.
-    
-    ## Основные возможности:
-    - Управление принтерами (USB, Bluetooth, Network)
-    - Управление сканерами штрих-кодов/QR-кодов
-    - Печать этикеток (ZPL, TSPL, ESC/POS)
-    - Обнаружение USB/COM портов
-    - Тестирование оборудования
-  version: 1.0.0
-  contact:
-    name: Idento Support
-    email: support@idento.app
-  license:
-    name: MIT
-servers:
-  - url: http://localhost:12345
-    description: Local agent
-tags:
-  - name: Health
-    description: Проверка состояния агента
-  - name: Printers
-    description: Управление принтерами
-  - name: Scanners
-    description: Управление сканерами
-  - name: Print
-    description: Печать этикеток
-  - name: Scan
-    description: Сканирование кодов
-paths:
-  /health:
-    get:
-      tags:
-        - Health
-      summary: Проверка состояния агента
-      responses:
-        '200':
-          description: Агент работает
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: "Idento Agent is running"
-  /printers:
-    get:
-      tags:
-        - Printers
-      summary: Получить список принтеров
-      description: Возвращает все доступные принтеры (USB, Network, Bluetooth)
-      responses:
-        '200':
-          description: Список принтеров
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-              example:
-                - "HP_Smart_Tank_790_series"
-                - "Network_192_168_0_245"
-                - "Serial_COM3"
-  /printers/add:
-    post:
-      tags:
-        - Printers
-      summary: Добавить сетевой принтер
-      description: Добавляет принтер по IP адресу для прямой печати через TCP
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-                - ip
-              properties:
-                name:
-                  type: string
-                  description: Имя принтера
-                  example: "Network_Office"
-                ip:
-                  type: string
-                  description: IP адрес принтера
-                  example: "192.168.0.245"
-                port:
-                  type: integer
-                  description: Порт (по умолчанию 9100)
-                  default: 9100
-      responses:
-        '200':
-          description: Принтер добавлен
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  name:
-                    type: string
-                  ip:
-                    type: string
-                  port:
-                    type: integer
-  /printers/fonts:
-    get:
-      tags:
-        - Printers
-      summary: Получить список стандартных ZPL шрифтов
-      description: Возвращает список встроенных шрифтов ZPL и примеры кастомных
-      responses:
-        '200':
-          description: Список шрифтов
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  built_in:
-                    type: array
-                    items:
-                      type: object
-                  custom_examples:
-                    type: array
-                    items:
-                      type: string
-                  note:
-                    type: string
-  /printers/{name}/fonts:
-    get:
-      tags:
-        - Printers
-      summary: Получить шрифты конкретного принтера
-      description: Запрашивает у принтера список загруженных шрифтов (ZPL)
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: Имя принтера
-      responses:
-        '200':
-          description: Информация о шрифтах принтера
-  /print:
-    post:
-      tags:
-        - Print
-      summary: Отправить задание на печать
-      description: Печать этикетки с ZPL кодом на выбранном принтере
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - printer_name
-                - zpl
-              properties:
-                printer_name:
-                  type: string
-                  description: Имя принтера из списка доступных
-                  example: "Network_192_168_0_245"
-                zpl:
-                  type: string
-                  description: ZPL команды для печати
-                  example: "^XA^FO50,50^ADN,36,20^FDHello World^FS^XZ"
-      responses:
-        '200':
-          description: Задание отправлено
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "sent"
-  /scanners:
-    get:
-      tags:
-        - Scanners
-      summary: Получить список сканеров
-      description: Возвращает все подключенные и настроенные сканеры
-      responses:
-        '200':
-          description: Список сканеров
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-              example:
-                - "Scanner_COM3"
-                - "Scanner_ttyUSB0"
-  /scanners/ports:
-    get:
-      tags:
-        - Scanners
-      summary: Получить список доступных портов
-      description: |
-        Сканирует систему и возвращает доступные USB/COM порты для подключения сканеров.
-        
-        ### Поддерживаемые порты:
-        - **Windows**: COM1, COM2, COM3, ...
-        - **Linux**: /dev/ttyUSB0, /dev/ttyACM0, ...
-        - **macOS**: /dev/tty.usbserial-*, /dev/tty.usbmodem*
-      responses:
-        '200':
-          description: Список портов
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: string
-              example:
-                - "COM3"
-                - "/dev/ttyUSB0"
-  /scanners/add:
-    post:
-      tags:
-        - Scanners
-      summary: Добавить COM/USB сканер
-      description: Добавляет сканер на указанном порту
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - port_name
-              properties:
-                port_name:
-                  type: string
-                  description: Имя COM/USB порта
-                  example: "COM3"
-      responses:
-        '200':
-          description: Сканер добавлен
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  name:
-                    type: string
-                  port:
-                    type: string
-        '409':
-          description: Сканер уже существует
-        '500':
-          description: Не удалось открыть порт
-  /scan/last:
-    get:
-      tags:
-        - Scan
-      summary: Получить последний отсканированный код
-      description: |
-        Возвращает последний код, отсканированный любым подключенным сканером.
-        Используется для polling при тестировании сканеров.
-      responses:
-        '200':
-          description: Данные последнего сканирования
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code:
-                    type: string
-                    description: Отсканированный код
-                  time:
-                    type: string
-                    format: date-time
-  /scan/clear:
-    post:
-      tags:
-        - Scan
-      summary: Очистить последний скан
-      description: Сбрасывает буфер последнего отсканированного кода
-      responses:
-        '200':
-          description: Буфер очищен
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "cleared"
-`
+func loadOpenAPISpec() ([]byte, error) {
+	root, err := os.OpenRoot(".")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := root.Close(); closeErr != nil {
+			log.Printf("close openapi root: %v", closeErr)
+		}
+	}()
+
+	candidatePaths := []string{
+		filepath.Join("agent", "openapi.yaml"),
+		"openapi.yaml",
+	}
+	for _, path := range candidatePaths {
+		data, err := root.ReadFile(path)
+		if err == nil {
+			return data, nil
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("openapi spec not found")
+}
 
 // getConfigDir returns the absolute path to ~/.idento for os.Root-scoped config access.
 func getConfigDir() (string, error) {
@@ -353,14 +77,18 @@ func getConfigDir() (string, error) {
 	return absDir, nil
 }
 
+func defaultConfig() *AgentConfig {
+	return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}, ScannerPorts: []string{}}
+}
+
 func loadConfig() (*AgentConfig, error) {
 	configDir, err := getConfigDir()
 	if err != nil {
-		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+		return defaultConfig(), nil
 	}
 	root, err := os.OpenRoot(configDir)
 	if err != nil {
-		return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+		return defaultConfig(), nil
 	}
 	defer func() {
 		if closeErr := root.Close(); closeErr != nil {
@@ -370,13 +98,19 @@ func loadConfig() (*AgentConfig, error) {
 	data, err := root.ReadFile("agent_config.json")
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}, nil
+			return defaultConfig(), nil
 		}
 		return nil, err
 	}
 	var config AgentConfig
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
+	}
+	if config.NetworkPrinters == nil {
+		config.NetworkPrinters = []NetworkPrinterConfig{}
+	}
+	if config.ScannerPorts == nil {
+		config.ScannerPorts = []string{}
 	}
 	return &config, nil
 }
@@ -443,48 +177,37 @@ func main() {
 			}
 		}
 
-		// 2. Discover serial/USB printers (for direct connection)
-		ports, err := printer.DiscoverSerialPrinters()
-		if err != nil {
-			log.Printf("Failed to discover serial printers: %v", err)
-		} else {
-			log.Printf("Found %d potential serial printer port(s)", len(ports))
-			for _, portName := range ports {
-				printerName := fmt.Sprintf("Serial_%s", sanitizePortName(portName))
-				log.Printf("  ⚡ %s (%s)", printerName, portName)
-
-				// Create serial printer
-				serialPrinter, err := printer.NewSerialPrinter(printerName, portName)
-				if err != nil {
-					log.Printf("  ✗ Failed to create serial printer: %v", err)
-					continue
-				}
-				pm.AddPrinter(printerName, serialPrinter)
-			}
-		}
-
 		// If no printers found, add a mock as fallback
 		if len(pm.ListPrinters()) == 0 {
 			log.Println("⚠️  No printers detected, adding fallback mock printer")
 			pm.AddPrinter("Fallback_Mock", printer.NewMockPrinter("Fallback_Mock"))
 		}
 
-		// 3. Discover scanners
-		log.Println("Detecting scanners...")
-		scannerPorts, err := scanner.DiscoverScanners()
+		// 2. Load saved configuration
+		log.Println("Loading saved network printers...")
+		config, err := loadConfig()
 		if err != nil {
-			log.Printf("Failed to discover scanners: %v", err)
-		} else {
-			log.Printf("Found %d potential scanner port(s)", len(scannerPorts))
-			for _, portName := range scannerPorts {
+			log.Printf("Failed to load config: %v", err)
+			config = defaultConfig()
+		}
+		if len(config.NetworkPrinters) > 0 {
+			log.Printf("Found %d saved network printer(s)", len(config.NetworkPrinters))
+			for _, np := range config.NetworkPrinters {
+				log.Printf("  🌐 %s (%s:%d)", np.Name, np.IP, np.Port)
+				networkPrinter := printer.NewNetworkPrinterFromIP(np.Name, np.IP, np.Port)
+				pm.AddPrinter(np.Name, networkPrinter)
+			}
+		}
+
+		// 3. Open allow-listed scanners
+		if len(config.ScannerPorts) > 0 {
+			log.Printf("Opening %d allow-listed scanner port(s)...", len(config.ScannerPorts))
+			for _, portName := range config.ScannerPorts {
+				if portName == "" {
+					continue
+				}
 				scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(portName))
-				log.Printf("  📷 %s (%s)", scannerName, portName)
-
-				// Create scanner instance
 				s := scanner.NewScanner(scannerName, portName, 9600)
-				sm.AddScanner(scannerName, s)
-
-				// Register scan callback
 				s.OnScan(func(data string) {
 					scanDataMutex.Lock()
 					lastScannedCode = data
@@ -492,25 +215,12 @@ func main() {
 					scanDataMutex.Unlock()
 					log.Printf("📋 Scan received: %s", data)
 				})
-
-				// Try to open scanner
 				if err := s.Open(); err != nil {
-					log.Printf("  ✗ Failed to open scanner: %v", err)
+					log.Printf("Failed to open allow-listed scanner %s (%s): %v", scannerName, portName, err)
+					continue
 				}
-			}
-		}
-
-		// 4. Load saved network printers
-		log.Println("Loading saved network printers...")
-		config, err := loadConfig()
-		if err != nil {
-			log.Printf("Failed to load config: %v", err)
-		} else if len(config.NetworkPrinters) > 0 {
-			log.Printf("Found %d saved network printer(s)", len(config.NetworkPrinters))
-			for _, np := range config.NetworkPrinters {
-				log.Printf("  🌐 %s (%s:%d)", np.Name, np.IP, np.Port)
-				networkPrinter := printer.NewNetworkPrinterFromIP(np.Name, np.IP, np.Port)
-				pm.AddPrinter(np.Name, networkPrinter)
+				sm.AddScanner(scannerName, s)
+				log.Printf("Opened scanner: %s (%s)", scannerName, portName)
 			}
 		}
 	}
@@ -577,7 +287,7 @@ func main() {
 		config, err := loadConfig()
 		if err != nil {
 			log.Printf("Warning: Failed to load config: %v", err)
-			config = &AgentConfig{NetworkPrinters: []NetworkPrinterConfig{}}
+			config = defaultConfig()
 		}
 
 		// Check if printer already exists in config
@@ -850,7 +560,7 @@ func main() {
 
 	// Scanner endpoints
 	mux.HandleFunc("/scanners", func(w http.ResponseWriter, r *http.Request) {
-		scanners := sm.ListScanners()
+		scanners := sm.ListScannerInfos()
 
 		// Marshal response to bytes first to avoid partial writes on error
 		data, err := json.Marshal(scanners)
@@ -872,7 +582,7 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to discover scanner ports: %v", err)
 			w.Header().Set("Content-Type", "application/json")
-			if encErr := json.NewEncoder(w).Encode([]string{}); encErr != nil {
+			if encErr := json.NewEncoder(w).Encode([]scanner.PortInfo{}); encErr != nil {
 				log.Printf("Failed to encode empty response: %v", encErr)
 			}
 			return
@@ -880,7 +590,7 @@ func main() {
 
 		// Ensure we always return an array, never null
 		if ports == nil {
-			ports = []string{}
+			ports = []scanner.PortInfo{}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -954,20 +664,43 @@ func main() {
 		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
 
 		// Check if scanner already exists
-		existingScanner, err := sm.GetScanner(scannerName)
+		config, err := loadConfig()
 		if err != nil {
-			log.Printf("Failed to check existing scanner: %v", err)
-			http.Error(w, fmt.Sprintf("Failed to check existing scanner: %v", err), http.StatusInternalServerError)
-			return
+			log.Printf("Failed to load config: %v", err)
+			config = defaultConfig()
 		}
-		if existingScanner != nil {
-			http.Error(w, "Scanner already exists", http.StatusConflict)
+
+		allowListed := false
+		for _, port := range config.ScannerPorts {
+			if port == req.PortName {
+				allowListed = true
+				break
+			}
+		}
+		if _, ok := sm.GetScanner(scannerName); ok {
+			if !allowListed {
+				config.ScannerPorts = append(config.ScannerPorts, req.PortName)
+				if err := saveConfig(config); err != nil {
+					log.Printf("Failed to save scanner allow-list: %v", err)
+					http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+					return
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "exists",
+				"name":   scannerName,
+				"port":   req.PortName,
+			}); err != nil {
+				log.Printf("Failed to encode response: %v", err)
+			}
 			return
 		}
 
 		// Create scanner instance
 		s := scanner.NewScanner(scannerName, req.PortName, 9600)
-		sm.AddScanner(scannerName, s)
 
 		// Register scan callback
 		s.OnScan(func(data string) {
@@ -984,8 +717,21 @@ func main() {
 			http.Error(w, fmt.Sprintf("Failed to open scanner: %v", err), http.StatusInternalServerError)
 			return
 		}
+		if !allowListed {
+			config.ScannerPorts = append(config.ScannerPorts, req.PortName)
+			if err := saveConfig(config); err != nil {
+				log.Printf("Failed to save scanner allow-list: %v", err)
+				if closeErr := s.Close(); closeErr != nil {
+					log.Printf("Failed to close scanner %s after config save failure: %v", scannerName, closeErr)
+				}
+				http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+				return
+			}
+		}
+		sm.AddScanner(scannerName, s)
 
 		log.Printf("Added scanner: %s (%s)", scannerName, req.PortName)
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "added",
@@ -996,10 +742,71 @@ func main() {
 		}
 	})
 
+	mux.HandleFunc("/scanners/remove", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			PortName string `json:"port_name"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		if req.PortName == "" {
+			http.Error(w, "port_name is required", http.StatusBadRequest)
+			return
+		}
+
+		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
+		if err := sm.RemoveScanner(scannerName); err != nil {
+			log.Printf("Failed to remove scanner %s: %v", scannerName, err)
+		}
+
+		config, err := loadConfig()
+		if err != nil {
+			log.Printf("Failed to load config: %v", err)
+			config = defaultConfig()
+		}
+
+		filtered := make([]string, 0, len(config.ScannerPorts))
+		for _, port := range config.ScannerPorts {
+			if port != req.PortName {
+				filtered = append(filtered, port)
+			}
+		}
+		config.ScannerPorts = filtered
+		if err := saveConfig(config); err != nil {
+			log.Printf("Failed to save scanner allow-list: %v", err)
+			http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "removed",
+			"name":   scannerName,
+			"port":   req.PortName,
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
+	})
+
 	// OpenAPI spec endpoint
 	mux.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/yaml")
-		if _, err := w.Write([]byte(openapiSpec)); err != nil {
+		spec, err := loadOpenAPISpec()
+		if err != nil {
+			log.Printf("Failed to load OpenAPI spec: %v", err)
+			http.Error(w, "OpenAPI spec not available", http.StatusInternalServerError)
+			return
+		}
+		if _, err := w.Write(spec); err != nil {
 			log.Printf("Failed to write OpenAPI spec: %v", err)
 		}
 	})
