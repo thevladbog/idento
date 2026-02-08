@@ -40,8 +40,10 @@ else {
 # Fallback: stop processes by known dev ports if still running
 $PortsToStop = @(8008, 5173, 3000)
 foreach ($Port in $PortsToStop) {
-    $netstatLines = netstat -ano | findstr ":$Port" | findstr "LISTENING"
+    $pattern = ":{0}\s+" -f $Port
+    $netstatLines = netstat -ano | Select-String -Pattern $pattern | Where-Object { $_.Line -match "LISTENING" }
     foreach ($line in $netstatLines) {
+        $line = $line.Line
         $parts = $line -split "\s+"
         if ($parts.Length -ge 5) {
             $procId = $parts[-1]

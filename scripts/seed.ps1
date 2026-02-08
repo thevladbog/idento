@@ -81,7 +81,12 @@ if (Test-Path $SeedFile) {
 
     if ($LASTEXITCODE -eq 0) {
         $usersCountRaw = & docker exec idento_db psql -U idento -d idento_db -t -A -c "SELECT COUNT(*) FROM users;" 2>$null
-        if ([int]$usersCountRaw -gt 0) {
+        $usersCountTrimmed = ($usersCountRaw | Out-String).Trim()
+        $usersCount = 0
+        if ($usersCountTrimmed -match '^\d+$') {
+            $usersCount = [int]$usersCountTrimmed
+        }
+        if ($usersCount -gt 0) {
             Write-Success "Seed data loaded successfully"
         }
         else {

@@ -29,8 +29,7 @@ INSERT INTO user_tenants (user_id, tenant_id, role, joined_at)
 SELECT id, tenant_id, role, NOW()
 FROM upserted_users
 ON CONFLICT (user_id, tenant_id) DO UPDATE
-SET role = EXCLUDED.role,
-    joined_at = EXCLUDED.joined_at;
+SET role = EXCLUDED.role;
 
 -- Insert test events
 INSERT INTO events (id, tenant_id, name, location, start_date, end_date, created_at, updated_at)
