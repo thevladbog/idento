@@ -69,13 +69,13 @@ export const fontsApi = {
 
   // Get font file URL
   getFontFileUrl: (fontId: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080";
+    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8008";
     return `${baseUrl}/api/fonts/${fontId}/file`;
   },
 
   // Get CSS URL for all event fonts
   getFontsCSSUrl: (eventId: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8080";
+    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8008";
     return `${baseUrl}/api/events/${eventId}/fonts/css`;
   },
 };

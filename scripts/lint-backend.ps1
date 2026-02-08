@@ -37,4 +37,4 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Success "✅ Done."
+Write-Success "Done."

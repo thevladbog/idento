@@ -250,14 +250,14 @@ Test super admin endpoints with curl:
 ```bash
 # Get all organizations
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/api/super-admin/tenants
+  http://localhost:8008/api/super-admin/tenants
 
 # Update subscription
 curl -X PATCH \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"plan_id":"PLAN_UUID","custom_limits":{"events_per_month":100}}' \
-  http://localhost:8080/api/super-admin/tenants/TENANT_UUID/subscription
+  http://localhost:8008/api/super-admin/tenants/TENANT_UUID/subscription
 ```
 
 ## Support

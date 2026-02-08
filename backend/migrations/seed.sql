@@ -7,13 +7,29 @@ VALUES
     ('550e8400-e29b-41d4-a716-446655440000', 'Test Company Ltd', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;
 
--- Insert test users (password is 'password123' hashed with bcrypt cost 10)
--- bcrypt hash: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
-INSERT INTO users (id, tenant_id, email, password_hash, role, created_at, updated_at)
-VALUES 
-    ('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440000', 'admin@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'admin', NOW(), NOW()),
-    ('550e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440000', 'manager@test.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', 'manager', NOW(), NOW())
-ON CONFLICT (id) DO NOTHING;
+-- Insert test users (password is 'password' hashed with bcrypt cost 10)
+-- bcrypt hash: $2a$10$7zrdL/KqT9k1TX9kLSCi8egPvwoHIMKGGGMUtj.2lsFIjiJzwE1ly
+WITH seed_users (id, tenant_id, email, password_hash, role) AS (
+    VALUES
+        ('550e8400-e29b-41d4-a716-446655440001', '550e8400-e29b-41d4-a716-446655440000', 'admin@test.com', '$2a$10$7zrdL/KqT9k1TX9kLSCi8egPvwoHIMKGGGMUtj.2lsFIjiJzwE1ly', 'admin'),
+        ('550e8400-e29b-41d4-a716-446655440002', '550e8400-e29b-41d4-a716-446655440000', 'manager@test.com', '$2a$10$7zrdL/KqT9k1TX9kLSCi8egPvwoHIMKGGGMUtj.2lsFIjiJzwE1ly', 'manager')
+),
+upserted_users AS (
+    INSERT INTO users (id, tenant_id, email, password_hash, role, created_at, updated_at)
+    SELECT id, tenant_id, email, password_hash, role, NOW(), NOW()
+    FROM seed_users
+    ON CONFLICT (email) DO UPDATE
+    SET tenant_id = EXCLUDED.tenant_id,
+        password_hash = EXCLUDED.password_hash,
+        role = EXCLUDED.role,
+        updated_at = NOW()
+    RETURNING id, tenant_id, role
+)
+INSERT INTO user_tenants (user_id, tenant_id, role, joined_at)
+SELECT id, tenant_id, role, NOW()
+FROM upserted_users
+ON CONFLICT (user_id, tenant_id) DO UPDATE
+SET role = EXCLUDED.role;
 
 -- Insert test events
 INSERT INTO events (id, tenant_id, name, location, start_date, end_date, created_at, updated_at)

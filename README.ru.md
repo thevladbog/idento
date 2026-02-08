@@ -89,11 +89,13 @@ make dev
 ### Доступ к системе
 
 🌐 **Web Admin**: http://localhost:5173  
-🔑 **Login**: `admin@test.com` / `password123`
+🔑 **Login**: `admin@test.com` / `password`
 
-🔧 **Backend API**: http://localhost:8080  
+🔧 **Backend API**: http://localhost:8008  
 🖨️ **Printing Agent**: http://localhost:3000  
-🗄️ **PgAdmin**: http://localhost:5050 (`admin@idento.com` / `admin`)
+🗄️ **PgAdmin**: http://localhost:50050 (`admin@idento.com` / `admin`)
+
+Подсказка: установите `IDENTO_SKIP_PASSWORD_RESET=1`, чтобы пропустить сброс тестовых паролей при `make dev`.
 
 ### Остановка
 
@@ -106,6 +108,8 @@ bash scripts/stop-all.sh
 
 # Или через Make (все платформы)
 make docker-down
+
+# Примечание: stop-all сохраняет контейнеры/volumes, docker-down удаляет их.
 ```
 
 ## 📖 Как использовать
@@ -187,7 +191,7 @@ idento/
 - **Руководство разработчика**: [DEVELOPMENT.md](./DEVELOPMENT.md) — детальная инструкция по разработке на Windows, macOS, и Linux
 - **Документация проекта**: [docs/](./docs/) — руководства по настройке, тестированию, миграциям и статусам реализации
 - **CI/CD**: [.github/CI.md](./.github/CI.md) — информация о пайплайнах и проверках
-- **API Docs**: http://localhost:8080/api/docs (после запуска)
+- **API Docs**: http://localhost:8008/api/docs (после запуска)
 
 ## 🎨 Функции
 
@@ -275,20 +279,20 @@ bash scripts/seed.sh         # Миграции и seed
 
 **Загрузка CSV**:
 ```bash
-curl -X POST http://localhost:8080/api/events/{event_id}/attendees/bulk \
+curl -X POST http://localhost:8008/api/events/{event_id}/attendees/bulk \
   -H "Authorization: Bearer {token}" \
   -F "file=@examples/sample-attendees.csv"
 ```
 
 **Генерация кодов**:
 ```bash
-curl -X POST http://localhost:8080/api/events/{event_id}/attendees/generate-codes \
+curl -X POST http://localhost:8008/api/events/{event_id}/attendees/generate-codes \
   -H "Authorization: Bearer {token}"
 ```
 
 **Экспорт CSV**:
 ```bash
-curl -X GET http://localhost:8080/api/events/{event_id}/attendees/export \
+curl -X GET http://localhost:8008/api/events/{event_id}/attendees/export \
   -H "Authorization: Bearer {token}" \
   --output attendees.csv
 ```

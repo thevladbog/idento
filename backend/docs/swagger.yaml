@@ -1,5 +1,5 @@
 basePath: /
-host: localhost:8080
+host: localhost:8008
 info:
   contact:
     email: support@idento.app

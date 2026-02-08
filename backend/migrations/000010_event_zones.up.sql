@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS event_zones (
     UNIQUE(event_id, name)
 );
 
-CREATE INDEX idx_event_zones_event ON event_zones(event_id);
-CREATE INDEX idx_event_zones_type ON event_zones(zone_type);
+CREATE INDEX IF NOT EXISTS idx_event_zones_event ON event_zones(event_id);
+CREATE INDEX IF NOT EXISTS idx_event_zones_type ON event_zones(zone_type);
 
 -- Zone access rules by category (from attendee custom_fields)
 CREATE TABLE IF NOT EXISTS zone_access_rules (
@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS zone_access_rules (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_zone_access_rules_zone ON zone_access_rules(zone_id);
-CREATE UNIQUE INDEX idx_zone_access_rules_unique ON zone_access_rules(zone_id, category);
+CREATE INDEX IF NOT EXISTS idx_zone_access_rules_zone ON zone_access_rules(zone_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zone_access_rules_unique ON zone_access_rules(zone_id, category);
 
 -- Individual attendee access overrides
 CREATE TABLE IF NOT EXISTS attendee_zone_access (
@@ -52,8 +52,8 @@ CREATE TABLE IF NOT EXISTS attendee_zone_access (
     UNIQUE(attendee_id, zone_id)
 );
 
-CREATE INDEX idx_attendee_zone_access_attendee ON attendee_zone_access(attendee_id);
-CREATE INDEX idx_attendee_zone_access_zone ON attendee_zone_access(zone_id);
+CREATE INDEX IF NOT EXISTS idx_attendee_zone_access_attendee ON attendee_zone_access(attendee_id);
+CREATE INDEX IF NOT EXISTS idx_attendee_zone_access_zone ON attendee_zone_access(zone_id);
 
 -- Zone check-ins (separate from general event check-in)
 CREATE TABLE IF NOT EXISTS zone_checkins (
@@ -68,9 +68,9 @@ CREATE TABLE IF NOT EXISTS zone_checkins (
     UNIQUE(attendee_id, zone_id, event_day) -- One check-in per zone per day
 );
 
-CREATE INDEX idx_zone_checkins_attendee ON zone_checkins(attendee_id);
-CREATE INDEX idx_zone_checkins_zone ON zone_checkins(zone_id, event_day);
-CREATE INDEX idx_zone_checkins_day ON zone_checkins(event_day);
+CREATE INDEX IF NOT EXISTS idx_zone_checkins_attendee ON zone_checkins(attendee_id);
+CREATE INDEX IF NOT EXISTS idx_zone_checkins_zone ON zone_checkins(zone_id, event_day);
+CREATE INDEX IF NOT EXISTS idx_zone_checkins_day ON zone_checkins(event_day);
 
 -- Staff zone assignments
 CREATE TABLE IF NOT EXISTS staff_zone_assignments (
@@ -83,8 +83,8 @@ CREATE TABLE IF NOT EXISTS staff_zone_assignments (
     UNIQUE(user_id, zone_id)
 );
 
-CREATE INDEX idx_staff_zone_assignments_user ON staff_zone_assignments(user_id);
-CREATE INDEX idx_staff_zone_assignments_zone ON staff_zone_assignments(zone_id);
+CREATE INDEX IF NOT EXISTS idx_staff_zone_assignments_user ON staff_zone_assignments(user_id);
+CREATE INDEX IF NOT EXISTS idx_staff_zone_assignments_zone ON staff_zone_assignments(zone_id);
 
 -- Add fields to attendees table
 ALTER TABLE attendees ADD COLUMN IF NOT EXISTS packet_delivered BOOLEAN DEFAULT FALSE;
@@ -101,9 +101,21 @@ END;
 $$ language 'plpgsql';
 
 -- Update triggers
-CREATE TRIGGER update_event_zones_updated_at BEFORE UPDATE ON event_zones
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_event_zones_updated_at') THEN
+        EXECUTE 'CREATE TRIGGER update_event_zones_updated_at BEFORE UPDATE ON event_zones
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()';
+    END IF;
+END;
+$$;
 
-CREATE TRIGGER update_attendee_zone_access_updated_at BEFORE UPDATE ON attendee_zone_access
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_attendee_zone_access_updated_at') THEN
+        EXECUTE 'CREATE TRIGGER update_attendee_zone_access_updated_at BEFORE UPDATE ON attendee_zone_access
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()';
+    END IF;
+END;
+$$;
 

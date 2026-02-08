@@ -15,7 +15,7 @@ func main() {
 	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://idento:idento_password@localhost:5432/idento_db"
+		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)

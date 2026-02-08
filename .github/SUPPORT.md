@@ -72,7 +72,7 @@ Please follow our [Code of Conduct](.github/CODE_OF_CONDUCT.md) in all interacti
 
 ## Additional Resources
 
-- **API Documentation**: http://localhost:8080/api/docs (when running)
+- **API Documentation**: http://localhost:8008/api/docs (when running)
 - **GitHub Repository**: https://github.com/thevladbog/idento
 - **Issue Tracker**: https://github.com/thevladbog/idento/issues
 

@@ -20,7 +20,7 @@ info:
     name: MIT
     
 servers:
-  - url: http://localhost:8080
+  - url: http://localhost:8008
     description: Local development server
   - url: https://api.idento.app
     description: Production server

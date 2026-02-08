@@ -8,7 +8,7 @@ fi
 
 # Default database connection
 DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
+DB_PORT="${DB_PORT:-5438}"
 DB_USER="${DB_USER:-idento_user}"
 DB_PASSWORD="${DB_PASSWORD:-idento_password}"
 DB_NAME="${DB_NAME:-idento_db}"

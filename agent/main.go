@@ -410,6 +410,8 @@ func main() {
 	useMock := flag.Bool("mock", false, "Use mock printers instead of real hardware")
 	flag.Parse()
 
+	log.SetOutput(os.Stdout)
+
 	// Initialize Printer Manager
 	pm := printer.NewManager()
 
@@ -1025,7 +1027,7 @@ func main() {
 
 	// Setup CORS to allow requests from localhost web app
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000", "*"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:3000"},
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: true,

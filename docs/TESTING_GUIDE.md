@@ -18,8 +18,8 @@
 
 ### 1. Backend запущен
 ```bash
-# Backend уже запущен на порту 8080
-# Проверка: curl http://localhost:8080/api/me
+# Backend уже запущен на порту 8008
+# Проверка: curl http://localhost:8008/api/me
 ```
 
 ### 2. Запустите Web UI
@@ -60,7 +60,7 @@ npm run dev
 #### Получить список зон события
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/api/events/{event_id}/zones?with_stats=true
+  http://localhost:8008/api/events/{event_id}/zones?with_stats=true
 ```
 
 #### Создать зону
@@ -75,14 +75,14 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
     "requires_registration": true,
     "is_active": true
   }' \
-  http://localhost:8080/api/events/{event_id}/zones
+  http://localhost:8008/api/events/{event_id}/zones
 ```
 
 #### Получить QR-код зоны
 ```bash
 # Получить PNG напрямую
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/api/zones/{zone_id}/qr > zone-qr.png
+  http://localhost:8008/api/zones/{zone_id}/qr > zone-qr.png
 ```
 
 ### Тест 4: История перемещений (когда будут check-ins)
@@ -127,11 +127,11 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
     "zone_id": "zone-uuid",
     "event_day": "2024-12-15T00:00:00Z"
   }' \
-  http://localhost:8080/api/zones/checkin
+  http://localhost:8008/api/zones/checkin
 
 # История перемещений участника
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  http://localhost:8080/api/attendees/{attendee_id}/zone-history
+  http://localhost:8008/api/attendees/{attendee_id}/zone-history
 ```
 
 ### Mobile API (Backend ready)
@@ -244,10 +244,10 @@ GET    /api/mobile/zones/:zone_id/days          # Дни события
 
 ```bash
 # Проверить статус backend
-curl http://localhost:8080/api/me
+curl http://localhost:8008/api/me
 
 # Остановить backend
-lsof -ti:8080 | xargs kill -9
+lsof -ti:8008 | xargs kill -9
 
 # Запустить backend
 cd /Users/thevladbog/PRSOME/idento/backend && go run main.go

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import api from '@/lib/api';
 import {
   Dialog,
   DialogContent,
@@ -20,8 +21,8 @@ export function QRCodeDisplay({ attendee }: QRCodeDisplayProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   
-  // Construct QR image URL
-  const qrImageUrl = `http://localhost:8080/api/attendees/${attendee.id}/qr`;
+  const apiBaseUrl = (api.defaults.baseURL ?? import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+  const qrImageUrl = `${apiBaseUrl}/api/attendees/${attendee.id}/qr`;
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
