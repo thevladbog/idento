@@ -1,3 +1,6 @@
+// Package handler provides HTTP handlers for the Idento REST API:
+// auth (register, login, QR login), tenants, users, events, attendees,
+// zones, API keys, fonts, sync, and super-admin endpoints.
 package handler
 
 import (
@@ -7,14 +10,17 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// Handler holds dependencies (e.g. Store) and implements HTTP handlers for the API.
 type Handler struct {
 	Store store.Store
 }
 
+// New returns a new Handler with the given store.
 func New(s store.Store) *Handler {
 	return &Handler{Store: s}
 }
 
+// RegisterRoutes mounts all API routes on the given Echo instance.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	// Auth routes
 	auth := e.Group("/auth")

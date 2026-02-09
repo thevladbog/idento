@@ -15,22 +15,27 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// RegisterRequest is the JSON body for POST /auth/register.
 type RegisterRequest struct {
 	TenantName string `json:"tenant_name"`
 	Email      string `json:"email"`
 	Password   string `json:"password"`
 }
 
+// LoginRequest is the JSON body for POST /auth/login.
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
+// AuthResponse is the JSON response for register and login (token and user).
 type AuthResponse struct {
 	Token string       `json:"token"`
 	User  *models.User `json:"user"`
 }
 
+// Register creates a tenant and an admin user, or adds an existing user to the new tenant.
+// Returns 400 on invalid input, 500 on store or token errors.
 func (h *Handler) Register(c echo.Context) error {
 	req := new(RegisterRequest)
 	if err := c.Bind(req); err != nil {
@@ -109,6 +114,8 @@ func (h *Handler) Register(c echo.Context) error {
 	})
 }
 
+// Login authenticates a user by email and password and returns a JWT and user info.
+// Returns 400 on invalid input, 401 on wrong credentials or no tenants, 500 on store or token errors.
 func (h *Handler) Login(c echo.Context) error {
 	req := new(LoginRequest)
 	if err := c.Bind(req); err != nil {

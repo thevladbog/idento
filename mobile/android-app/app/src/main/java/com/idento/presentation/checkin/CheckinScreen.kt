@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.idento.R
 import com.idento.data.model.Attendee
 import com.idento.presentation.theme.*
 
@@ -70,7 +72,7 @@ fun CheckinScreen(
                         onDismissRequest = { expanded = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Terminal Mode") },
+                            text = { Text(stringResource(R.string.terminal_mode)) },
                             onClick = {
                                 expanded = false
                                 onNavigateToQRScanner()
@@ -83,7 +85,7 @@ fun CheckinScreen(
                         HorizontalDivider()
                         
                         DropdownMenuItem(
-                            text = { Text("View All Attendees") },
+                            text = { Text(stringResource(R.string.view_all_attendees)) },
                             onClick = {
                                 expanded = false
                                 onNavigateToAttendeesList()
@@ -94,7 +96,7 @@ fun CheckinScreen(
                         )
                         
                         DropdownMenuItem(
-                            text = { Text("Edit Success Screen") },
+                            text = { Text(stringResource(R.string.edit_success_screen)) },
                             onClick = {
                                 expanded = false
                                 onNavigateToTemplateEditor("success_screen")
@@ -105,7 +107,7 @@ fun CheckinScreen(
                         )
                         
                         DropdownMenuItem(
-                            text = { Text("Edit Badge Template") },
+                            text = { Text(stringResource(R.string.edit_badge_template)) },
                             onClick = {
                                 expanded = false
                                 onNavigateToTemplateEditor("badge_template")
@@ -295,7 +297,7 @@ private fun HardwareScannerInfoCard(scannerName: String) {
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Terminal Mode",
+                    text = stringResource(R.string.terminal_mode),
                     style = MaterialTheme.typography.titleSmall
                 )
                 Text(
@@ -320,7 +322,7 @@ private fun HardwareScannerInfoCard(scannerName: String) {
                             .background(Success)
                     )
                     Text(
-                        text = "Active",
+                        text = stringResource(R.string.active),
                         style = MaterialTheme.typography.labelSmall,
                         color = Success
                     )
@@ -587,7 +589,7 @@ private fun AttendeeDetailCard(
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Check In")
+                        Text(stringResource(R.string.check_in))
                     }
                 }
                 
@@ -611,7 +613,7 @@ private fun AttendeeDetailCard(
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Print")
+                        Text(stringResource(R.string.print))
                     }
                 }
             }
@@ -705,7 +707,7 @@ private fun EmptyStateCard(
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("View All Attendees")
+                Text(stringResource(R.string.view_all_attendees))
             }
         }
     }

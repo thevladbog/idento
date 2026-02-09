@@ -236,7 +236,7 @@ export default function SubscriptionPlans() {
                 <Input
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Free Plan"
+                  placeholder={t("planPlaceholderName")}
                 />
               </div>
               <div>
@@ -244,7 +244,7 @@ export default function SubscriptionPlans() {
                 <Input
                   value={formData.slug}
                   onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                  placeholder="free"
+                  placeholder={t("planPlaceholderSlug")}
                 />
               </div>
             </div>
@@ -256,10 +256,10 @@ export default function SubscriptionPlans() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="free">Free</SelectItem>
-                  <SelectItem value="starter">Starter</SelectItem>
-                  <SelectItem value="pro">Pro</SelectItem>
-                  <SelectItem value="enterprise">Enterprise</SelectItem>
+                  <SelectItem value="free">{t("planFree")}</SelectItem>
+                  <SelectItem value="starter">{t("planStarter")}</SelectItem>
+                  <SelectItem value="pro">{t("planProfessional")}</SelectItem>
+                  <SelectItem value="enterprise">{t("planEnterprise")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

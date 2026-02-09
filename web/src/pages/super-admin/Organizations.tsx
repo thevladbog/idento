@@ -112,10 +112,10 @@ export default function Organizations() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('allPlans')}</SelectItem>
-            <SelectItem value="free">Free</SelectItem>
-            <SelectItem value="starter">Starter</SelectItem>
-            <SelectItem value="pro">Professional</SelectItem>
-            <SelectItem value="enterprise">Enterprise</SelectItem>
+            <SelectItem value="free">{t("planFree")}</SelectItem>
+            <SelectItem value="starter">{t("planStarter")}</SelectItem>
+            <SelectItem value="pro">{t("planProfessional")}</SelectItem>
+            <SelectItem value="enterprise">{t("planEnterprise")}</SelectItem>
           </SelectContent>
         </Select>
       </div>

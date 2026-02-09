@@ -6,6 +6,11 @@ interface ScanData {
   timestamp: Date;
 }
 
+/**
+ * Polls the Idento agent for the last barcode/QR scan when enabled.
+ * @param enabled - When true, polling runs every 200ms and lastScan is updated for new scans.
+ * @returns { lastScan, isPolling, clearScan } - lastScan holds the latest code and timestamp; clearScan resets it.
+ */
 export function useScanner(enabled: boolean = true) {
   const [lastScan, setLastScan] = useState<ScanData | null>(null);
   const [isPolling, setIsPolling] = useState(false);

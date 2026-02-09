@@ -636,7 +636,7 @@ export default function BadgeTemplateEditorV2() {
                 {/* Position */}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label>X (mm)</Label>
+                    <Label>{t("xMm")}</Label>
                     <Input
                       type="number"
                       value={selectedElement.x}
@@ -649,7 +649,7 @@ export default function BadgeTemplateEditorV2() {
                     />
                   </div>
                   <div>
-                    <Label>Y (mm)</Label>
+                    <Label>{t("yMm")}</Label>
                     <Input
                       type="number"
                       value={selectedElement.y}
@@ -804,7 +804,7 @@ export default function BadgeTemplateEditorV2() {
                             customFont: e.target.value,
                           })
                         }
-                        placeholder="Arial, Times New Roman, Courier..."
+                        placeholder={t("fontPlaceholderExample")}
                       />
                       <div className="text-xs text-muted-foreground mt-2 space-y-2">
                         <p>

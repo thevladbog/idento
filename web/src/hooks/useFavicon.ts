@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+/**
+ * Keeps the document favicon and apple-touch-icon in sync with the current i18n language (en/ru).
+ */
 export function useFavicon() {
   const { i18n } = useTranslation();
 

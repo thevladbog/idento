@@ -123,7 +123,7 @@ fun LoginScreen(
                 
                 // App name
                 Text(
-                    text = "Idento",
+                    text = stringResource(R.string.app_name),
                     style = MaterialTheme.typography.displaySmall,
                     color = MaterialTheme.colorScheme.onBackground
                 )
@@ -300,7 +300,7 @@ fun LoginScreen(
                         color = MaterialTheme.colorScheme.outlineVariant
                     )
                     Text(
-                        text = "or",
+                        text = stringResource(R.string.or),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp)

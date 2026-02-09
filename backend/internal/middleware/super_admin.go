@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// SuperAdminOnly returns Echo middleware that allows only users with IsSuperAdmin set in the store.
 func SuperAdminOnly(s store.Store) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

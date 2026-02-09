@@ -19,8 +19,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.idento.R
 import com.google.accompanist.permissions.*
 import com.idento.data.scanner.BluetoothScanner
 import com.idento.presentation.components.IdentoCard
@@ -60,7 +62,7 @@ fun BluetoothScannerSettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Bluetooth Scanner Settings") },
+                title = { Text(stringResource(R.string.bluetooth_scanner_settings)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -136,7 +138,7 @@ fun BluetoothScannerSettingsScreen(
             if (bluetoothPermissionState.allPermissionsGranted && uiState.isBluetoothEnabled) {
                 item {
                     Text(
-                        text = "Available Scanners",
+                        text = stringResource(R.string.available_scanners),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(vertical = 8.dp)
@@ -202,7 +204,7 @@ private fun BluetoothStatusCard(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Bluetooth Status",
+                            text = stringResource(R.string.bluetooth_status),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -231,7 +233,7 @@ private fun BluetoothStatusCard(
                 ) {
                     Icon(Icons.Default.Security, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Grant Permission")
+                    Text(stringResource(R.string.grant_permission))
                 }
             } else if (!isEnabled) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -241,7 +243,7 @@ private fun BluetoothStatusCard(
                 ) {
                     Icon(Icons.Default.Bluetooth, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Enable Bluetooth")
+                    Text(stringResource(R.string.enable_bluetooth))
                 }
             }
         }
@@ -271,7 +273,7 @@ private fun SelectedScannerCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Selected Scanner",
+                        text = stringResource(R.string.selected_scanner),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -282,7 +284,7 @@ private fun SelectedScannerCard(
                     )
                     if (isConnected) {
                         Text(
-                            text = "Connected",
+                            text = stringResource(R.string.connected),
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFF4CAF50)
                         )
@@ -309,7 +311,7 @@ private fun SelectedScannerCard(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                     }
-                    Text("Test")
+                    Text(stringResource(R.string.test))
                 }
                 
                 OutlinedButton(
@@ -318,7 +320,7 @@ private fun SelectedScannerCard(
                 ) {
                     Icon(Icons.Default.Close, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Disconnect")
+                    Text(stringResource(R.string.disconnect))
                 }
             }
         }
@@ -363,7 +365,7 @@ private fun ScannerCard(
                 )
                 if (scanner.isPaired) {
                     Text(
-                        text = "Paired",
+                        text = stringResource(R.string.paired),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -403,13 +405,13 @@ private fun EmptyScannersCard() {
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "No scanners found",
+                text = stringResource(R.string.no_scanners_found),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Make sure your scanner is powered on and in pairing mode",
+                text = stringResource(R.string.scanner_pairing_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
