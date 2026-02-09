@@ -76,6 +76,7 @@ export default function CheckinFullscreenPage() {
   const [printers, setPrinters] = useState<string[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>("");
   const [agentConnected, setAgentConnected] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Scanner integration
   const { lastScan, clearScan } = useScanner(scanMode);
@@ -83,7 +84,7 @@ export default function CheckinFullscreenPage() {
   useEffect(() => {
     fetchUserEvents();
     loadSettings();
-    checkAgent();
+    checkAgent().catch((err) => console.error("Agent check failed", err));
   }, []);
 
   useEffect(() => {
@@ -151,23 +152,29 @@ export default function CheckinFullscreenPage() {
   };
 
   const saveSettings = async () => {
-    const settings = {
-      badgeTypeField,
-      printEnabled,
-      manualPrint,
-      selectedPrinter,
-    };
-    localStorage.setItem("checkin_settings", JSON.stringify(settings));
-    // Sync selected printer to agent as default (single source of truth)
-    if (selectedPrinter) {
-      try {
-        await agentApi.setDefaultPrinter(selectedPrinter);
-      } catch (error) {
-        console.error("Failed to set default printer on agent", error);
+    setIsSaving(true);
+    try {
+      const settings = {
+        badgeTypeField,
+        printEnabled,
+        manualPrint,
+        selectedPrinter,
+      };
+      localStorage.setItem("checkin_settings", JSON.stringify(settings));
+      // Sync selected printer to agent as default (single source of truth)
+      if (selectedPrinter) {
+        try {
+          await agentApi.setDefaultPrinter(selectedPrinter);
+        } catch (error) {
+          console.error("Failed to set default printer on agent", error);
+          toast.warning(t("defaultPrinterSyncFailed"));
+        }
       }
+      toast.success(t("settingsSaved"));
+      setShowSettings(false);
+    } finally {
+      setIsSaving(false);
     }
-    toast.success(t("settingsSaved"));
-    setShowSettings(false);
   };
 
   const checkAgent = async () => {
@@ -614,7 +621,9 @@ export default function CheckinFullscreenPage() {
                   >
                     {t("cancel")}
                   </Button>
-                  <Button onClick={saveSettings}>{t("saveSettings")}</Button>
+                  <Button onClick={saveSettings} disabled={isSaving}>
+                    {t("saveSettings")}
+                  </Button>
                 </div>
               </DialogContent>
             </Dialog>

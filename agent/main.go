@@ -38,6 +38,9 @@ type AgentConfig struct {
 	DefaultPrinter  string                 `json:"default_printer"`
 }
 
+// configMu serializes all config load-modify-save sequences to avoid races.
+var configMu sync.Mutex
+
 func loadOpenAPISpec() ([]byte, error) {
 	root, err := os.OpenRoot(".")
 	if err != nil {
@@ -261,6 +264,8 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		configMu.Lock()
+		defer configMu.Unlock()
 		if r.Method == http.MethodGet {
 			config, err := loadConfig()
 			if err != nil {
@@ -356,6 +361,8 @@ func main() {
 		networkPrinter := printer.NewNetworkPrinterFromIP(req.Name, req.IP, req.Port)
 		pm.AddPrinter(req.Name, networkPrinter)
 
+		configMu.Lock()
+		defer configMu.Unlock()
 		// Save to config
 		config, err := loadConfig()
 		if err != nil {
@@ -736,6 +743,8 @@ func main() {
 
 		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
 
+		configMu.Lock()
+		defer configMu.Unlock()
 		// Check if scanner already exists
 		config, err := loadConfig()
 		if err != nil {
@@ -840,6 +849,8 @@ func main() {
 			log.Printf("Failed to remove scanner %s: %v", scannerName, err)
 		}
 
+		configMu.Lock()
+		defer configMu.Unlock()
 		config, err := loadConfig()
 		if err != nil {
 			log.Printf("Failed to load config: %v", err)

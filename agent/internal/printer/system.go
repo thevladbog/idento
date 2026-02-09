@@ -1,16 +1,47 @@
 package printer
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // safePrinterName allows only chars safe for lp/lpstat args (no shell or path injection).
 var safePrinterName = regexp.MustCompile(`^[a-zA-Z0-9 _-]+$`)
+
+const (
+	discoveryCallTimeout    = 5 * time.Second
+	discoveryMaxRetries    = 3
+	discoveryInitialBackoff = 200 * time.Millisecond
+)
+
+// runDiscoveryCmd runs an external command with a timeout and retries with exponential backoff
+// on transient errors (including context.DeadlineExceeded). Cancels on timeout so the goroutine cannot hang.
+func runDiscoveryCmd(name string, args ...string) ([]byte, error) {
+	var lastErr error
+	backoff := discoveryInitialBackoff
+	for attempt := 0; attempt < discoveryMaxRetries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), discoveryCallTimeout)
+		cmd := exec.CommandContext(ctx, name, args...)
+		output, err := cmd.Output()
+		cancel() // release resources and signal process to exit on timeout
+		if err == nil {
+			return output, nil
+		}
+		lastErr = err
+		if attempt < discoveryMaxRetries-1 {
+			log.Printf("discovery %s attempt %d failed: %v; retrying in %v", name, attempt+1, lastErr, backoff)
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+	}
+	return nil, lastErr
+}
 
 func sanitizePrinterNameForExec(name string) (string, error) {
 	if name == "" {
@@ -41,12 +72,10 @@ func DiscoverSystemPrinters() ([]string, error) {
 // Falls back to lpstat -a if -p fails or returns empty; logs a warning if no printers found.
 func discoverMacOSPrinters() ([]string, error) {
 	// Use full path so discovery works when PATH is minimal (e.g. launchd)
-	cmd := exec.Command("/usr/bin/lpstat", "-p")
-	output, err := cmd.Output()
+	output, err := runDiscoveryCmd("/usr/bin/lpstat", "-p")
 	if err != nil || len(output) == 0 {
 		// Fallback: all printers (lpstat -a), first column is printer name
-		cmd = exec.Command("/usr/bin/lpstat", "-a")
-		output, err = cmd.Output()
+		output, err = runDiscoveryCmd("/usr/bin/lpstat", "-a")
 		if err != nil {
 			log.Printf("lpstat failed: %v", err)
 			return nil, fmt.Errorf("failed to execute lpstat: %w", err)
@@ -87,8 +116,7 @@ func discoverMacOSPrinters() ([]string, error) {
 // discoverLinuxPrinters discovers printers on Linux using lpstat (CUPS)
 func discoverLinuxPrinters() ([]string, error) {
 	// Same as macOS - both use CUPS
-	cmd := exec.Command("lpstat", "-p")
-	output, err := cmd.Output()
+	output, err := runDiscoveryCmd("lpstat", "-p")
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute lpstat: %w", err)
 	}
@@ -111,8 +139,7 @@ func discoverLinuxPrinters() ([]string, error) {
 // Prefers PowerShell (Get-Printer) for reliable one-name-per-line output; falls back to wmic.
 func discoverWindowsPrinters() ([]string, error) {
 	// Primary: PowerShell, one printer name per line, no table header
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name")
-	output, err := cmd.Output()
+	output, err := runDiscoveryCmd("powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name")
 	if err == nil && len(output) > 0 {
 		var printers []string
 		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -128,27 +155,20 @@ func discoverWindowsPrinters() ([]string, error) {
 	}
 
 	// Fallback: wmic (deprecated but still present on many Windows 10/11)
-	cmd = exec.Command("wmic", "printer", "get", "name")
-	output, err = cmd.Output()
+	output, err = runDiscoveryCmd("wmic", "printer", "get", "name")
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover printers (PowerShell and wmic): %w", err)
 	}
 
 	var printers []string
 	lines := strings.Split(string(output), "\n")
-	// wmic output: first line is "Name", then rows; columns may be padded
-	for i, line := range lines {
-		if i == 0 && strings.TrimSpace(line) == "Name" {
+	// wmic output: header "Name" then one printer name per line (possibly padded); use full line as name
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" || name == "Name" {
 			continue
 		}
-		// Line may be "PrinterName    " or multi-column; take first column
-		fields := strings.Fields(line)
-		if len(fields) >= 1 {
-			name := fields[0]
-			if name != "Name" && name != "" {
-				printers = append(printers, name)
-			}
-		}
+		printers = append(printers, name)
 	}
 
 	if len(printers) == 0 {
