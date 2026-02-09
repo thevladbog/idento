@@ -42,6 +42,9 @@ i18n
           createAccount: "Create Account",
           getStarted: "Get started with Idento",
           registrationFailed: "Registration failed",
+          loginFailed: "Login failed",
+          invalidEmail: "Invalid email address",
+          passwordRequired: "Password is required",
           alreadyHaveAccount: "Already have an account?",
           dontHaveAccount: "Don't have an account?",
 
@@ -813,6 +816,9 @@ i18n
           createAccount: "Создать аккаунт",
           getStarted: "Начните работу с Иденто",
           registrationFailed: "Ошибка регистрации",
+          loginFailed: "Ошибка входа",
+          invalidEmail: "Некорректный email",
+          passwordRequired: "Введите пароль",
           alreadyHaveAccount: "Уже есть аккаунт?",
           dontHaveAccount: "Нет аккаунта?",
 
