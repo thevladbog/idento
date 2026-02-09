@@ -350,7 +350,8 @@ object BadgeTemplate {
                                     fontWidth = fontSize,
                                     customFontFamily = fontFamily,
                                     customFontSize = fontSize.toFloat(),
-                                    bold = bold
+                                    bold = bold,
+                                    forceImageRendering = customFont.isNotEmpty()
                                 ))
                                 appendLine()
                             }
