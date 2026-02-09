@@ -9,7 +9,7 @@ Idento is an **event check-in system** with badge printing, QR codes, and offlin
 - **web/** — React 18 admin UI (TypeScript, Vite, Tailwind v4, shadcn/ui)
 - **mobile/** — Kotlin Multiplatform app (Jetpack Compose on Android, Hilt, offline-first)
 
-Use **Go 1.25** and **Node.js 20+** for backend/agent and web. See [DEVELOPMENT.md](DEVELOPMENT.md) for full setup.
+Use **Go 1.25** and **Node.js 22** for backend/agent and web. See [DEVELOPMENT.md](DEVELOPMENT.md) for full setup.
 
 ## Build and validation
 

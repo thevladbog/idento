@@ -380,9 +380,9 @@
                     ? data.address 
                     : `${data.ip}:${data.port || 9100}`;
                 
-                let infoHtml = `<strong>${name}</strong><br>${typeLabel} (${address})`;
-                if (model) infoHtml += `<br>Model: ${model}`;
-                if (location) infoHtml += `<br>Location: ${location}`;
+                let infoHtml = `<strong>${escapeHtml(name)}</strong><br>${typeLabel} (${escapeHtml(address)})`;
+                if (model) infoHtml += `<br>Model: ${escapeHtml(model)}`;
+                if (location) infoHtml += `<br>Location: ${escapeHtml(location)}`;
                 
                 printerInfo.innerHTML = infoHtml;
                 
@@ -398,6 +398,10 @@
         
         function printQR() {
             const printWindow = window.open('', '_blank');
+            if (!printWindow) {
+                alert('Please allow popups to print the QR code.');
+                return;
+            }
             const nameEscaped = escapeHtml(document.getElementById('name').value);
             const infoEscaped = escapeHtml(printerInfo.textContent);
             const imgSrcEscaped = escapeAttr(qrImage.src || '');
