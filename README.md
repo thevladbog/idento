@@ -3,7 +3,7 @@
   
 # Idento - Event Check-in System
   
-### Complete event registration and check-in system with badge printing
+## Complete event registration and check-in system with badge printing
   
   [![CI](https://img.shields.io/github/actions/workflow/status/thevladbog/idento/ci.yml?branch=main&label=CI&logo=github)](https://github.com/thevladbog/idento/actions/workflows/ci.yml)
   [![GitHub Stars](https://img.shields.io/github/stars/thevladbog/idento?style=social)](https://github.com/thevladbog/idento/stargazers)

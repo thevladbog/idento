@@ -3,7 +3,7 @@
   
 # Idento - Система Регистрации на Мероприятиях
   
-### Полнофункциональная система регистрации и чекина участников на мероприятиях с печатью бейджей
+## Полнофункциональная система регистрации и чекина участников на мероприятиях с печатью бейджей
   
   [![CI](https://img.shields.io/github/actions/workflow/status/thevladbog/idento/ci.yml?branch=main&label=CI&logo=github)](https://github.com/thevladbog/idento/actions/workflows/ci.yml)
   [![GitHub Stars](https://img.shields.io/github/stars/thevladbog/idento?style=social)](https://github.com/thevladbog/idento/stargazers)
