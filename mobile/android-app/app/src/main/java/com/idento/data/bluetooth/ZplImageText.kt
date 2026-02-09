@@ -205,6 +205,7 @@ object ZplImageText {
      * @param customFontFamily Кастомный шрифт для image rendering
      * @param customFontSize Размер для image rendering
      * @param bold Жирный текст
+     * @param forceImageRendering Если true, всегда рендерить текст как изображение (один шрифт для латиницы и кириллицы)
      * @return ZPL команда
      */
     fun generateSmartText(
@@ -216,9 +217,10 @@ object ZplImageText {
         fontWidth: Int = 30,
         customFontFamily: String? = null,
         customFontSize: Float? = null,
-        bold: Boolean = false
+        bold: Boolean = false,
+        forceImageRendering: Boolean = false
     ): String {
-        return if (needsImageRendering(text)) {
+        return if (needsImageRendering(text) || forceImageRendering) {
             // Рендерим как изображение для поддержки кириллицы и других символов
             val family = customFontFamily ?: "sans-serif"
             val size = customFontSize ?: fontHeight.toFloat()

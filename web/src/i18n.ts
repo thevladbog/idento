@@ -166,6 +166,9 @@ i18n
           detectedFonts: "Detected Fonts",
           customFontsNote:
             "These are examples. To use custom fonts, they must be loaded to your printer first. Enter the exact font name in the Custom Font field above.",
+          customFontAppliesToAllText:
+            "When set, this font is used for all text in this element, including English.",
+          customFontLabelCyrillic: "Font for Cyrillic (optional)",
           selectPrinterForQuery: "Select Printer to Query",
           printerQueryNote:
             "The agent will query the selected printer for loaded fonts. This requires the printer to support bi-directional communication.",
@@ -929,6 +932,9 @@ i18n
           detectedFonts: "Обнаруженные шрифты",
           customFontsNote:
             "Это примеры. Для использования кастомных шрифтов они должны быть предварительно загружены в принтер. Введите точное название шрифта в поле Кастомный шрифт выше.",
+          customFontAppliesToAllText:
+            "Если шрифт выбран, он используется для всего текста элемента, включая английский.",
+          customFontLabelCyrillic: "Шрифт для кириллицы (опционально)",
           selectPrinterForQuery: "Выберите принтер для запроса",
           printerQueryNote:
             "Агент отправит запрос выбранному принтеру для получения списка загруженных шрифтов. Это требует поддержки двусторонней связи принтером.",

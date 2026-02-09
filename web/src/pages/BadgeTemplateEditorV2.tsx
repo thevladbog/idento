@@ -779,7 +779,7 @@ export default function BadgeTemplateEditorV2() {
 
                     <div>
                       <div className="flex items-center justify-between mb-2">
-                        <Label>Шрифт для кириллицы (опционально)</Label>
+                        <Label>{t("customFontLabelCyrillic")}</Label>
                         <Button
                           type="button"
                           variant="ghost"
@@ -811,6 +811,7 @@ export default function BadgeTemplateEditorV2() {
                           Текст с кириллицей рендерится как изображение с
                           системным шрифтом.
                         </p>
+                        <p>{t("customFontAppliesToAllText")}</p>
 
                         <details className="bg-muted/50 rounded-md p-2">
                           <summary className="cursor-pointer font-medium text-foreground hover:text-primary">

@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/thevladbog/idento/main/web/public/idento-en-full.svg" alt="Idento Logo" width="200"/>
+  <img src="./web/public/logo-en.svg" alt="Idento Logo" width="200"/>
   
-  # Idento - Event Check-in System
+# Idento - Event Check-in System
   
-  ### Complete event registration and check-in system with badge printing
+## Complete event registration and check-in system with badge printing
   
   [![CI](https://img.shields.io/github/actions/workflow/status/thevladbog/idento/ci.yml?branch=main&label=CI&logo=github)](https://github.com/thevladbog/idento/actions/workflows/ci.yml)
   [![GitHub Stars](https://img.shields.io/github/stars/thevladbog/idento?style=social)](https://github.com/thevladbog/idento/stargazers)
@@ -79,6 +79,7 @@ make dev
 ### What happens on startup?
 
 The command automatically:
+
 - ✅ Starts Docker (PostgreSQL, Redis, PgAdmin)
 - ✅ Applies DB migrations
 - ✅ Loads test data
@@ -88,12 +89,12 @@ The command automatically:
 
 ### System Access
 
-🌐 **Web Admin**: http://localhost:5173  
+🌐 **Web Admin**: <http://localhost:5173>  
 🔑 **Login**: `admin@test.com` / `password`
 
-🔧 **Backend API**: http://localhost:8008  
-🖨️ **Printing Agent**: http://localhost:3000  
-🗄️ **PgAdmin**: http://localhost:50050 (`admin@idento.com` / `admin`)
+🔧 **Backend API**: <http://localhost:8008>  
+🖨️ **Printing Agent**: <http://localhost:3000>  
+🗄️ **PgAdmin**: <http://localhost:50050> (`admin@idento.com` / `admin`)
 
 Tip: set `IDENTO_SKIP_PASSWORD_RESET=1` to skip resetting test passwords during `make dev`.
 
@@ -125,6 +126,7 @@ make docker-down
 ### 2️⃣ Generate Codes
 
 If CSV didn't have a "code" column:
+
 - Click **"Generate Ticket Codes"**
 - Done! Unique codes created
 
@@ -191,29 +193,34 @@ idento/
 - **Developer Guide**: [DEVELOPMENT.md](./DEVELOPMENT.md) — detailed instructions for development on Windows, macOS, and Linux
 - **Project Documentation**: [docs/](./docs/) — setup guides, testing, migrations, and implementation status
 - **CI/CD**: [.github/CI.md](./.github/CI.md) — pipeline and checks information
-- **API Docs**: http://localhost:8008/docs (after startup)
+- **API Docs**: <http://localhost:8008/docs> (after startup)
 
 ## 🎨 Features
 
 ### CSV Import with Dynamic Fields
+
 ```csv
 first_name,last_name,email,company,custom_field_1,custom_field_2
 John,Doe,john@example.com,Acme,Value1,Value2
 ```
+
 ✅ Any columns - system adapts!
 
 ### Badge Editor
+
 - Drag & Drop elements
 - Field selection from dropdown
 - QR codes
 - Size, font, color customization
 
 ### Offline Mode (Mobile)
+
 - SQLite database
 - Works without internet
 - Auto-sync
 
 ### User Management
+
 - Roles: Admin, Manager, Staff
 - QR tokens for quick staff login
 - Event assignment
@@ -252,6 +259,7 @@ make clean
 ### Platform-Specific Scripts
 
 **Windows:**
+
 ```powershell
 .\scripts\start-all.ps1    # Start all services
 .\scripts\stop-all.ps1     # Stop
@@ -260,6 +268,7 @@ make clean
 ```
 
 **macOS/Linux:**
+
 ```bash
 bash scripts/start-all.sh    # Start all services
 bash scripts/stop-all.sh     # Stop
@@ -270,6 +279,7 @@ bash scripts/seed.sh         # Migrations and seed
 ### Detailed Information
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for:
+
 - Dependency installation for each platform
 - OS-specific troubleshooting
 - Development tips
@@ -278,6 +288,7 @@ See [DEVELOPMENT.md](./DEVELOPMENT.md) for:
 ## 📝 Usage Examples
 
 **Upload CSV**:
+
 ```bash
 curl -X POST http://localhost:8008/api/events/{event_id}/attendees/bulk \
   -H "Authorization: Bearer {token}" \
@@ -285,12 +296,14 @@ curl -X POST http://localhost:8008/api/events/{event_id}/attendees/bulk \
 ```
 
 **Generate Codes**:
+
 ```bash
 curl -X POST http://localhost:8008/api/events/{event_id}/attendees/generate-codes \
   -H "Authorization: Bearer {token}"
 ```
 
 **Export CSV**:
+
 ```bash
 curl -X GET http://localhost:8008/api/events/{event_id}/attendees/export \
   -H "Authorization: Bearer {token}" \
@@ -302,6 +315,7 @@ curl -X GET http://localhost:8008/api/events/{event_id}/attendees/export \
 This project uses a proprietary license. To obtain permission for use or contributions, please contact the repository owner.
 
 If you have suggestions or found a bug:
+
 1. Create an [Issue](https://github.com/thevladbog/idento/issues/new/choose)
 2. Describe the problem or suggestion in detail
 3. Attach screenshots or logs if necessary

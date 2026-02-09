@@ -92,8 +92,11 @@ async function generateTextZPL(
     textContent = String(data[element.source]);
   }
 
-  // Check if text needs image rendering (Cyrillic, Chinese, etc.)
-  if (useImageForCyrillic && needsImageRendering(textContent)) {
+  // Use image rendering when text has non-Latin script OR when custom font is set (so one font for all text)
+  const useImageRendering =
+    (useImageForCyrillic && needsImageRendering(textContent)) ||
+    !!(element.customFont && element.customFont.trim());
+  if (useImageRendering) {
     // Render text as image for full font support
     const fontSize = element.fontSize || 12;
     const fontSizePixels = Math.round((fontSize / 72) * dpi);
