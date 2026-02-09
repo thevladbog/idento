@@ -36,7 +36,6 @@ import { Switch } from "@/components/ui/switch";
 import { useScanner } from "@/hooks/useScanner";
 import { agentApi } from "@/lib/agent";
 import { loadEventFonts } from "@/lib/fonts";
-import { generateZPL } from "@/utils/zpl";
 import { formatDateTime } from "@/utils/dateFormat";
 import {
   renderMarkdownTemplate,
@@ -223,42 +222,18 @@ export default function CheckinFullscreenPage() {
     }
 
     try {
-      // Get template from event
-      const rawTemplate = selectedEvent.custom_fields?.badgeTemplate;
-      if (!rawTemplate || typeof rawTemplate !== 'object') {
+      const { data } = await api.post<{ zpl: string }>(
+        `/api/events/${selectedEvent.id}/badge-zpl`,
+        { attendee_id: attendee.id }
+      );
+      if (!data?.zpl) {
         toast.error(t("noTemplateConfigured"));
         return;
       }
-      const template = rawTemplate as { width_mm: number; height_mm: number; dpi: number; elements: import('@/utils/zpl').BadgeElement[] };
-
-      // Prepare attendee data
-      const attendeeData = {
-        first_name: attendee.first_name,
-        last_name: attendee.last_name,
-        email: attendee.email,
-        company: attendee.company || "",
-        position: attendee.position || "",
-        code: attendee.code,
-        ...(attendee.custom_fields || {}),
-      };
-
-      // Generate ZPL
-      const zpl = await generateZPL(
-        {
-          widthMM: template.width_mm,
-          heightMM: template.height_mm,
-          dpi: template.dpi as 203 | 300,
-        },
-        template.elements,
-        attendeeData
-      );
-
-      // Send to printer
       await agentApi.print({
         printer_name: selectedPrinter,
-        zpl: zpl,
+        zpl: data.zpl,
       });
-
       toast.success(t("badgePrinted"));
     } catch (error) {
       console.error("Print failed", error);

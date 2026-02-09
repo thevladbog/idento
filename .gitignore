@@ -35,6 +35,12 @@ coverage.out
 node_modules/
 web/dist
 web/dist-ssr
+*.tsbuildinfo
+
+# Desktop (Tauri / Vite)
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
 
 # Mobile - Android
 mobile/android-app/build/
@@ -76,6 +82,9 @@ Thumbs.db
 
 # Root build output (Makefile build-backend / build-agent)
 /build/
+
+# Test coverage (JS/TS)
+coverage/
 
 # Lint and temp
 lint/

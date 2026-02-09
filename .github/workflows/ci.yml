@@ -25,6 +25,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       web: ${{ steps.filter.outputs.web }}
       mobile: ${{ steps.filter.outputs.mobile }}
+      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -40,6 +41,8 @@ jobs:
               - 'web/**'
             mobile:
               - 'mobile/**'
+            desktop:
+              - 'desktop/**'
 
   # Lint Go code (backend + agent)
   lint-go:
@@ -314,6 +317,42 @@ jobs:
           echo "## Android Lint Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Android linting completed" >> $GITHUB_STEP_SUMMARY
 
+  # Build desktop (Tauri)
+  build-desktop:
+    name: Build Desktop (Tauri)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies (desktop)
+        run: cd desktop && npm ci
+      - name: Install Tauri system deps (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Build Tauri
+        run: cd desktop && npm run tauri build
+        env:
+          CI: true
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-bundle
+          path: desktop/src-tauri/target/release/bundle/
+          retention-days: 7
+      - name: Summary
+        run: |
+          echo "## Desktop Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Tauri desktop built successfully" >> $GITHUB_STEP_SUMMARY
+
   # Security: Dependency review for pull requests
   dependency-review:
     name: Dependency Review
@@ -339,7 +378,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [lint-go, test-go, build-go, gosec, typecheck-web, lint-web, build-web, dependency-review]
+    needs: [lint-go, test-go, build-go, gosec, typecheck-web, lint-web, build-web, build-desktop, dependency-review]
     if: always()
     steps:
       - name: Check job statuses
@@ -371,6 +410,10 @@ jobs:
           fi
           if [[ "${{ needs.build-web.result }}" != "success" && "${{ needs.build-web.result }}" != "skipped" ]]; then
             echo "build-web failed"
+            exit 1
+          fi
+          if [[ "${{ needs.build-desktop.result }}" != "success" && "${{ needs.build-desktop.result }}" != "skipped" ]]; then
+            echo "build-desktop failed"
             exit 1
           fi
           if [[ "${{ needs.dependency-review.result }}" != "success" && "${{ needs.dependency-review.result }}" != "skipped" ]]; then

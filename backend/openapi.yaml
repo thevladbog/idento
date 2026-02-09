@@ -184,6 +184,25 @@ components:
         message:
           type: string
 
+    BadgeZPLRequest:
+      type: object
+      required:
+        - attendee_id
+      properties:
+        attendee_id:
+          type: string
+          format: uuid
+          description: ID участника для печати бейджа
+
+    BadgeZPLResponse:
+      type: object
+      required:
+        - zpl
+      properties:
+        zpl:
+          type: string
+          description: Готовая ZPL-разметка для отправки на принтер (Zebra)
+
 security:
   - BearerAuth: []
 
@@ -338,6 +357,54 @@ paths:
       responses:
         '200':
           description: Мероприятие обновлено
+
+  /api/events/{id}/badge-zpl:
+    post:
+      tags:
+        - Events
+      summary: Получить готовую ZPL для печати бейджа
+      description: |
+        По шаблону бейджа мероприятия (event.custom_fields.badgeTemplate) и данным участника
+        генерирует готовую ZPL-разметку. Клиент отправляет полученный ZPL на принтер через agent POST /print.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID мероприятия
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BadgeZPLRequest'
+      responses:
+        '200':
+          description: Готовая ZPL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadgeZPLResponse'
+        '400':
+          description: Некорректный запрос или шаблон
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Мероприятие или участник не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Доступ запрещён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
           
   /api/events/{id}/attendees:
     get:

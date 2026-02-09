@@ -1,0 +1,11 @@
+{
+  "identifier": "main-capability",
+  "description": "Main window: app commands and shell",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen"
+  ]
+}

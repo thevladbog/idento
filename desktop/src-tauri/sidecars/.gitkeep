@@ -1,0 +1,3 @@
+# Place idento-agent-<TARGET_TRIPLE> binaries here for bundled agent.
+# Build with: make -C ../../.. build-agent-sidecars
+# Or manually: cd agent && GOOS=linux GOARCH=arm64 go build -o ../desktop/src-tauri/sidecars/idento-agent-aarch64-unknown-linux-gnu .
