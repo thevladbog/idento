@@ -83,9 +83,13 @@ func (m *Manager) ListPrinters() []string {
 	return list
 }
 
-// RemovePrinter removes a printer by name. It is a no-op if the name is not found.
-func (m *Manager) RemovePrinter(name string) {
+// RemovePrinter removes a printer by name. Returns true if the printer was
+// present and removed, false if it was not in the manager (e.g. stale config).
+// Callers can use the return value to log or distinguish "removed" from "not found".
+func (m *Manager) RemovePrinter(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	_, ok := m.printers[name]
 	delete(m.printers, name)
+	return ok
 }

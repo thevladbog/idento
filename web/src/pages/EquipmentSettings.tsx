@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -73,6 +74,7 @@ export default function EquipmentSettingsPage() {
   const [networkPrinterName, setNetworkPrinterName] = useState("");
   const [networkPrinterIP, setNetworkPrinterIP] = useState("");
   const [networkPrinterPort, setNetworkPrinterPort] = useState("9100");
+  const [printerToRemove, setPrinterToRemove] = useState<string | null>(null);
 
   // COM Scanner settings
   const [comScannerPort, setComScannerPort] = useState("");
@@ -244,12 +246,15 @@ export default function EquipmentSettingsPage() {
       // Add printer to agent
       await agentApi.addNetworkPrinter(printerName, networkPrinterIP, port);
 
-      // Save to localStorage for persistence
+      // Save to localStorage for persistence (dedupe by name)
       const savedPrinters = JSON.parse(
         localStorage.getItem("network_printers") || "[]"
       );
-      savedPrinters.push({ name: printerName, ip: networkPrinterIP, port });
-      localStorage.setItem("network_printers", JSON.stringify(savedPrinters));
+      const filtered = savedPrinters.filter(
+        (p: { name: string }) => p.name !== printerName
+      );
+      filtered.push({ name: printerName, ip: networkPrinterIP, port });
+      localStorage.setItem("network_printers", JSON.stringify(filtered));
 
       // Update local state
       const newPrinter: PrinterDevice = {
@@ -273,7 +278,6 @@ export default function EquipmentSettingsPage() {
   };
 
   const removeNetworkPrinter = async (name: string) => {
-    if (!window.confirm(t("confirmDeletePrinter"))) return;
     try {
       await agentApi.removeNetworkPrinter(name);
       const savedPrinters = JSON.parse(
@@ -288,6 +292,7 @@ export default function EquipmentSettingsPage() {
       }
       await fetchPrinters();
       toast.success(t("printerRemoved"));
+      setPrinterToRemove(null);
     } catch (error) {
       console.error("Failed to remove network printer", error);
       toast.error(t("failedToRemovePrinter"));
@@ -484,6 +489,9 @@ export default function EquipmentSettingsPage() {
                       {printers.map((printer) => (
                         <SelectItem key={printer.name} value={printer.name}>
                           <div className="flex items-center gap-2">
+                            {printer.type === "system" && (
+                              <Printer className="w-4 h-4" />
+                            )}
                             {printer.type === "usb" && (
                               <Usb className="w-4 h-4" />
                             )}
@@ -556,7 +564,7 @@ export default function EquipmentSettingsPage() {
                               variant="ghost"
                               size="icon"
                               className="shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeNetworkPrinter(printer.name)}
+                              onClick={() => setPrinterToRemove(printer.name)}
                               title={t("deletePrinter")}
                               aria-label={t("deletePrinter")}
                             >
@@ -957,6 +965,36 @@ export default function EquipmentSettingsPage() {
               </Button>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={printerToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setPrinterToRemove(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("deletePrinter")}</DialogTitle>
+            <DialogDescription>{t("confirmDeletePrinter")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setPrinterToRemove(null)}
+            >
+              {t("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (printerToRemove) removeNetworkPrinter(printerToRemove);
+              }}
+            >
+              {t("deletePrinter")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Layout>

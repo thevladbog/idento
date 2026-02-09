@@ -225,6 +225,10 @@ paths:
                     type: string
         '400':
           description: Некорректные данные (name обязателен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /printers/add:
     post:

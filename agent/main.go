@@ -38,8 +38,8 @@ type AgentConfig struct {
 	DefaultPrinter  string                 `json:"default_printer"`
 }
 
-// configMu serializes all config load-modify-save sequences to avoid races.
-var configMu sync.Mutex
+// configMu serializes config load-modify-save; use RLock for read-only access.
+var configMu sync.RWMutex
 
 func loadOpenAPISpec() ([]byte, error) {
 	root, err := os.OpenRoot(".")
@@ -242,9 +242,9 @@ func main() {
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
 		names := pm.ListPrinters()
-		configMu.Lock()
+		configMu.RLock()
 		config, err := loadConfig()
-		configMu.Unlock()
+		configMu.RUnlock()
 		networkSet := make(map[string]bool)
 		if err == nil {
 			for _, np := range config.NetworkPrinters {
@@ -445,31 +445,36 @@ func main() {
 
 		log.Printf("Removing printer: %s", req.Name)
 
-		configMu.Lock()
-		config, err := loadConfig()
-		if err != nil {
-			configMu.Unlock()
-			log.Printf("Failed to load config: %v", err)
-			http.Error(w, "Failed to load config", http.StatusInternalServerError)
-			return
-		}
-		filtered := config.NetworkPrinters[:0]
-		for _, np := range config.NetworkPrinters {
-			if np.Name != req.Name {
-				filtered = append(filtered, np)
+		updateConfig := func(name string) error {
+			configMu.Lock()
+			defer configMu.Unlock()
+			config, err := loadConfig()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
 			}
+			filtered := make([]NetworkPrinterConfig, 0, len(config.NetworkPrinters))
+			for _, np := range config.NetworkPrinters {
+				if np.Name != name {
+					filtered = append(filtered, np)
+				}
+			}
+			config.NetworkPrinters = filtered
+			if err := saveConfig(config); err != nil {
+				return fmt.Errorf("save config: %w", err)
+			}
+			return nil
 		}
-		config.NetworkPrinters = filtered
-		if err := saveConfig(config); err != nil {
-			configMu.Unlock()
-			log.Printf("Failed to save config: %v", err)
-			http.Error(w, "Failed to save config", http.StatusInternalServerError)
+		if err := updateConfig(req.Name); err != nil {
+			log.Printf("Failed to update config: %v", err)
+			http.Error(w, "Failed to update config", http.StatusInternalServerError)
 			return
 		}
-		configMu.Unlock()
 
-		pm.RemovePrinter(req.Name)
-		log.Printf("Printer removed from config")
+		if removed := pm.RemovePrinter(req.Name); removed {
+			log.Printf("Printer removed from config and manager: %s", req.Name)
+		} else {
+			log.Printf("Printer %s removed from config (was not in manager, possibly stale)", req.Name)
+		}
 
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(map[string]string{
