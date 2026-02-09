@@ -1,3 +1,6 @@
+/**
+ * Client for the Idento Agent (local service on port 12345): printers, ZPL/PDF print, scanners, ports.
+ */
 import axios from "axios";
 
 const AGENT_URL = "http://localhost:12345";
@@ -29,7 +32,9 @@ export interface ScannerInfo {
   port_name?: string;
 }
 
+/** API for the local Idento Agent: health, printers, print (ZPL/PDF), scanner ports and last scan. */
 export const agentApi = {
+  /** Returns true if the agent is reachable. */
   checkHealth: async () => {
     try {
       const response = await axios.get(`${AGENT_URL}/health`, {

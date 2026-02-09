@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// CreateAttendeeRequest is the JSON body for POST /api/events/:event_id/attendees.
 type CreateAttendeeRequest struct {
 	FirstName    string                 `json:"first_name"`
 	LastName     string                 `json:"last_name"`
@@ -20,6 +21,7 @@ type CreateAttendeeRequest struct {
 	CustomFields map[string]interface{} `json:"custom_fields"`
 }
 
+// UpdateAttendeeRequest is the JSON body for PATCH /api/attendees/:id (full info update).
 type UpdateAttendeeRequest struct {
 	FirstName    *string                `json:"first_name,omitempty"`
 	LastName     *string                `json:"last_name,omitempty"`
@@ -31,6 +33,7 @@ type UpdateAttendeeRequest struct {
 	CustomFields map[string]interface{} `json:"custom_fields,omitempty"`
 }
 
+// CreateAttendee creates an attendee for the given event; returns 400/404/500 on error.
 func (h *Handler) CreateAttendee(c echo.Context) error {
 	eventID, err := uuid.Parse(c.Param("event_id"))
 	if err != nil {

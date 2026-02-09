@@ -103,6 +103,8 @@ i18n
           // Theme & Language
           toggleTheme: "Toggle theme",
           toggleLanguage: "Toggle language",
+          languageEn: "English",
+          languageRu: "Русский",
           light: "Light",
           dark: "Dark",
           system: "System",
@@ -255,6 +257,9 @@ i18n
             "Choose which field from your attendee data should be displayed as the badge type/category during check-in",
           none: "None",
           alignRight: "Right",
+          xMm: "X (mm)",
+          yMm: "Y (mm)",
+          fontPlaceholderExample: "Arial, Times New Roman, Courier...",
 
           // Users
           users: "Users",
@@ -642,6 +647,8 @@ i18n
           organizationSettings: "Organization Settings",
           organizationSettingsDesc: "Manage organization details and preferences",
           organizationName: "Organization Name",
+          websitePlaceholder: "https://example.com",
+          contactEmailPlaceholder: "contact@example.com",
           
           // Super Admin
           superAdmin: "Super Admin",
@@ -729,6 +736,8 @@ i18n
             "Upload a font file (woff2, woff, ttf, otf). Maximum 5 MB.",
           fontFile: "Font File",
           fontName: "Name",
+          fontNamePlaceholder: "Roboto Bold",
+          fontFamilyPlaceholder: "Roboto",
           fontFamily: "Font Family (CSS)",
           fontFamilyHint: "This name will be used in the template editor",
           fontWeight: "Weight",
@@ -778,6 +787,12 @@ i18n
           next: "Next",
           page: "Page",
           of: "of",
+          planFree: "Free",
+          planStarter: "Starter",
+          planProfessional: "Professional",
+          planEnterprise: "Enterprise",
+          planPlaceholderName: "Free Plan",
+          planPlaceholderSlug: "free",
           planCreated: "Plan created",
           planUpdated: "Plan updated",
           fillPlanDetails: "Fill in plan details",
@@ -883,6 +898,8 @@ i18n
           // Theme & Language
           toggleTheme: "Сменить тему",
           toggleLanguage: "Сменить язык",
+          languageEn: "English",
+          languageRu: "Русский",
           light: "Светлая",
           dark: "Тёмная",
           system: "Системная",
@@ -1037,6 +1054,9 @@ i18n
             "Выберите, какое поле из данных участника будет отображаться как тип/категория бейджа во время чек-ина",
           none: "Нет",
           alignRight: "Справа",
+          xMm: "X (мм)",
+          yMm: "Y (мм)",
+          fontPlaceholderExample: "Arial, Times New Roman, Courier...",
 
           // Users
           users: "Пользователи",
@@ -1427,6 +1447,8 @@ i18n
           organizationSettings: "Настройки организации",
           organizationSettingsDesc: "Управление деталями и настройками организации",
           organizationName: "Название организации",
+          websitePlaceholder: "https://example.com",
+          contactEmailPlaceholder: "contact@example.com",
           
           // Super Admin
           superAdmin: "Супер Админ",
@@ -1514,6 +1536,8 @@ i18n
             "Загрузите файл шрифта (woff2, woff, ttf, otf). Максимум 5 МБ.",
           fontFile: "Файл шрифта",
           fontName: "Название",
+          fontNamePlaceholder: "Roboto Bold",
+          fontFamilyPlaceholder: "Roboto",
           fontFamily: "Font Family (CSS)",
           fontFamilyHint: "Это имя будет использоваться в редакторе шаблонов",
           fontWeight: "Начертание",
@@ -1566,6 +1590,12 @@ i18n
           next: "Вперед",
           page: "Страница",
           of: "из",
+          planFree: "Free",
+          planStarter: "Starter",
+          planProfessional: "Professional",
+          planEnterprise: "Enterprise",
+          planPlaceholderName: "Free Plan",
+          planPlaceholderSlug: "free",
           planCreated: "План создан",
           planUpdated: "План обновлен",
           fillPlanDetails: "Заполните детали плана",

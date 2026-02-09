@@ -1,3 +1,9 @@
+/**
+ * Axios instance for the Idento backend API.
+ * - Base URL from VITE_API_URL (default http://localhost:8008).
+ * - Request interceptor adds Bearer token from localStorage.
+ * - Response interceptor clears auth and redirects to /login on 401.
+ */
 import axios from 'axios';
 
 const api = axios.create({

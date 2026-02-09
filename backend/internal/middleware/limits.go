@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// CheckLimits middleware для проверки лимитов перед созданием ресурсов
+// CheckLimits returns Echo middleware that enforces tenant limits before creating resources (e.g. users, events, attendees).
 func CheckLimits(s store.Store, resourceType string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

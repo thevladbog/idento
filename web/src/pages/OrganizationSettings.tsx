@@ -140,7 +140,7 @@ export default function OrganizationSettings() {
                     id="website"
                     type="url"
                     {...register('website')}
-                    placeholder="https://example.com"
+                    placeholder={t("websitePlaceholder")}
                   />
                   <p className="text-sm text-muted-foreground">{t('optional')}</p>
                 </div>
@@ -154,7 +154,7 @@ export default function OrganizationSettings() {
                     id="contact_email"
                     type="email"
                     {...register('contact_email')}
-                    placeholder="contact@example.com"
+                    placeholder={t("contactEmailPlaceholder")}
                   />
                   <p className="text-sm text-muted-foreground">{t('optional')}</p>
                 </div>

@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { loadEventFonts, fontsApi, type FontListItem } from "@/lib/fonts";
 
-// Hook to load custom fonts for a specific event
+/**
+ * Loads custom event fonts into the document when eventId is set and user is authenticated.
+ * @returns { loaded, error } - loaded is true when fonts have been loaded; error is a message on failure.
+ */
 export function useEventFontsLoader(eventId: string | undefined) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +32,10 @@ export function useEventFontsLoader(eventId: string | undefined) {
   return { loaded, error };
 }
 
-// Hook to manage fonts list for an event
+/**
+ * Fetches and manages the list of fonts for an event; supports upload and delete.
+ * @returns { fonts, loading, error, fetchFonts, uploadFont, deleteFont } - state and actions.
+ */
 export function useEventFonts(eventId: string | undefined) {
   const [fonts, setFonts] = useState<FontListItem[]>([]);
   const [loading, setLoading] = useState(false);

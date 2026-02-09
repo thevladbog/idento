@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// CreateEventRequest is the JSON body for POST /api/events.
 type CreateEventRequest struct {
 	Name      string     `json:"name"`
 	StartDate *time.Time `json:"start_date"`
@@ -17,6 +18,7 @@ type CreateEventRequest struct {
 	Location  string     `json:"location"`
 }
 
+// CreateEvent creates an event for the tenant from JWT; returns 400/500 on error.
 func (h *Handler) CreateEvent(c echo.Context) error {
 	user := c.Get("user").(*models.JWTCustomClaims)
 	tenantID, err := uuid.Parse(user.TenantID)

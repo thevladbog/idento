@@ -22,8 +22,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.idento.R
 import androidx.core.content.ContextCompat
 import com.google.accompanist.permissions.*
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -199,7 +201,7 @@ private fun ScanningScreen(
                             Spacer(modifier = Modifier.width(16.dp))
                             Column {
                                 Text(
-                                    text = "Hardware Scanner Active",
+                                    text = stringResource(R.string.hardware_scanner_active),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -209,7 +211,7 @@ private fun ScanningScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "Press scan button on device",
+                                    text = stringResource(R.string.press_scan_button),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -287,7 +289,7 @@ private fun ScanningScreen(
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "Processing...",
+                                    text = stringResource(R.string.processing),
                                     style = MaterialTheme.typography.titleLarge
                                 )
                             }
@@ -331,7 +333,7 @@ private fun ScanningScreen(
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
-                                    text = "Ready to scan",
+                                    text = stringResource(R.string.ready_to_scan),
                                     style = MaterialTheme.typography.titleLarge,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -375,7 +377,7 @@ private fun SuccessScreen(
             
             // Заголовок
             Text(
-                text = "Welcome!",
+                text = stringResource(R.string.welcome),
                 style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
@@ -494,7 +496,7 @@ private fun SuccessScreen(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Successfully Checked In",
+                            text = stringResource(R.string.successfully_checked_in),
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF4CAF50)
@@ -514,7 +516,7 @@ private fun SuccessScreen(
                 modifier = Modifier.padding(horizontal = 32.dp)
             ) {
                 Text(
-                    text = "Continue",
+                    text = stringResource(R.string.continue_text),
                     style = MaterialTheme.typography.titleMedium
                 )
             }
@@ -689,7 +691,7 @@ private fun PermissionRequestScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Camera Permission") },
+                title = { Text(stringResource(R.string.camera_permission)) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -714,14 +716,14 @@ private fun PermissionRequestScreen(
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = if (shouldShowRationale) "Camera Access Needed" else "Camera Permission Required",
+                text = stringResource(R.string.camera_permission_required),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "To scan QR codes for self check-in, we need access to your camera.",
+                text = stringResource(R.string.camera_permission_rationale),
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -733,7 +735,7 @@ private fun PermissionRequestScreen(
             ) {
                 Icon(Icons.Default.Camera, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Grant Permission")
+                Text(stringResource(R.string.grant_permission))
             }
         }
     }

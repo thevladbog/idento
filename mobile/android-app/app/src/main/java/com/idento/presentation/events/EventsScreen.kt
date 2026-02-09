@@ -19,7 +19,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.idento.R
 import com.idento.data.model.Event
 import com.idento.presentation.theme.*
 import com.idento.presentation.components.getGridColumns
@@ -206,7 +208,7 @@ private fun ErrorState(
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
-            text = "Something went wrong",
+            text = stringResource(R.string.something_went_wrong),
             style = MaterialTheme.typography.titleMedium
         )
         
@@ -231,7 +233,7 @@ private fun ErrorState(
                 modifier = Modifier.size(18.dp)
             )
             Spacer(Modifier.width(8.dp))
-            Text("Try again")
+            Text(stringResource(R.string.try_again))
         }
     }
 }
@@ -261,14 +263,14 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(24.dp))
         
         Text(
-            text = "No events yet",
+            text = stringResource(R.string.no_events_yet),
             style = MaterialTheme.typography.titleMedium
         )
         
         Spacer(modifier = Modifier.height(8.dp))
         
         Text(
-            text = "Events will appear here once created",
+            text = stringResource(R.string.events_will_appear),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -1,3 +1,5 @@
+// Package store defines the data access interface for Idento:
+// tenants, users, events, attendees, zones, API keys, fonts, subscriptions, usage, and audit.
 package store
 
 import (
@@ -8,6 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Store is the main data access interface; implementations (e.g. PGStore) provide persistence.
 type Store interface {
 	CreateTenant(ctx context.Context, tenant *models.Tenant) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)

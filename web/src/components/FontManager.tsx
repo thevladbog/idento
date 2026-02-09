@@ -199,7 +199,7 @@ export function FontManager({ eventId }: FontManagerProps) {
                       id="font-name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="Roboto Bold"
+                      placeholder={t("fontNamePlaceholder")}
                       className="mt-1"
                     />
                   </div>
@@ -210,7 +210,7 @@ export function FontManager({ eventId }: FontManagerProps) {
                       id="font-family"
                       value={family}
                       onChange={(e) => setFamily(e.target.value)}
-                      placeholder="Roboto"
+                      placeholder={t("fontFamilyPlaceholder")}
                       className="mt-1"
                     />
                     <p className="text-xs text-muted-foreground mt-1">

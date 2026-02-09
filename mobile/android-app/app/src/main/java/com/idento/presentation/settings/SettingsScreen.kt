@@ -23,8 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.idento.R
 import com.google.accompanist.permissions.*
 import com.idento.data.bluetooth.BluetoothPrinter
 import com.idento.data.preferences.AppPreferences
@@ -119,7 +121,7 @@ fun SettingsScreen(
             // Printer Section Header
             item {
                 Text(
-                    text = "Badge Printer",
+                    text = stringResource(R.string.badge_printer),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(top = 8.dp)
@@ -187,7 +189,7 @@ fun SettingsScreen(
                 uiState.printerType == PrinterType.BLUETOOTH) {
                 item {
                     Text(
-                        text = "Available Printers",
+                        text = stringResource(R.string.available_printers),
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 8.dp)
@@ -304,7 +306,7 @@ private fun PrinterTypeSelector(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Connection Type",
+                text = stringResource(R.string.connection_type),
                 style = MaterialTheme.typography.titleSmall
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -316,7 +318,7 @@ private fun PrinterTypeSelector(
                 FilterChip(
                     selected = selectedType == PrinterType.BLUETOOTH,
                     onClick = { onTypeSelected(PrinterType.BLUETOOTH) },
-                    label = { Text("Bluetooth") },
+                    label = { Text(stringResource(R.string.bluetooth)) },
                     leadingIcon = {
                         Icon(
                             Icons.Outlined.Bluetooth, 
@@ -331,7 +333,7 @@ private fun PrinterTypeSelector(
                 FilterChip(
                     selected = selectedType == PrinterType.ETHERNET,
                     onClick = { onTypeSelected(PrinterType.ETHERNET) },
-                    label = { Text("Ethernet") },
+                    label = { Text(stringResource(R.string.ethernet)) },
                     leadingIcon = {
                         Icon(
                             Icons.Outlined.Cable, 
@@ -373,7 +375,7 @@ private fun BluetoothStatusCard(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Bluetooth",
+                        text = stringResource(R.string.bluetooth),
                         style = MaterialTheme.typography.titleSmall
                     )
                     Text(
@@ -400,7 +402,7 @@ private fun BluetoothStatusCard(
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Grant Permission")
+                    Text(stringResource(R.string.grant_permission))
                 }
             } else if (!isEnabled) {
                 Spacer(modifier = Modifier.height(12.dp))
@@ -414,7 +416,7 @@ private fun BluetoothStatusCard(
                 ) {
                     Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Enable Bluetooth")
+                    Text(stringResource(R.string.enable_bluetooth))
                 }
             }
         }
@@ -445,7 +447,7 @@ private fun SelectedPrinterCard(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Selected Printer",
+                        text = stringResource(R.string.selected_printer),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -483,7 +485,7 @@ private fun SelectedPrinterCard(
                         Icon(Icons.Outlined.Print, contentDescription = null, modifier = Modifier.size(18.dp))
                     }
                     Spacer(Modifier.width(8.dp))
-                    Text("Test")
+                    Text(stringResource(R.string.test))
                 }
                 
                 OutlinedButton(
@@ -497,7 +499,7 @@ private fun SelectedPrinterCard(
                 ) {
                     Icon(Icons.Outlined.Clear, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Remove")
+                    Text(stringResource(R.string.remove))
                 }
             }
         }
@@ -573,11 +575,11 @@ private fun EmptyPrintersCard() {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "No printers found",
+                text = stringResource(R.string.no_printers_found),
                 style = MaterialTheme.typography.titleSmall
             )
             Text(
-                text = "Make sure your printer is paired",
+                text = stringResource(R.string.printer_pairing_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -632,15 +634,15 @@ private fun EthernetPrinterForm(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Ethernet Printer",
+                text = stringResource(R.string.ethernet_printer),
                 style = MaterialTheme.typography.titleSmall
             )
             
             OutlinedTextField(
                 value = ipAddress,
                 onValueChange = onIpChanged,
-                label = { Text("IP Address") },
-                placeholder = { Text("192.168.1.100") },
+                label = { Text(stringResource(R.string.ip_address)) },
+                placeholder = { Text(stringResource(R.string.ip_address_placeholder)) },
                 leadingIcon = { Icon(Icons.Outlined.Cable, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = InputShape,
@@ -650,8 +652,8 @@ private fun EthernetPrinterForm(
             OutlinedTextField(
                 value = port,
                 onValueChange = onPortChanged,
-                label = { Text("Port") },
-                placeholder = { Text("9100") },
+                label = { Text(stringResource(R.string.port)) },
+                placeholder = { Text(stringResource(R.string.port_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = InputShape,
                 singleLine = true
@@ -660,8 +662,8 @@ private fun EthernetPrinterForm(
             OutlinedTextField(
                 value = printerName,
                 onValueChange = onNameChanged,
-                label = { Text("Printer Name") },
-                placeholder = { Text("Office Printer") },
+                label = { Text(stringResource(R.string.printer_name)) },
+                placeholder = { Text(stringResource(R.string.printer_name_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 shape = InputShape,
                 singleLine = true
@@ -681,7 +683,7 @@ private fun EthernetPrinterForm(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                 }
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         }
     }

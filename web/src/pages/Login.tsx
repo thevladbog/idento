@@ -112,7 +112,7 @@ export default function LoginPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="name@example.com"
+                    placeholder={t("emailPlaceholder")}
                     {...register("email")}
                   />
                   {errors.email && (
