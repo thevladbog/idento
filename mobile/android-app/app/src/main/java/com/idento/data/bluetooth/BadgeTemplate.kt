@@ -341,7 +341,7 @@ object BadgeTemplate {
                             val text = getFieldValue(attendee, source, customFields)
                             
                             if (text.isNotEmpty()) {
-                                val fontFamily = customFont.ifEmpty { defaultFontFamily ?: "sans-serif" }
+                                val fontFamily = customFont.takeIf { it.isNotBlank() } ?: (defaultFontFamily ?: "sans-serif")
                                 append(ZplImageText.generateSmartText(
                                     text = text,
                                     x = x,
@@ -351,7 +351,7 @@ object BadgeTemplate {
                                     customFontFamily = fontFamily,
                                     customFontSize = fontSize.toFloat(),
                                     bold = bold,
-                                    forceImageRendering = customFont.isNotEmpty()
+                                    forceImageRendering = customFont.isNotBlank()
                                 ))
                                 appendLine()
                             }

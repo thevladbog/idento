@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./main/web/public/idento-en-full.svg" alt="Idento Logo" width="200"/>
+  <img src="./web/public/logo-en.svg" alt="Idento Logo" width="200"/>
   
 # Idento - Event Check-in System
   
