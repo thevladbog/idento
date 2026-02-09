@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
@@ -14,6 +14,12 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { checkAgentHealth, agentGet, agentPost } from "@/lib/agent";
+import { clearSession } from "@/lib/api";
+import {
+  loadCheckinSettings,
+  saveCheckinSettings,
+  type KioskCheckinSettings,
+} from "@/lib/checkinSettings";
 import { toast } from "sonner";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
@@ -42,12 +48,6 @@ function parseScanners(text: string): string[] {
   }
 }
 
-import {
-  loadCheckinSettings,
-  saveCheckinSettings,
-  type KioskCheckinSettings,
-} from "@/lib/checkinSettings";
-
 export default function EquipmentPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -65,8 +65,9 @@ export default function EquipmentPage() {
 
   const [testCode, setTestCode] = useState("");
   const [testQRImage, setTestQRImage] = useState("");
-  const [testResult, setTestResult] = useState<"idle" | "waiting" | "success" | "fail">("idle");
+  const [testResult, setTestResult] = useState<"idle" | "waiting" | "success" | "fail" | "timeout">("idle");
   const [testPolling, setTestPolling] = useState(false);
+  const scannerTestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [checkinSettings, setCheckinSettings] = useState<KioskCheckinSettings>(() => loadCheckinSettings());
   const persistCheckinSettings = (next: KioskCheckinSettings) => {
@@ -74,31 +75,50 @@ export default function EquipmentPage() {
     saveCheckinSettings(next);
   };
 
-  useEffect(() => {
-    setCheckinSettings(loadCheckinSettings());
+  const fetchEquipmentData = useCallback(async () => {
+    const [printersText, scannersText, portsText, defaultText] = await Promise.all([
+      agentGet("/printers"),
+      agentGet("/scanners"),
+      agentGet("/scanners/ports").catch(() => "[]"),
+      agentGet("/printers/default").catch(() => "{}"),
+    ]);
+    let defaultPrinter: string | null = null;
+    try {
+      const def = JSON.parse(defaultText) as { default?: string | null };
+      defaultPrinter = def.default ?? null;
+    } catch {
+      /* ignore */
+    }
+    let availablePorts: { port_name: string }[] = [];
+    try {
+      const ports = JSON.parse(portsText) as { port_name: string }[];
+      availablePorts = Array.isArray(ports) ? ports : [];
+    } catch {
+      /* ignore */
+    }
+    return {
+      printers: parsePrinters(printersText),
+      scanners: parseScanners(scannersText),
+      availablePorts,
+      defaultPrinter,
+    };
   }, []);
 
   const refresh = useCallback(async () => {
     if (!agentConnected) return;
     try {
-      const [printersText, scannersText, defaultText] = await Promise.all([
-        agentGet("/printers"),
-        agentGet("/scanners"),
-        agentGet("/printers/default").catch(() => "{}"),
-      ]);
-      setPrinters(parsePrinters(printersText));
-      setScanners(parseScanners(scannersText));
-      try {
-        const def = JSON.parse(defaultText) as { default?: string | null };
-        setDefaultPrinter(def.default ?? null);
-      } catch {
-        setDefaultPrinter(null);
-      }
+      const data = await fetchEquipmentData();
+      setPrinters(data.printers);
+      setScanners(data.scanners);
+      setAvailablePorts(data.availablePorts);
+      setDefaultPrinter(data.defaultPrinter);
     } catch {
       setPrinters([]);
       setScanners([]);
+      setAvailablePorts([]);
+      setDefaultPrinter(null);
     }
-  }, [agentConnected]);
+  }, [agentConnected, fetchEquipmentData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,38 +131,27 @@ export default function EquipmentPage() {
         return;
       }
       try {
-        const [printersText, scannersText, portsText, defaultText] = await Promise.all([
-          agentGet("/printers"),
-          agentGet("/scanners"),
-          agentGet("/scanners/ports").catch(() => "[]"),
-          agentGet("/printers/default").catch(() => "{}"),
-        ]);
+        const data = await fetchEquipmentData();
         if (!cancelled) {
-          setPrinters(parsePrinters(printersText));
-          setScanners(parseScanners(scannersText));
-          try {
-            const ports = JSON.parse(portsText) as { port_name: string }[];
-            setAvailablePorts(Array.isArray(ports) ? ports : []);
-          } catch {
-            setAvailablePorts([]);
-          }
-          try {
-            const def = JSON.parse(defaultText) as { default?: string | null };
-            setDefaultPrinter(def.default ?? null);
-          } catch {
-            setDefaultPrinter(null);
-          }
+          setPrinters(data.printers);
+          setScanners(data.scanners);
+          setAvailablePorts(data.availablePorts);
+          setDefaultPrinter(data.defaultPrinter);
         }
       } catch {
-        if (!cancelled) setPrinters([]);
-        if (!cancelled) setScanners([]);
+        if (!cancelled) {
+          setPrinters([]);
+          setScanners([]);
+          setAvailablePorts([]);
+          setDefaultPrinter(null);
+        }
       }
       if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [fetchEquipmentData]);
 
   const addNetworkPrinter = async () => {
     if (!networkName.trim() || !networkIP.trim()) {
@@ -201,10 +210,19 @@ export default function EquipmentPage() {
   };
 
   const startScannerTest = useCallback(async () => {
+    if (scannerTestTimeoutRef.current) {
+      clearTimeout(scannerTestTimeoutRef.current);
+      scannerTestTimeoutRef.current = null;
+    }
     const code = `TEST-${Date.now()}`;
     setTestCode(code);
     setTestResult("waiting");
     setTestPolling(true);
+    scannerTestTimeoutRef.current = setTimeout(() => {
+      scannerTestTimeoutRef.current = null;
+      setTestPolling(false);
+      setTestResult("timeout");
+    }, 60_000);
     try {
       const dataUrl = await QRCode.toDataURL(code, { width: 200 });
       setTestQRImage(dataUrl);
@@ -225,6 +243,10 @@ export default function EquipmentPage() {
         const text = await agentGet("/scan/last");
         const data = JSON.parse(text) as { code?: string };
         if (data.code && data.code.trim() === testCode.trim()) {
+          if (scannerTestTimeoutRef.current) {
+            clearTimeout(scannerTestTimeoutRef.current);
+            scannerTestTimeoutRef.current = null;
+          }
           setTestResult("success");
           setTestPolling(false);
         }
@@ -236,11 +258,24 @@ export default function EquipmentPage() {
   }, [testPolling, testResult, testCode]);
 
   const endScannerTest = () => {
+    if (scannerTestTimeoutRef.current) {
+      clearTimeout(scannerTestTimeoutRef.current);
+      scannerTestTimeoutRef.current = null;
+    }
     setTestPolling(false);
     setTestResult("idle");
     setTestCode("");
     setTestQRImage("");
   };
+
+  useEffect(() => {
+    return () => {
+      if (scannerTestTimeoutRef.current) {
+        clearTimeout(scannerTestTimeoutRef.current);
+        scannerTestTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background p-4">
@@ -258,7 +293,7 @@ export default function EquipmentPage() {
             variant="ghost"
             size="sm"
             onClick={() => {
-              localStorage.removeItem("token");
+              clearSession();
               navigate("/login");
             }}
           >
@@ -519,6 +554,14 @@ export default function EquipmentPage() {
                 <div className="flex items-center gap-2 text-green-600">
                   <CheckCircle className="h-5 w-5" />
                   <span>{t("scannerTestPassed")}</span>
+                  <Button variant="outline" size="sm" onClick={endScannerTest}>
+                    {t("done")}
+                  </Button>
+                </div>
+              )}
+              {testResult === "timeout" && (
+                <div className="flex items-center gap-2 text-amber-600">
+                  <span>{t("scannerTestTimedOut")}</span>
                   <Button variant="outline" size="sm" onClick={endScannerTest}>
                     {t("done")}
                   </Button>

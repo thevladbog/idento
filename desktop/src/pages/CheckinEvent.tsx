@@ -59,6 +59,7 @@ export default function CheckinEventPage() {
   const [event, setEvent] = useState<EventWithCustomFields | null>(null);
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [agentConnected, setAgentConnected] = useState(false);
   const [polling, setPolling] = useState(false);
   const [scanCode, setScanCode] = useState("");
@@ -83,9 +84,11 @@ export default function CheckinEventPage() {
   useEffect(() => {
     if (!eventId) {
       setLoading(false);
+      setLoadError(null);
       return;
     }
     let cancelled = false;
+    setLoadError(null);
     api
       .get<EventWithCustomFields>(`/api/events/${eventId}`)
       .then((res) => {
@@ -96,13 +99,25 @@ export default function CheckinEventPage() {
           .then((attendeesRes) => {
             if (!cancelled) setAttendees(Array.isArray(attendeesRes.data) ? attendeesRes.data : []);
           })
-          .catch(() => {
-            if (!cancelled) setAttendees([]);
+          .catch((e) => {
+            if (!cancelled) {
+              const msg = e instanceof Error ? e.message : String(e);
+              const context = `/api/events/${eventId}/attendees`;
+              setLoadError(msg);
+              toast.error(`Failed to load ${context}: ${msg}`);
+              setAttendees([]);
+            }
           });
       })
-      .catch(() => {
-        if (!cancelled) setEvent(null);
-        if (!cancelled) setAttendees([]);
+      .catch((e) => {
+        if (!cancelled) {
+          const msg = e instanceof Error ? e.message : String(e);
+          const context = `/api/events/${eventId}`;
+          setLoadError(msg);
+          toast.error(`Failed to load ${context}: ${msg}`);
+          setEvent(null);
+          setAttendees([]);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -122,57 +137,69 @@ export default function CheckinEventPage() {
     return () => setPolling(false);
   }, [isScannerMode, agentConnected, eventId]);
 
+  // Media stream: request camera, attach to video, cleanup only when leaving camera or eventId changes.
   useEffect(() => {
-    if (!isCameraMode || scanResult || !eventId) return;
+    if (!isCameraMode || !eventId) return;
     setCameraDenied(false);
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!video) return;
     let cancelled = false;
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: "environment" } })
       .then((stream) => {
         if (cancelled) {
-          stream.getTracks().forEach((t) => {
-            t.stop();
-          });
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
         streamRef.current = stream;
         video.srcObject = stream;
         video.play().catch(() => {});
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        const tick = () => {
-          if (cancelled || !streamRef.current) return;
-          if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            const w = Math.min(video.videoWidth, 640);
-            const h = Math.min(video.videoHeight, 640);
-            canvas.width = w;
-            canvas.height = h;
-            ctx.drawImage(video, 0, 0, w, h);
-            const imageData = ctx.getImageData(0, 0, w, h);
-            const code = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
-            if (code && code.data) {
-              handleScanCodeRef.current(code.data.trim());
-              return;
-            }
-          }
-          animationRef.current = requestAnimationFrame(tick);
-        };
-        tick();
       })
       .catch(() => {
         if (!cancelled) setCameraDenied(true);
       });
     return () => {
       cancelled = true;
-      if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
-      streamRef.current?.getTracks().forEach((t) => {
-        t.stop();
-      });
+      streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       if (video) video.srcObject = null;
+    };
+  }, [isCameraMode, eventId]);
+
+  // Decode loop: run QR tick when no scan result; cancel only animation frame on result/unmount (stream stays).
+  useEffect(() => {
+    if (!isCameraMode || !eventId || scanResult) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled) return;
+      if (!streamRef.current) return;
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        const w = Math.min(video.videoWidth, 640);
+        const h = Math.min(video.videoHeight, 640);
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const code = jsQR(imageData.data, w, h, { inversionAttempts: "attemptBoth" });
+        if (code && code.data) {
+          handleScanCodeRef.current(code.data.trim());
+          return;
+        }
+      }
+      animationRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      if (animationRef.current != null) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
     };
   }, [isCameraMode, eventId, scanResult]);
 
@@ -296,6 +323,10 @@ export default function CheckinEventPage() {
   const printBadge = useCallback(
     async (attendee: Attendee) => {
       if (!eventId || !attendee?.id) return;
+      if (!agentConnected) {
+        toast.error(t("agentNotConnected"));
+        return;
+      }
       try {
         let defaultName: string | null = null;
         try {
@@ -327,7 +358,7 @@ export default function CheckinEventPage() {
         toast.error(t("printFailed"));
       }
     },
-    [eventId, t]
+    [eventId, agentConnected, t]
   );
 
   useEffect(() => {
@@ -350,6 +381,15 @@ export default function CheckinEventPage() {
     }
     titleTapTimeoutRef.current = setTimeout(() => setTitleTapCount(0), 2000);
   };
+
+  useEffect(() => {
+    return () => {
+      if (titleTapTimeoutRef.current) {
+        clearTimeout(titleTapTimeoutRef.current);
+        titleTapTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const getBackgroundColor = () => {
     if (!scanResult) return "bg-background";
@@ -428,7 +468,7 @@ export default function CheckinEventPage() {
     >
       <header className="flex items-center justify-between border-b border-border/50 bg-card/90 px-4 py-3 backdrop-blur">
         <div className="flex items-center gap-2">
-          <div onClick={handleTitleTap} onKeyDown={(e) => e.key === "Enter" && handleTitleTap()} role="button" tabIndex={0}>
+          <div onClick={handleTitleTap} onKeyDown={(e) => e.key === "Enter" && handleTitleTap()} role="button" tabIndex={0} aria-label={t("navigateToCheckin")}>
             <h1 className="text-xl font-semibold">{event?.name ?? t("checkin")}</h1>
             <p className="text-sm text-muted-foreground">{t("checkinInterfaceDesc")}</p>
           </div>
@@ -454,6 +494,14 @@ export default function CheckinEventPage() {
       {loading ? (
         <div className="flex min-h-[60vh] items-center justify-center">
           <p className="text-muted-foreground">{t("loading")}</p>
+        </div>
+      ) : loadError ? (
+        <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 p-6">
+          <p className="text-center text-destructive">{loadError}</p>
+          <Button variant="outline" onClick={() => navigate("/checkin")}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {t("back")}
+          </Button>
         </div>
       ) : scanResult ? (
         <div className="flex min-h-[calc(100vh-80px)] flex-col items-center justify-center p-6">

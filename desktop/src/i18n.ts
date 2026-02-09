@@ -64,6 +64,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         startScannerTest: "Start scanner test",
         scanThisCode: "Scan this code with your scanner",
         scannerTestPassed: "Scanner test passed",
+        scannerTestTimedOut: "Scanner test timed out",
         cancel: "Cancel",
         done: "Done",
         setAsDefault: "Set as default",
@@ -88,6 +89,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         startCheckin: "Start check-in",
         // CheckinEvent
         back: "Back",
+        navigateToCheckin: "Navigate to check-in",
         eventNotFound: "Event not found",
         searchPlaceholder: "Search by name, email, or code...",
         listeningForScan: "Listening for scan...",
@@ -182,6 +184,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         startScannerTest: "Запустить тест сканера",
         scanThisCode: "Отсканируйте этот код сканером",
         scannerTestPassed: "Тест сканера пройден",
+        scannerTestTimedOut: "Тест сканера: время истекло",
         cancel: "Отмена",
         done: "Готово",
         setAsDefault: "По умолчанию",
@@ -206,6 +209,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         startCheckin: "Начать чекин",
         // CheckinEvent
         back: "Назад",
+        navigateToCheckin: "Перейти к чекину",
         eventNotFound: "Мероприятие не найдено",
         searchPlaceholder: "Поиск по имени, email или коду...",
         listeningForScan: "Ожидание сканирования...",

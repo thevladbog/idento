@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { api, clearSession } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
 type Event = { id: string; name: string };
@@ -39,7 +39,7 @@ export default function CheckinPage() {
             <Settings className="mr-1 h-4 w-4" />
             {t("equipment")}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => { localStorage.removeItem("token"); navigate("/login"); }}>
+          <Button variant="ghost" size="sm" onClick={() => { clearSession(); navigate("/login"); }}>
             {t("logout")}
           </Button>
         </div>

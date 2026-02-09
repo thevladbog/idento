@@ -36,14 +36,6 @@ type BadgeElement struct {
 	MaxLines   int     `json:"maxLines,omitempty"`
 }
 
-// BadgeTemplate is the structure stored in event.custom_fields.badgeTemplate.
-type BadgeTemplate struct {
-	Elements []BadgeElement `json:"elements"`
-	WidthMM  float64        `json:"width_mm"`
-	HeightMM float64        `json:"height_mm"`
-	DPI      int            `json:"dpi"`
-}
-
 func mmToDots(mm float64, dpi int) int {
 	return int(math.Round((mm / 25.4) * float64(dpi)))
 }
@@ -354,7 +346,7 @@ func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, e
 			Elements []BadgeElement `json:"elements"`
 		}
 		if err := json.Unmarshal(js, &t); err != nil {
-			return Config{}, nil, fmt.Errorf("unmarshal elements: %w", err)
+			return Config{}, nil, fmt.Errorf("unmarshal badge template: %w", err)
 		}
 		cfg.WidthMM = t.WidthMM
 		cfg.HeightMM = t.HeightMM
