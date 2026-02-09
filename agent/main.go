@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,7 +35,11 @@ type NetworkPrinterConfig struct {
 type AgentConfig struct {
 	NetworkPrinters []NetworkPrinterConfig `json:"network_printers"`
 	ScannerPorts    []string               `json:"scanner_ports"`
+	DefaultPrinter  string                 `json:"default_printer"`
 }
+
+// configMu serializes all config load-modify-save sequences to avoid races.
+var configMu sync.Mutex
 
 func loadOpenAPISpec() ([]byte, error) {
 	root, err := os.OpenRoot(".")
@@ -170,6 +175,7 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to discover system printers: %v", err)
 		} else {
+			sort.Strings(systemPrinters) // stable order independent of discovery
 			log.Printf("Found %d system printer(s)", len(systemPrinters))
 			for _, printerName := range systemPrinters {
 				log.Printf("  ✓ %s (System)", printerName)
@@ -252,6 +258,81 @@ func main() {
 		}
 	})
 
+	// GET /printers/default — return configured default printer name or null
+	mux.HandleFunc("/printers/default", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		configMu.Lock()
+		defer configMu.Unlock()
+		if r.Method == http.MethodGet {
+			config, err := loadConfig()
+			if err != nil {
+				log.Printf("Failed to load config for default printer: %v", err)
+				http.Error(w, "Failed to load config", http.StatusInternalServerError)
+				return
+			}
+			var defaultName *string
+			if config.DefaultPrinter != "" {
+				defaultName = &config.DefaultPrinter
+			}
+			data, err := json.Marshal(map[string]interface{}{"default": defaultName})
+			if err != nil {
+				http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(data); err != nil {
+				log.Printf("Failed to write default printer response: %v", err)
+			}
+			return
+		}
+		// POST: set default printer
+		var req struct {
+			Default string `json:"default"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Default == "" {
+			http.Error(w, "default printer name is required", http.StatusBadRequest)
+			return
+		}
+		names := pm.ListPrinters()
+		found := false
+		for _, n := range names {
+			if n == req.Default {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "printer not found", http.StatusBadRequest)
+			return
+		}
+		config, err := loadConfig()
+		if err != nil {
+			log.Printf("Failed to load config: %v", err)
+			http.Error(w, "Failed to load config", http.StatusInternalServerError)
+			return
+		}
+		config.DefaultPrinter = req.Default
+		if err := saveConfig(config); err != nil {
+			log.Printf("Failed to save config: %v", err)
+			http.Error(w, "Failed to save default printer", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("Default printer set to: %s", req.Default)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"default": req.Default}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
+	})
+
 	mux.HandleFunc("/printers/add", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -283,11 +364,14 @@ func main() {
 		networkPrinter := printer.NewNetworkPrinterFromIP(req.Name, req.IP, req.Port)
 		pm.AddPrinter(req.Name, networkPrinter)
 
+		configMu.Lock()
+		defer configMu.Unlock()
 		// Save to config
 		config, err := loadConfig()
 		if err != nil {
-			log.Printf("Warning: Failed to load config: %v", err)
-			config = defaultConfig()
+			log.Printf("Failed to load config: %v", err)
+			http.Error(w, "Failed to load config", http.StatusInternalServerError)
+			return
 		}
 
 		// Check if printer already exists in config
@@ -663,13 +747,15 @@ func main() {
 
 		scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(req.PortName))
 
-		// Check if scanner already exists
+		// Load config and check if scanner already exists (hold lock only for config read/write)
+		configMu.Lock()
 		config, err := loadConfig()
 		if err != nil {
 			log.Printf("Failed to load config: %v", err)
-			config = defaultConfig()
+			http.Error(w, "Failed to load config", http.StatusInternalServerError)
+			configMu.Unlock()
+			return
 		}
-
 		allowListed := false
 		for _, port := range config.ScannerPorts {
 			if port == req.PortName {
@@ -683,10 +769,10 @@ func main() {
 				if err := saveConfig(config); err != nil {
 					log.Printf("Failed to save scanner allow-list: %v", err)
 					http.Error(w, "Failed to save scanner configuration", http.StatusInternalServerError)
+					configMu.Unlock()
 					return
 				}
 			}
-
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if err := json.NewEncoder(w).Encode(map[string]interface{}{
@@ -696,13 +782,13 @@ func main() {
 			}); err != nil {
 				log.Printf("Failed to encode response: %v", err)
 			}
+			configMu.Unlock()
 			return
 		}
+		configMu.Unlock()
 
-		// Create scanner instance
+		// Open scanner outside lock so config mutations are not blocked
 		s := scanner.NewScanner(scannerName, req.PortName, 9600)
-
-		// Register scan callback
 		s.OnScan(func(data string) {
 			scanDataMutex.Lock()
 			lastScannedCode = data
@@ -710,14 +796,32 @@ func main() {
 			scanDataMutex.Unlock()
 			log.Printf("📷 Scanned: %s", data)
 		})
-
-		// Try to open scanner
 		if err := s.Open(); err != nil {
 			log.Printf("Failed to open scanner %s: %v", scannerName, err)
 			http.Error(w, fmt.Sprintf("Failed to open scanner: %v", err), http.StatusInternalServerError)
 			return
 		}
-		if !allowListed {
+
+		// Lock again to update config and register scanner
+		configMu.Lock()
+		defer configMu.Unlock()
+		config, err = loadConfig()
+		if err != nil {
+			log.Printf("Failed to load config: %v", err)
+			if closeErr := s.Close(); closeErr != nil {
+				log.Printf("Failed to close scanner %s after config load failure: %v", scannerName, closeErr)
+			}
+			http.Error(w, "Failed to load config", http.StatusInternalServerError)
+			return
+		}
+		needAppend := true
+		for _, port := range config.ScannerPorts {
+			if port == req.PortName {
+				needAppend = false
+				break
+			}
+		}
+		if needAppend {
 			config.ScannerPorts = append(config.ScannerPorts, req.PortName)
 			if err := saveConfig(config); err != nil {
 				log.Printf("Failed to save scanner allow-list: %v", err)
@@ -767,10 +871,13 @@ func main() {
 			log.Printf("Failed to remove scanner %s: %v", scannerName, err)
 		}
 
+		configMu.Lock()
+		defer configMu.Unlock()
 		config, err := loadConfig()
 		if err != nil {
 			log.Printf("Failed to load config: %v", err)
-			config = defaultConfig()
+			http.Error(w, "Failed to load config", http.StatusInternalServerError)
+			return
 		}
 
 		filtered := make([]string, 0, len(config.ScannerPorts))

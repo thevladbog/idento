@@ -155,7 +155,12 @@ export default function EquipmentSettingsPage() {
         }))
       );
       if (printerList.length > 0) {
-        setSelectedPrinter(printerList[0]);
+        const defaultName = await agentApi.getDefaultPrinter();
+        const initial =
+          defaultName && printerList.includes(defaultName)
+            ? defaultName
+            : printerList[0];
+        setSelectedPrinter(initial);
       }
     } catch (error) {
       console.error("Failed to fetch printers", error);
@@ -442,32 +447,51 @@ export default function EquipmentSettingsPage() {
               {/* Printer Selection */}
               <div className="space-y-2">
                 <Label>{t("selectPrinter")}</Label>
-                <Select
-                  value={selectedPrinter}
-                  onValueChange={setSelectedPrinter}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("noPrintersFound")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {printers.map((printer) => (
-                      <SelectItem key={printer.name} value={printer.name}>
-                        <div className="flex items-center gap-2">
-                          {printer.type === "usb" && (
-                            <Usb className="w-4 h-4" />
-                          )}
-                          {printer.type === "bluetooth" && (
-                            <Bluetooth className="w-4 h-4" />
-                          )}
-                          {printer.type === "network" && (
-                            <Wifi className="w-4 h-4" />
-                          )}
-                          {printer.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2">
+                  <Select
+                    value={selectedPrinter}
+                    onValueChange={setSelectedPrinter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("noPrintersFound")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {printers.map((printer) => (
+                        <SelectItem key={printer.name} value={printer.name}>
+                          <div className="flex items-center gap-2">
+                            {printer.type === "usb" && (
+                              <Usb className="w-4 h-4" />
+                            )}
+                            {printer.type === "bluetooth" && (
+                              <Bluetooth className="w-4 h-4" />
+                            )}
+                            {printer.type === "network" && (
+                              <Wifi className="w-4 h-4" />
+                            )}
+                            {printer.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!selectedPrinter}
+                    onClick={async () => {
+                      if (!selectedPrinter) return;
+                      try {
+                        await agentApi.setDefaultPrinter(selectedPrinter);
+                        toast.success(t("defaultPrinterSet"));
+                      } catch (error) {
+                        console.error("Failed to set default printer", error);
+                        toast.error(t("failedToSetDefaultPrinter"));
+                      }
+                    }}
+                  >
+                    {t("setAsDefaultPrinter")}
+                  </Button>
+                </div>
               </div>
 
               {/* Printer List */}

@@ -76,6 +76,7 @@ export default function CheckinFullscreenPage() {
   const [printers, setPrinters] = useState<string[]>([]);
   const [selectedPrinter, setSelectedPrinter] = useState<string>("");
   const [agentConnected, setAgentConnected] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Scanner integration
   const { lastScan, clearScan } = useScanner(scanMode);
@@ -83,8 +84,7 @@ export default function CheckinFullscreenPage() {
   useEffect(() => {
     fetchUserEvents();
     loadSettings();
-    checkAgent();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+    checkAgent().catch((err) => console.error("Agent check failed", err));
   }, []);
 
   useEffect(() => {
@@ -151,16 +151,30 @@ export default function CheckinFullscreenPage() {
     }
   };
 
-  const saveSettings = () => {
-    const settings = {
-      badgeTypeField,
-      printEnabled,
-      manualPrint,
-      selectedPrinter,
-    };
-    localStorage.setItem("checkin_settings", JSON.stringify(settings));
-    toast.success(t("settingsSaved"));
-    setShowSettings(false);
+  const saveSettings = async () => {
+    setIsSaving(true);
+    try {
+      const settings = {
+        badgeTypeField,
+        printEnabled,
+        manualPrint,
+        selectedPrinter,
+      };
+      localStorage.setItem("checkin_settings", JSON.stringify(settings));
+      // Sync selected printer to agent as default (single source of truth)
+      if (selectedPrinter) {
+        try {
+          await agentApi.setDefaultPrinter(selectedPrinter);
+        } catch (error) {
+          console.error("Failed to set default printer on agent", error);
+          toast.warning(t("defaultPrinterSyncFailed"));
+        }
+      }
+      toast.success(t("settingsSaved"));
+      setShowSettings(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const checkAgent = async () => {
@@ -170,25 +184,28 @@ export default function CheckinFullscreenPage() {
       const printerList = await agentApi.getPrinters();
       setPrinters(printerList);
 
-      // Restore saved printer if it exists in the list, otherwise pick first
-      const saved = localStorage.getItem("checkin_settings");
-      if (saved) {
-        try {
-          const settings = JSON.parse(saved);
-          if (
-            settings.selectedPrinter &&
-            printerList.includes(settings.selectedPrinter)
-          ) {
-            setSelectedPrinter(settings.selectedPrinter);
-          } else if (printerList.length > 0 && !selectedPrinter) {
-            setSelectedPrinter(printerList[0]);
-          }
-        } catch {
-          if (printerList.length > 0 && !selectedPrinter) {
-            setSelectedPrinter(printerList[0]);
+      // Priority: agent default → saved checkin_settings → first in list
+      if (printerList.length > 0) {
+        const defaultName = await agentApi.getDefaultPrinter();
+        if (defaultName && printerList.includes(defaultName)) {
+          setSelectedPrinter(defaultName);
+          return;
+        }
+        const saved = localStorage.getItem("checkin_settings");
+        if (saved) {
+          try {
+            const settings = JSON.parse(saved);
+            if (
+              settings.selectedPrinter &&
+              printerList.includes(settings.selectedPrinter)
+            ) {
+              setSelectedPrinter(settings.selectedPrinter);
+              return;
+            }
+          } catch {
+            // fall through to first
           }
         }
-      } else if (printerList.length > 0 && !selectedPrinter) {
         setSelectedPrinter(printerList[0]);
       }
     }
@@ -604,7 +621,9 @@ export default function CheckinFullscreenPage() {
                   >
                     {t("cancel")}
                   </Button>
-                  <Button onClick={saveSettings}>{t("saveSettings")}</Button>
+                  <Button onClick={saveSettings} disabled={isSaving}>
+                    {t("saveSettings")}
+                  </Button>
                 </div>
               </DialogContent>
             </Dialog>
