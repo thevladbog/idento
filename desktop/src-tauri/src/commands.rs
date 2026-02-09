@@ -1,5 +1,7 @@
 //! Tauri commands: agent proxy and sidecar lifecycle.
 
+use std::time::Duration;
+
 pub const AGENT_PORT: u16 = 12345;
 pub const AGENT_PORT_STR: &str = "12345";
 
@@ -12,7 +14,10 @@ pub async fn agent_request(
     body: Option<String>,
 ) -> Result<String, String> {
     let url = format!("http://127.0.0.1:{}{}", AGENT_PORT_STR, path);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|e| e.to_string())?;
 
     let response = match method.to_uppercase().as_str() {
         "GET" => client.get(&url).send().await,

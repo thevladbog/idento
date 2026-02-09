@@ -43,8 +43,9 @@ export default function ConnectionPage() {
   };
 
   const save = () => {
-    setBackendUrl(url);
-    api.defaults.baseURL = getBackendUrl();
+    const normalizedBase = url.trim().replace(/\/$/, "");
+    setBackendUrl(normalizedBase);
+    api.defaults.baseURL = normalizedBase;
     navigate("/login");
   };
 

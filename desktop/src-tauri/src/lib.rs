@@ -15,9 +15,16 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             if let Ok(sidecar) = app.shell().sidecar("idento-agent") {
-                let _: Result<_, _> = sidecar
+                if let Err(e) = sidecar
                     .args(["--port", commands::AGENT_PORT_STR])
-                    .spawn();
+                    .spawn()
+                {
+                    log::error!(
+                        "failed to spawn idento-agent (port {}): {}",
+                        commands::AGENT_PORT_STR,
+                        e
+                    );
+                }
             }
             Ok(())
         })

@@ -57,7 +57,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">{t("login")}</CardTitle>
-          <CardDescription>Idento Kiosk – {t("appName")}</CardDescription>
+          <CardDescription>{t("appName")}</CardDescription>
         </CardHeader>
         <form onSubmit={onSubmit}>
           <CardContent className="space-y-4">

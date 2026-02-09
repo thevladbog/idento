@@ -91,11 +91,12 @@ func getZPLRotation(rotation int) string {
 	}
 }
 
-// escapeZPL escapes special ZPL characters in text: \ ^ ~
+// escapeZPL escapes special ZPL characters using ZPL hex (_ + hex): _ -> _5F, ^ -> _5E, ~ -> _7E.
+// Order matters: escape _ first to avoid double-escaping the escape prefix.
 func escapeZPL(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "^", "\\^")
-	s = strings.ReplaceAll(s, "~", "\\~")
+	s = strings.ReplaceAll(s, "_", "_5F")
+	s = strings.ReplaceAll(s, "^", "_5E")
+	s = strings.ReplaceAll(s, "~", "_7E")
 	return s
 }
 
@@ -167,9 +168,9 @@ func generateTextZPL(el BadgeElement, data map[string]interface{}, dpi int) stri
 
 	if el.Width > 0 {
 		width := mmToDots(el.Width, dpi)
-		return fmt.Sprintf("^FO%d,%d^FB%d,%d,0,%s,0%s^FD%s^FS", x, y, width, maxLines, align, fontCmd, textContent)
+		return fmt.Sprintf("^FO%d,%d^FB%d,%d,0,%s,0%s^FH^FD%s^FS", x, y, width, maxLines, align, fontCmd, textContent)
 	}
-	return fmt.Sprintf("^FO%d,%d%s^FD%s^FS", x, y, fontCmd, textContent)
+	return fmt.Sprintf("^FO%d,%d%s^FH^FD%s^FS", x, y, fontCmd, textContent)
 }
 
 func generateQRCodeZPL(el BadgeElement, data map[string]interface{}, dpi int) string {
@@ -193,7 +194,7 @@ func generateQRCodeZPL(el BadgeElement, data map[string]interface{}, dpi int) st
 		moduleSize = 2
 	}
 
-	return fmt.Sprintf("^FO%d,%d^BQN,2,%d^FDQA,%s^FS", x, y, moduleSize, qrData)
+	return fmt.Sprintf("^FO%d,%d^BQN,2,%d^FH^FDQA,%s^FS", x, y, moduleSize, qrData)
 }
 
 func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) string {
@@ -214,7 +215,7 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 	}
 	height := mmToDots(heightMM, dpi)
 
-	return fmt.Sprintf("^FO%d,%d^BCN,%d,Y,N,N^FD%s^FS", x, y, height, barcodeData)
+	return fmt.Sprintf("^FO%d,%d^BCN,%d,Y,N,N^FH^FD%s^FS", x, y, height, barcodeData)
 }
 
 func generateLineZPL(el BadgeElement, dpi int) string {
@@ -313,6 +314,15 @@ func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, e
 		if d, ok := v["dpi"].(float64); ok {
 			cfg.DPI = int(d)
 		} else {
+			cfg.DPI = 203
+		}
+		if cfg.WidthMM <= 0 {
+			cfg.WidthMM = 50
+		}
+		if cfg.HeightMM <= 0 {
+			cfg.HeightMM = 30
+		}
+		if cfg.DPI <= 0 {
 			cfg.DPI = 203
 		}
 		if els := v["elements"]; els != nil {

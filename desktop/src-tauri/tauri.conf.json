@@ -12,7 +12,13 @@
   "app": {
     "withGlobalTauri": true,
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' asset:",
+        "script-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost http://localhost:8008 http://127.0.0.1:8008",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data: blob:"
+      }
     },
     "windows": [
       {

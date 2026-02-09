@@ -118,7 +118,9 @@ export default function CheckinEventPage() {
       .getUserMedia({ video: { facingMode: "environment" } })
       .then((stream) => {
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((t) => {
+            t.stop();
+          });
           return;
         }
         streamRef.current = stream;
@@ -151,7 +153,9 @@ export default function CheckinEventPage() {
     return () => {
       cancelled = true;
       if (animationRef.current != null) cancelAnimationFrame(animationRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current?.getTracks().forEach((t) => {
+        t.stop();
+      });
       streamRef.current = null;
       if (video) video.srcObject = null;
     };

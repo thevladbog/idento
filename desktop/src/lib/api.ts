@@ -23,6 +23,11 @@ function createApi() {
         localStorage.removeItem("user");
         localStorage.removeItem("tenants");
         localStorage.removeItem("current_tenant");
+        const path = window.location.pathname + window.location.search;
+        if (!path.startsWith("/login") && !path.startsWith("/qr-login")) {
+          const returnUrl = encodeURIComponent(path);
+          window.location.href = returnUrl ? `/login?returnUrl=${returnUrl}` : "/login";
+        }
       }
       return Promise.reject(error);
     }

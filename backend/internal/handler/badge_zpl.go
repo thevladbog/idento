@@ -32,6 +32,9 @@ func attendeeToData(a *models.Attendee) map[string]interface{} {
 	}
 	if a.CustomFields != nil {
 		for k, v := range a.CustomFields {
+			if _, ok := data[k]; ok {
+				continue // avoid overwriting standard attendee keys
+			}
 			data[k] = v
 		}
 	}
@@ -65,7 +68,10 @@ func (h *Handler) BadgeZPL(c echo.Context) error {
 	}
 
 	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil {
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if event == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
 	}
 	if event.TenantID != tenantID {
@@ -73,7 +79,10 @@ func (h *Handler) BadgeZPL(c echo.Context) error {
 	}
 
 	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || attendee == nil {
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if attendee == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
 	}
 	if attendee.EventID != eventID {

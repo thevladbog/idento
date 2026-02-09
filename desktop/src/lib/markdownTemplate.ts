@@ -1,4 +1,11 @@
 /**
+ * Escapes regex metacharacters in a string so it can be safely embedded in a RegExp.
+ */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Replace template variables with actual data. Supports {field_name}.
  */
 export function renderMarkdownTemplate(
@@ -9,7 +16,7 @@ export function renderMarkdownTemplate(
   let result = template;
   Object.keys(data).forEach((key) => {
     const value = data[key] !== null && data[key] !== undefined ? String(data[key]) : "";
-    const regex = new RegExp(`\\{${key}\\}`, "g");
+    const regex = new RegExp(`\\{${escapeRegExp(key)}\\}`, "g");
     result = result.replace(regex, value);
   });
   result = result.replace(/\{[^}]+\}/g, "");
