@@ -11,7 +11,6 @@ import {
   Minimize,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { agentGet, agentPost, checkAgentHealth } from "@/lib/agent";
 import { toast } from "sonner";
@@ -77,7 +76,7 @@ export default function CheckinEventPage() {
   const [titleTapCount, setTitleTapCount] = useState(0);
   const titleTapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const checkinSettings = loadCheckinSettings();
+  const [checkinSettings, setCheckinSettings] = useState(loadCheckinSettings);
   const isScannerMode = checkinSettings.checkinMode === "scanner" || forceScannerMode;
   const isCameraMode = checkinSettings.checkinMode === "camera" && !forceScannerMode;
 
@@ -86,15 +85,31 @@ export default function CheckinEventPage() {
       setLoading(false);
       return;
     }
+    let cancelled = false;
     api
       .get<EventWithCustomFields>(`/api/events/${eventId}`)
-      .then((res) => setEvent(res.data))
-      .catch(() => setEvent(null));
-    api
-      .get<Attendee[]>(`/api/events/${eventId}/attendees`)
-      .then((res) => setAttendees(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setAttendees([]))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (cancelled) return;
+        setEvent(res.data);
+        return api
+          .get<Attendee[]>(`/api/events/${eventId}/attendees`)
+          .then((attendeesRes) => {
+            if (!cancelled) setAttendees(Array.isArray(attendeesRes.data) ? attendeesRes.data : []);
+          })
+          .catch(() => {
+            if (!cancelled) setAttendees([]);
+          });
+      })
+      .catch(() => {
+        if (!cancelled) setEvent(null);
+        if (!cancelled) setAttendees([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [eventId]);
 
   useEffect(() => {
@@ -175,7 +190,7 @@ export default function CheckinEventPage() {
       } catch {
         /* ignore */
       }
-    }, 300);
+    }, 500);
     return () => clearInterval(id);
   }, [polling, agentConnected]);
 
@@ -246,7 +261,7 @@ export default function CheckinEventPage() {
           });
         });
     };
-  }, [lookupByCode, t, checkinSettings.printEnabled, checkinSettings.manualPrint]);
+  }, [lookupByCode, t, checkinSettings]);
 
   useEffect(() => {
     if (!scanCode) return;
@@ -315,7 +330,9 @@ export default function CheckinEventPage() {
     [eventId, t]
   );
 
-  printBadgeRef.current = printBadge;
+  useEffect(() => {
+    printBadgeRef.current = printBadge;
+  }, [printBadge]);
 
   const closeResult = () => {
     setScanResult(null);
@@ -489,7 +506,9 @@ export default function CheckinEventPage() {
           <p className="text-muted-foreground">{t("cameraPermissionDenied")}</p>
           <Button
             onClick={() => {
-              saveCheckinSettings({ ...loadCheckinSettings(), checkinMode: "scanner" });
+              const next = { ...checkinSettings, checkinMode: "scanner" as const };
+              saveCheckinSettings(next);
+              setCheckinSettings(next);
               setForceScannerMode(true);
             }}
           >

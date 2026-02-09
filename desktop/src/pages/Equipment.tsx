@@ -296,7 +296,9 @@ export default function EquipmentPage() {
                       <span className="flex items-center gap-2">
                         {p.name}{p.type === "network" ? ` (${t("network")})` : ""}
                         {defaultPrinter === p.name && (
-                          <Star className="h-4 w-4 fill-amber-500 text-amber-500" title={t("defaultPrinter")} />
+                          <span title={t("defaultPrinter")}>
+                          <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                        </span>
                         )}
                       </span>
                       <div className="flex items-center gap-1">

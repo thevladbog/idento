@@ -52,18 +52,24 @@ func pointsToDots(points float64, dpi int) int {
 	return int(math.Round((points / 72) * float64(dpi)))
 }
 
+// getZPLFont returns a ZPL font code. Prefer scalable "0" when fontSize does not
+// exactly match a bitmap's base size so ^A fontHeight,fontWidth scale consistently.
+// Bitmap fonts: A (12pt), B (14pt), C (18×10), D (24pt), E (28pt).
 func getZPLFont(fontSize float64) string {
-	switch {
-	case fontSize <= 10:
-		return "0"
-	case fontSize <= 14:
+	pt := int(math.Round(fontSize))
+	switch pt {
+	case 12:
 		return "A"
-	case fontSize <= 18:
+	case 14:
 		return "B"
-	case fontSize <= 24:
+	case 18:
+		return "C" // 18×10 bitmap
+	case 24:
 		return "D"
-	default:
+	case 28:
 		return "E"
+	default:
+		return "0" // scalable; use for non-exact sizes
 	}
 }
 
@@ -328,10 +334,10 @@ func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, e
 		if els := v["elements"]; els != nil {
 			js, err := json.Marshal(els)
 			if err != nil {
-				return Config{}, nil, err
+				return Config{}, nil, fmt.Errorf("marshal els: %w", err)
 			}
 			if err := json.Unmarshal(js, &elements); err != nil {
-				return Config{}, nil, err
+				return Config{}, nil, fmt.Errorf("unmarshal elements: %w", err)
 			}
 		}
 		return cfg, elements, nil
@@ -339,7 +345,7 @@ func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, e
 		// Try JSON roundtrip
 		js, err := json.Marshal(raw)
 		if err != nil {
-			return Config{}, nil, err
+			return Config{}, nil, fmt.Errorf("marshal template: %w", err)
 		}
 		var t struct {
 			WidthMM  float64        `json:"width_mm"`
@@ -348,7 +354,7 @@ func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, e
 			Elements []BadgeElement `json:"elements"`
 		}
 		if err := json.Unmarshal(js, &t); err != nil {
-			return Config{}, nil, err
+			return Config{}, nil, fmt.Errorf("unmarshal elements: %w", err)
 		}
 		cfg.WidthMM = t.WidthMM
 		cfg.HeightMM = t.HeightMM
