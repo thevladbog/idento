@@ -38,8 +38,8 @@ type AgentConfig struct {
 	DefaultPrinter  string                 `json:"default_printer"`
 }
 
-// configMu serializes all config load-modify-save sequences to avoid races.
-var configMu sync.Mutex
+// configMu serializes config load-modify-save; use RLock for read-only access.
+var configMu sync.RWMutex
 
 func loadOpenAPISpec() ([]byte, error) {
 	root, err := os.OpenRoot(".")
@@ -241,16 +241,34 @@ func main() {
 	})
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
-		printers := pm.ListPrinters()
-
-		// Marshal response to bytes first to avoid partial writes on error
-		data, err := json.Marshal(printers)
+		names := pm.ListPrinters()
+		configMu.RLock()
+		config, err := loadConfig()
+		configMu.RUnlock()
+		networkSet := make(map[string]bool)
+		if err == nil {
+			for _, np := range config.NetworkPrinters {
+				networkSet[np.Name] = true
+			}
+		}
+		type printerEntry struct {
+			Name string `json:"name"`
+			Type string `json:"type"`
+		}
+		result := make([]printerEntry, 0, len(names))
+		for _, name := range names {
+			t := "system"
+			if networkSet[name] {
+				t = "network"
+			}
+			result = append(result, printerEntry{Name: name, Type: t})
+		}
+		data, err := json.Marshal(result)
 		if err != nil {
 			log.Printf("Failed to marshal printers response: %v", err)
 			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 			return
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(data); err != nil {
@@ -402,6 +420,66 @@ func main() {
 			"status":  "added",
 			"name":    req.Name,
 			"address": fmt.Sprintf("%s:%d", req.IP, req.Port),
+		}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
+		}
+	})
+
+	mux.HandleFunc("/printers/remove", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "Name is required", http.StatusBadRequest)
+			return
+		}
+
+		log.Printf("Removing printer: %s", req.Name)
+
+		updateConfig := func(name string) error {
+			configMu.Lock()
+			defer configMu.Unlock()
+			config, err := loadConfig()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			filtered := make([]NetworkPrinterConfig, 0, len(config.NetworkPrinters))
+			for _, np := range config.NetworkPrinters {
+				if np.Name != name {
+					filtered = append(filtered, np)
+				}
+			}
+			config.NetworkPrinters = filtered
+			if err := saveConfig(config); err != nil {
+				return fmt.Errorf("save config: %w", err)
+			}
+			return nil
+		}
+		if err := updateConfig(req.Name); err != nil {
+			log.Printf("Failed to update config: %v", err)
+			http.Error(w, "Failed to update config", http.StatusInternalServerError)
+			return
+		}
+
+		if removed := pm.RemovePrinter(req.Name); removed {
+			log.Printf("Printer removed from config and manager: %s", req.Name)
+		} else {
+			log.Printf("Printer %s removed from config (was not in manager, possibly stale)", req.Name)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(map[string]string{
+			"status": "removed",
+			"name":   req.Name,
 		}); err != nil {
 			log.Printf("Failed to encode response: %v", err)
 		}

@@ -113,13 +113,14 @@ export function PrintBadgeDialog({
     setIsAgentConnected(healthy);
     if (healthy) {
       const printerList = await agentApi.getPrinters();
-      setPrinters(printerList);
-      if (printerList.length > 0) {
+      const printerNames = printerList.map((p) => p.name);
+      setPrinters(printerNames);
+      if (printerNames.length > 0) {
         const defaultName = await agentApi.getDefaultPrinter();
         const initial =
-          defaultName && printerList.includes(defaultName)
+          defaultName && printerNames.includes(defaultName)
             ? defaultName
-            : printerList[0];
+            : printerNames[0];
         setSelectedPrinter(initial);
       }
     }

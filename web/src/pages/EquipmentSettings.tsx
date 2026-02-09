@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,6 +39,7 @@ import {
   XCircle,
   AlertTriangle,
   ScanLine,
+  Trash2,
 } from "lucide-react";
 import { agentApi } from "@/lib/agent";
 import type { ScannerInfo, ScannerPort } from "@/lib/agent";
@@ -45,7 +47,7 @@ import { toast } from "sonner";
 
 interface PrinterDevice {
   name: string;
-  type: "usb" | "bluetooth" | "network";
+  type: "system" | "network" | "usb" | "bluetooth";
   status: "connected" | "disconnected";
   model?: string;
 }
@@ -69,8 +71,10 @@ export default function EquipmentSettingsPage() {
   >("prompt");
 
   // Network printer settings
+  const [networkPrinterName, setNetworkPrinterName] = useState("");
   const [networkPrinterIP, setNetworkPrinterIP] = useState("");
   const [networkPrinterPort, setNetworkPrinterPort] = useState("9100");
+  const [printerToRemove, setPrinterToRemove] = useState<string | null>(null);
 
   // COM Scanner settings
   const [comScannerPort, setComScannerPort] = useState("");
@@ -146,20 +150,19 @@ export default function EquipmentSettingsPage() {
     try {
       const printerList = await agentApi.getPrinters();
       setPrinters(
-        printerList.map((name: string) => ({
-          name,
-          type: name.includes("Serial")
-            ? ("usb" as const)
-            : ("network" as const),
+        printerList.map((p) => ({
+          name: p.name,
+          type: p.type,
           status: "connected" as const,
         }))
       );
       if (printerList.length > 0) {
         const defaultName = await agentApi.getDefaultPrinter();
+        const names = printerList.map((p) => p.name);
         const initial =
-          defaultName && printerList.includes(defaultName)
+          defaultName && names.includes(defaultName)
             ? defaultName
-            : printerList[0];
+            : printerList[0].name;
         setSelectedPrinter(initial);
       }
     } catch (error) {
@@ -235,19 +238,23 @@ export default function EquipmentSettingsPage() {
       return;
     }
 
-    const printerName = `Network_${networkPrinterIP.replace(/\./g, "_")}`;
+    const autoName = `Network_${networkPrinterIP.replace(/\./g, "_")}`;
+    const printerName = networkPrinterName.trim() || autoName;
     const port = parseInt(networkPrinterPort) || 9100;
 
     try {
       // Add printer to agent
       await agentApi.addNetworkPrinter(printerName, networkPrinterIP, port);
 
-      // Save to localStorage for persistence
+      // Save to localStorage for persistence (dedupe by name)
       const savedPrinters = JSON.parse(
         localStorage.getItem("network_printers") || "[]"
       );
-      savedPrinters.push({ name: printerName, ip: networkPrinterIP, port });
-      localStorage.setItem("network_printers", JSON.stringify(savedPrinters));
+      const filtered = savedPrinters.filter(
+        (p: { name: string }) => p.name !== printerName
+      );
+      filtered.push({ name: printerName, ip: networkPrinterIP, port });
+      localStorage.setItem("network_printers", JSON.stringify(filtered));
 
       // Update local state
       const newPrinter: PrinterDevice = {
@@ -259,6 +266,7 @@ export default function EquipmentSettingsPage() {
       setSelectedPrinter(printerName);
 
       // Clear form
+      setNetworkPrinterName("");
       setNetworkPrinterIP("");
       setNetworkPrinterPort("9100");
 
@@ -266,6 +274,28 @@ export default function EquipmentSettingsPage() {
     } catch (error) {
       console.error("Failed to add network printer", error);
       toast.error(t("failedToAddPrinter"));
+    }
+  };
+
+  const removeNetworkPrinter = async (name: string) => {
+    try {
+      await agentApi.removeNetworkPrinter(name);
+      const savedPrinters = JSON.parse(
+        localStorage.getItem("network_printers") || "[]"
+      );
+      const filtered = savedPrinters.filter(
+        (p: { name: string }) => p.name !== name
+      );
+      localStorage.setItem("network_printers", JSON.stringify(filtered));
+      if (selectedPrinter === name) {
+        setSelectedPrinter("");
+      }
+      await fetchPrinters();
+      toast.success(t("printerRemoved"));
+      setPrinterToRemove(null);
+    } catch (error) {
+      console.error("Failed to remove network printer", error);
+      toast.error(t("failedToRemovePrinter"));
     }
   };
 
@@ -459,6 +489,9 @@ export default function EquipmentSettingsPage() {
                       {printers.map((printer) => (
                         <SelectItem key={printer.name} value={printer.name}>
                           <div className="flex items-center gap-2">
+                            {printer.type === "system" && (
+                              <Printer className="w-4 h-4" />
+                            )}
                             {printer.type === "usb" && (
                               <Usb className="w-4 h-4" />
                             )}
@@ -505,6 +538,9 @@ export default function EquipmentSettingsPage() {
                         className="flex items-center justify-between p-3 border rounded-lg"
                       >
                         <div className="flex items-center gap-3">
+                          {printer.type === "system" && (
+                            <Printer className="w-5 h-5 text-muted-foreground" />
+                          )}
                           {printer.type === "usb" && (
                             <Usb className="w-5 h-5 text-muted-foreground" />
                           )}
@@ -521,13 +557,28 @@ export default function EquipmentSettingsPage() {
                             </div>
                           </div>
                         </div>
-                        <div
-                          className={`w-2 h-2 rounded-full ${
-                            printer.status === "connected"
-                              ? "bg-green-500"
-                              : "bg-red-500"
-                          }`}
-                        />
+                        <div className="flex items-center gap-2">
+                          {printer.type === "network" && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={() => setPrinterToRemove(printer.name)}
+                              title={t("deletePrinter")}
+                              aria-label={t("deletePrinter")}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <div
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              printer.status === "connected"
+                                ? "bg-green-500"
+                                : "bg-red-500"
+                            }`}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -549,6 +600,11 @@ export default function EquipmentSettingsPage() {
               <div className="pt-4 border-t space-y-3">
                 <Label>{t("addNetworkPrinter")}</Label>
                 <div className="space-y-2">
+                  <Input
+                    placeholder={t("printerNameOptional")}
+                    value={networkPrinterName}
+                    onChange={(e) => setNetworkPrinterName(e.target.value)}
+                  />
                   <Input
                     placeholder={t("ipAddress")}
                     value={networkPrinterIP}
@@ -909,6 +965,36 @@ export default function EquipmentSettingsPage() {
               </Button>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={printerToRemove !== null}
+        onOpenChange={(open) => {
+          if (!open) setPrinterToRemove(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("deletePrinter")}</DialogTitle>
+            <DialogDescription>{t("confirmDeletePrinter")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setPrinterToRemove(null)}
+            >
+              {t("cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (printerToRemove) removeNetworkPrinter(printerToRemove);
+              }}
+            >
+              {t("deletePrinter")}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Layout>
