@@ -16,7 +16,7 @@ var safePrinterName = regexp.MustCompile(`^[a-zA-Z0-9 _-]+$`)
 
 const (
 	discoveryCallTimeout    = 5 * time.Second
-	discoveryMaxRetries    = 3
+	discoveryMaxRetries     = 3
 	discoveryInitialBackoff = 200 * time.Millisecond
 )
 
