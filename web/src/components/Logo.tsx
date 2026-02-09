@@ -6,6 +6,13 @@ interface LogoProps {
   linkTo?: string;
 }
 
+/**
+ * Renders the site logo as a link that displays a language-specific image.
+ *
+ * @param className - Additional CSS classes applied to the wrapper link. Defaults to an empty string.
+ * @param linkTo - Destination path for the link. Defaults to '/dashboard'.
+ * @returns A Link element containing the localized logo image.
+ */
 export function Logo({ className = '', linkTo = '/dashboard' }: LogoProps) {
   const { i18n } = useTranslation();
   
@@ -17,9 +24,8 @@ export function Logo({ className = '', linkTo = '/dashboard' }: LogoProps) {
       <img 
         src={logoSrc} 
         alt={logoAlt}
-        className="h-8 w-auto transition-opacity hover:opacity-80"
+        className="logo-img h-8 w-auto transition-opacity hover:opacity-80"
       />
     </Link>
   );
 }
-

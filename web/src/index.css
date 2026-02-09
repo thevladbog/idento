@@ -32,19 +32,19 @@
     --card-foreground: 213 31% 91%;
     --popover: 224 71% 8%;
     --popover-foreground: 213 31% 91%;
-    --primary: 152 80% 45%;
+    --primary: 152 50% 42%;
     --primary-foreground: 0 0% 100%;
     --secondary: 222.2 47.4% 15%;
     --secondary-foreground: 210 40% 98%;
     --muted: 223 47% 15%;
     --muted-foreground: 215 20.2% 65.1%;
     --accent: 152 30% 20%;
-    --accent-foreground: 152 80% 60%;
+    --accent-foreground: 152 55% 55%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
     --border: 216 34% 17%;
     --input: 216 34% 17%;
-    --ring: 152 80% 45%;
+    --ring: 152 50% 42%;
   }
 }
 
@@ -179,4 +179,47 @@
 
 .markdown-preview.text-center p {
   font-size: 1.1em;
+}
+
+/* Login split-screen branding: richer background */
+.login-brand-bg {
+  background: linear-gradient(
+    160deg,
+    hsl(var(--primary)) 0%,
+    hsl(152 85% 22%) 50%,
+    hsl(152 90% 18%) 100%
+  );
+}
+.dark .login-brand-bg {
+  background: linear-gradient(
+    160deg,
+    hsl(var(--primary) / 0.9) 0%,
+    hsl(152 70% 28%) 50%,
+    hsl(152 75% 22%) 100%
+  );
+}
+
+/* Login branding pattern overlay */
+.login-brand-pattern {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 14px,
+    rgba(255, 255, 255, 0.04) 14px,
+    rgba(255, 255, 255, 0.04) 28px
+  );
+}
+.dark .login-brand-pattern {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 14px,
+    rgba(255, 255, 255, 0.06) 14px,
+    rgba(255, 255, 255, 0.06) 28px
+  );
+}
+
+/* Nav logo: invert only when app theme is dark (class on html), not by system preference */
+.dark .logo-img {
+  filter: invert(1) brightness(1.1);
 }

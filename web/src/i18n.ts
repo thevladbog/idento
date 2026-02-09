@@ -16,6 +16,8 @@ i18n
         translation: {
           // Common
           welcome: "Welcome to Idento",
+          appName: "Idento",
+          appDescription: "Event check-in and badge management",
           logout: "Logout",
           cancel: "Cancel",
           save: "Save",
@@ -40,6 +42,9 @@ i18n
           createAccount: "Create Account",
           getStarted: "Get started with Idento",
           registrationFailed: "Registration failed",
+          loginFailed: "Login failed",
+          invalidEmail: "Invalid email address",
+          passwordRequired: "Password is required",
           alreadyHaveAccount: "Already have an account?",
           dontHaveAccount: "Don't have an account?",
 
@@ -785,6 +790,8 @@ i18n
         translation: {
           // Common
           welcome: "Добро пожаловать в Иденто",
+          appName: "Иденто",
+          appDescription: "Регистрация на мероприятиях и управление бейджами",
           logout: "Выйти",
           cancel: "Отмена",
           save: "Сохранить",
@@ -809,6 +816,9 @@ i18n
           createAccount: "Создать аккаунт",
           getStarted: "Начните работу с Иденто",
           registrationFailed: "Ошибка регистрации",
+          loginFailed: "Ошибка входа",
+          invalidEmail: "Некорректный email",
+          passwordRequired: "Введите пароль",
           alreadyHaveAccount: "Уже есть аккаунт?",
           dontHaveAccount: "Нет аккаунта?",
 
