@@ -4,7 +4,9 @@ import { getBackendUrl } from "./config";
 const SESSION_KEYS = ["token", "user", "tenants", "current_tenant"] as const;
 
 export function clearSession(): void {
-  SESSION_KEYS.forEach((key) => localStorage.removeItem(key));
+  SESSION_KEYS.forEach((key) => {
+    localStorage.removeItem(key);
+  });
 }
 
 function createApi() {
@@ -28,8 +30,7 @@ function createApi() {
         clearSession();
         const path = window.location.pathname + window.location.search;
         if (!path.startsWith("/login") && !path.startsWith("/qr-login")) {
-          const returnUrl = encodeURIComponent(path);
-          window.location.href = returnUrl ? `/login?returnUrl=${returnUrl}` : "/login";
+          window.location.href = `/login?returnUrl=${encodeURIComponent(path)}`;
         }
       }
       return Promise.reject(error);

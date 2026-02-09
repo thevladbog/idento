@@ -82,25 +82,25 @@ export default function EquipmentPage() {
       agentGet("/scanners/ports").catch(() => "[]"),
       agentGet("/printers/default").catch(() => "{}"),
     ]);
-    let defaultPrinter: string | null = null;
+    let parsedDefault: string | null = null;
     try {
       const def = JSON.parse(defaultText) as { default?: string | null };
-      defaultPrinter = def.default ?? null;
+      parsedDefault = def.default ?? null;
     } catch {
       /* ignore */
     }
-    let availablePorts: { port_name: string }[] = [];
+    let parsedPorts: { port_name: string }[] = [];
     try {
       const ports = JSON.parse(portsText) as { port_name: string }[];
-      availablePorts = Array.isArray(ports) ? ports : [];
+      parsedPorts = Array.isArray(ports) ? ports : [];
     } catch {
       /* ignore */
     }
     return {
       printers: parsePrinters(printersText),
       scanners: parseScanners(scannersText),
-      availablePorts,
-      defaultPrinter,
+      availablePorts: parsedPorts,
+      defaultPrinter: parsedDefault,
     };
   }, []);
 
@@ -494,14 +494,14 @@ export default function EquipmentPage() {
                     size="sm"
                     onClick={() => persistCheckinSettings({ ...checkinSettings, printEnabled: false })}
                   >
-                    Off
+                    {t("off")}
                   </Button>
                   <Button
                     variant={checkinSettings.printEnabled ? "default" : "outline"}
                     size="sm"
                     onClick={() => persistCheckinSettings({ ...checkinSettings, printEnabled: true })}
                   >
-                    On
+                    {t("on")}
                   </Button>
                 </div>
                 {checkinSettings.printEnabled && (

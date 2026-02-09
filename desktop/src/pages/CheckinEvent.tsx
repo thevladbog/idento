@@ -423,13 +423,13 @@ export default function CheckinEventPage() {
     const template =
       event?.custom_fields?.attendeeTemplate ?? getDefaultAttendeeTemplate();
     const data: Record<string, unknown> = {
+      ...(attendee.custom_fields ?? {}),
       first_name: attendee.first_name,
       last_name: attendee.last_name,
       email: attendee.email ?? "",
       company: attendee.company ?? "",
       position: attendee.position ?? "",
       code: attendee.code ?? "",
-      ...(attendee.custom_fields ?? {}),
     };
     const text = renderMarkdownTemplate(template, data);
     return (

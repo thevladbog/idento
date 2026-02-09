@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { api, clearSession } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { toast } from "sonner";
 
 type Event = { id: string; name: string };
 
@@ -20,14 +21,20 @@ export default function CheckinPage() {
   const navigate = useNavigate();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
+    setFetchError(false);
     api
       .get<Event[]>("/api/events")
       .then((res: { data: Event[] }) => setEvents(Array.isArray(res.data) ? res.data : []))
-      .catch(() => setEvents([]))
+      .catch(() => {
+        setFetchError(true);
+        setEvents([]);
+        toast.error(t("eventsFetchFailed"));
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [t]);
 
   return (
     <div className="min-h-screen bg-background p-4">
@@ -47,6 +54,13 @@ export default function CheckinPage() {
 
       {loading ? (
         <p className="text-muted-foreground">{t("loadingEvents")}</p>
+      ) : fetchError ? (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive">{t("eventsFetchFailed")}</CardTitle>
+            <CardDescription>{t("eventsFetchFailedDesc")}</CardDescription>
+          </CardHeader>
+        </Card>
       ) : events.length === 0 ? (
         <Card>
           <CardHeader>

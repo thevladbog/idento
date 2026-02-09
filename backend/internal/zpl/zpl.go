@@ -36,6 +36,11 @@ type BadgeElement struct {
 	MaxLines   int     `json:"maxLines,omitempty"`
 }
 
+// qrModulesPerSide is the typical number of modules per side for a medium-sized
+// QR symbol (e.g. version 3 is 29×29). Used to derive per-module dot size from
+// the element width in mm: (widthDots / qrModulesPerSide) gives module size in dots.
+const qrModulesPerSide = 30
+
 func mmToDots(mm float64, dpi int) int {
 	return int(math.Round((mm / 25.4) * float64(dpi)))
 }
@@ -86,6 +91,43 @@ func getZPLRotation(rotation int) string {
 		return "B"
 	default:
 		return "N"
+	}
+}
+
+// sanitizeZPLFont returns a ZPL font code (one character: '0' or 'A'–'Z') for use in ^A.
+// If fontFamily is empty, invalid, or not in the allowed set, returns getZPLFont(fontSize).
+// Accepts single rune '0' or 'A'–'Z' (case-insensitive); maps common names to a valid code otherwise.
+func sanitizeZPLFont(fontFamily string, fontSize float64) string {
+	fontFamily = strings.TrimSpace(fontFamily)
+	if fontFamily == "" {
+		return getZPLFont(fontSize)
+	}
+	runes := []rune(fontFamily)
+	if len(runes) == 1 {
+		c := runes[0]
+		if c == '0' || (c >= 'A' && c <= 'Z') {
+			return string(c)
+		}
+		if c >= 'a' && c <= 'z' {
+			return string(c - 32)
+		}
+		return getZPLFont(fontSize)
+	}
+	switch strings.ToLower(fontFamily) {
+	case "scalable", "default":
+		return "0"
+	case "a", "12", "12pt":
+		return "A"
+	case "b", "14", "14pt":
+		return "B"
+	case "c", "18", "18pt":
+		return "C"
+	case "d", "24", "24pt":
+		return "D"
+	case "e", "28", "28pt":
+		return "E"
+	default:
+		return getZPLFont(fontSize)
 	}
 }
 
@@ -142,10 +184,7 @@ func generateTextZPL(el BadgeElement, data map[string]interface{}, dpi int) stri
 	fontHeight := pointsToDots(fontSize, dpi)
 	fontWidth := fontHeight
 	rot := getZPLRotation(el.Rotation)
-	font := el.FontFamily
-	if font == "" {
-		font = getZPLFont(fontSize)
-	}
+	font := sanitizeZPLFont(el.FontFamily, fontSize)
 	align := getZPLAlign(el.Align)
 
 	if el.Valign != "" && el.Height > 0 {
@@ -187,7 +226,7 @@ func generateQRCodeZPL(el BadgeElement, data map[string]interface{}, dpi int) st
 	if widthMM <= 0 {
 		widthMM = 20
 	}
-	moduleSize := mmToDots(widthMM, dpi) / 30
+	moduleSize := mmToDots(widthMM, dpi) / qrModulesPerSide
 	if moduleSize < 2 {
 		moduleSize = 2
 	}
