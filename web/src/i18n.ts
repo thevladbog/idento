@@ -16,6 +16,8 @@ i18n
         translation: {
           // Common
           welcome: "Welcome to Idento",
+          appName: "Idento",
+          appDescription: "Event check-in and badge management",
           logout: "Logout",
           cancel: "Cancel",
           save: "Save",
@@ -785,6 +787,8 @@ i18n
         translation: {
           // Common
           welcome: "Добро пожаловать в Иденто",
+          appName: "Иденто",
+          appDescription: "Регистрация на мероприятиях и управление бейджами",
           logout: "Выйти",
           cancel: "Отмена",
           save: "Сохранить",

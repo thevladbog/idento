@@ -17,7 +17,7 @@ export function Logo({ className = '', linkTo = '/dashboard' }: LogoProps) {
       <img 
         src={logoSrc} 
         alt={logoAlt}
-        className="h-8 w-auto transition-opacity hover:opacity-80"
+        className="logo-img h-8 w-auto transition-opacity hover:opacity-80"
       />
     </Link>
   );
