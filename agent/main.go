@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,7 @@ type NetworkPrinterConfig struct {
 type AgentConfig struct {
 	NetworkPrinters []NetworkPrinterConfig `json:"network_printers"`
 	ScannerPorts    []string               `json:"scanner_ports"`
+	DefaultPrinter  string                 `json:"default_printer"`
 }
 
 func loadOpenAPISpec() ([]byte, error) {
@@ -170,6 +172,7 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to discover system printers: %v", err)
 		} else {
+			sort.Strings(systemPrinters) // stable order independent of discovery
 			log.Printf("Found %d system printer(s)", len(systemPrinters))
 			for _, printerName := range systemPrinters {
 				log.Printf("  ✓ %s (System)", printerName)
@@ -249,6 +252,76 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write(data); err != nil {
 			log.Printf("Failed to write printers response: %v", err)
+		}
+	})
+
+	// GET /printers/default — return configured default printer name or null
+	mux.HandleFunc("/printers/default", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.Method == http.MethodGet {
+			config, err := loadConfig()
+			if err != nil {
+				log.Printf("Failed to load config for default printer: %v", err)
+				config = defaultConfig()
+			}
+			var defaultName *string
+			if config.DefaultPrinter != "" {
+				defaultName = &config.DefaultPrinter
+			}
+			data, err := json.Marshal(map[string]interface{}{"default": defaultName})
+			if err != nil {
+				http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(data); err != nil {
+				log.Printf("Failed to write default printer response: %v", err)
+			}
+			return
+		}
+		// POST: set default printer
+		var req struct {
+			Default string `json:"default"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		if req.Default == "" {
+			http.Error(w, "default printer name is required", http.StatusBadRequest)
+			return
+		}
+		names := pm.ListPrinters()
+		found := false
+		for _, n := range names {
+			if n == req.Default {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "printer not found", http.StatusBadRequest)
+			return
+		}
+		config, err := loadConfig()
+		if err != nil {
+			log.Printf("Failed to load config: %v", err)
+			config = defaultConfig()
+		}
+		config.DefaultPrinter = req.Default
+		if err := saveConfig(config); err != nil {
+			log.Printf("Failed to save config: %v", err)
+			http.Error(w, "Failed to save default printer", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("Default printer set to: %s", req.Default)
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{"default": req.Default}); err != nil {
+			log.Printf("Failed to encode response: %v", err)
 		}
 	})
 

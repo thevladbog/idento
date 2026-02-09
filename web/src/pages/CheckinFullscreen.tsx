@@ -84,7 +84,6 @@ export default function CheckinFullscreenPage() {
     fetchUserEvents();
     loadSettings();
     checkAgent();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   useEffect(() => {
@@ -151,7 +150,7 @@ export default function CheckinFullscreenPage() {
     }
   };
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     const settings = {
       badgeTypeField,
       printEnabled,
@@ -159,6 +158,14 @@ export default function CheckinFullscreenPage() {
       selectedPrinter,
     };
     localStorage.setItem("checkin_settings", JSON.stringify(settings));
+    // Sync selected printer to agent as default (single source of truth)
+    if (selectedPrinter) {
+      try {
+        await agentApi.setDefaultPrinter(selectedPrinter);
+      } catch (error) {
+        console.error("Failed to set default printer on agent", error);
+      }
+    }
     toast.success(t("settingsSaved"));
     setShowSettings(false);
   };
@@ -170,25 +177,28 @@ export default function CheckinFullscreenPage() {
       const printerList = await agentApi.getPrinters();
       setPrinters(printerList);
 
-      // Restore saved printer if it exists in the list, otherwise pick first
-      const saved = localStorage.getItem("checkin_settings");
-      if (saved) {
-        try {
-          const settings = JSON.parse(saved);
-          if (
-            settings.selectedPrinter &&
-            printerList.includes(settings.selectedPrinter)
-          ) {
-            setSelectedPrinter(settings.selectedPrinter);
-          } else if (printerList.length > 0 && !selectedPrinter) {
-            setSelectedPrinter(printerList[0]);
-          }
-        } catch {
-          if (printerList.length > 0 && !selectedPrinter) {
-            setSelectedPrinter(printerList[0]);
+      // Priority: agent default → saved checkin_settings → first in list
+      if (printerList.length > 0) {
+        const defaultName = await agentApi.getDefaultPrinter();
+        if (defaultName && printerList.includes(defaultName)) {
+          setSelectedPrinter(defaultName);
+          return;
+        }
+        const saved = localStorage.getItem("checkin_settings");
+        if (saved) {
+          try {
+            const settings = JSON.parse(saved);
+            if (
+              settings.selectedPrinter &&
+              printerList.includes(settings.selectedPrinter)
+            ) {
+              setSelectedPrinter(settings.selectedPrinter);
+              return;
+            }
+          } catch {
+            // fall through to first
           }
         }
-      } else if (printerList.length > 0 && !selectedPrinter) {
         setSelectedPrinter(printerList[0]);
       }
     }

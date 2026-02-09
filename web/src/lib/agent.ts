@@ -51,6 +51,22 @@ export const agentApi = {
     }
   },
 
+  getDefaultPrinter: async (): Promise<string | null> => {
+    try {
+      const response = await axios.get<{ default: string | null }>(
+        `${AGENT_URL}/printers/default`
+      );
+      return response.data.default ?? null;
+    } catch (error) {
+      console.error("Failed to get default printer", error);
+      return null;
+    }
+  },
+
+  setDefaultPrinter: async (name: string): Promise<void> => {
+    await axios.post(`${AGENT_URL}/printers/default`, { default: name });
+  },
+
   print: async (request: PrintRequest) => {
     const response = await axios.post(`${AGENT_URL}/print`, request);
     return response.data;

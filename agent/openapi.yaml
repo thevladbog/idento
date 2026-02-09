@@ -203,6 +203,54 @@ paths:
                     type: integer
         '400':
           description: Некорректные данные
+
+  /printers/default:
+    get:
+      tags:
+        - Printers
+      summary: Получить принтер по умолчанию
+      description: Возвращает имя принтера по умолчанию или null, если не задан
+      responses:
+        '200':
+          description: Принтер по умолчанию
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  default:
+                    type: string
+                    nullable: true
+                    description: Имя принтера по умолчанию или null
+    post:
+      tags:
+        - Printers
+      summary: Установить принтер по умолчанию
+      description: Устанавливает принтер по умолчанию. Имя должно быть в списке доступных принтеров.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - default
+              properties:
+                default:
+                  type: string
+                  description: Имя принтера из списка GET /printers
+      responses:
+        '200':
+          description: Принтер по умолчанию установлен
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  default:
+                    type: string
+        '400':
+          description: Принтер не найден в списке или некорректный запрос
           
   /printers/{name}/fonts:
     get:

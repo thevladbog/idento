@@ -115,7 +115,12 @@ export function PrintBadgeDialog({
       const printerList = await agentApi.getPrinters();
       setPrinters(printerList);
       if (printerList.length > 0) {
-        setSelectedPrinter(printerList[0]);
+        const defaultName = await agentApi.getDefaultPrinter();
+        const initial =
+          defaultName && printerList.includes(defaultName)
+            ? defaultName
+            : printerList[0];
+        setSelectedPrinter(initial);
       }
     }
     setIsLoading(false);

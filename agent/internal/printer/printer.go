@@ -2,6 +2,7 @@ package printer
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -70,5 +71,6 @@ func (m *Manager) ListPrinters() []string {
 	for name := range m.printers {
 		list = append(list, name)
 	}
+	sort.Strings(list)
 	return list
 }

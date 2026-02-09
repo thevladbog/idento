@@ -36,26 +36,51 @@ func DiscoverSystemPrinters() ([]string, error) {
 	}
 }
 
-// discoverMacOSPrinters discovers printers on macOS using lpstat
+// discoverMacOSPrinters discovers printers on macOS using lpstat.
+// Uses full path /usr/bin/lpstat to avoid PATH issues when running as a service.
+// Falls back to lpstat -a if -p fails or returns empty; logs a warning if no printers found.
 func discoverMacOSPrinters() ([]string, error) {
-	cmd := exec.Command("lpstat", "-p")
+	// Use full path so discovery works when PATH is minimal (e.g. launchd)
+	cmd := exec.Command("/usr/bin/lpstat", "-p")
 	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute lpstat: %w", err)
-	}
-
-	var printers []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		// Format: "printer PrinterName is idle"
-		if strings.HasPrefix(line, "printer ") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				printers = append(printers, parts[1])
-			}
+	if err != nil || len(output) == 0 {
+		// Fallback: all printers (lpstat -a), first column is printer name
+		cmd = exec.Command("/usr/bin/lpstat", "-a")
+		output, err = cmd.Output()
+		if err != nil {
+			log.Printf("lpstat failed: %v", err)
+			return nil, fmt.Errorf("failed to execute lpstat: %w", err)
 		}
 	}
 
+	var printers []string
+	seen := make(map[string]bool)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// lpstat -p: "printer PrinterName is idle"
+		if strings.HasPrefix(line, "printer ") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 && !seen[parts[1]] {
+				seen[parts[1]] = true
+				printers = append(printers, parts[1])
+			}
+			continue
+		}
+		// lpstat -a: "PrinterName accepting requests since ..."
+		parts := strings.Fields(line)
+		if len(parts) >= 1 && !seen[parts[0]] {
+			seen[parts[0]] = true
+			printers = append(printers, parts[0])
+		}
+	}
+
+	if len(printers) == 0 {
+		log.Printf("warning: no system printers found (lpstat returned empty or no known format)")
+	}
 	return printers, nil
 }
 
@@ -82,27 +107,53 @@ func discoverLinuxPrinters() ([]string, error) {
 	return printers, nil
 }
 
-// discoverWindowsPrinters discovers printers on Windows using wmic
+// discoverWindowsPrinters discovers printers on Windows.
+// Prefers PowerShell (Get-Printer) for reliable one-name-per-line output; falls back to wmic.
 func discoverWindowsPrinters() ([]string, error) {
-	cmd := exec.Command("wmic", "printer", "get", "name")
+	// Primary: PowerShell, one printer name per line, no table header
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name")
 	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		var printers []string
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			name := strings.TrimSpace(line)
+			if name != "" {
+				printers = append(printers, name)
+			}
+		}
+		if len(printers) > 0 {
+			return printers, nil
+		}
+	}
+
+	// Fallback: wmic (deprecated but still present on many Windows 10/11)
+	cmd = exec.Command("wmic", "printer", "get", "name")
+	output, err = cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute wmic: %w", err)
+		return nil, fmt.Errorf("failed to discover printers (PowerShell and wmic): %w", err)
 	}
 
 	var printers []string
 	lines := strings.Split(string(output), "\n")
+	// wmic output: first line is "Name", then rows; columns may be padded
 	for i, line := range lines {
-		// Skip header and empty lines
-		if i == 0 || strings.TrimSpace(line) == "" {
+		if i == 0 && strings.TrimSpace(line) == "Name" {
 			continue
 		}
-		name := strings.TrimSpace(line)
-		if name != "Name" && name != "" {
-			printers = append(printers, name)
+		// Line may be "PrinterName    " or multi-column; take first column
+		fields := strings.Fields(line)
+		if len(fields) >= 1 {
+			name := fields[0]
+			if name != "Name" && name != "" {
+				printers = append(printers, name)
+			}
 		}
 	}
 
+	if len(printers) == 0 {
+		log.Printf("warning: no system printers found on Windows")
+	}
 	return printers, nil
 }
 
