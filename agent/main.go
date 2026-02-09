@@ -444,12 +444,11 @@ func main() {
 		}
 
 		log.Printf("Removing printer: %s", req.Name)
-		pm.RemovePrinter(req.Name)
 
 		configMu.Lock()
-		defer configMu.Unlock()
 		config, err := loadConfig()
 		if err != nil {
+			configMu.Unlock()
 			log.Printf("Failed to load config: %v", err)
 			http.Error(w, "Failed to load config", http.StatusInternalServerError)
 			return
@@ -462,10 +461,15 @@ func main() {
 		}
 		config.NetworkPrinters = filtered
 		if err := saveConfig(config); err != nil {
-			log.Printf("Warning: Failed to save config: %v", err)
-		} else {
-			log.Printf("Printer removed from config")
+			configMu.Unlock()
+			log.Printf("Failed to save config: %v", err)
+			http.Error(w, "Failed to save config", http.StatusInternalServerError)
+			return
 		}
+		configMu.Unlock()
+
+		pm.RemovePrinter(req.Name)
+		log.Printf("Printer removed from config")
 
 		w.WriteHeader(http.StatusOK)
 		if err := json.NewEncoder(w).Encode(map[string]string{

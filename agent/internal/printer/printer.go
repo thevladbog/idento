@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -43,8 +44,9 @@ func (p *MockPrinter) Status() (string, error) {
 	return "Ready", nil
 }
 
-// Manager handles a collection of printers
+// Manager handles a collection of printers. Safe for concurrent use from HTTP handlers.
 type Manager struct {
+	mu       sync.RWMutex
 	printers map[string]PrinterInterface
 }
 
@@ -55,10 +57,14 @@ func NewManager() *Manager {
 }
 
 func (m *Manager) AddPrinter(name string, printer PrinterInterface) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.printers[name] = printer
 }
 
 func (m *Manager) GetPrinter(name string) (PrinterInterface, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	p, ok := m.printers[name]
 	if !ok {
 		return nil, fmt.Errorf("printer not found: %s", name)
@@ -67,6 +73,8 @@ func (m *Manager) GetPrinter(name string) (PrinterInterface, error) {
 }
 
 func (m *Manager) ListPrinters() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	list := make([]string, 0, len(m.printers))
 	for name := range m.printers {
 		list = append(list, name)
@@ -77,5 +85,7 @@ func (m *Manager) ListPrinters() []string {
 
 // RemovePrinter removes a printer by name. It is a no-op if the name is not found.
 func (m *Manager) RemovePrinter(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.printers, name)
 }
