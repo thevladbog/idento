@@ -49,6 +49,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.GET("/events/:id", h.GetEvent)
 	api.POST("/events", h.CreateEvent, middleware.CheckLimits(h.Store, "events_per_month"))
 	api.PUT("/events/:id", h.UpdateEvent)
+	api.POST("/events/:id/badge-zpl", h.BadgeZPL)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
 	api.POST("/events/:event_id/staff", h.AssignStaffToEvent)
 

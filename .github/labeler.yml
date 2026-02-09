@@ -2,27 +2,31 @@
 # https://github.com/marketplace/actions/labeler
 
 backend:
-- changed-files:
-  - any-glob-to-any-file: backend/**
+  - changed-files:
+      - any-glob-to-any-file: backend/**
 
 agent:
-- changed-files:
-  - any-glob-to-any-file: agent/**
+  - changed-files:
+      - any-glob-to-any-file: agent/**
 
 web:
-- changed-files:
-  - any-glob-to-any-file: web/**
+  - changed-files:
+      - any-glob-to-any-file: web/**
+
+desktop:
+  - changed-files:
+      - any-glob-to-any-file: desktop/**
 
 mobile:
-- changed-files:
-  - any-glob-to-any-file: mobile/**
+  - changed-files:
+      - any-glob-to-any-file: mobile/**
 
 documentation:
-- changed-files:
-  - any-glob-to-any-file:
-      - docs/**
-      - "**/*.md"
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - "**/*.md"
 
 ci:
-- changed-files:
-  - any-glob-to-any-file: .github/**
+  - changed-files:
+      - any-glob-to-any-file: .github/**

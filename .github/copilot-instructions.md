@@ -8,6 +8,7 @@ Idento is an **event check-in system** with badge printing, QR codes, and offlin
 - **agent/** — Go printing agent (serial/network printers, scanners)
 - **web/** — React 18 admin UI (TypeScript, Vite, Tailwind v4, shadcn/ui)
 - **mobile/** — Kotlin Multiplatform app (Jetpack Compose on Android, Hilt, offline-first)
+- **desktop/** — Tauri 2 desktop/kiosk app (React, Vite); login, equipment settings, check-in; optional sidecar agent
 
 Use **Go 1.25** and **Node.js 22** for backend/agent and web. See [DEVELOPMENT.md](DEVELOPMENT.md) for full setup.
 
@@ -43,12 +44,20 @@ Always run `make lint` and `make test` before committing when changing Go code.
 
 - Build and test from `mobile/android-app/` with Gradle (e.g. `./gradlew assembleDebug`, `./gradlew test`). See CI and [DEVELOPMENT.md](DEVELOPMENT.md) for exact steps.
 
+### Desktop (Tauri)
+
+- Install: `cd desktop && npm ci`
+- Build: `cd desktop && npm run build` (frontend), `cd desktop && npm run tauri build` (app bundle)
+- Dev: `cd desktop && npm run tauri dev`
+- See [desktop/README.md](desktop/README.md) and [docs/DESKTOP_KIOSK.md](docs/DESKTOP_KIOSK.md) for deployment (including Raspberry Pi).
+
 ## Project layout
 
 - **backend/** — `cmd/`, `internal/handler`, `internal/store`, `internal/models`, `internal/middleware`, `migrations/`, `openapi.yaml`
 - **agent/** — `internal/printer`, `internal/scanner`, `main.go`, `openapi.yaml`
 - **web/** — `src/pages/`, `src/components/`, `src/hooks/`, `src/lib/`, `src/types/`, `vite.config.ts`
 - **mobile/** — `android-app/` (Compose app), `shared/` (KMP), `iosApp/`
+- **desktop/** — Tauri app: `src/` (React), `src-tauri/` (Rust), `src-tauri/sidecars/` (optional agent binary)
 - **scripts/** — start-all, stop-all, seed, lint-backend (per platform)
 - **docs/** — guides and migration notes
 
