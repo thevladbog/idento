@@ -19,6 +19,13 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+/**
+ * Renders the login page and handles user authentication flow.
+ *
+ * On successful submission stores `token` and `user` in localStorage, and also stores `tenants` and `current_tenant` when provided, then navigates to `/dashboard`. On failure sets a local error message that is displayed on the form.
+ *
+ * @returns The JSX element for the login page.
+ */
 export default function LoginPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();

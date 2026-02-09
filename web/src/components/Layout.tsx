@@ -13,6 +13,16 @@ interface LayoutProps {
   children: ReactNode;
 }
 
+/**
+ * Application layout component that renders the top navigation bar and page content.
+ *
+ * Renders logo, primary navigation links, organization switcher, language and mode toggles, and a logout button.
+ * The logout action removes 'token' and 'user' from localStorage and navigates to '/login'.
+ * If the stored user has `is_super_admin` truthy, a Super Admin navigation item is included.
+ *
+ * @param children - Content to render inside the layout's main area.
+ * @returns The layout element containing navigation and the provided children.
+ */
 export function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -94,4 +104,3 @@ export function Layout({ children }: LayoutProps) {
     </div>
   );
 }
-
