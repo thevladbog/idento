@@ -41,10 +41,17 @@ export const agentApi = {
     }
   },
 
-  getPrinters: async () => {
+  getPrinters: async (): Promise<Array<{ name: string; type: "system" | "network" }>> => {
     try {
-      const response = await axios.get<string[]>(`${AGENT_URL}/printers`);
-      return response.data;
+      const response = await axios.get<Array<{ name: string; type: string }>>(
+        `${AGENT_URL}/printers`
+      );
+      const data = response.data;
+      if (!Array.isArray(data)) return [];
+      return data.map((p) => ({
+        name: p.name,
+        type: p.type === "network" ? ("network" as const) : ("system" as const),
+      }));
     } catch (error) {
       console.error("Failed to fetch printers", error);
       return [];
@@ -145,6 +152,18 @@ export const agentApi = {
       return response.data;
     } catch (error) {
       console.error("Failed to add network printer", error);
+      throw error;
+    }
+  },
+
+  removeNetworkPrinter: async (name: string) => {
+    try {
+      const response = await axios.post(`${AGENT_URL}/printers/remove`, {
+        name,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Failed to remove network printer", error);
       throw error;
     }
   },

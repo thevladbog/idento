@@ -134,6 +134,29 @@ components:
         message:
           type: string
 
+    PrinterEntry:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          description: Имя принтера
+        type:
+          type: string
+          enum: [system, network]
+          description: system — системный принтер (ОС), network — добавленный по IP
+
+    RemovePrinterRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Имя сетевого принтера для удаления
+
 paths:
   /health:
     get:
@@ -158,21 +181,51 @@ paths:
       tags:
         - Printers
       summary: Получить список принтеров
-      description: Возвращает все доступные принтеры (USB, Network, Bluetooth)
+      description: |
+        Возвращает все доступные принтеры с типом (system — из ОС, network — добавленный по IP).
       responses:
         '200':
-          description: Список принтеров
+          description: Список принтеров с типом
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  type: string
+                  $ref: '#/components/schemas/PrinterEntry'
                 example:
-                  - "HP_Smart_Tank_790_series"
-                  - "Network_192_168_0_245"
-                  - "Office_Printer"
-                  
+                  - name: "HP_Smart_Tank_790_series"
+                    type: "system"
+                  - name: "Network_192_168_0_245"
+                    type: "network"
+
+  /printers/remove:
+    post:
+      tags:
+        - Printers
+      summary: Удалить сетевой принтер
+      description: Удаляет ранее добавленный по IP сетевой принтер из списка и конфигурации.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemovePrinterRequest'
+      responses:
+        '200':
+          description: Принтер удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "removed"
+                  name:
+                    type: string
+        '400':
+          description: Некорректные данные (name обязателен)
+
   /printers/add:
     post:
       tags:

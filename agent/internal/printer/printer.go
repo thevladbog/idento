@@ -74,3 +74,8 @@ func (m *Manager) ListPrinters() []string {
 	sort.Strings(list)
 	return list
 }
+
+// RemovePrinter removes a printer by name. It is a no-op if the name is not found.
+func (m *Manager) RemovePrinter(name string) {
+	delete(m.printers, name)
+}

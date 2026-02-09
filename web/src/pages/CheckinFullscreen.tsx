@@ -182,12 +182,13 @@ export default function CheckinFullscreenPage() {
     setAgentConnected(healthy);
     if (healthy) {
       const printerList = await agentApi.getPrinters();
-      setPrinters(printerList);
+      const printerNames = printerList.map((p) => p.name);
+      setPrinters(printerNames);
 
       // Priority: agent default → saved checkin_settings → first in list
-      if (printerList.length > 0) {
+      if (printerNames.length > 0) {
         const defaultName = await agentApi.getDefaultPrinter();
-        if (defaultName && printerList.includes(defaultName)) {
+        if (defaultName && printerNames.includes(defaultName)) {
           setSelectedPrinter(defaultName);
           return;
         }
@@ -197,7 +198,7 @@ export default function CheckinFullscreenPage() {
             const settings = JSON.parse(saved);
             if (
               settings.selectedPrinter &&
-              printerList.includes(settings.selectedPrinter)
+              printerNames.includes(settings.selectedPrinter)
             ) {
               setSelectedPrinter(settings.selectedPrinter);
               return;
@@ -206,7 +207,7 @@ export default function CheckinFullscreenPage() {
             // fall through to first
           }
         }
-        setSelectedPrinter(printerList[0]);
+        setSelectedPrinter(printerNames[0]);
       }
     }
   };
