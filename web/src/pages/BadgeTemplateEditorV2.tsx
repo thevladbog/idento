@@ -250,13 +250,14 @@ export default function BadgeTemplateEditorV2() {
     try {
       // First, load printers from agent
       const printerList = await agentApi.getPrinters();
-      if (printerList && printerList.length > 0) {
-        setPrinters(printerList);
+      const printerNames = printerList.map((p) => p.name);
+      if (printerNames.length > 0) {
+        setPrinters(printerNames);
         const defaultName = await agentApi.getDefaultPrinter();
         const initial =
-          defaultName && printerList.includes(defaultName)
+          defaultName && printerNames.includes(defaultName)
             ? defaultName
-            : printerList[0];
+            : printerNames[0];
         setSelectedPrinter(initial);
         setShowPrinterSelectDialog(true);
       } else {
