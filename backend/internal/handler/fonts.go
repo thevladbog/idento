@@ -270,7 +270,7 @@ func (h *Handler) GetEventFontCSS(c echo.Context) error {
 	css.WriteString("/* Auto-generated font faces for event */\n\n")
 
 	for _, font := range fonts {
-		css.WriteString(fmt.Sprintf(`@font-face {
+		fmt.Fprintf(&css, `@font-face {
   font-family: '%s';
   font-weight: %s;
   font-style: %s;
@@ -278,7 +278,7 @@ func (h *Handler) GetEventFontCSS(c echo.Context) error {
   font-display: swap;
 }
 
-`, font.Family, font.Weight, font.Style, font.ID.String(), font.Format))
+`, font.Family, font.Weight, font.Style, font.ID.String(), font.Format)
 	}
 
 	c.Response().Header().Set("Content-Type", "text/css; charset=utf-8")
