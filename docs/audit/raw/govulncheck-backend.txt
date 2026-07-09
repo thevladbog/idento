@@ -1,0 +1,38 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5856
+    Invoking Encrypted Client Hello privacy leak in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-5856
+  Standard library
+    Found in: crypto/tls@go1.26.4
+    Fixed in: crypto/tls@go1.26.5
+    Example traces found:
+      #1: main.go:479:24: backend.main calls echo.Echo.Start, which eventually calls tls.Conn.HandshakeContext
+      #2: internal/handler/fonts.go:173:25: handler.Handler.UploadEventFont calls io.ReadAll, which eventually calls tls.Conn.Read
+      #3: internal/handler/attendee_codes.go:162:24: handler.Handler.ExportAttendeesCSV calls csv.Writer.Error, which eventually calls tls.Conn.Write
+      #4: main.go:479:24: backend.main calls echo.Echo.Start, which eventually calls tls.Dialer.DialContext
+
+Vulnerability #2: GO-2026-5004
+    SQL Injection via placeholder confusion with dollar quoted string literals
+    in github.com/jackc/pgx
+  More info: https://pkg.go.dev/vuln/GO-2026-5004
+  Module: github.com/jackc/pgx/v5
+    Found in: github.com/jackc/pgx/v5@v5.7.6
+    Fixed in: github.com/jackc/pgx/v5@v5.9.2
+    Example traces found:
+      #1: internal/store/pg_store.go:1285:25: store.PGStore.GetAuditLog calls pgxpool.Pool.Query, which eventually calls sanitize.SanitizeSQL
+
+Vulnerability #3: GO-2026-4970
+    Root escape via symlink plus trailing slash in os
+  More info: https://pkg.go.dev/vuln/GO-2026-4970
+  Standard library
+    Found in: os@go1.26.4
+    Fixed in: os@go1.26.5
+    Example traces found:
+      #1: internal/store/pg_store.go:117:32: store.PGStore.RunMigrations calls os.Root.ReadFile
+
+Your code is affected by 3 vulnerabilities from 1 module and the Go standard library.
+This scan also found 4 vulnerabilities in packages you import and 20
+vulnerabilities in modules you require, but your code doesn't appear to call
+these vulnerabilities.
+Use '-show verbose' for more details.

@@ -1,0 +1,27 @@
+=== Symbol Results ===
+
+Vulnerability #1: GO-2026-5856
+    Invoking Encrypted Client Hello privacy leak in crypto/tls
+  More info: https://pkg.go.dev/vuln/GO-2026-5856
+  Standard library
+    Found in: crypto/tls@go1.26.4
+    Fixed in: crypto/tls@go1.26.5
+    Example traces found:
+      #1: main.go:1052:33: agent.main calls http.Server.ListenAndServe, which eventually calls tls.Conn.HandshakeContext
+      #2: internal/scanner/scanner.go:88:16: scanner.Scanner.Close calls sync.Once.Do, which eventually calls tls.Conn.Read
+
+Vulnerability #2: GO-2026-4970
+    Root escape via symlink plus trailing slash in os
+  More info: https://pkg.go.dev/vuln/GO-2026-4970
+  Standard library
+    Found in: os@go1.26.4
+    Fixed in: os@go1.26.5
+    Example traces found:
+      #1: main.go:103:28: agent.loadConfig calls os.Root.ReadFile
+      #2: main.go:144:23: agent.saveConfig calls os.Root.WriteFile
+
+Your code is affected by 2 vulnerabilities from the Go standard library.
+This scan also found 0 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.
