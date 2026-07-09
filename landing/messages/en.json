@@ -1,0 +1,323 @@
+{
+  "HomePage": {
+    "title": "Idento - Secure Badge Printing & Check-in",
+    "hero": {
+      "title": "Professional Badge Printing & Event Check-in",
+      "subtitle": "Secure, offline-first desktop application for seamless event management.",
+      "cta_download": "Download for Free",
+      "cta_pro": "Get Pro Version"
+    },
+    "features": {
+      "title": "Why Idento?",
+      "offline": "Works Offline",
+      "offline_desc": "No internet? No problem. Local database ensures 100% uptime.",
+      "secure": "Secure & Private",
+      "secure_desc": "Your data stays on your device. End-to-end encryption.",
+      "fast": "Lightning Fast",
+      "fast_desc": "Optimized for speed. Check in attendees in seconds."
+    }
+  },
+  "Hero": {
+    "title": "Event Check-in That Works Offline",
+    "subtitle": "Professional badge printing and attendee management with zero downtime. Perfect for conferences, corporate events, and exhibitions.",
+    "badges": {
+      "offline": "100% Offline",
+      "noInternet": "No Internet Required",
+      "enterprise": "Enterprise Security"
+    },
+    "cta": {
+      "primary": "Start Free Trial",
+      "secondary": "Watch Demo"
+    },
+    "demo": {
+      "placeholder": "Product Demo Coming Soon"
+    },
+    "stats": {
+      "stat1": {
+        "value": "10k+",
+        "label": "Events Managed"
+      },
+      "stat2": {
+        "value": "500k+",
+        "label": "Attendees Checked In"
+      },
+      "stat3": {
+        "value": "99.9%",
+        "label": "Uptime Guarantee"
+      }
+    }
+  },
+  "Features": {
+    "title": "Everything You Need for Event Success",
+    "subtitle": "Powerful features designed to make event check-in seamless and efficient",
+    "items": {
+      "csvImport": {
+        "title": "Flexible CSV Import",
+        "description": "Import attendee lists with any columns. System automatically detects and adapts to your data structure."
+      },
+      "badgeEditor": {
+        "title": "Visual Badge Editor",
+        "description": "Drag-and-drop badge designer with dynamic field mapping, QR codes, and custom layouts."
+      },
+      "qrScanning": {
+        "title": "QR & Barcode Scanning",
+        "description": "Fast check-in with built-in scanner support. Works with QR codes, barcodes, and manual entry."
+      },
+      "multiPlatform": {
+        "title": "Multi-Platform",
+        "description": "Available on Web, Desktop (Windows, macOS, Linux), and Mobile (Android). Choose what works best."
+      },
+      "printerSupport": {
+        "title": "Universal Printer Support",
+        "description": "Connect via USB, Bluetooth, or Network. Support for thermal printers, label printers, and standard printers."
+      },
+      "staffManagement": {
+        "title": "Staff Management",
+        "description": "Role-based access control, QR login for staff, and real-time activity tracking across your team."
+      },
+      "offlineFirst": {
+        "title": "Offline-First Architecture",
+        "description": "Continue working without internet. All data stored locally with automatic sync when connected."
+      },
+      "realTimeSync": {
+        "title": "Real-Time Sync",
+        "description": "Automatic data synchronization across devices when online. Never lose a check-in record."
+      }
+    }
+  },
+  "HowItWorks": {
+    "title": "Simple Process, Powerful Results",
+    "subtitle": "Get started in minutes with our streamlined workflow",
+    "steps": {
+      "import": {
+        "title": "Import Attendees",
+        "description": "Upload your CSV with any columns. System automatically detects fields and validates data."
+      },
+      "design": {
+        "title": "Design Badges",
+        "description": "Use our visual editor to create professional badges. Map fields, add QR codes, and customize layout."
+      },
+      "checkin": {
+        "title": "Check-in & Print",
+        "description": "Scan QR codes, search by name, or manual entry. Print badges instantly on any supported printer."
+      },
+      "sync": {
+        "title": "Sync & Report",
+        "description": "Automatic data sync across devices. Generate reports, export data, and track attendance in real-time."
+      }
+    }
+  },
+  "UseCases": {
+    "title": "Built for Every Event Type",
+    "subtitle": "Trusted by event organizers across industries",
+    "items": {
+      "conferences": {
+        "title": "Conferences & Exhibitions",
+        "description": "Handle thousands of attendees with multiple tracks, sessions, and networking events.",
+        "benefits": {
+          "1": "Multi-session check-in tracking",
+          "2": "Speaker and VIP badge differentiation",
+          "3": "Real-time attendance analytics"
+        }
+      },
+      "corporate": {
+        "title": "Corporate Events",
+        "description": "Professional check-in for company meetings, training sessions, and internal events.",
+        "benefits": {
+          "1": "Employee database integration",
+          "2": "Department-specific badge templates",
+          "3": "Secure data handling for corporate compliance"
+        }
+      },
+      "tech": {
+        "title": "Tech Meetups & Hackathons",
+        "description": "Fast, efficient check-in for developer communities and tech gatherings.",
+        "benefits": {
+          "1": "Quick QR code check-in",
+          "2": "GitHub and social profile integration",
+          "3": "Hacker-friendly offline mode"
+        }
+      },
+      "largescale": {
+        "title": "Large-Scale Events (1000+ Attendees)",
+        "description": "Enterprise-grade infrastructure for massive events, festivals, and conventions.",
+        "benefits": {
+          "1": "Multiple check-in stations",
+          "2": "Load balancing and queue management",
+          "3": "Dedicated support and custom deployment"
+        }
+      }
+    }
+  },
+  "Comparison": {
+    "title": "Why Choose Idento?",
+    "subtitle": "See how we compare to traditional solutions and competitors",
+    "table": {
+      "feature": "Feature",
+      "idento": "Idento",
+      "traditional": "Traditional Solutions",
+      "competitors": "Competitors"
+    },
+    "features": {
+      "offlineFirst": "Offline-First Architecture",
+      "selfHosted": "Self-Hosted Option",
+      "perAttendee": "No Per-Attendee Pricing",
+      "multiPlatform": "Multi-Platform Support",
+      "openApi": "Open API Access",
+      "badgeEditor": "Visual Badge Editor",
+      "qrScanning": "QR/Barcode Scanning",
+      "mobileApp": "Native Mobile App"
+    }
+  },
+  "Pricing": {
+    "title": "Simple, Transparent Pricing",
+    "subtitle": "Choose the plan that fits your needs. Upgrade or downgrade anytime.",
+    "popular": "Most Popular",
+    "toggle": {
+      "monthly": "Monthly",
+      "annual": "Annual",
+      "save": "Save 20%"
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "description": "Perfect for small events and getting started",
+        "price": {
+          "monthly": "$0",
+          "annual": "$0"
+        },
+        "period": "forever",
+        "features": {
+          "1": "Up to 100 attendees per event",
+          "2": "Basic badge templates",
+          "3": "Single user account",
+          "4": "Community support",
+          "5": "Core check-in features"
+        },
+        "cta": "Get Started Free"
+      },
+      "professional": {
+        "name": "Professional",
+        "description": "For event organizers and growing businesses",
+        "price": {
+          "monthly": "$49",
+          "annual": "$39"
+        },
+        "period": "month",
+        "features": {
+          "1": "Unlimited attendees",
+          "2": "Custom badge templates",
+          "3": "Up to 10 team members",
+          "4": "Priority email support",
+          "5": "Advanced reporting and analytics"
+        },
+        "cta": "Start Free Trial"
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "description": "Custom solutions for large organizations",
+        "price": {
+          "monthly": "Custom",
+          "annual": "Custom"
+        },
+        "period": "",
+        "features": {
+          "1": "Unlimited everything",
+          "2": "Custom deployment options",
+          "3": "Dedicated account manager",
+          "4": "24/7 phone support",
+          "5": "Custom integrations and training"
+        },
+        "cta": "Contact Sales"
+      }
+    },
+    "footer": "All plans include 30-day money-back guarantee. No credit card required for free trial."
+  },
+  "FAQ": {
+    "title": "Frequently Asked Questions",
+    "subtitle": "Everything you need to know about Idento",
+    "questions": {
+      "offline": {
+        "question": "Does it really work without internet?",
+        "answer": "Yes! Idento is built with an offline-first architecture. All core features work without internet connection. Data is stored locally on your device and automatically syncs when you're back online."
+      },
+      "printers": {
+        "question": "What printers are supported?",
+        "answer": "Idento supports a wide range of printers including thermal badge printers, label printers, and standard office printers. You can connect via USB, Bluetooth, or network. We support popular brands like Zebra, Dymo, Brother, and more."
+      },
+      "import": {
+        "question": "Can I import my existing attendee list?",
+        "answer": "Absolutely! Import CSV files with any column structure. Our system automatically detects fields like name, email, company, etc. You can also manually map columns if needed. We support files with thousands of rows."
+      },
+      "security": {
+        "question": "Is my data secure?",
+        "answer": "Security is our top priority. All data is encrypted at rest and in transit. For self-hosted deployments, your data never leaves your infrastructure. We're GDPR compliant and follow industry best practices for data protection."
+      },
+      "mobile": {
+        "question": "Do you have a mobile app?",
+        "answer": "Yes! We have a native Android app with full offline support. iOS app is coming soon. The mobile app is perfect for on-site check-in staff and includes built-in QR code scanning."
+      },
+      "formats": {
+        "question": "What badge formats are supported?",
+        "answer": "Idento supports all standard badge sizes from business card (3.5x2) to large format (4x6 and beyond). You can create custom sizes, add QR codes, logos, photos, and dynamic text fields from your attendee data."
+      },
+      "customize": {
+        "question": "Can I customize the badge design?",
+        "answer": "Yes! Our visual badge editor lets you drag and drop elements, choose fonts and colors, add your logo, and map any field from your attendee data. Save templates to reuse across events."
+      },
+      "migrate": {
+        "question": "How do I migrate from another system?",
+        "answer": "We provide migration guides and support for popular event management platforms. Export your data as CSV from your current system and import into Idento. Our team can help with custom migration needs for Enterprise plans."
+      }
+    }
+  },
+  "Download": {
+    "title": "Download Idento",
+    "subtitle": "Get started with the desktop or mobile app for your platform",
+    "platforms": {
+      "windows": {
+        "name": "Windows",
+        "format": ".exe installer",
+        "requirements": "Windows 10 or later"
+      },
+      "macos": {
+        "name": "macOS",
+        "format": ".dmg or .pkg",
+        "requirements": "macOS 11 (Big Sur) or later"
+      },
+      "linux": {
+        "name": "Linux",
+        "format": "AppImage or .deb",
+        "requirements": "Ubuntu 20.04+ or equivalent"
+      },
+      "android": {
+        "name": "Android",
+        "format": "APK or Google Play",
+        "requirements": "Android 8.0 or later"
+      }
+    },
+    "cta": "Download",
+    "info": {
+      "version": "Latest Version: v1.0.0",
+      "changelog": "See what's new in the latest release with bug fixes, performance improvements, and new features.",
+      "viewChangelog": "View Full Changelog"
+    }
+  },
+  "FinalCTA": {
+    "title": "Ready to Revolutionize Your Event Check-in?",
+    "subtitle": "Join thousands of event organizers who trust Idento for seamless attendee management.",
+    "trust": {
+      "noCredit": "No credit card required",
+      "cancel": "Cancel anytime",
+      "support": "Free onboarding support"
+    },
+    "cta": "Start Your Free Trial",
+    "additional": "Takes less than 2 minutes to set up your first event"
+  },
+  "Navigation": {
+    "features": "Features",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "docs": "Documentation"
+  }
+}
