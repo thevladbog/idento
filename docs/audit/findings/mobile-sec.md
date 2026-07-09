@@ -7,6 +7,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Убрать `usesCleartextTraffic="true"`, добавить `network_security_config.xml`, разрешающий cleartext только для `10.0.2.2`/`localhost` в debug-сборке (через `debug-overrides`). Завести build-flavor'ы/переменные окружения, которые реально переключают `baseUrl` на `PROD_BASE_URL` в release-сборках, и убрать возможность собрать release с dev-URL.
+- Вердикт: ПОДТВЕРЖДЕНО — все цитаты подтверждены построчно: манифест (39), `NetworkConstants*.kt` жёстко возвращают dev-URL, `AppModule.kt:41-50` использует `getDefaultBaseUrl()`, `PROD_BASE_URL` встречается только в своём объявлении (grep не нашёл использований), `network_security_config.xml` в проекте отсутствует.
 
 ### MOBILE-SEC-02: Полное логирование тела и заголовков HTTP-запросов/ответов (включая JWT и пароль при логине) без отключения в релизе
 - Файл: mobile/android-app/app/src/main/java/com/idento/di/NetworkModule.kt:33-35; mobile/shared/src/commonMain/kotlin/com/idento/data/network/ApiClient.kt:40-43; mobile/android-app/app/src/main/java/com/idento/data/api/AuthInterceptor.kt:29-32; mobile/android-app/app/src/main/java/com/idento/data/model/LoginRequest.kt:5-19
@@ -15,6 +16,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Убрать логирование тела/заголовков в production (использовать `HttpLoggingInterceptor.Level.NONE`/`BASIC` в релизе через `BuildConfig.DEBUG`, аналогично для Ktor — `LogLevel.NONE` в релизе или явную маску полей `Authorization`/`password`). Никогда не логировать сырые пароли и токены даже в debug.
+- Вердикт: ПОДТВЕРЖДЕНО — `NetworkModule.kt:33-35`/`ApiClient.kt:40-43` безусловно включают `Level.BODY`/`LogLevel.BODY`, `AuthInterceptor.kt:29-32` добавляет заголовок с токеном, grep по `BuildConfig.DEBUG` во всём `mobile/` не даёт совпадений, `proguard-rules.pro` логирование не вырезает.
 
 ### MOBILE-SEC-03: JWT-токен и данные пользователя хранятся в незашифрованном виде на диске (Android DataStore-файл и iOS Documents-файл), без Keystore/Keychain
 - Файл: mobile/shared/src/androidMain/kotlin/com/idento/data/storage/DataStoreFactory.android.kt:14-20; mobile/shared/src/iosMain/kotlin/com/idento/data/storage/DataStoreFactory.ios.kt:17-36; mobile/shared/src/commonMain/kotlin/com/idento/data/preferences/AuthPreferences.kt:76-83; mobile/android-app/app/src/main/java/com/idento/di/DataStoreModule.kt:14; mobile/android-app/app/src/main/java/com/idento/data/local/TokenManager.kt:34-40
@@ -23,6 +25,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: На Android — хранить токен через `EncryptedSharedPreferences`/Jetpack Security Crypto (AES-256, ключ в Android Keystore) либо шифровать DataStore. На iOS — хранить токен в Keychain (`kSecClassGenericPassword`) вместо обычного файла в Documents. Прочие пользовательские данные (email/name/role) — хотя бы исключить из бэкапов, если не переносить в защищённое хранилище целиком.
+- Вердикт: ПОДТВЕРЖДЕНО — `DataStoreFactory.android.kt`/`.ios.kt` создают DataStore поверх обычных файлов (`filesDir`/`Documents`), legacy `TokenManager.kt`/`DataStoreModule.kt` — тот же паттерн; grep по `EncryptedSharedPreferences|MasterKey|Keychain|Keystore` по всему `mobile/` не даёт ни одного совпадения.
 
 ### MOBILE-SEC-04: Правила бэкапа Android не приведены в соответствие с реальным расположением данных — отсутствует осознанная защита при будущих изменениях хранилища
 - Файл: mobile/android-app/app/src/main/AndroidManifest.xml:32-34; mobile/android-app/app/src/main/res/xml/backup_rules.xml:1-5; mobile/android-app/app/src/main/res/xml/data_extraction_rules.xml:1-7
@@ -31,6 +34,7 @@
 - Серьёзность: Low
 - Уверенность: средняя
 - Рекомендация: Явно исключить чувствительные данные (`domain="file" path="datastore/"` с `<exclude>`, если DataStore когда-либо попадёт в бэкапящийся домен) или отключить `allowBackup` совсем для клиента, работающего с чувствительными токенами/PII. Пересматривать `backup_rules.xml`/`data_extraction_rules.xml` при каждом изменении слоя хранения.
+- Вердикт: ПОДТВЕРЖДЕНО — `allowBackup=true` и правила с доменами `sharedpref`/`database` подтверждены построчно; в коде нет ни одного `SharedPreferences`/`@Database`/`@Entity`, `OfflineDatabaseImpl` — in-memory заглушка, так что вывод о случайном (а не осознанном) несовпадении корректен, severity Low обоснован.
 
 ### MOBILE-SEC-05: Избыточное разрешение RECEIVE_BOOT_COMPLETED без соответствующего получателя
 - Файл: mobile/android-app/app/src/main/AndroidManifest.xml:28
@@ -39,6 +43,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Удалить неиспользуемое разрешение `RECEIVE_BOOT_COMPLETED`, либо (если автозапуск на самом деле нужен для аппаратных сканеров) реализовать соответствующий `BroadcastReceiver` и задокументировать назначение.
+- Вердикт: ПОДТВЕРЖДЕНО — разрешение объявлено на строке 28 манифеста; ни в манифесте, ни в коде (`HardwareScannerService.kt`/`BluetoothScannerService.kt` регистрируют receiver'ы только для сканер-специфичных action'ов) нет обработчика `BOOT_COMPLETED`.
 
 ### MOBILE-SEC-06: Logout — только локальная очистка, серверная инвалидация токена не выполняется
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/repository/AuthRepository.kt:84-91; mobile/shared/src/commonMain/kotlin/com/idento/data/network/AuthApiService.kt:92-98
@@ -47,3 +52,4 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: На logout выполнять реальный вызов к backend-эндпоинту инвалидации/отзыва токена (или сессии/refresh-токена), если такой существует или может быть добавлен на бэкенде; в дополнение сократить время жизни access-токена и обеспечить его ротацию.
+- Вердикт: ПОДТВЕРЖДЕНО — `AuthRepository.kt:84-91` вызывает только `clearAuth()`, `AuthApiService.kt` (строки ~95-98) содержит пустой `runCatching {}` без сетевого вызова; grep подтверждает, что `AuthApiService.logout()` нигде не вызывается.

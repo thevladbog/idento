@@ -15,6 +15,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить `registered_at`, `registration_zone_id`, `packet_delivered` в SELECT/INSERT/UPDATE `attendees` в pg_store.go (или вынести регистрацию в отдельный, чётко протестированный store-метод) и покрыть сценарий "регистрация → чек-ин в другой зоне" интеграционным тестом.
+- Вердикт: ПОДТВЕРЖДЕНО — проверены все перечисленные SQL-запросы в pg_store.go (CreateAttendee:407-422, GetAttendeesByEventID:424-457, GetAttendeeByCode:459-479, GetAttendeeByID:481-501, UpdateAttendee:503-523) — ни один не упоминает `registered_at`/`registration_zone_id`/`packet_delivered`, при этом миграция 000010_event_zones.up.sql:90-92 добавляет эти колонки.
 
 ### BACKEND-BUG-02: Слепая перезапись всей строки attendee без блокировки — потерянные обновления при параллельном чек-ине/редактировании
 - Файл: backend/internal/handler/attendees.go:182-246 (`UpdateAttendeeHandler`, чек-ин/расчекин), :112-179 (`UpdateAttendeeInfo`), :249-289 (`BlockAttendee`), :292-325 (`UnblockAttendee`), :328-360 (`DeleteAttendee`); backend/internal/store/pg_store.go:503-523 (`UpdateAttendee`)
@@ -23,6 +24,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Перейти на частичные `UPDATE ... SET col = $1 WHERE id = $2` только для изменяемых полей конкретной операции (чек-ин отдельно от общего редактирования), и/или добавить оптимистичную блокировку (`WHERE id = $1 AND updated_at = $2`, возврат конфликта 409 при 0 affected rows), и/или атомарный `UPDATE ... SET checked_in_by = COALESCE(checked_in_by, $1), checked_in_at = COALESCE(checked_in_at, NOW()) WHERE id = $2 AND checkin_status = FALSE` для чек-ина.
+- Вердикт: ПОДТВЕРЖДЕНО — `UpdateAttendee` (pg_store.go:503-523) действительно один `UPDATE` перезаписывает все отслеживаемые поля без `WHERE updated_at=...`/версии, и все 5 перечисленных хендлеров в attendees.go делают read-modify-write без блокировки.
 
 ### BACKEND-BUG-03: UpdateAttendee никогда не сохраняет колонку `code` — исправление билетного кода тихо не применяется
 - Файл: backend/internal/store/pg_store.go:511-522 (SET-список `UpdateAttendee`); backend/internal/handler/attendees.go:162-164 (`UpdateAttendeeInfo`, `req.Code`)
@@ -31,6 +33,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить `code = $N` в SET-список `UpdateAttendee` (с осторожностью — учесть уникальный индекс `UNIQUE(event_id, code)` и вернуть `409 Conflict` при коллизии), либо явно документировать/блокировать попытку изменить `code` через этот путь на уровне хендлера, если это осознанное ограничение.
+- Вердикт: ПОДТВЕРЖДЕНО — SET-список `UpdateAttendee` (pg_store.go:512-516) действительно не содержит `code`, при этом `UpdateAttendeeInfo` (attendees.go:162-164) меняет `attendee.Code` в памяти и возвращает его клиенту как будто сохранённое.
 
 ### BACKEND-BUG-04: Загрузка шрифта мероприятия никогда не проходит аутентификацию — неверное приведение типа контекста
 - Файл: backend/internal/handler/fonts.go:51-70 (`UploadEventFont`); backend/internal/middleware/jwt.go:28-45 (`middleware.JWT()`)
@@ -39,6 +42,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Заменить блок извлечения пользователя на стандартный `claims, ok := c.Get("user").(*models.JWTCustomClaims)` и `uuid.Parse(claims.UserID)`, как во всех остальных хендлерах; удалить неиспользуемый импорт `jwt` из fonts.go, если он более не нужен.
+- Вердикт: ПОДТВЕРЖДЕНО — `UploadEventFont` (fonts.go:58-70) действительно делает `userToken.(*jwt.Token)`, тогда как `middleware.JWT()` (jwt.go:45) кладёт в контекст `*models.JWTCustomClaims`; приведение типа гарантированно проваливается (`ok == false`) для любого валидного токена → всегда 401.
 
 ### BACKEND-BUG-05: Гонка при повторном/параллельном сканировании в ZoneCheckIn возвращает 500 вместо идемпотентного «уже отмечен»
 - Файл: backend/internal/handler/zones.go:404-439 (`ZoneCheckIn`, шаги 7–8); backend/migrations/000010_event_zones.up.sql (`UNIQUE(attendee_id, zone_id, event_day)` на `zone_checkins`)
@@ -47,6 +51,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Medium
 - Уверенность: средняя (требует конкурентных запросов для проявления, но конструкция кода делает это гарантированным при гонке)
 - Рекомендация: В `CreateZoneCheckin`/`ZoneCheckIn` распознавать код ошибки Postgres `23505` (unique_violation) через `pgconn.PgError` и в этом случае повторно прочитать существующую запись и вернуть тот же идемпотентный "Already checked in" ответ, что и для последовательного случая.
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждён check-then-act (`CheckAttendeeZoneCheckin` → `CreateZoneCheckin` без транзакции/блокировки, zones.go:404-439), уникальный индекс `UNIQUE(attendee_id, zone_id, event_day)` подтверждён в migrations/000010_event_zones.up.sql:68, и обработчик ошибки (434-439) действительно не отличает unique_violation от прочих ошибок.
 
 ### BACKEND-BUG-06: `time.Truncate(24h)` используется как граница календарного дня — даёт смещённые сутки для мероприятий не в UTC
 - Файл: backend/internal/store/pg_store_zones.go:133 (`GetEventZonesWithStats`, `today`), :414 (`GetZoneCheckins`, `dateOnly`), :472 (`CheckAttendeeZoneCheckin`, `dateOnly`); backend/internal/handler/zones.go:601-613 (`GetZoneDays`, `currentDay`/`endDay`/`is_today`/`is_past`/`is_future`)
@@ -55,6 +60,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Medium
 - Уверенность: высокая (детерминированное поведение Go, легко воспроизводимо для любого события не в UTC+0)
 - Рекомендация: Вычислять "начало суток" через `time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)` с явной локацией мероприятия/тенанта (или хранить и сравнивать чистую `DATE` без времени, полученную с явным часовым поясом на стороне клиента), а не полагаться на `Truncate`.
+- Вердикт: ПОДТВЕРЖДЕНО — `Truncate(24*time.Hour)` подтверждён именно на указанных строках (pg_store_zones.go:133,414,472; zones.go:602-613), поведение соответствует документированной семантике Go (усечение от нулевого времени в UTC, а не от локальной полуночи).
 
 ### BACKEND-BUG-07: SyncPush слепо принимает изменения клиента и глотает все ошибки; SyncPull никогда не сообщает об удалениях
 - Файл: backend/internal/handler/sync.go:44-107 (`SyncPull`), :109-167 (`SyncPush`); backend/internal/store/pg_store_sync.go:47-84 (`GetAttendeesChangedSince`)
@@ -63,6 +69,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Сравнивать `updated_at` сервера и клиента перед принятием изменения (skip / conflict, не "всегда клиент побеждает"); возвращать список неудачных ID из `SyncPush` в ответе; генерировать код по умолчанию для создаваемых через sync участников без кода, как в `CreateAttendeeRequest`; реализовать реальный список `Deleted` в `SyncPull` (фильтр `deleted_at IS NOT NULL AND deleted_at > since`).
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждены все элементы: `continue` без логирования на ошибках (sync.go:141-144,155-157), комментарий "always accept client updates" (135-138), `Deleted` всегда пустой список (78-84,95-101), и `GetAttendeesChangedSince` (pg_store_sync.go:47-52) не фильтрует `deleted_at IS NULL` в ветке `since != zero` (фильтр есть только в ветке `since.IsZero()`, строка 58).
 
 ### BACKEND-BUG-08: Диапазон дат в статистике использования тенанта исключает данные за последний день периода
 - Файл: backend/internal/handler/super_admin.go:251-264 (`GetTenantUsage`); backend/internal/store/pg_store.go:1178-1201 (`GetUsageStats`)
@@ -71,6 +78,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Приводить `end_date` к концу дня (`endDate.Add(24*time.Hour - time.Nanosecond)`) или использовать `logged_at < end_date + 1 day` вместо `BETWEEN`.
+- Вердикт: ПОДТВЕРЖДЕНО — `GetTenantUsage` (super_admin.go:260-264) парсит `end_date` через `"2006-01-02"` (полночь), а `GetUsageStats` (pg_store.go:1178-1201) использует `BETWEEN $2 AND $3` — весь день после 00:00:00 исключается.
 
 ### BACKEND-BUG-09: Register создаёт tenant/user/членство в трёх нетранзакционных шагах — частичный сбой оставляет несогласованные данные
 - Файл: backend/internal/handler/auth.go:39-115 (`Register`)
@@ -79,6 +87,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Low
 - Уверенность: средняя (требует сбоя ровно между шагами; воспроизводимо только точечной инъекцией ошибки/гонкой БД, но не бизнес-логикой запроса)
 - Рекомендация: Выполнять шаги (1)-(3) в единой транзакции `pgx.Tx` с rollback при любой ошибке, аналогично `BulkUpdateZoneAccessRules` (pg_store_zones.go:247-280), которая уже реализована корректно.
+- Вердикт: ПОДТВЕРЖДЕНО — `Register` (auth.go:39-115) действительно выполняет `CreateTenant`/`CreateUser`/`AddUserToTenant` как отдельные store-вызовы без общей транзакции; `BulkUpdateZoneAccessRules` подтверждена как корректный пример с `tx.Begin`/`tx.Commit`.
 
 ### BACKEND-BUG-10: CheckZoneAccess разыменовывает attendee без проверки на nil
 - Файл: backend/internal/store/pg_store_zones.go:578-590 (`CheckZoneAccess`); backend/internal/store/pg_store.go:481-501 (`GetAttendeeByID`, возвращает `(nil, nil)` при отсутствии строки)
@@ -87,6 +96,7 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Low
 - Уверенность: высокая (код виден напрямую; эксплуатируемость сейчас ограничена единственным безопасным вызывающим)
 - Рекомендация: Добавить `if attendee == nil { return false, "Attendee not found", nil }` сразу после вызова `GetAttendeeByID`, не полагаясь на инварианты вызывающей стороны.
+- Вердикт: ПОДТВЕРЖДЕНО — `CheckZoneAccess` (pg_store_zones.go:578-590) действительно обращается к `attendee.Blocked` сразу после проверки только `err != nil`, а `GetAttendeeByID` (pg_store.go:489-493) возвращает `(nil, nil)` при отсутствии строки — nil pointer dereference технически возможен.
 
 ### BACKEND-BUG-11: GenerateAttendeeCodes тихо пропускает участников при коллизии сгенерированного кода
 - Файл: backend/internal/handler/attendee_codes.go:35-46 (`GenerateAttendeeCodes`)
@@ -95,3 +105,4 @@ UpdateAttendeeHandler, заглушка `attendees_per_event` в CheckTenantLimi
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Повторять генерацию кода в цикле при конфликте (аналогично bulk_import.go:157-162) вместо однократной попытки, и включать в ответ список ID участников, для которых код не удалось сгенерировать.
+- Вердикт: ПОДТВЕРЖДЕНО — `GenerateAttendeeCodes` (attendee_codes.go:35-46) действительно вызывает `generateUniqueCode()` без проверки коллизий и на ошибке `UpdateAttendee` только логирует и делает `continue`, не отражая это в ответе клиенту.

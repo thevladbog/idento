@@ -7,6 +7,7 @@
 - Серьёзность: High
 - Уверенность: средняя
 - Рекомендация: Добавить `useRef`-флаг "poll in flight" и пропускать очередной тик, пока предыдущий не завершился (или использовать `AbortController`/отмену), либо переключиться на последовательный `while`-цикл с `await` вместо `setInterval`.
+- Вердикт: ПОДТВЕРЖДЕНО — useScanner.ts:18-43 (`pollScanner`) не имеет флага "запрос в процессе", `setInterval(pollScanner, 200)` (строка 54) не ждёт завершения предыдущего вызова, а `getLastScan`/`clearLastScan` в agent.ts:130-148 — два отдельных HTTP-запроса, что делает гонку реалистичной при просадке агента.
 
 ### WEB-BUG-02: `isFirstCheckin` вычисляется по устаревшему локальному состоянию, а не по ответу сервера
 - Файл: web/src/pages/CheckinFullscreen.tsx:267-325 (`handleCheckin`), строка 282: `const isFirstCheckin = !attendee.checkin_status;`
@@ -15,6 +16,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Определять "первый чек-ин" по значению, которое возвращает backend в ответе на PUT (например, флаг `already_checked_in` из ответа), а не по локально закэшированному `attendee.checkin_status`; либо блокировать повторный ввод, пока предыдущий запрос чек-ина не завершится.
+- Вердикт: ПОДТВЕРЖДЕНО — CheckinFullscreen.tsx:282 действительно вычисляет `isFirstCheckin` из локального `attendee.checkin_status`, ответ PUT не используется, а `fetchAttendees` (строки 306-308) вызывается без `await` уже после показа результата и печати, оставляя окно для повторной трактовки как "первого" чек-ина.
 
 ### WEB-BUG-03: Редактор бейджей не предупреждает о потере несохранённых изменений
 - Файл: web/src/pages/BadgeTemplateEditorV2.tsx (весь компонент, 37-1135); состояние без отслеживания "грязности": строки 43-63 (`widthMM`, `heightMM`, `dpi`, `elements`); мутации без сохранения: `addTextField`/`addQRCode`/`addBarcode`/`addLine`/`addBox`/`updateElement`/`handleDragEnd`/`deleteElement`, строки 111-206
@@ -23,6 +25,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить отслеживание "dirty"-состояния (сравнение текущего `elements/widthMM/heightMM/dpi` с последним сохранённым) и подтверждение перед уходом со страницы через `window.onbeforeunload` и/или блокировку роутинга (`useBlocker`/`unstable_usePrompt`).
+- Вердикт: ПОДТВЕРЖДЕНО — BadgeTemplateEditorV2.tsx не содержит ни `onbeforeunload`, ни `useBlocker`/`usePrompt`, ни какого-либо dirty-трекинга; все мутации элементов (`addTextField`/`addQRCode`/.../`deleteElement`, строки 111-206) сразу применяются только к локальному state и теряются при навигации без сохранения.
 
 ### WEB-BUG-04: Сохранение шаблона бейджа делает полный overwrite объекта события устаревшим снимком (потеря параллельных изменений)
 - Файл: web/src/pages/BadgeTemplateEditorV2.tsx:208-247 (особенно строки 222-228: `await api.put(\`/api/events/${eventId}\`, { ...event, custom_fields: { ...event.custom_fields, badgeTemplate: template } })`); аналогичный паттерн: web/src/pages/event/EventSettings.tsx:90-116 (строки 93-107)
@@ -31,6 +34,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Сохранять точечно (PATCH только `custom_fields.badgeTemplate` / только изменённых полей формы) вместо полного PUT снимком всего объекта события; либо перед сохранением подтягивать свежую версию события и мёржить именно изменённое поле.
+- Вердикт: ПОДТВЕРЖДЕНО — BadgeTemplateEditorV2.tsx:40 действительно деструктурирует из `useOutletContext` только `reloadEvent` (не `event`), держит собственный `event`-стейт (строка 52, загружаемый в `loadEventAndTemplate`, 78-109), и `handleSave` (строки 222-228) шлёт `{...event, custom_fields: {...}}` этим устаревшим снимком; тот же паттерн полного PUT снимком подтверждён в EventSettings.tsx:93-107.
 
 ### WEB-BUG-05: Импорт CSV не учитывает кодировку файла — кириллица/спецсимволы могут превратиться в "кракозябры"
 - Файл: web/src/components/CSVImportEnhanced.tsx:68-90 (`parseCSV`, вызов `Papa.parse(file, { header: true, skipEmptyLines: true, complete, error })`)
@@ -39,6 +43,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Определять/уточнять кодировку (например, через `jschardet`/эвристику по BOM, либо явный выбор кодировки пользователем "UTF-8 / Windows-1251" перед парсингом) и передавать её в `Papa.parse({ encoding })`; либо хотя бы показывать предупреждение, если после парсинга обнаружены символы replacement character (U+FFFD).
+- Вердикт: ПОДТВЕРЖДЕНО — CSVImportEnhanced.tsx:69-89 вызывает `Papa.parse(file, { header: true, skipEmptyLines: true, complete, error })` без параметра `encoding`, никакого определения/выбора кодировки в файле нет.
 
 ### WEB-BUG-06: Гонка состояний при быстрой смене CSV-файла — старый парсинг может перезаписать данные новее выбранного файла
 - Файл: web/src/components/CSVImportEnhanced.tsx:60-66 (`handleFileChange`), 68-90 (`parseCSV`), 165-177 (кнопка "Изменить", сброс `file`/`csvData`)
@@ -47,6 +52,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Использовать идентификатор/токен текущего запроса парсинга (например, ref со счётчиком) и игнорировать в `complete`/`error` колбэках результаты парсинга, если файл с момента запуска парсинга успел смениться.
+- Вердикт: ПОДТВЕРЖДЕНО — `parseCSV` (строки 68-90) не передаёт и не проверяет никакой токен/идентификатор запроса, кнопка "Изменить" (строки 165-176) действительно сбрасывает `file`/`csvData` и позволяет запустить новый параллельный `Papa.parse`, чей `complete`-колбэк перезапишет state независимо от порядка выбора файлов.
 
 ### WEB-BUG-07: Нет ограничения размера/строк CSV и парсинг не вынесен в worker — риск зависания вкладки на больших файлах
 - Файл: web/src/components/CSVImportEnhanced.tsx:60-66 (`handleFileChange`), 68-90 (`parseCSV` без `worker: true`), 92-118 (`handleImport` — один большой POST без чанкинга/таймаута)
@@ -55,6 +61,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Добавить проверку размера/числа строк с предупреждением, включить `worker: true` в конфиге Papa.parse для больших файлов, и/или разбивать импорт на чанки с прогресс-баром.
+- Вердикт: ПОДТВЕРЖДЕНО — `handleFileChange` (60-66) не проверяет размер/число строк, `parseCSV` (68-90) не использует `worker: true`, а `handleImport` (92-118) отправляет весь `csvData` одним POST-запросом на `/api/events/${eventId}/attendees/bulk` без чанкинга/прогресса.
 
 ### WEB-BUG-08: Форматтеры дат падают с необработанным исключением на невалидной дате, а в приложении нет ErrorBoundary
 - Файл: web/src/utils/dateFormat.ts:6-21 (`formatDateTime`), аналогично 26-37 (`formatDate`), 42-54 (`formatTime`), 59-83 (`formatRelativeTime`); используется в web/src/pages/CheckinFullscreen.tsx:751 и web/src/pages/event/EventAttendees.tsx:476
@@ -63,6 +70,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Проверять `isNaN(dateObj.getTime())` в начале каждого форматтера и возвращать `'-'`/safe-fallback вместо вызова `Intl.DateTimeFormat`; добавить хотя бы один React ErrorBoundary верхнего уровня в `App.tsx`, чтобы падение рендера не сносило всё приложение.
+- Вердикт: ПОДТВЕРЖДЕНО — dateFormat.ts:6-83 во всех функциях проверяет только `!date`, без `isNaN(dateObj.getTime())`, а `grep` по `web/src` (включая `App.tsx`/`main.tsx`) не находит ни одного `ErrorBoundary`/`componentDidCatch`.
 
 ### WEB-BUG-09: Falsy-проверка данных для полей бейджа отбрасывает валидные нулевые/пустые значения
 - Файл: web/src/utils/zpl.ts:91 (`generateTextZPL`), 190 (`generateQRCodeZPL`), 219 (`generateBarcodeZPL`) — во всех трёх: `if (element.source && data[element.source]) { ... = String(data[element.source]); }`
@@ -71,6 +79,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Заменить проверку на `element.source && data[element.source] !== undefined && data[element.source] !== null && data[element.source] !== ''` (или аналогичную явную проверку на nullish), чтобы `0`/`false` не терялись.
+- Вердикт: ПОДТВЕРЖДЕНО — zpl.ts:91, 190 и 219 действительно используют truthy-проверку `element.source && data[element.source]` во всех трёх генераторах (`generateTextZPL`/`generateQRCodeZPL`/`generateBarcodeZPL`), значение `0` будет отброшено как отсутствующее.
 
 ### WEB-BUG-10: Таймер тестирования сканера в настройках оборудования не останавливается при размонтировании компонента
 - Файл: web/src/pages/EquipmentSettings.tsx:92 (`testIntervalRef`), 358-412 (`startScannerTest`, `setInterval` на строке 389), 414-422 (`closeScannerTest`)
@@ -79,6 +88,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Добавить `useEffect(() => () => { if (testIntervalRef.current) clearInterval(testIntervalRef.current); }, [])` для очистки таймера при размонтировании.
+- Вердикт: ПОДТВЕРЖДЕНО — EquipmentSettings.tsx содержит `clearInterval(testIntervalRef.current)` только внутри самого интервал-колбэка (строки 397-399, 404-406) и в `closeScannerTest` (415-417); ни один `useEffect` не возвращает cleanup-функцию для `testIntervalRef` при размонтировании компонента.
 
 ### WEB-BUG-11: Поток чек-ина не имеет обработки офлайн-режима и повторной синхронизации
 - Файл: web/src/pages/CheckinFullscreen.tsx:267-325 (`handleCheckin`, блок `catch` строки 317-324), web/src/hooks/useScanner.ts (весь файл)
@@ -87,3 +97,4 @@
 - Серьёзность: Low
 - Уверенность: средняя
 - Рекомендация: Добавить локальную очередь неотправленных чек-инов (например, в `localStorage`) с индикатором офлайн-режима и авто-ресинхронизацией по событию `online`, либо явно ограничиться понятным индикатором "нет соединения" вместо использования неподключённого ключа `offlineMode`.
+- Вердикт: ПОДТВЕРЖДЕНО — `grep` по `web/src` подтверждает отсутствие `navigator.onLine`/слушателей `online`/`offline`; ключ `offlineMode` встречается только в `i18n.ts` (переводы), нигде не используется в коде; `handleCheckin` (catch на строках 317-324) лишь показывает `checkinFailed` на 3 секунды без сохранения попытки.

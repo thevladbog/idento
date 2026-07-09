@@ -32,6 +32,7 @@
   unit-тестов на чистые функции (`utils/zpl.ts`, `utils/dateFormat.ts`,
   `utils/markdownTemplate.ts`) и с интеграционных тестов на
   `CheckinFullscreen.tsx` (поиск/чек-ин/печать) как самый критичный флоу.
+- Вердикт: ПОДТВЕРЖДЕНО — `find` по `web/src` не находит ни одного `*.test.*`/`*.spec.*` файла, `web/package.json` содержит только `dev/build/lint/lint:fix/preview` в `scripts` и не перечисляет `vitest`/`@testing-library/*`/`jest` среди зависимостей.
 
 ### WEB-QUAL-02: Настройка check-in киоска для конкретного события не долетает до CheckinFullscreen
 - Файл: web/src/pages/event/EventCheckin.tsx:13 (`navigate(\`/checkin-fullscreen?event=${eventId}\`)`); web/src/pages/CheckinFullscreen.tsx:83-87, 244-254
@@ -53,6 +54,7 @@
 - Рекомендация: В `CheckinFullscreenPage` читать `event` из `useSearchParams()`
   и, если он присутствует и валиден, выбирать это событие как
   `selectedEvent` вместо `events[0]`.
+- Вердикт: ПОДТВЕРЖДЕНО — EventCheckin.tsx:13 передаёт `?event=${eventId}`, но CheckinFullscreen.tsx нигде не импортирует/не использует `useSearchParams` или `location.search` (подтверждено полным чтением файла), и `fetchUserEvents` (строки 244-254), вызываемый из mount-эффекта (83-87), безусловно выбирает `response.data[0]`.
 
 ### WEB-QUAL-03: «Поле типа бейджа» — два независимых несинхронизированных источника правды
 - Файл: web/src/pages/event/EventSettings.tsx:44,65,104 (сохраняется в `event.custom_fields.badgeTypeField` через API); web/src/pages/CheckinFullscreen.tsx:72,138-151,153-177 (хранится отдельно в `localStorage["checkin_settings"].badgeTypeField`)
@@ -77,6 +79,7 @@
   `CheckinFullscreen.tsx`, читать `badgeTypeField` из `event.custom_fields`
   (как это уже делает `EventSettings.tsx`), либо явно развести две настройки
   по смыслу и переименовать/задокументировать разницу.
+- Вердикт: ПОДТВЕРЖДЕНО — EventSettings.tsx:44,65,104 сохраняет `badgeTypeField` в `event.custom_fields` через API, а CheckinFullscreen.tsx хранит и читает независимый `badgeTypeField` state только из `localStorage["checkin_settings"]` (`loadSettings` 138-151, `saveSettings` 153-177) и нигде не обращается к `selectedEvent.custom_fields.badgeTypeField` (подтверждено полным чтением файла).
 
 ### WEB-QUAL-04: Восстановление сетевых принтеров из localStorage не срабатывает из-за устаревшего замыкания state
 - Файл: web/src/pages/EquipmentSettings.tsx:109-114 (`useEffect`), 116-137 (`loadSavedNetworkPrinters`)
@@ -102,6 +105,7 @@
   из колбэка/промиса `checkAgentStatus()` после реального подтверждения
   `"connected"`, либо убрать проверку `agentStatus` и просто пытаться
   восстановить принтеры, обрабатывая ошибку сети как no-op.
+- Вердикт: ПОДТВЕРЖДЕНО — `useEffect` на строках 109-114 синхронно вызывает `checkAgentStatus()` и `loadSavedNetworkPrinters()` не дожидаясь друг друга; `loadSavedNetworkPrinters` (116-137) проверяет `agentStatus === "connected"` (строка 121), но `agentStatus` инициализирован `"disconnected"` (строки 59-61) и не успевает обновиться асинхронным `checkAgentStatus` к моменту этой проверки — условие действительно всегда ложно при обычной загрузке.
 
 ### WEB-QUAL-05: Логика выбора принтера по умолчанию продублирована в трёх местах с разным порядком приоритетов
 - Файл: web/src/pages/BadgeTemplateEditorV2.tsx:249-278 (`loadFonts`); web/src/pages/EquipmentSettings.tsx:149-171 (`fetchPrinters`); web/src/pages/CheckinFullscreen.tsx:179-212 (`checkAgent`)
@@ -121,6 +125,7 @@
 - Рекомендация: Вынести общую логику выбора принтера в
   `web/src/lib/agent.ts` или отдельный хук `usePrinterSelection()` и
   переиспользовать во всех трёх местах.
+- Вердикт: ПОДТВЕРЖДЕНО — BadgeTemplateEditorV2.tsx:249-278 (`loadFonts`) и EquipmentSettings.tsx:149-171 (`fetchPrinters`) используют только приоритет agent default → первый в списке, тогда как CheckinFullscreen.tsx:179-212 (`checkAgent`) явно комментирует и реализует третий приоритет — `localStorage["checkin_settings"]` (строки 187, 194-208); общего хука/сервиса для этой логики в проекте нет.
 
 ### WEB-QUAL-06: BadgeTemplateEditorV2.tsx — компонент на 1135 строк со смешанными ответственностями
 - Файл: web/src/pages/BadgeTemplateEditorV2.tsx:1-1135
@@ -145,6 +150,7 @@
   `BadgeCanvas` (рендер Konva-элементов), `useAgentFonts`/`usePrinterQuery`
   (работа со шрифтами/принтером), и заменить самодельные модалки на
   `@/components/ui/dialog`.
+- Вердикт: ПОДТВЕРЖДЕНО — файл действительно занимает 1-1135 строк и смешивает загрузку/сохранение шаблона, Konva-рендеринг 5 типов элементов с почти идентичными блоками `Rect` (строки 394-516), drag&drop, ZPL preview/copy и работу со шрифтами/принтером; три модалки на `fixed inset-0` (строки 1012-1132) не используют `@/components/ui/dialog`, который в файле вообще не импортирован.
 
 ### WEB-QUAL-07: EquipmentSettings.tsx — компонент на 1002 строки, объединяющий принтеры, сканеры, камеру и COM-порты
 - Файл: web/src/pages/EquipmentSettings.tsx:1-1003
@@ -164,6 +170,7 @@
 - Рекомендация: Выделить `usePrinters()`, `useScannerPorts()`,
   `useScannerTest()` хуки и модуль `networkPrintersStore.ts` для
   инкапсуляции работы с `localStorage`.
+- Вердикт: ПОДТВЕРЖДЕНО — файл содержит 1003 строки и объединяет управление принтерами/сканерами/камерой/COM-портами; прямые обращения к `localStorage["network_printers"]` подтверждены ровно в трёх местах — 118-137 (`loadSavedNetworkPrinters`), 250-257 (`saveNetworkPrinter`) и 283-289 (`removeNetworkPrinter`), без единого стора; дублирование действительно уже привело к багу WEB-QUAL-04 в этом же файле.
 
 ### WEB-QUAL-08: Дублирование ~110 строк JSX между диалогами создания и редактирования зоны
 - Файл: web/src/pages/event/EventZones.tsx:356-467 (Create Zone Dialog), 470-581 (Edit Zone Dialog)
@@ -180,6 +187,7 @@
 - Рекомендация: Выделить `<ZoneFormFields formData={} onChange={} idPrefix?=/>`
   и переиспользовать в обоих диалогах (или использовать один диалог с флагом
   `mode: 'create' | 'edit'`).
+- Вердикт: ПОДТВЕРЖДЕНО — Create Zone Dialog (356-467) и Edit Zone Dialog (470-581) в EventZones.tsx почти дословно дублируют поля `name`/`zone_type`/`open_time`/`close_time`/`is_registration_zone`/`requires_registration`/`is_active`, различаясь только префиксом `id="edit_..."` и текстом заголовка/кнопки.
 
 ### WEB-QUAL-09: Ключи localStorage и парсинг auth-данных продублированы без единого модуля
 - Файл: web/src/App.tsx:32,38; web/src/components/Layout.tsx:31-39; web/src/components/OrganizationSwitcher.tsx:40-68; web/src/lib/api.ts:15,28-31; web/src/pages/Login.tsx:56-67; web/src/pages/OrganizationSettings.tsx:34,67; web/src/pages/QRLogin.tsx:31-32; web/src/pages/Register.tsx:36-44; web/src/pages/super-admin/SuperAdminLayout.tsx:22-28
@@ -200,6 +208,7 @@
   `getToken()/setToken()/getUser()/setUser()/getCurrentTenant()/clearSession()`
   и константами ключей, использовать везде вместо прямых обращений к
   `localStorage`.
+- Вердикт: ПОДТВЕРЖДЕНО — все девять перечисленных файлов и строк подтверждены (App.tsx:32,38; Layout.tsx:31-38; OrganizationSwitcher.tsx:40-68; api.ts:15,28-31; Login.tsx:56-67; OrganizationSettings.tsx:34,67; QRLogin.tsx:31-32; Register.tsx:36-44; SuperAdminLayout.tsx:22-28) — везде литералы `'token'`/`'user'`/`'tenants'`/`'current_tenant'` с собственным `JSON.parse`, единого модуля сессии в проекте нет.
 
 ### WEB-QUAL-10: Несогласованная обработка подтверждения удаления — нативный `confirm()` vs кастомный Dialog
 - Файл: web/src/components/FontManager.tsx:102; web/src/components/APIKeysManager.tsx:85; web/src/pages/event/EventAttendees.tsx:146,215,227; web/src/pages/event/EventStaff.tsx:38 (используют `window.confirm(...)`); в противовес web/src/pages/event/EventZones.tsx:584-601 и web/src/pages/EquipmentSettings.tsx:971-999 (используют `@/components/ui/dialog` для того же типа действия — подтверждение удаления)
@@ -219,6 +228,7 @@
 - Рекомендация: Завести переиспользуемый `useConfirmDialog()`/
   `<ConfirmDialog />` и заменить все вызовы `window.confirm` на него для
   единообразия.
+- Вердикт: ПОДТВЕРЖДЕНО — все указанные строки подтверждены (FontManager.tsx:102, APIKeysManager.tsx:85, EventAttendees.tsx:146,215,227, EventStaff.tsx:38 вызывают глобальный `confirm(...)`, что эквивалентно `window.confirm`), а EventZones.tsx:584-601 и EquipmentSettings.tsx:971-999 для того же типа действия используют `Dialog` — несогласованность реальна.
 
 ### WEB-QUAL-11: Отладочные console.log оставлены в продовых путях кода
 - Файл: web/src/components/PrintBadgeDialog.tsx:100-107 (эффект на каждое открытие диалога печати логирует весь объект шаблона); web/src/pages/event/EventLayout.tsx:27-33 (логирует событие и badgeTemplate при каждой загрузке события); web/src/pages/BadgeTemplateEditorV2.tsx:220,230 (логирует шаблон при каждом сохранении); web/src/lib/fonts.ts:100-102 (логирует при каждой загрузке шрифта)
@@ -233,6 +243,7 @@
 - Уверенность: высокая
 - Рекомендация: Убрать эти `console.log` или обернуть в
   `if (import.meta.env.DEV)`.
+- Вердикт: ПОДТВЕРЖДЕНО — все указанные `console.log` подтверждены: PrintBadgeDialog.tsx:100-107 (эффект на `isOpen`), EventLayout.tsx (лог при каждой загрузке события, фактически строки 29-33, что практически совпадает с указанным диапазоном 27-33), BadgeTemplateEditorV2.tsx:220,230 и fonts.ts:100-102 — все выполняются в обычных пользовательских путях, а не только при ошибках.
 
 ### WEB-QUAL-12: Несогласованное форматирование дат — часть экранов игнорирует локаль приложения
 - Файл: web/src/components/AttendeeMovementTimeline.tsx:84,88; web/src/pages/OrganizationSettings.tsx:182; web/src/pages/super-admin/Organizations.tsx:163; web/src/pages/super-admin/AllUsers.tsx:122; web/src/pages/super-admin/OrganizationDetail.tsx:256; web/src/pages/super-admin/AuditLog.tsx:60
@@ -252,6 +263,7 @@
 - Рекомендация: Заменить прямые вызовы `toLocaleDateString`/`toLocaleString`
   на `formatDate`/`formatDateTime` из `utils/dateFormat.ts` во всех
   перечисленных местах.
+- Вердикт: ПОДТВЕРЖДЕНО — `grep` подтверждает точное совпадение всех перечисленных строк (AttendeeMovementTimeline.tsx:84,88; OrganizationSettings.tsx:182; Organizations.tsx:163; AllUsers.tsx:122; OrganizationDetail.tsx:256; AuditLog.tsx:60), везде используется `new Date(...).toLocaleDateString()/toLocaleString()/toLocaleTimeString()` без учёта `i18n.language`, в отличие от `formatDate`/`formatDateTime` из `utils/dateFormat.ts`.
 
 ### WEB-QUAL-13: Неработающая кнопка «Delete Event» в Danger Zone
 - Файл: web/src/pages/event/EventSettings.tsx:408-421
@@ -266,3 +278,4 @@
 - Уверенность: средняя
 - Рекомендация: Либо реализовать удаление события, либо скрыть секцию за
   feature-flag/убрать до готовности функциональности.
+- Вердикт: ПОДТВЕРЖДЕНО — EventSettings.tsx:408-421 содержит `<Button variant="destructive" disabled>{t("deleteEvent")}</Button>` без `onClick` и без условного снятия `disabled`, кнопка функционально мертва.

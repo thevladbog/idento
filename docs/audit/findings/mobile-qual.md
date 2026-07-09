@@ -38,6 +38,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
   (`BadgeTemplate.generateZPL`, `ApiResult`-трансформации, `AttendeeRepository`/`EventRepository`
   с фейковыми API-сервисами, `CheckinViewModel`/`LoginViewModel` через `kotlinx-coroutines-test`),
   затем добавить пару instrumentation/Compose UI тестов на критичный путь чек-ина.
+- Вердикт: ПОДТВЕРЖДЕНО — `find mobile -iname "*Test*.kt" -not -path "*/build/*"` и поиск тестовых каталогов дают ноль результатов; обе `build.gradle.kts` объявляют тестовые зависимости на цитируемых строках.
 
 ### MOBILE-QUAL-02: mobile/android-app полностью дублирует mobile/shared независимой реализацией
 - Файл: mobile/android-app/settings.gradle.kts:17-19 (подключает `:shared`), но
@@ -66,6 +67,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
   на реальное потребление `:shared` (заменить Hilt/Retrofit/Room-стек на Koin/Ktor слой
   из shared), либо явно признать shared-модуль экспериментальным/iOS-only и не поддерживать
   иллюзию единой кодовой базы для Android.
+- Вердикт: ПОДТВЕРЖДЕНО — `settings.gradle.kts` подключает `:shared` (строки 18-20), но в `app/build.gradle.kts` нет ни одной строки `implementation(project(":shared"))`; `MainActivity`/`IdentoNavHost` android-app используют собственный пакет, а не shared — независимость модулей подтверждена.
 
 ### MOBILE-QUAL-03: Модели одних и тех же сущностей разошлись по полям между двумя реализациями
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/model/Attendee.kt:1-33 vs
@@ -94,6 +96,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: Свести модели данных к одному источнику истины (в идеале — сгенерировать
   из общего API-контракта/OpenAPI-схемы backend, либо оставить только shared-модели и
   использовать их из android-app через `:shared`).
+- Вердикт: ПОДТВЕРЖДЕНО — построчное сравнение подтверждает все расхождения: `email` nullable в shared / non-null в android-app, `customFields` типизирован по-разному, `Event`/`User` структурно разошлись, как описано.
 
 ### MOBILE-QUAL-04: Печать бейджа и настройки принтера в shared-модуле — нерабочая заглушка, выдаваемая за успех
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/presentation/checkin/CheckinViewModel.kt:319-349
@@ -126,6 +129,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: Либо реализовать реальный вызов `BluetoothPrinterService`/`EthernetPrinterService`
   в `printBadge()`/настройках принтера shared-модуля, либо явно пометить функцию как
   недоступную (disabled/coming soon) в UI до готовности, но не показывать фиктивный успех.
+- Вердикт: ПОДТВЕРЖДЕНО — `CheckinViewModel.kt:319-349` и `SettingsViewModel.kt:114-163` подтверждены построчно (TODO-комментарии + фиктивный `successMessage`); `ViewModelModule.kt:20` инжектирует в `CheckinViewModel` ровно 4 зависимости без принтер-сервисов, тогда как android-app реально вызывает `printWithAutoConnect(...)`.
 
 ### MOBILE-QUAL-05: Базовый URL API захардкожен на dev/эмулятор без переключения окружений
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/network/NetworkConstants.kt:8-10
@@ -153,6 +157,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: Завести переключение base URL по build type/flavor (BuildConfig-поле в
   android-app, KMP `expect`/`actual` с учётом release-конфигурации в shared) и удалить
   либо реально задействовать мёртвую константу `PROD_BASE_URL`.
+- Вердикт: ПОДТВЕРЖДЕНО — совпадает с MOBILE-SEC-01 по фактам: `getDefaultBaseUrl()` безусловно возвращает dev-адрес на обеих платформах, `PROD_BASE_URL` не используется нигде (grep), `BuildConfig.DEBUG`-проверок нет ни в shared, ни в android-app `NetworkModule.kt:22`.
 
 ### MOBILE-QUAL-06: Офлайн-очередь чек-инов и синхронизация зарегистрированы в DI, но нигде не используются (мёртвый функционал)
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/repository/OfflineCheckInRepository.kt
@@ -176,6 +181,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
   `NetworkMonitor`, fallback на `OfflineCheckInRepository`, периодический вызов
   `SyncService`), либо удалить неиспользуемый код, чтобы не вводить в заблуждение
   относительно реальных возможностей приложения.
+- Вердикт: ПОДТВЕРЖДЕНО — `OfflineCheckInRepository`/`SyncService`/`NetworkMonitorImpl` встречаются только в файлах определения и в `di/AppModule.kt` (строки 63, 69, 72); `ZoneSelectViewModel`/`ZoneQRScannerViewModel` не зарегистрированы даже в `di/ViewModelModule.kt`, `App.kt`/`IdentoNavHost` их не вызывают.
 
 ### MOBILE-QUAL-07: Несогласованная модель обработки ошибок между shared и android-app
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/network/ApiResult.kt:1-11
@@ -199,6 +205,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: При объединении дублирующихся реализаций (MOBILE-QUAL-02) выбрать один
   тип результата для всего мобильного кода и единый набор доменных ошибок
   (network/unauthorized/notFound/validation), а не сообщения-строки.
+- Вердикт: ПОДТВЕРЖДЕНО — `ApiResult.kt:1-11` (sealed class Success/Error/Loading, подтверждено) в shared против `kotlin.Result<T>`+`.onSuccess/.onFailure` в android-app `EventRepository.kt`/`AuthRepository.kt` на цитируемых строках.
 
 ### MOBILE-QUAL-08: Магические числа в генераторе ZPL для бейджей
 - Файл: mobile/android-app/app/src/main/java/com/idento/data/bluetooth/BadgeTemplate.kt:34-90+
@@ -221,6 +228,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: Вынести размеры/отступы/шрифты в именованные константы (или простую
   конфигурацию макета), особенно раз выбор архитектуры между "рендер на устройстве" и
   "шаблон с сервера" для генерации бейджа в проекте уже не единообразен.
+- Вердикт: ПОДТВЕРЖДЕНО — android-app `BadgeTemplate.kt` (516 строк) содержит буквальные ZPL-координаты/размеры без именованных констант; shared `BadgeTemplate.kt` (39 строк) вместо этого лишь подставляет значения в готовый серверный ZPL-шаблон — принципиально другой механизм, как и заявлено.
 
 ### MOBILE-QUAL-09: Файлы Compose-экранов свыше 400 строк смешивают несколько ответственностей
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/presentation/checkin/CheckinScreen.kt
@@ -243,6 +251,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Рекомендация: Вынести отдельные `@Composable` из `CheckinScreen.kt`/`QRScannerScreen.kt`/
   `SettingsScreen.kt` в отдельные файлы по под-пакетам (components/dialogs), оставив в
   основном файле только корневой composable и связывание с ViewModel.
+- Вердикт: ПОДТВЕРЖДЕНО — `wc -l` подтверждает точное совпадение (`CheckinScreen.kt` 867 строк, `QRScannerScreen.kt` 742 строки), позиции названных composable-функций совпадают с точностью до 1 строки.
 
 ### MOBILE-QUAL-10: Готовая система локализации в shared обходится хардкодом строк в бизнес-коде
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/presentation/settings/SettingsViewModel.kt:100,106
@@ -267,6 +276,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Уверенность: высокая
 - Рекомендация: Завести соответствующие ключи в `StringKey`/`Strings.kt` для всех
   сообщений ViewModel и убрать ad-hoc `if (language == "ru")`-ветвления.
+- Вердикт: ПОДТВЕРЖДЕНО — `Strings.kt` содержит ровно 93 записи `StringKey` (подсчитано), `SettingsViewModel.kt` не вызывает `getString`/`StringKey` ни разу, все указанные `successMessage`/`errorMessage` литералы подтверждены построчно, включая дублирующее `if (language == "ru")` на 100/106.
 
 ### MOBILE-QUAL-11: Каталог версий Gradle не подключён — версии дублируются вручную и уже разошлись (из docs/audit/raw/mobile-deps.md)
 - Файл: mobile/android-app/gradle/libs.versions.toml (53 записи, не используется —
@@ -298,6 +308,7 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
   ссылками `libs.*` во всех трёх build.gradle.kts, либо удалить неиспользуемый каталог,
   чтобы не вводить в заблуждение. Отдельно — привести `navigation-compose` в shared к
   стабильной версии, согласованной с остальными модулями.
+- Вердикт: ПОДТВЕРЖДЕНО — `grep -rn "libs\." mobile --include="*.kts"` даёт ровно 1 совпадение (само объявление в toml), версии реально разошлись: toml `compose-bom=2024.12.01`/`compose-navigation=2.8.5` против фактических `2024.11.00`/`2.8.4` в `app/build.gradle.kts`, и alpha-артефакт в `shared/build.gradle.kts:78`.
 
 ### MOBILE-QUAL-12: Избыточное использование `!!` там, где уже есть безопасные альтернативы
 - Файл: mobile/android-app/app/src/main/java/com/idento/data/repository/EventRepository.kt:22,37,52,67,86
@@ -318,3 +329,4 @@ DI-модули (Koin в shared, Hilt в android-app), основные ViewMode
 - Уверенность: высокая
 - Рекомендация: Заменить пары "проверка + `!!`" на `?.let { }` /
   безопасные операторы (`response.body()?.let { Result.success(it) } ?: Result.failure(...)`).
+- Вердикт: ПОДТВЕРЖДЕНО — все цитируемые `!!` (`EventRepository.kt:22,37,...`, `AuthRepository.kt:29,50`, `EthernetPrinterService.kt:84`) подтверждены построчно, каждый следует сразу за проверкой на null в том же условии/выражении — технически безопасно, но стилистически хрупко, как и описано.

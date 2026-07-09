@@ -25,6 +25,7 @@ server actions (`"use server"`), форм обратной связи/подпи
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Добавить в `next.config.mjs` асинхронную функцию `headers()`, возвращающую для всех путей (`source: '/(.*)'`) как минимум `X-Frame-Options: DENY` (или `Content-Security-Policy: frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, и разумный `Content-Security-Policy` под используемые скрипты/шрифты.
+- Вердикт: ПОДТВЕРЖДЕНО — `next.config.mjs:5-6` содержит только `const nextConfig = {};` без `headers()`, заголовки безопасности действительно не заданы.
 
 ### LANDING-SEC-02: Внешняя ссылка с target="_blank" без rel="noopener noreferrer" (reverse tabnabbing)
 - Файл: landing/src/components/layout/Header.tsx:44-52 (десктоп-навигация) и 89-99 (мобильное меню); ссылка задаётся в navItems на строке 20 (`href: "https://docs.idento.app"`)
@@ -33,3 +34,4 @@ server actions (`"use server"`), форм обратной связи/подпи
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Добавить `rel="noopener noreferrer"` к обеим ссылкам с `target="_blank"` в Header.tsx (аналогично уже сделанному в Footer.tsx), либо вынести общий helper-компонент `ExternalLink` с этим атрибутом по умолчанию.
+- Вердикт: ПОДТВЕРЖДЕНО — `Header.tsx:44-52` и `:89-99` рендерят `Link ... target={item.external ? "_blank" : undefined}` без `rel`; в `node_modules/next/dist/client/app-dir/link.js` нет автоподстановки `rel`/`noopener`; для сравнения `Footer.tsx:15-31` корректно содержит `rel="noreferrer"`.

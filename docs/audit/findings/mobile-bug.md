@@ -7,6 +7,7 @@
 - Серьёзность: Critical
 - Уверенность: высокая
 - Рекомендация: Заменить in-memory список на персистентное хранилище (SQLDelight/Room-аналог для KMP), фактически реализовав заявленный TODO, до того как офлайн-функциональность будет включена в продакшен-поток.
+- Вердикт: ЧАСТИЧНО — код подтверждён дословно (`OfflineDatabaseImpl` в обоих `.android.kt`/`.ios.kt` — чистый `mutableListOf` без персистентности), но severity Critical завышена: единственный писатель в это хранилище — `OfflineCheckInRepository`, вызываемый только из `ZoneSelectViewModel`/`ZoneQRScannerViewModel` (`presentation/zoneselect/`), которые не зарегистрированы даже в Koin `viewModelModule` и не подключены ни к одному маршруту `IdentoNavHost` (см. MOBILE-BUG-03) — то есть сегодня ни один реальный пользователь не может создать запись, которую эта заглушка потеряет; реальная severity — Low/Medium (мина замедленного действия, а не активная потеря данных).
 
 ### MOBILE-BUG-02: NetworkMonitor на Android всегда возвращает "онлайн" — офлайн-режим не определяется
 - Файл: mobile/shared/src/androidMain/kotlin/com/idento/data/sync/NetworkMonitor.android.kt:10-22
@@ -15,6 +16,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Реализовать `NetworkMonitorImpl` через `ConnectivityManager.NetworkCallback` (Android) и `Network`/`NWPathMonitor` (iOS) вместо заглушки.
+- Вердикт: ЧАСТИЧНО — код подтверждён дословно (`MutableStateFlow(true)`, `checkConnectivity()` жёстко `return true`), но severity High завышена: единственный потребитель `NetworkMonitor.isOnline` — `SyncService`, чей `startAutoSync()` нигде не вызывается (см. MOBILE-BUG-03), поэтому сегодня заглушка ни на что не влияет на реально достижимых экранах; реальная severity — Low, пока sync-подсистема не подключена к UI.
 
 ### MOBILE-BUG-03: Реальный сценарий чек-ина не имеет офлайн-фоллбэка — вся offline-sync подсистема не подключена к UI
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/presentation/navigation/IdentoNavHost.kt (весь файл); mobile/shared/src/commonMain/kotlin/com/idento/presentation/checkin/CheckinViewModel.kt:267-317; mobile/android-app/app/src/main/java/com/idento/presentation/checkin/CheckinViewModel.kt:278-315; mobile/shared/src/commonMain/kotlin/com/idento/data/sync/SyncService.kt:29-42
@@ -23,6 +25,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Либо подключить существующую offline-sync подсистему (зона-чек-ин) к реальному флоу `CheckinViewModel`/`EventRepository.checkinAttendee`, либо реализовать аналогичную офлайн-очередь непосредственно для сценария `checkinAttendee`, и вызывать `SyncService.startAutoSync()` при старте приложения/сессии.
+- Вердикт: ПОДТВЕРЖДЕНО — `IdentoNavHost.kt` (полностью прочитан) не содержит маршрута на `ZoneSelectScreen`, `ZoneSelectViewModel`/`ZoneQRScannerViewModel` не зарегистрированы даже в Koin `di/ViewModelModule.kt` и не имеют вызовов вне своего пакета; `startAutoSync()` встречается только в своём объявлении (`SyncService.kt:29`); оба `CheckinViewModel.checkinAttendee()` (shared:267-317, android-app:278-315) на `ApiResult.Error`/`onFailure` только выставляют `errorMessage` без обращения к офлайн-очереди.
 
 ### MOBILE-BUG-04: `runBlocking` внутри `BroadcastReceiver.onReceive` на главном потоке — риск ANR/deadlock при сканировании
 - Файл: mobile/android-app/app/src/main/java/com/idento/data/scanner/HardwareScannerService.kt:214-232; mobile/android-app/app/src/main/java/com/idento/data/scanner/BluetoothScannerService.kt:164-201 (runBlocking на строке 189)
@@ -31,6 +34,7 @@
 - Серьёзность: High
 - Уверенность: средняя
 - Рекомендация: Не использовать `runBlocking` в `onReceive`; эмитить результат через несуспендирующий механизм (`tryEmit` с достаточным `extraBufferCapacity`, либо `CoroutineScope(Dispatchers.Default).launch { emit(...) }` вне главного потока), либо регистрировать receiver с фоновым `Handler`.
+- Вердикт: ПОДТВЕРЖДЕНО — `HardwareScannerService.kt:187-191` регистрирует receiver через `ContextCompat.registerReceiver(..., RECEIVER_EXPORTED)` без `Handler` (main thread), `handleScanIntent()` (214-232) вызывает `runBlocking { _scanResults.emit(it) }` (228-230) в `MutableSharedFlow(replay=0)`; идентичный `runBlocking` подтверждён в `BluetoothScannerService.kt:189`. Путь реально используется в android-app (реальном, навигационно достижимом сканере).
 
 ### MOBILE-BUG-05: Race condition в `SyncService.performSync()` — check-then-act без атомарности может привести к двойной отправке чек-ина
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/sync/SyncService.kt:55-88
@@ -39,6 +43,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Использовать `Mutex` или атомарный `compareAndSet` над состоянием синхронизации вместо раздельных чтения/записи `_syncState.value`, чтобы гарантировать, что `syncAll()` выполняется не более одного раза одновременно.
+- Вердикт: ЧАСТИЧНО — неатомарный check-then-act в `performSync()` (55-88) подтверждён построчно, но severity Medium завышена: `performSync()` имеет единственную точку вызова во всём `mobile/` — внутри собственного коллектора `startAutoSync()`, который сам нигде не запускается (см. MOBILE-BUG-03), поэтому описанного второго конкурентного вызова («ручной sync» параллельно с авто-sync) в достижимом коде не существует; реальная severity — Low.
 
 ### MOBILE-BUG-06: Постоянные (не сетевые) ошибки чек-ина бесконечно повторяются в офлайн-очереди без учёта количества попыток
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/data/repository/OfflineCheckInRepository.kt:78-98 (syncCheckIn), 25-46 (performCheckIn); mobile/shared/src/commonMain/kotlin/com/idento/data/storage/OfflineDatabase.kt:38-47 (модель `PendingZoneCheckIn`)
@@ -47,6 +52,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Различать сетевые/временные ошибки (стоит повторять) и постоянные бизнес-ошибки (4xx с конкретной причиной — не стоит повторять), обновлять `attemptCount`/`errorMessage` при каждой неудачной попытке и удалять/помечать как "требует внимания" записи, превысившие лимит попыток или содержащие неустранимую ошибку.
+- Вердикт: ЧАСТИЧНО — подтверждено дословно, что `attemptCount`/`lastAttemptAt`/`errorMessage` (`OfflineDatabase.kt:38-47`) нигде не читаются/не пишутся ни в `performCheckIn` (25-46), ни в `syncCheckIn` (78-98); но это часть той же отключённой от UI подсистемы (см. MOBILE-BUG-03), поэтому реальная severity сегодня — Low, а не Medium, пока офлайн-поток не подключён к достижимому экрану.
 
 ### MOBILE-BUG-07: NPE-риск от `!!` на `selectedAttendee`, гонка с автозакрытием по таймеру
 - Файл: mobile/shared/src/commonMain/kotlin/com/idento/presentation/checkin/CheckinScreen.kt:124-133 (авто-дисмисс таймер), 346-357 (использование `!!` в `onPrintBadge`)
@@ -55,6 +61,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Заменить `uiState.selectedAttendee!!` на безопасный доступ (`?.let { ... }` вокруг всего блока кнопки, либо ранний `return@Button` при `null`) вместо `!!` в обработчике клика.
+- Вердикт: ПОДТВЕРЖДЕНО — таймер (`LaunchedEffect`, строки 126-134) и `val uiState by viewModel.uiState.collectAsState()` (строка 76, делегат перечитывается на момент вызова) вместе с ленивым `onPrintBadge = { viewModel.printBadge(uiState.selectedAttendee!!) }` (строка 353, гейт на 346) подтверждены построчно; `CheckinScreen.kt` реально рендерится (используется `App.kt` → `IdentoNavHost()`, доступен на обеих платформах через общий навигационный граф).
 
 ### MOBILE-BUG-08: Утечка ресурсов ML Kit — новый `BarcodeScanner` создаётся на каждый кадр камеры без закрытия
 - Файл: mobile/android-app/app/src/main/java/com/idento/presentation/qrscanner/QRScannerScreen.kt:575-610 (`processImageProxy`)
@@ -63,6 +70,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Создавать `BarcodeScanner` один раз (например, `remember { BarcodeScanning.getClient() }` на уровне composable или в `viewModel`) и переиспользовать во всех вызовах анализатора, закрывая клиент в `DisposableEffect`/`onCleared()`.
+- Вердикт: ПОДТВЕРЖДЕНО — `processImageProxy()` (строки 575-610) создаёт `BarcodeScanning.getClient()` на строке 587 при каждом вызове анализатора кадров, `.close()` на scanner нигде в файле не вызывается (закрывается только `imageProxy`); маршрут `QRScanner` реально зарегистрирован и достижим в android-app.
 
 ### MOBILE-BUG-09: `TokenManager.getToken()` использует `collect` на незавершающемся Flow — гарантированно зависнет при вызове
 - Файл: mobile/android-app/app/src/main/java/com/idento/data/local/TokenManager.kt:50-56
@@ -71,3 +79,4 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Заменить на `dataStore.data.map { it[TOKEN_KEY] }.first()`, как это уже корректно сделано для `authToken`/`userEmail`/`userName` в этом же файле.
+- Вердикт: ПОДТВЕРЖДЕНО — `TokenManager.kt:50-56` использует `dataStore.data.collect { ... }` (никогда не завершающийся Flow) перед недостижимым `return token`; grep подтверждает 0 вызовов `getToken()` во всём `mobile/`, что соответствует заявленному отсутствию текущего влияния и severity Low.

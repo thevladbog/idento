@@ -7,6 +7,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Начать с unit-тестов на самые рискованные модули: `generateTokenForTenant`/`middleware.JWT`, `ZoneCheckIn`, `CheckTenantLimit`, генерацию кодов участников; добавить table-driven тесты для store через тестовый Postgres или testcontainers.
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждено `find`: 0 файлов `*_test.go`; подтверждено 36 .go файлов / 7297 строк в internal+cmd; coverage.out (в .gitignore) содержит 1412 строк профиля, все с counter=0.
 
 ### BACKEND-QUAL-02: Три независимые и несовместимые реализации генерации кода участника
 - Файл: backend/internal/handler/attendee_codes.go:175-179, backend/internal/handler/bulk_import.go:154-163, backend/internal/handler/attendees.go:74-76
@@ -15,6 +16,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Вынести генерацию кода в одну функцию в store/models (с проверкой уникальности через БД, напр. `INSERT ... ON CONFLICT` retry или `SELECT EXISTS`), использовать её во всех трёх местах.
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждены все три реализации ровно на указанных строках: attendee_codes.go:175-179 (8 символов, без проверки коллизий), bulk_import.go:154-163 (цикл с `existingCodes`), attendees.go:74-76 (полный `uuid.New().String()`).
 
 ### BACKEND-QUAL-03: Проверка "event.TenantID == текущий tenant" дублируется вручную в каждом хендлере и местами отсутствует
 - Файл: backend/internal/handler/attendees.go (CreateAttendee:59, UpdateAttendeeInfo:136, BlockAttendee:275, UnblockAttendee:311, DeleteAttendee:347), backend/internal/handler/events.go:89,119, backend/internal/handler/badge_zpl.go:77, backend/internal/handler/attendee_codes.go:25,66, backend/internal/handler/sync.go:131,151 и др.
@@ -23,6 +25,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Вынести проверку в общий хелпер (`func (h *Handler) loadEventForTenant(ctx, eventID, claims) (*models.Event, error)`) или добавить фильтрацию по tenant_id непосредственно в SQL-запросы store.
+- Вердикт: ПОДТВЕРЖДЕНО — проверка `event.TenantID != tenantID`/`.String() != user.TenantID` подтверждена ровно на всех указанных строках (attendees.go:59,136,275,311,347; events.go:89,119; badge_zpl.go:77; attendee_codes.go:25,66; sync.go:131,151), используя две разные идиомы сравнения; store-запросы (GetAttendeeByID/GetEventByID) действительно фильтруют только по `id`.
 
 ### BACKEND-QUAL-04: UpdateAttendeeHandler (эндпоинт чек-ина) не проверяет принадлежность attendee к tenant вызывающего
 - Файл: backend/internal/handler/attendees.go:182-246 (`PUT /api/attendees/:id`, зарегистрирован в handler.go:63 с комментарием "For check-in status")
@@ -31,6 +34,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить в UpdateAttendeeHandler ту же проверку tenant, что и в соседних хендлерах этого файла (получить event по attendee.EventID и сверить tenant), в идеале — централизованно (см. BACKEND-QUAL-03).
+- Вердикт: ПОДТВЕРЖДЕНО — независимо подтверждено чтением attendees.go:182-246: `UpdateAttendeeHandler` не содержит проверки tenant, в отличие от соседних `BlockAttendee`/`UnblockAttendee`/`DeleteAttendee`/`UpdateAttendeeInfo`.
 
 ### BACKEND-QUAL-05: GetAttendees и ZoneCheckIn не проверяют принадлежность event/zone к tenant вызывающего
 - Файл: backend/internal/handler/attendees.go:97-110 (`GetAttendees`), backend/internal/handler/zones.go:327-466 (`ZoneCheckIn`)
@@ -39,6 +43,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить проверку tenant для обоих эндпоинтов по аналогии с GetEvent/SyncPush; рассмотреть проверку прав уровня zone/event (assigned staff) в самом ZoneCheckIn.
+- Вердикт: ПОДТВЕРЖДЕНО — независимо подтверждено чтением attendees.go:97-110 и zones.go:327-466: ни `GetAttendees`, ни `ZoneCheckIn` не сверяют tenant, в отличие от `GetEvent`/`SyncPush`, которые эту проверку делают.
 
 ### BACKEND-QUAL-06: Несогласованная обработка "не найдено" в store — часть методов возвращает (nil, nil), часть — (nil, ErrNoRows)
 - Файл: backend/internal/store/pg_store.go:153-167 (GetTenantByID), :213-224 (GetUserByID), :388-405 (GetEventByID) vs :197-212 (GetUserByEmail), :459-479 (GetAttendeeByCode), :481-501 (GetAttendeeByID), :559-578 (GetAPIKeyByHash), :652-670 (GetFontByID)
@@ -47,6 +52,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Привести все Get*ByID/ByEmail методы store к единой конвенции (например, всегда возвращать `(nil, nil)` при ErrNoRows, ошибку — только при реальных сбоях БД).
+- Вердикт: ЧАСТИЧНО — центральный пример подтверждён (`GetTenantByID`/`GetUserByID`/`GetEventByID` не проверяют `pgx.ErrNoRows` и пробрасывают его как обычную ошибку; `GetEvent` в events.go:82-85 из-за этого действительно отвечает 500, а не 404), но `GetAPIKeyByHash` (pg_store.go:559-576) и `GetFontByID` (652-669) на самом деле возвращают `(nil, fmt.Errorf(...))` с текстом ошибки, а не `(nil, nil)`, как утверждается в находке — категоризация этих двух методов в группе "(nil, nil)" неточна, хотя общий вывод о несогласованности конвенций верен.
 
 ### BACKEND-QUAL-07: LoginWithQR подписывает JWT захардкоженным литералом секрета вместо общего механизма
 - Файл: backend/internal/handler/qr_auth.go:36-46
@@ -55,6 +61,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Заменить ручное построение JWT в LoginWithQR вызовом `generateTokenForTenant(user, user.TenantID.String(), role)`, убрать хардкод секрета и TODO.
+- Вердикт: ПОДТВЕРЖДЕНО — независимо подтверждено чтением qr_auth.go:36-46 и auth.go:192-211/204-208 и middleware/jwt.go:29-33: три независимых секрета (`JWT_SECRET`, `"your-secret-key"`, `"idento_secret_key_change_me"`) действительно используются в трёх разных местах.
 
 ### BACKEND-QUAL-08: CheckTenantLimit не реализован для лимита "attendees_per_event" — заглушка с current=0
 - Файл: backend/internal/store/pg_store.go:1239-1258 (`CheckTenantLimit`), используется в handler.go:58-59 (`middleware.CheckLimits(h.Store, "attendees_per_event")`)
@@ -63,6 +70,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Реализовать подсчёт `SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL` (event_id нужно прокинуть в CheckTenantLimit/middleware.CheckLimits, сейчас туда передаётся только tenantID) либо убрать этот limitType, пока не готов, и добавить `default:` в switch с явной ошибкой на неизвестный/нереализованный limitType вместо тихого `current = 0`.
+- Вердикт: ПОДТВЕРЖДЕНО — `CheckTenantLimit` (pg_store.go:1203-1262) подтверждён: `case "attendees_per_event": current = 0` (1248-1251) делает лимит всегда неэффективным при заданном лимите, а `maxLimit == 0` при отсутствии лимита даёт `allowed := 0 < 0 == false`, блокируя создание участников для любого tenant без явного лимита.
 
 ### BACKEND-QUAL-09: Несогласованный формат тела ошибки API — `{"error": ...}` vs `{"message": ...}`
 - Файл: backend/internal/handler/bulk_import.go, qr.go, printer_qr.go, qr_auth.go, users.go (46 вызовов echo.NewHTTPError) против остальных ~30 файлов (177 вызовов `c.JSON(status, map[string]string{"error": ...})`)
@@ -71,6 +79,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Выбрать один формат (`{"error": ...}` или `{"message": ...}`), зарегистрировать кастомный `e.HTTPErrorHandler` в main.go и привести все хендлеры к нему; для унификации проще всего обернуть echo.NewHTTPError-вызовы в одинаковый c.JSON.
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждено grep: ровно 46 вызовов `echo.NewHTTPError` строго в bulk_import.go/qr.go/qr_auth.go/printer_qr.go/users.go, ровно 177 вызовов `c.JSON(..., map[string]string{"error": ...})` в остальных файлах; main.go не регистрирует кастомный `e.HTTPErrorHandler`.
 
 ### BACKEND-QUAL-10: api_keys.go использует context.Background() вместо контекста запроса — теряется отмена/таймаут
 - Файл: backend/internal/handler/api_keys.go:51,71,86,111,179,188
@@ -79,6 +88,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Заменить все `context.Background()` в api_keys.go на `c.Request().Context()`.
+- Вердикт: ПОДТВЕРЖДЕНО — подтверждены все 6 вызовов `context.Background()` ровно на строках 51,71,86,111,179,188 в api_keys.go; ни один другой файл handler/ так не делает (грep по всем 14 остальным файлам не даёт совпадений).
 
 ### BACKEND-QUAL-11: pg_store.go — 1320 строк, смешаны ~10 не связанных доменов в одном файле
 - Файл: backend/internal/store/pg_store.go (1320 строк, самый большой файл в подсистеме)
@@ -87,6 +97,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Разбить pg_store.go по аналогии с уже выделенными файлами: pg_store_billing.go (subscriptions/plans/usage/limits), pg_store_fonts.go, pg_store_audit.go, оставив в pg_store.go только tenants/users/events/attendees и миграции.
+- Вердикт: ПОДТВЕРЖДЕНО — `wc -l` подтверждает ровно 1320 строк в pg_store.go, содержащих все перечисленные домены; pg_store_zones.go/pg_store_sync.go/pg_store_super_admin.go подтверждены как уже существующий прецедент разделения.
 
 ### BACKEND-QUAL-12: zones.go (handler) — 676 строк, смешаны 6 разных зон ответственности
 - Файл: backend/internal/handler/zones.go (676 строк)
@@ -95,6 +106,7 @@
 - Серьёзность: Low
 - Уверенность: средняя
 - Рекомендация: Разнести на zones_crud.go, zone_access.go, zone_checkin.go (核心 бизнес-логика отдельно), zone_qr.go.
+- Вердикт: ПОДТВЕРЖДЕНО — `wc -l` подтверждает ровно 676 строк в zones.go, содержащих CRUD зон, правил доступа, individual overrides, staff-назначения, `ZoneCheckIn` и генерацию QR (собственный импорт `go-qrcode`, дублирующий qr.go/printer_qr.go).
 
 ### BACKEND-QUAL-13: Непроверяемое приведение типа `c.Get("user").(*models.JWTCustomClaims)` повторено 32 раза в 11 файлах
 - Файл: backend/internal/handler/{sync,users,auth,attendees,badge_zpl,super_admin,bulk_import,events,zones,attendee_codes,tenants}.go (32 вхождения `c.Get("user").(*models.JWTCustomClaims)` без проверки `ok`)
@@ -103,6 +115,7 @@
 - Серьёзность: Low
 - Уверенность: средняя
 - Рекомендация: Добавить хелпер `func getClaims(c echo.Context) (*models.JWTCustomClaims, error)` с явной проверкой `ok`, использовать во всех хендлерах вместо прямого приведения типа.
+- Вердикт: ПОДТВЕРЖДЕНО — grep подтверждает ровно 32 вхождения `c.Get("user").(*models.JWTCustomClaims)` ровно в 11 перечисленных файлах; middleware/limits.go подтверждён как единственное место с безопасной проверкой `ok`.
 
 ### BACKEND-QUAL-14: main.go встраивает устаревшую, неполную копию OpenAPI-спецификации вместо реального файла
 - Файл: backend/main.go:16-386 (константа `backendOpenAPISpec`), backend/openapi.yaml (714 строк)
@@ -111,6 +124,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Удалить встроенную константу и отдавать `openapi.yaml` через `c.File("openapi.yaml")`, либо генерировать константу из файла на этапе сборки.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go:16-386 действительно содержит константу `backendOpenAPISpec`, отдаваемую через `/openapi.yaml` (447-449), покрывающую лишь малую часть маршрутов (нет zones/api-keys/fonts/super-admin), при наличии отдельного полного backend/openapi.yaml.
 
 ### BACKEND-QUAL-15: Мёртвые пустые директории backend/handlers и backend/models
 - Файл: backend/handlers/ (пусто), backend/models/ (пусто)
@@ -119,3 +133,4 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Удалить пустые директории.
+- Вердикт: ПОДТВЕРЖДЕНО — `find`/`ls` подтверждают, что backend/handlers/ и backend/models/ существуют и пусты.

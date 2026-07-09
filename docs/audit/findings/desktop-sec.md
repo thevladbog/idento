@@ -7,6 +7,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: строить URL через `reqwest::Url::parse` с базой `http://127.0.0.1:{port}` и `.join(path)` с последующей проверкой, что итоговый `host()` действительно `127.0.0.1`/`localhost` и порт совпадает с `AGENT_PORT`; отклонять URL, если разбор дал другой host. Дополнительно ограничить `path` явным allow-list префиксов (`/health`, `/printers`, `/printers/*`, `/scanners`, `/scan/*`, `/print`), например регэкспом `^/[a-zA-Z0-9/_-]+$` плюс allow-list по началу пути.
+- Вердикт: ПОДТВЕРЖДЕНО — `commands.rs:16` строит URL наивной конкатенацией без валидации `path`; воспроизведено WHATWG-парсингом (тот же стандарт, что использует `url`/`reqwest`) — `http://127.0.0.1:12345@evil.example.com/x` разбирается с `host=evil.example.com`, `userinfo=127.0.0.1:12345`, что подтверждает SSRF в обход CSP `connect-src`.
 
 ### DESKTOP-SEC-02: JWT и сессионные данные хранятся в localStorage без шифрования
 - Файл: desktop/src/lib/api.ts:4-19 (SESSION_KEYS, чтение `localStorage.getItem("token")`), desktop/src/pages/Login.tsx:32-38, desktop/src/pages/QRLogin.tsx:31-32
@@ -15,6 +16,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Хранить токен в защищённом от чтения любым JS хранилище — например, использовать `tauri-plugin-store` совместно с OS keychain/credential vault (`tauri-plugin-stronghold` или отдельный Rust-command, кладущий токен в OS keyring через `keyring-rs`), а фронтенду выдавать только opaque handle/использовать сам Rust-слой для добавления заголовка Authorization к запросам, не передавая сырой токен в JS-контекст.
+- Вердикт: ПОДТВЕРЖДЕНО — `api.ts:4` (SESSION_KEYS) и `:19` (`localStorage.getItem("token")`), `Login.tsx:32-38`, `QRLogin.tsx:31-32` точно совпадают с описанием; токен действительно хранится в открытом виде в WebView localStorage.
 
 ### DESKTOP-SEC-03: Разрешение `shell:allow-open` выдано без ограничивающего scope и не используется приложением
 - Файл: desktop/src-tauri/capabilities/default.json:5-10 (permissions: `"shell:allow-open"`)
@@ -23,6 +25,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя (semantics разрешения подтверждены из сгенерированного ACL-манифеста; точное рантайм-поведение shell-плагина без scope не проверялось запуском)
 - Рекомендация: Убрать `shell:allow-open` из capabilities, так как код им не пользуется. Если функциональность открытия ссылок понадобится — использовать `shell:default` (ограниченный scope http(s)/tel/mailto) вместо "сырого" `shell:allow-open`.
+- Вердикт: ПОДТВЕРЖДЕНО — `default.json:7` содержит `shell:allow-open`; ACL-манифест (`acl-manifests.json`) подтверждает описание "without any pre-configured scope"; `grep -rn "shell" desktop/src/` не находит использования плагина.
 
 ### DESKTOP-SEC-04: `withGlobalTauri: true` без необходимости расширяет глобальную поверхность IPC в WebView
 - Файл: desktop/src-tauri/tauri.conf.json:13
@@ -31,6 +34,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Установить `"withGlobalTauri": false` (или убрать поле — по умолчанию false) и продолжать использовать ES-module импорты, как уже сделано в коде.
+- Вердикт: ПОДТВЕРЖДЕНО — `tauri.conf.json:13` действительно `"withGlobalTauri": true`; `agent.ts:9,14,24` и `CheckinEvent.tsx:313` точно совпадают со строками, где используются ES-импорты `@tauri-apps/api/*` вместо глобального объекта.
 
 ### DESKTOP-SEC-05: CSP `connect-src` жёстко ограничен plaintext HTTP-эндпоинтами, но UI предлагает настраивать произвольный (в т.ч. сетевой) backend URL
 - Файл: desktop/src-tauri/tauri.conf.json:14-22 (connect-src, строка 18), desktop/src/lib/config.ts:1-21, desktop/src/pages/Connection.tsx:19-95, desktop/src/i18n.ts (placeholder `"serverUrlDesc": "Set the Idento backend URL (e.g. http://192.168.1.10:8008)"`)
@@ -39,6 +43,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя (не запускал приложение, чтобы наблюдать фактическое поведение CSP при вводе стороннего URL; вывод сделан из статического анализа конфигурации и кода)
 - Рекомендация: Если реальные развёртывания используют backend в локальной сети (не localhost), нужно либо: (а) требовать HTTPS для нелокальных backend URL и обновлять CSP `connect-src` динамически/через wildcard по HTTPS-схеме, либо (б) явно документировать и технически ограничить работу только через localhost/loopback (например, обязательный SSH/VPN туннель), убрав вводящий в заблуждение LAN-пример из UI.
+- Вердикт: ПОДТВЕРЖДЕНО — `tauri.conf.json:18` жёстко перечисляет только localhost/127.0.0.1:8008 (единственный CSP-конфиг, платформенных override-файлов нет), а `Connection.tsx`/`config.ts` реализуют произвольный backend URL с LAN-примером в `i18n.ts:76`; противоречие реально.
 
 ### DESKTOP-SEC-06: Окно киоска не защищено от выхода в ОС (нет fullscreen/kiosk-lock, есть стандартные декорации и resize)
 - Файл: desktop/src-tauri/tauri.conf.json:23-32 (конфигурация окна `main`)
@@ -47,4 +52,5 @@
 - Серьёзность: Medium
 - Уверенность: средняя (это, в первую очередь, эксплуатационная/физическая мера защиты; часть блокировки может обеспечиваться внешними средствами ОС/загрузчика киоска вне рассмотренного кода, что не проверялось в рамках данного аудита)
 - Рекомендация: Для продакшн-сборки киоска включить `"fullscreen": true`, `"decorations": false`, отключить системные комбинации переключения окон средствами ОС (или через отдельный kiosk-lock механизм), либо явно задокументировать, что lockdown обеспечивается внешней ОС-конфигурацией, не входящей в этот репозиторий.
+- Вердикт: ПОДТВЕРЖДЕНО — `tauri.conf.json:23-32` содержит только `resizable`/`center`, без `fullscreen`/`decorations`/`alwaysOnTop`; описанный риск kiosk-escape корректен.
 

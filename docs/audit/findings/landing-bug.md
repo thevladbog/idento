@@ -7,6 +7,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Обернуть кнопки в `asChild` + `<a href={downloadUrl} download>` (или `next/link` на страницу releases/changelog), подставив реальные URL артефактов сборки для каждой платформы и ссылку на changelog.
+- Вердикт: ПОДТВЕРЖДЕНО — `Download.tsx:54-57` и `:84-86` содержат `<Button>` без `asChild`, `href` или `onClick`; клик действительно ничего не делает.
 
 ### LANDING-BUG-02: Все основные CTA "начать/купить/связаться" ведут на несуществующий якорь `#signup`
 - Файл: landing/src/components/sections/Pricing.tsx:113; landing/src/components/sections/FinalCTA.tsx:68
@@ -15,6 +16,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Либо добавить секцию/форму с `id="signup"`, либо заменить ссылки на реальный маршрут регистрации/оформления (например, внешняя ссылка на app.idento.app/signup или форму лида).
+- Вердикт: ПОДТВЕРЖДЕНО — `Pricing.tsx:113` и `FinalCTA.tsx:68` ссылаются на `href="#signup"`; `grep -rn 'id="signup"' landing/src` не находит ни одного совпадения.
 
 ### LANDING-BUG-03: Хардкод-редирект `/` → `/en` в proxy.ts отключает автоопределение локали next-intl
 - Файл: landing/proxy.ts:10-13
@@ -23,6 +25,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Убрать ручной редирект `'/' -> '/en'` и позволить `handleI18nRouting` (next-intl middleware) самому обработать корневой путь со включённым `localeDetection`, либо явно задокументировать/обосновать принудительный дефолт на `en`.
+- Вердикт: ПОДТВЕРЖДЕНО — `proxy.ts:11-13` перехватывает `pathname === '/'` и редиректит на `/en` до вызова `handleI18nRouting(request)` на строке 15; `routing.ts` не задаёт `localeDetection: false`.
 
 ### LANDING-BUG-04: Root not-found.tsx всегда редиректит на `/en`, теряя текущую локаль
 - Файл: landing/src/app/not-found.tsx:1-5
@@ -31,6 +34,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Определять текущую локаль (например, из `headers()`/пути) и редиректить на `/${locale}`, либо добавить `src/app/[locale]/not-found.tsx`, которое сохраняет текущий сегмент локали.
+- Вердикт: ПОДТВЕРЖДЕНО — `not-found.tsx:4` безусловно вызывает `redirect('/en')`; `find src -iname "not-found*"` подтверждает отсутствие `[locale]/not-found.tsx`.
 
 ### LANDING-BUG-05: Footer полностью не локализован — хардкод на английском на всех страницах и в обеих локалях
 - Файл: landing/src/components/layout/Footer.tsx:6-33
@@ -39,6 +43,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Добавить namespace `Footer` в `messages/en.json` и `messages/ru.json` и заменить хардкод-строки на `t("...")`, удалить неиспользуемую переменную `_t`.
+- Вердикт: ПОДТВЕРЖДЕНО — `Footer.tsx:7` присваивает результат `useTranslations` в `_t`, которая больше нигде не используется; весь видимый текст — литералы; `messages/en.json` не содержит ключа `Footer`.
 
 ### LANDING-BUG-06: Ссылки Footer на `/privacy` и `/terms` ведут на несуществующие маршруты
 - Файл: landing/src/components/layout/Footer.tsx:36-47
@@ -47,6 +52,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Добавить страницы `[locale]/privacy/page.tsx` и `[locale]/terms/page.tsx` с реальным контентом либо временно убрать/скрыть эти ссылки, пока страницы не готовы.
+- Вердикт: ПОДТВЕРЖДЕНО — `Footer.tsx:36-47` содержит `<Link href="/privacy">`/`<Link href="/terms">`; `find src/app -iname "*privacy*" -o -iname "*terms*"` не находит соответствующих маршрутов.
 
 ### LANDING-BUG-07: Кнопка "Watch Demo" в Hero ведёт на несуществующий якорь `#demo`
 - Файл: landing/src/components/sections/Hero.tsx:73-78
@@ -55,6 +61,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Добавить `id="demo"` на блок с демо-плейсхолдером (`Hero.tsx:88-99`) либо убрать якорную ссылку, пока реального демо нет.
+- Вердикт: ПОДТВЕРЖДЕНО — `Hero.tsx:74` содержит `<a href="#demo">`; демо-плейсхолдер (`Hero.tsx:82-100`) не имеет атрибута `id`; grep по `id="demo"` в `landing/src` ничего не находит.
 
 ### LANDING-BUG-08: Страница `/pricing` содержит хардкод-текст на английском в обход next-intl
 - Файл: landing/src/app/[locale]/pricing/page.tsx:6-14
@@ -63,6 +70,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Использовать `getTranslations` (серверный API next-intl) в `PricingPage` и вынести эти строки в `messages/en.json`/`messages/ru.json` (например, в существующий namespace `Pricing` или отдельный `PricingPage`).
+- Вердикт: ПОДТВЕРЖДЕНО — `pricing/page.tsx:1-21` не содержит `"use client"` и не импортирует `getTranslations`; заголовок/подзаголовок на строках 9-13 — английские литералы, тогда как вложенные `<Pricing />`/`<FAQ />` используют `useTranslations`.
 
 ### LANDING-BUG-09: Якорные ссылки шапки (`#features`, `#pricing`, `#faq`) ломаются на подстраницах `/download` и частично на `/pricing`
 - Файл: landing/src/components/layout/Header.tsx:16-21
@@ -71,6 +79,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Делать эти ссылки локале-осознанными абсолютными ссылками на главную с якорем (например `/#features` через `Link` из `@/i18n/routing`) вместо относительных `#features`, чтобы переход работал независимо от текущей страницы.
+- Вердикт: ПОДТВЕРЖДЕНО — `Header.tsx:16-21` задаёт статичные `#features`/`#pricing`/`#faq`; `Header`/`Footer` подключены глобально в `[locale]/layout.tsx:101-103`; `download/page.tsx` рендерит только `Download`+`FinalCTA` (нет `id="features"` и др.), `pricing/page.tsx` не рендерит `Features` (нет `id="features"`).
 
 ### LANDING-BUG-10: Метаданные (title/description/og:url) не переопределяются для `/pricing` и `/download` — все страницы получают одинаковый SEO-заголовок
 - Файл: landing/src/app/[locale]/layout.tsx:11-66; landing/src/app/[locale]/download/page.tsx; landing/src/app/[locale]/pricing/page.tsx
@@ -79,6 +88,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Добавить `generateMetadata`/`metadata` в `download/page.tsx` и `pricing/page.tsx` со своими title/description и корректным `openGraph.url`, учитывающим текущий `locale`/путь.
+- Вердикт: ПОДТВЕРЖДЕНО — `[locale]/layout.tsx:11-66` содержит единственный `generateMetadata` с фиксированным `openGraph.url: "https://idento.app"`; ни `download/page.tsx`, ни `pricing/page.tsx` не экспортируют `metadata`/`generateMetadata`.
 
 ## Проверено, но находок не потребовало
 - Ключи локализации `messages/en.json` и `messages/ru.json` сверены программно (рекурсивный обход всех вложенных ключей) — набор ключей идентичен в обеих локалях (177/177), пропавших или лишних ключей не найдено.

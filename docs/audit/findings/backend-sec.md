@@ -7,6 +7,7 @@
 - Серьёзность: Critical
 - Уверенность: высокая
 - Рекомендация: убрать дефолт полностью — при пустом `JWT_SECRET` middleware должен возвращать 500/останавливать обработку (аналогично поведению при выпуске токена), а лучше — проверять наличие `JWT_SECRET` при старте приложения в main.go и завершать процесс (`log.Fatal`), если он не задан вне dev-окружения.
+- Вердикт: ПОДТВЕРЖДЕНО — middleware/jwt.go:29-33 действительно подставляет хардкод при пустом `JWT_SECRET`, тогда как auth.go:204-208 (`generateTokenForTenant`) явно фейлится; main.go не проверяет наличие `JWT_SECRET` при старте.
 
 ### BACKEND-SEC-02: Захардкоженный секрет подписи JWT в обработчике QR-логина персонала
 - Файл: backend/internal/handler/qr_auth.go:45-46
@@ -15,6 +16,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: убрать литерал `"your-secret-key"`, использовать ту же функцию генерации токена, что и в auth.go (`generateTokenForTenant`), читающую `JWT_SECRET` из окружения и возвращающую ошибку при его отсутствии.
+- Вердикт: ПОДТВЕРЖДЕНО — qr_auth.go:46 действительно подписывает токен литералом `"your-secret-key"` с комментарием `// TODO: use env var`, не используя `JWT_SECRET`/`generateTokenForTenant`.
 
 ### BACKEND-SEC-03: Отсутствует проверка принадлежности tenant при получении списка участников и обновлении статуса чек-ина
 - Файл: backend/internal/handler/attendees.go:97-110 (GetAttendees), backend/internal/handler/attendees.go:182-246 (UpdateAttendeeHandler)
@@ -23,6 +25,7 @@
 - Серьёзность: Critical
 - Уверенность: высокая
 - Рекомендация: в обоих хендлерах получить `event`/`tenant_id` из JWT и явно сверить `event.TenantID == tenantID` перед выполнением запроса/операции, по образцу уже существующих проверок в `BlockAttendee`/`DeleteAttendee` в этом же файле.
+- Вердикт: ПОДТВЕРЖДЕНО — `GetAttendees` (attendees.go:97-110) и `UpdateAttendeeHandler` (182-246) действительно не содержат ни одной проверки tenant, в отличие от `BlockAttendee`/`UnblockAttendee`/`DeleteAttendee`/`UpdateAttendeeInfo` в том же файле.
 
 ### BACKEND-SEC-04: GetAttendeeQR отдаёт QR-код (чек-ин код) участника без проверки владения
 - Файл: backend/internal/handler/qr.go:12-38
@@ -31,6 +34,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: добавить проверку `event.TenantID == tenantID` (аналогично `BadgeZPL`) перед генерацией QR.
+- Вердикт: ПОДТВЕРЖДЕНО — `GetAttendeeQR` (qr.go:12-38) получает attendee и сразу кодирует `attendee.Code` без единой проверки владения, в отличие от `BadgeZPL` (badge_zpl.go:70-79), которая такую проверку делает.
 
 ### BACKEND-SEC-05: ZoneCheckIn не проверяет ни принадлежность zone/event к tenant'у, ни назначение персонала на зону
 - Файл: backend/internal/handler/zones.go:327-466
@@ -39,6 +43,7 @@
 - Серьёзность: Critical
 - Уверенность: высокая
 - Рекомендация: в `ZoneCheckIn` после получения `zone` получить `event := GetEventByID(zone.EventID)` и сверить `event.TenantID` с tenant'ом из JWT; дополнительно проверять, что вызывающий пользователь имеет роль admin/manager либо назначен как staff на данную зону (`GetZoneStaffAssignments`/`GetStaffZoneAssignments`).
+- Вердикт: ПОДТВЕРЖДЕНО — `ZoneCheckIn` (zones.go:327-466) действительно не сверяет tenant ни разу и не проверяет staff-назначение на зону; единственные проверки — бизнес-правила (активность зоны, время, регистрация, `CheckZoneAccess`).
 
 ### BACKEND-SEC-06: Системное отсутствие проверки tenant во всех остальных обработчиках zones.go
 - Файл: backend/internal/handler/zones.go (CreateEventZone:18-36, GetEventZones:39-61, GetEventZone:64-76, UpdateEventZone:79-97, DeleteEventZone:100-111, CreateZoneAccessRule:116-134, GetZoneAccessRules:137-149, BulkUpdateZoneAccessRules:152-168, CreateAttendeeZoneAccess:173-191, GetAttendeeZoneAccess:194-206, UpdateAttendeeZoneAccess:209-227, DeleteAttendeeZoneAccess:230-241, AssignStaffToZone:246-273, GetZoneStaff:276-288, RemoveStaffFromZone:291-307, GetUserZoneAssignments:310-322, GetZoneCheckins:469-492, GetAttendeeZoneHistory:495-530)
@@ -47,6 +52,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: добавить единую проверку владения (event/zone → tenant_id) — например, middleware или хелпер, резолвящий zone_id/attendee_id в tenant_id и сравнивающий с claims.TenantID, — и применить её последовательно ко всем перечисленным маршрутам, как это уже сделано в events.go/attendees.go для большинства операций.
+- Вердикт: ПОДТВЕРЖДЕНО — проверены все перечисленные хендлеры в zones.go: ни один не сверяет tenant, и pg_store_zones.go подтверждает, что ни один из соответствующих store-методов не принимает/не фильтрует по tenant_id.
 
 ### BACKEND-SEC-07: API-ключи можно создавать, просматривать и отзывать для чужих мероприятий
 - Файл: backend/internal/handler/api_keys.go:17-91 (CreateAPIKey, GetAPIKeys, RevokeAPIKey)
@@ -55,6 +61,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: во всех трёх хендлерах получить событие по `event_id` (для Revoke — ключ по `key_id`, затем событие по `key.EventID`) и сверить `event.TenantID` с tenant'ом из JWT перед выполнением операции.
+- Вердикт: ПОДТВЕРЖДЕНО — `CreateAPIKey`/`GetAPIKeys`/`RevokeAPIKey` (api_keys.go:17-91) берут `event_id`/`key_id` напрямую и вызывают Store без единой проверки tenant.
 
 ### BACKEND-SEC-08: QR-токен для быстрого входа персонала хранится и отдаётся в открытом виде через GET /api/users
 - Файл: backend/internal/models/models.go:43 (`QRToken *string json:"qr_token,omitempty"`), backend/internal/store/pg_store.go:226-244 (GetUsersByTenantID выбирает qr_token), backend/internal/handler/users.go:17-36 (GetUsers)
@@ -63,6 +70,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: не включать `qr_token` в ответ списочных/чтения эндпоинтов (`json:"-"`, отдавать только сам факт наличия токена, например `has_qr_token: bool`); хранить в БД хеш токена (как это уже сделано для паролей и API-ключей), а не сам секрет.
+- Вердикт: ПОДТВЕРЖДЕНО — `QRToken` в models.go:43 сериализуется (`omitempty`, не `-`), `GetUsersByTenantID` (pg_store.go:226-244) выбирает `qr_token`, `GetUserByQRToken`/`UpdateUserQRToken` хранят и сравнивают токен как открытый текст; `GetUsers` (users.go:17-36) доступен admin и manager.
 
 ### BACKEND-SEC-09: Отсутствие проверки tenant в управлении шрифтами мероприятия
 - Файл: backend/internal/handler/fonts.go (GetEventFonts:19-39, UploadEventFont:42-227, GetEventFontCSS:253-287)
@@ -71,6 +79,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: добавить проверку `event.TenantID == tenantID` во всех трёх хендлерах и применить `middleware.CheckLimits` к загрузке шрифтов.
+- Вердикт: ЧАСТИЧНО — `GetEventFonts`/`GetEventFontCSS` подтверждены как полностью эксплуатируемые (нет проверки tenant, нет `CheckLimits` в handler.go:113-116), но сценарий загрузки через `UploadEventFont` сейчас на практике недостижим из-за отдельного бага (см. BACKEND-BUG-04: неверное приведение типа контекста всегда даёт 401 раньше, чем код дошёл бы до отсутствующей проверки tenant) — влияние по загрузке файлов временно не реализуемо, хотя после исправления auth-бага риск сразу вернётся.
 
 ### BACKEND-SEC-10: Разрешающий CORS для всех источников на API с Bearer-токенами
 - Файл: backend/main.go:430-433
@@ -79,6 +88,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: ограничить `AllowOrigins` конкретным списком доменов фронтенда (web/desktop) через переменную окружения, вместо `"*"`.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go:430-433 действительно конфигурирует `AllowOrigins: []string{"*"}` вместе с `AllowHeaders` включающим `Authorization`.
 
 ### BACKEND-SEC-11: CSV-экспорт участников уязвим к формула-инъекции (CSV/Excel injection)
 - Файл: backend/internal/handler/attendee_codes.go:116-171 (ExportAttendeesCSV)
@@ -87,6 +97,7 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: перед записью в CSV экранировать ячейки, начинающиеся с `=`, `+`, `-`, `@`, `\t`, `\r` (например, добавлять ведущий апостроф или префиксовать таб-символом согласно рекомендациям OWASP по CSV injection).
+- Вердикт: ПОДТВЕРЖДЕНО — `ExportAttendeesCSV` записывает `attendee.Code`/`CustomFields`/прочие поля напрямую (attendee_codes.go:126-159) без какого-либо экранирования ведущих символов.
 
 ### BACKEND-SEC-12: Отсутствие rate limiting на аутентификацию и чек-ин по короткому коду
 - Файл: backend/internal/handler/auth.go (Login, LoginWithQR), backend/internal/handler/zones.go (ZoneCheckIn); в internal/middleware/ нет ни одного rate-limit/anti-bruteforce middleware
@@ -95,6 +106,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: добавить rate limiting (по IP и/или по email/zone_id) на `/auth/login`, `/auth/login-qr` и `/api/zones/checkin`, например через `echo/middleware.RateLimiter`.
+- Вердикт: ПОДТВЕРЖДЕНО — в internal/middleware/ (jwt.go, limits.go, super_admin.go, api_key.go) действительно нет ни одного rate-limit/anti-bruteforce механизма, и main.go не регистрирует такое middleware глобально.
 
 ### BACKEND-SEC-13: Пароль передаётся как аргумент командной строки в утилите reset_password
 - Файл: backend/cmd/reset_password/main.go:19-24
@@ -103,3 +115,4 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: читать пароль интерактивно (без эха) или из переменной окружения/stdin вместо позиционного аргумента.
+- Вердикт: ПОДТВЕРЖДЕНО — cmd/reset_password/main.go:19-24 действительно читает пароль из `os.Args[2]` без какой-либо альтернативы (env/stdin/интерактивный ввод).

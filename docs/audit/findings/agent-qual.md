@@ -13,6 +13,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Добавить unit-тесты как минимум на: `printer.Manager`/`scanner.Manager` (конкурентный доступ через `go test -race`), парсинг вывода discovery-команд (таблично, без реального `exec`), `loadConfig`/`saveConfig` (через временную HOME-директорию), сборку легаси-шаблона. Внедрить `go test ./... -race` в CI перед мержем в agent/.
+- Вердикт: ПОДТВЕРЖДЕНО — `find agent -name "*_test.go"` не дал результатов; присутствующий `agent/coverage.out` содержит только строки покрытия с нулевым числом выполнений (`... 1 0`), что подтверждает отсутствие фактически исполняемых тестов.
 
 ### AGENT-QUAL-02: scanner.Manager не защищён от конкурентного доступа (в отличие от printer.Manager)
 - Файл: agent/internal/scanner/scanner.go:225-269
@@ -21,6 +22,7 @@
 - Серьёзность: High
 - Уверенность: высокая
 - Рекомендация: Добавить `sync.RWMutex` в `scanner.Manager` по аналогии с `printer.Manager` и защитить им все операции чтения/записи карты `scanners`. Покрыть `go test -race` (см. AGENT-QUAL-01).
+- Вердикт: ПОДТВЕРЖДЕНО — идентично AGENT-BUG-01: scanner.go:225-269 подтверждает отсутствие мьютекса в `Manager`, в отличие от `printer.Manager` (printer.go:48-51), явно защищённого `sync.RWMutex`.
 
 ### AGENT-QUAL-03: Мёртвый код SerialPrinter — задокументированная в README функция недостижима
 - Файл: agent/internal/printer/serial.go:12-65,117-136
@@ -29,6 +31,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Либо удалить `SerialPrinter`/`DiscoverSerialPrinters` как неиспользуемый код, либо реально подключить его (аналог `pm.AddPrinter` для serial-портов при старте/через `/printers/add`) и одновременно поправить README, чтобы описание соответствовало фактическому поведению.
+- Вердикт: ПОДТВЕРЖДЕНО — `grep -rn "NewSerialPrinter|SerialPrinter\b|DiscoverSerialPrinters"` не находит вызовов вне serial.go, main.go:165-232 (реальная инициализация принтеров) использует только `DiscoverSystemPrinters`/`NewSystemPrinter`, `NewNetworkPrinterFromIP` и `NewMockPrinter`; README.md:9 действительно заявляет «✅ Serial/USB принтеры - прямое подключение через COM-порты».
 
 ### AGENT-QUAL-04: main.go — «god file» на 1069 строк с несколькими не связанными ответственностями
 - Файл: agent/main.go:1-1069
@@ -37,6 +40,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Вынести конфигурацию (`AgentConfig`, `loadConfig`/`saveConfig`, `configMu`) в `internal/config`, а HTTP-хендлеры — в `internal/api` (или хотя бы в отдельные файлы `handlers_printers.go`/`handlers_scanners.go` в пакете main), оставив в main.go только сборку зависимостей и запуск сервера.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go действительно 1069 строк (`wc -l`), содержит `loadConfig`/`saveConfig` (89-145), 17 регистраций `mux.HandleFunc` (236-1018, близко к заявленным «~18»), настройку CORS (1020-1028) и встроенный HTML `/docs` (1000-1018) в одном файле пакета `main`.
 
 ### AGENT-QUAL-05: Непоследовательная обработка ошибок сохранения конфигурации между похожими хендлерами
 - Файл: agent/main.go:404-418 (сравнить с main.go:448-471 и main.go:846-852,904-911)
@@ -45,6 +49,7 @@
 - Серьёзность: Medium
 - Уверенность: высокая
 - Рекомендация: Привести `/printers/add` к тому же контракту, что и остальные мутирующие эндпоинты: при ошибке `saveConfig` откатывать `pm.AddPrinter` (или не добавлять его до успешного сохранения) и возвращать 500, а не 201.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go:411-418 подтверждает, что ошибка `saveConfig` в `/printers/add` только логируется («Warning: Failed to save config»), после чего всё равно пишется `http.StatusCreated`; для сравнения `/printers/remove` (467-471), `/scanners/add` (847-852, 904-911) и `/scanners/remove` (968-971) при той же ошибке возвращают `http.StatusInternalServerError`.
 
 ### AGENT-QUAL-06: scanner.Manager.RemoveScanner всегда возвращает nil — «фиктивная» сигнатура ошибки
 - Файл: agent/internal/scanner/scanner.go:260-269
@@ -53,6 +58,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Сделать `RemoveScanner` симметричным `RemovePrinter` — возвращать `bool`/явную ошибку "not found", и использовать это в HTTP-ответе `/scanners/remove` вместо безусловного `200 "removed"`.
+- Вердикт: ПОДТВЕРЖДЕНО — `RemoveScanner` (scanner.go:260-269) действительно `return nil` в обоих ветвях (`ok`/`!ok`); `RemovePrinter` (printer.go:89-95) в отличие от него возвращает `bool`, используемый в main.go:473-477 для различного логирования.
 
 ### AGENT-QUAL-07: Дублирование скелета exec-команды между SendRaw и PrintPDF
 - Файл: agent/internal/printer/system.go:189-219 (SendRaw) и 221-253 (PrintPDF)
@@ -61,6 +67,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Выделить приватный хелпер `runLP(name string, extraArgs []string, data []byte) error`, принимающий отличающиеся флаги (`-o raw` или их отсутствие), и вызывать его из обоих методов.
+- Вердикт: ПОДТВЕРЖДЕНО — `SendRaw` (system.go:189-219) и `PrintPDF` (221-253) действительно почти дословно дублируют друг друга: одинаковая санитизация имени, `switch runtime.GOOS`, `exec.Command("lp", "-d", name, ...)` и `cmd.CombinedOutput()`, различие только во флаге `-o raw` и тексте логов.
 
 ### AGENT-QUAL-08: Повторяющийся паттерн «загрузить конфиг → изменить срез → сохранить» дублируется в 4 хендлерах с разной блокировкой
 - Файл: agent/main.go:385-416 (/printers/add), 448-471 (/printers/remove), 829-912 (/scanners/add), 952-972 (/scanners/remove)
@@ -69,6 +76,7 @@
 - Серьёзность: Low
 - Уверенность: средняя
 - Рекомендация: Вынести общий хелпер вида `withConfig(func(*AgentConfig) (*AgentConfig, error) error)`, инкапсулирующий lock/load/mutate/save, и использовать его во всех четырёх местах; для сценария "долгая операция вне лока" (открытие порта) сделать отдельный явный API.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go:385-416 (/printers/add), 448-471 (/printers/remove), 829-912 (/scanners/add) и 952-972 (/scanners/remove) подтверждают повторяющийся паттерн lock/loadConfig/мутация среза/saveConfig, реализованный заново в каждом хендлере с разной структурой блокировок, включая расщепление лока в /scanners/add на время `s.Open()` (868-885).
 
 ### AGENT-QUAL-09: Магические числа (baud rate, порт, таймауты) без общих именованных констант
 - Файл: agent/internal/printer/serial.go:21; agent/internal/scanner/scanner.go:48,72,128,143,165; agent/main.go:216,375-377,869
@@ -77,6 +85,7 @@
 - Серьёзность: Low
 - Уверенность: высокая
 - Рекомендация: Вынести baud rate, порт по умолчанию и тайминги сканера в именованные константы уровня пакета (по аналогии с system.go), в `main.go` вызывать `scanner.NewScanner(scannerName, portName, 0)`, полагаясь на дефолт внутри `NewScanner`, вместо повторного захардкоживания 9600.
+- Вердикт: ПОДТВЕРЖДЕНО — baud rate 9600 захардкожен ровно в четырёх указанных местах (serial.go:21, scanner.go:48, main.go:216, main.go:869), порт 9100 — в main.go:375-377, а тайминги scanner.go:72,128,143,165 (150/50/80/100 мс) заданы литералами, в отличие от именованных констант `discoveryCallTimeout`/`discoveryMaxRetries`/`discoveryInitialBackoff` в system.go:18-20.
 
 ### AGENT-QUAL-10: Отсутствие абстракции возможностей принтера — HTTP-хендлер определяет поддержку PDF через приведение типа
 - Файл: agent/main.go:566-576; agent/internal/printer/printer.go:11-15
@@ -85,3 +94,4 @@
 - Серьёзность: Medium
 - Уверенность: средняя
 - Рекомендация: Добавить в `PrinterInterface` (или в отдельный опциональный интерфейс `PDFCapable interface { SupportsPDF() bool; PrintPDF([]byte) error }`) метод, реализуемый нужными типами, и в хендлере делать `p.(PDFCapable)` вместо привязки к конкретному `*SystemPrinter`.
+- Вердикт: ПОДТВЕРЖДЕНО — main.go:567 подтверждает `systemPrinter, ok := p.(*printer.SystemPrinter)` в `/print-pdf`, а `PrinterInterface` (printer.go:12-15) объявляет только `SendRaw`/`Status`, без метода определения PDF-возможностей.
