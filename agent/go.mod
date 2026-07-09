@@ -1,6 +1,6 @@
 module idento/agent
 
-go 1.25.4
+go 1.26.5
 
 require (
 	github.com/creack/goselect v0.1.2 // indirect
