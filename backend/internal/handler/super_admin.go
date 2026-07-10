@@ -394,6 +394,11 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
 	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	//nolint:errcheck
+	_ = c.Bind(&body) // optional body; malformed/absent JSON leaves body.Reason == ""
 	current, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
@@ -414,7 +419,11 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}, c.RealIP(), c.Request().UserAgent()); err != nil {
+	changes := map[string]interface{}{"from": current, "to": tr.to}
+	if body.Reason != "" {
+		changes["reason"] = body.Reason
+	}
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, changes, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": tr.to})
@@ -438,6 +447,11 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
 	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	//nolint:errcheck
+	_ = c.Bind(&body)
 	status, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
@@ -457,7 +471,11 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to mint impersonation token"})
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "impersonate_tenant", "tenant", tenantID, map[string]interface{}{"expires_at": expiresAt}, c.RealIP(), c.Request().UserAgent()); err != nil {
+	changes := map[string]interface{}{"expires_at": expiresAt}
+	if body.Reason != "" {
+		changes["reason"] = body.Reason
+	}
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "impersonate_tenant", "tenant", tenantID, changes, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
