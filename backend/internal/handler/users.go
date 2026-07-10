@@ -16,7 +16,10 @@ import (
 
 // GetUsers returns all users in the tenant
 func (h *Handler) GetUsers(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	tenantID, err := uuid.Parse(user.TenantID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "Invalid token")
@@ -41,7 +44,10 @@ func (h *Handler) GetUsers(c echo.Context) error {
 
 // CreateUser creates a new user (staff or manager)
 func (h *Handler) CreateUser(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	tenantID, err := uuid.Parse(user.TenantID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "Invalid token")
@@ -103,7 +109,10 @@ func (h *Handler) CreateUser(c echo.Context) error {
 
 // GenerateQRToken generates a QR token for staff quick login
 func (h *Handler) GenerateQRToken(c echo.Context) error {
-	currentUser := c.Get("user").(*models.JWTCustomClaims)
+	currentUser, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 
 	// Only admin can generate QR tokens
 	if currentUser.Role != "admin" {
@@ -156,7 +165,10 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 
 // AssignStaffToEvent assigns a staff user to an event
 func (h *Handler) AssignStaffToEvent(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	tenantID, err := uuid.Parse(user.TenantID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")

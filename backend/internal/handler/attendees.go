@@ -180,7 +180,10 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 	}
 
 	// Get current user from JWT token
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID, err := uuid.Parse(user.UserID)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})

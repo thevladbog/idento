@@ -151,7 +151,10 @@ func (h *Handler) Login(c echo.Context) error {
 
 func (h *Handler) GetMe(c echo.Context) error {
 	// This will rely on middleware setting the user in context
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	return c.JSON(http.StatusOK, map[string]string{
 		"user_id":   user.UserID,
 		"tenant_id": user.TenantID,
@@ -208,7 +211,10 @@ type SwitchTenantRequest struct {
 
 func (h *Handler) SwitchTenant(c echo.Context) error {
 	// Get user from JWT token (set by middleware)
-	userClaims := c.Get("user").(*models.JWTCustomClaims)
+	userClaims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
