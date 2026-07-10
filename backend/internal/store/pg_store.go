@@ -1550,7 +1550,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		where = "WHERE action = $1"
 		args = append(args, action)
 	}
-	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address, user_agent, created_at
+	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address::text, user_agent, created_at
 	          FROM admin_audit_log %s
 	          ORDER BY created_at DESC
 	          LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
