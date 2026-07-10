@@ -62,9 +62,11 @@ private fun CFBridgingReleaseToNSData(ref: CFTypeRef?): NSData? = CFBridgingRele
 actual class SecureStore {
 
     actual fun putString(key: String, value: String): Boolean = try {
-        // SecItemAdd fails on a duplicate, so clear any existing item first.
-        remove(key)
+        // Encode first: if this failed we must NOT have already deleted the existing item
+        // (that would turn a "save failed" into a silent "session destroyed").
         val data = (value as NSString).dataUsingEncoding(NSUTF8StringEncoding) ?: return false
+        // SecItemAdd fails on a duplicate, so clear any existing item before adding.
+        remove(key)
         val serviceRef = CFString(SERVICE)
         val accountRef = CFString(key)
         val dataRef = CFData(data)

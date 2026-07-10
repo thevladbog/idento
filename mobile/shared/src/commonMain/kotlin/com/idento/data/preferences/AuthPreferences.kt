@@ -9,10 +9,13 @@ import com.idento.data.storage.DataStoreNames
 import com.idento.data.storage.SecureStore
 import com.idento.data.storage.SecureStoreKeys
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Authentication preferences (token, user info)
@@ -29,6 +32,9 @@ class AuthPreferences(dataStoreFactory: DataStoreFactory, private val secureStor
         private val USER_EMAIL = stringPreferencesKey("user_email")
         private val USER_NAME = stringPreferencesKey("user_name")
         private val USER_ROLE = stringPreferencesKey("user_role")
+
+        // Pre-SEC-03 builds stored the JWT as plaintext in DataStore under this key.
+        private val LEGACY_TOKEN = stringPreferencesKey("auth_token")
     }
 
     private val dataStore: DataStore<Preferences> =
@@ -38,12 +44,43 @@ class AuthPreferences(dataStoreFactory: DataStoreFactory, private val secureStor
     // Using atomicfu for thread-safe access in Kotlin/Native
     private val cachedToken = atomic<String?>(null)
 
+    // Long-lived (app-lifetime singleton) scope for the one-shot legacy-token migration.
+    private val scope = CoroutineScope(Dispatchers.Default)
+
     init {
         // Keychain/Keystore reads are synchronous — populate the cache at construction
         // so Ktor's Auth plugin has the token immediately, no async warm-up needed.
         cachedToken.value = secureStore.getString(SecureStoreKeys.AUTH_TOKEN)
+        // Best-effort: move any legacy plaintext token out of DataStore into the secure
+        // store and purge the plaintext copy (see migrateLegacyPlaintextToken).
+        scope.launch { migrateLegacyPlaintextToken() }
     }
 
+    /**
+     * One-time upgrade migration. Earlier builds persisted the JWT as plaintext in the
+     * DataStore file under "auth_token". Move any such value into the secure store (so the
+     * user's session survives the upgrade) and then delete the plaintext copy from disk —
+     * eliminating the exact unencrypted-token-at-rest artifact this fix targets.
+     * Fail-safe: any error just leaves the user to re-authenticate.
+     */
+    private suspend fun migrateLegacyPlaintextToken() {
+        try {
+            val legacy = dataStore.data.first()[LEGACY_TOKEN] ?: return
+            if (secureStore.getString(SecureStoreKeys.AUTH_TOKEN) == null &&
+                secureStore.putString(SecureStoreKeys.AUTH_TOKEN, legacy)
+            ) {
+                cachedToken.value = legacy
+            }
+            // Purge the plaintext key regardless of whether the secure write happened.
+            dataStore.edit { it.remove(LEGACY_TOKEN) }
+        } catch (e: Exception) {
+            // Nothing to migrate, or the store is unavailable — safe to ignore.
+        }
+    }
+
+    // NOTE: single-emission — emits the current cached token once. Callers today use
+    // `.first()` (one-shot). It is NOT a live stream; it will not re-emit on login/logout.
+    // If reactive observation is ever needed, back this with a StateFlow.
     val authToken: Flow<String?> = flow { emit(cachedToken.value) }
 
     /**
