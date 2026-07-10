@@ -9,7 +9,7 @@ data class Event(
     @SerialName("name") val name: String,
     @SerialName("description") val description: String? = null,
     @SerialName("start_date") val startDate: String,
-    @SerialName("end_date") val endDate: String,
+    @SerialName("end_date") val endDate: String? = null,
     @SerialName("location") val location: String? = null,
     @SerialName("badge_template") val badgeTemplate: String? = null,
     @SerialName("settings") val settings: EventSettings? = null,

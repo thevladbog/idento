@@ -79,4 +79,8 @@ class EventRepository(
             is ApiResult.Loading -> ApiResult.Loading
         }
     }
+
+    suspend fun getEventStats(eventId: String, zoneId: String? = null): ApiResult<com.idento.data.model.EventStatsResponseDto> {
+        return eventApiService.getEventStats(eventId, zoneId).toApiResult()
+    }
 }

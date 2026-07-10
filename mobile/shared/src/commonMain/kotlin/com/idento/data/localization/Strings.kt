@@ -148,6 +148,10 @@ enum class StringKey {
     // Misc
     ABOUT,
     VERSION,
+
+    // Offline banner (parameterized templates — use "{count}"/"{time}" as literal placeholder tokens)
+    OFFLINE_QUEUED_TEMPLATE,
+    OFFLINE_LAST_SYNC_TEMPLATE,
 }
 
 /**
@@ -268,6 +272,10 @@ private val englishStrings = mapOf(
     // Misc
     StringKey.ABOUT to "About",
     StringKey.VERSION to "Version",
+
+    // Offline banner
+    StringKey.OFFLINE_QUEUED_TEMPLATE to "Offline · {count} check-ins queued",
+    StringKey.OFFLINE_LAST_SYNC_TEMPLATE to "Syncs automatically · last sync {time}",
 )
 
 /**
@@ -388,6 +396,10 @@ private val russianStrings = mapOf(
     // Misc
     StringKey.ABOUT to "О приложении",
     StringKey.VERSION to "Версия",
+
+    // Offline banner
+    StringKey.OFFLINE_QUEUED_TEMPLATE to "Офлайн · {count} чек-инов в очереди",
+    StringKey.OFFLINE_LAST_SYNC_TEMPLATE to "Синхронизируются автоматически · посл. синх. {time}",
 )
 
 /**

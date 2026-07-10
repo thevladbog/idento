@@ -121,4 +121,12 @@ class AttendeeRepository(
             is ApiResult.Loading -> ApiResult.Loading
         }
     }
+
+    suspend fun submitBatchCheckins(eventId: String, items: List<com.idento.data.model.BatchCheckinItemDto>): ApiResult<List<com.idento.data.model.BatchCheckinResultDto>> {
+        return attendeeApiService.submitBatchCheckins(eventId, items).toApiResult()
+    }
+
+    suspend fun submitOverride(eventId: String, request: com.idento.data.model.CreateCheckinOverrideRequestDto): ApiResult<com.idento.data.model.CheckinOverrideDto> {
+        return attendeeApiService.submitOverride(eventId, request).toApiResult()
+    }
 }

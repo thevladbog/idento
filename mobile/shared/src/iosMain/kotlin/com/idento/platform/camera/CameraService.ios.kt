@@ -1,66 +1,118 @@
 package com.idento.platform.camera
 
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import platform.AVFoundation.*
+import platform.AVFoundation.AVCaptureConnection
+import platform.AVFoundation.AVCaptureDevice
+import platform.AVFoundation.AVCaptureDeviceInput
+import platform.AVFoundation.AVCaptureMetadataOutput
+import platform.AVFoundation.AVCaptureMetadataOutputObjectsDelegateProtocol
+import platform.AVFoundation.AVCaptureSession
+import platform.AVFoundation.AVCaptureSessionPresetHigh
+import platform.AVFoundation.AVAuthorizationStatusAuthorized
+import platform.AVFoundation.AVMediaTypeVideo
+import platform.AVFoundation.AVMetadataMachineReadableCodeObject
+import platform.AVFoundation.AVMetadataObjectTypeCode128Code
+import platform.AVFoundation.AVMetadataObjectTypeCode39Code
+import platform.AVFoundation.AVMetadataObjectTypeQRCode
+import platform.AVFoundation.authorizationStatusForMediaType
+import platform.AVFoundation.requestAccessForMediaType
+import platform.darwin.NSObject
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_queue_create
 
 /**
- * iOS Camera Service Implementation
- * Uses AVFoundation for QR code scanning
+ * iOS Camera Service — AVCaptureSession + AVCaptureMetadataOutput (QR + linear barcodes).
  */
+@OptIn(ExperimentalForeignApi::class)
 actual class CameraService {
-    
+
     private val _scanResults = MutableSharedFlow<String>(replay = 0)
     private var captureSession: AVCaptureSession? = null
     private var isCurrentlyScanning = false
-    
+    private val sessionQueue = dispatch_queue_create("com.idento.cameraservice.session", null)
+
+    private val metadataDelegate = object : NSObject(), AVCaptureMetadataOutputObjectsDelegateProtocol {
+        override fun captureOutput(
+            output: platform.AVFoundation.AVCaptureOutput,
+            didOutputMetadataObjects: List<*>,
+            fromConnection: AVCaptureConnection,
+        ) {
+            val code = didOutputMetadataObjects
+                .filterIsInstance<AVMetadataMachineReadableCodeObject>()
+                .firstOrNull()
+                ?.stringValue
+            if (code != null) {
+                _scanResults.tryEmit(code)
+            }
+        }
+    }
+
     actual fun isCameraAvailable(): Boolean {
-        // Check if camera is available
-        val device = AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo)
-        return device != null
+        return AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo) != null
     }
-    
+
     actual fun hasCameraPermission(): Boolean {
-        val status = AVCaptureDevice.authorizationStatusForMediaType(AVMediaTypeVideo)
-        return status == AVAuthorizationStatusAuthorized
+        return AVCaptureDevice.authorizationStatusForMediaType(AVMediaTypeVideo) == AVAuthorizationStatusAuthorized
     }
-    
+
     actual fun startScanning(): Flow<String> {
-        isCurrentlyScanning = true
-        
-        // TODO: Setup AVCaptureSession
-        // TODO: Add AVCaptureMetadataOutput for QR codes
-        // TODO: Set delegate to receive QR codes
-        
+        if (!isCurrentlyScanning && hasCameraPermission()) {
+            isCurrentlyScanning = true
+            val device = AVCaptureDevice.defaultDeviceWithMediaType(AVMediaTypeVideo)
+            if (device != null) {
+                val session = AVCaptureSession()
+                session.sessionPreset = AVCaptureSessionPresetHigh
+
+                val input = AVCaptureDeviceInput.deviceInputWithDevice(device, null)
+                if (input != null && session.canAddInput(input)) {
+                    session.addInput(input)
+                }
+
+                val output = AVCaptureMetadataOutput()
+                if (session.canAddOutput(output)) {
+                    session.addOutput(output)
+                    output.setMetadataObjectsDelegate(metadataDelegate, dispatch_get_main_queue())
+                    output.metadataObjectTypes = listOf(
+                        AVMetadataObjectTypeQRCode,
+                        AVMetadataObjectTypeCode128Code,
+                        AVMetadataObjectTypeCode39Code,
+                    )
+                }
+
+                captureSession = session
+                dispatch_async(sessionQueue) {
+                    session.startRunning()
+                }
+            } else {
+                isCurrentlyScanning = false
+            }
+        }
         return _scanResults.asSharedFlow()
     }
-    
+
     actual fun stopScanning() {
-        captureSession?.stopRunning()
+        val session = captureSession
+        captureSession = null
         isCurrentlyScanning = false
+        if (session != null) {
+            dispatch_async(sessionQueue) {
+                session.stopRunning()
+            }
+        }
     }
-    
-    actual fun isScanning(): Boolean {
-        return isCurrentlyScanning
-    }
-    
-    /**
-     * Request camera permission
-     */
+
+    actual fun isScanning(): Boolean = isCurrentlyScanning
+
+    /** Request camera permission (platform-only helper, not part of the `expect` contract). */
     suspend fun requestCameraPermission(): Boolean {
         return kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
             AVCaptureDevice.requestAccessForMediaType(AVMediaTypeVideo) { granted ->
                 continuation.resume(granted) {}
             }
         }
-    }
-    
-    /**
-     * Internal method to emit scan results
-     * Called by AVCaptureMetadataOutputObjectsDelegate
-     */
-    suspend fun onCodeScanned(code: String) {
-        _scanResults.emit(code)
     }
 }

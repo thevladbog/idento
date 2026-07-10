@@ -47,7 +47,12 @@ class ZoneRepository(
     suspend fun performZoneCheckIn(request: ZoneCheckInRequest): ApiResult<ZoneCheckInResponse> {
         return zoneApiService.performZoneCheckIn(request).toApiResult()
     }
-    
+
+    /** Mobile zone-control scan verdict — see ZoneApiService.scanZone. */
+    suspend fun scanZone(zoneId: String, code: String): ApiResult<com.idento.data.model.ZoneScanResponseDto> {
+        return zoneApiService.scanZone(zoneId, code).toApiResult()
+    }
+
     /**
      * Get attendee movement history
      */

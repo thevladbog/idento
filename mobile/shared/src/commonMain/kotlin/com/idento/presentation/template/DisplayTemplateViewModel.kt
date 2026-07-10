@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * ViewModel for Display Template Editor
@@ -138,8 +139,8 @@ class DisplayTemplateViewModel(
         position = "Software Engineer",
         phone = "+1 555 123 4567",
         customFields = mapOf(
-            "ticket_type" to "VIP",
-            "table_number" to "42"
+            "ticket_type" to JsonPrimitive("VIP"),
+            "table_number" to JsonPrimitive("42")
         )
     )
     

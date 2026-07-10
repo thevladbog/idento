@@ -125,7 +125,23 @@ class AttendeeApiService(private val apiClient: ApiClient) {
     suspend fun getAttendeeByCode(eventId: String, code: String): Result<Attendee> = runCatching {
         apiClient.httpClient.get("/api/events/$eventId/attendees") {
             parameter("code", code)
-        }.body<List<Attendee>>().firstOrNull() 
+        }.body<List<Attendee>>().firstOrNull()
             ?: throw Exception("Attendee not found")
+    }
+
+    /** POST /api/events/:event_id/checkins/batch — idempotent offline-sync flush. */
+    suspend fun submitBatchCheckins(eventId: String, items: List<com.idento.data.model.BatchCheckinItemDto>): Result<List<com.idento.data.model.BatchCheckinResultDto>> = apiRunCatching {
+        apiClient.httpClient.post("/api/events/$eventId/checkins/batch") {
+            contentType(ContentType.Application.Json)
+            setBody(items)
+        }.body()
+    }
+
+    /** POST /api/events/:event_id/checkins/override — staff "proceed anyway" audit log. */
+    suspend fun submitOverride(eventId: String, request: com.idento.data.model.CreateCheckinOverrideRequestDto): Result<com.idento.data.model.CheckinOverrideDto> = apiRunCatching {
+        apiClient.httpClient.post("/api/events/$eventId/checkins/override") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
     }
 }

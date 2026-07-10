@@ -41,6 +41,18 @@ class ZoneApiService(private val apiClient: ApiClient) {
     }
     
     /**
+     * Mobile zone-control scan (structured verdict, always HTTP 200 for the 3 designed
+     * outcomes) — POST /api/zones/:zone_id/scan. Distinct from the legacy performZoneCheckIn
+     * above, which stays untouched.
+     */
+    suspend fun scanZone(zoneId: String, code: String): Result<com.idento.data.model.ZoneScanResponseDto> = apiRunCatching {
+        apiClient.httpClient.post("/api/zones/$zoneId/scan") {
+            contentType(ContentType.Application.Json)
+            setBody(com.idento.data.model.ZoneScanRequestDto(code = code))
+        }.body()
+    }
+
+    /**
      * Get attendee movement history (all zone check-ins)
      */
     suspend fun getAttendeeMovementHistory(attendeeId: String): Result<List<MovementHistoryEntry>> = runCatching {
