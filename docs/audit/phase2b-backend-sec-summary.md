@@ -26,14 +26,24 @@
 | SEC-06 системный tenant-пробел zones.go | High | ✅ закрыто | 2B-5 (все 22 хендлера + GetAttendeeZoneAccessByID) |
 | SEC-07 API-ключи чужих событий | High | ✅ закрыто | 2B-6 |
 | SEC-08 утечка qr_token через GET /api/users | High | ✅ закрыто | 2B-8 (json:"-" + has_qr_token) |
-| SEC-09 tenant в fonts.go | Medium | ✅ закрыто | 2B-7 (3 хендлера + DeleteEventFont fast-follow) |
-| SEC-10 разрешающий CORS `*` | Medium | ✅ закрыто | 2B-9 (CORS_ALLOWED_ORIGINS allowlist) |
+| SEC-09 tenant в fonts.go | Medium | ✅ закрыто | 2B-7 (Get/Upload/CSS + DeleteEventFont + GetFontFile) |
+| SEC-10 разрешающий CORS `*` | Medium | ✅ закрыто | 2B-9 (CORS_ALLOWED_ORIGINS allowlist, **fail-fast** при пустом — иначе Echo подставляет `*`) |
 | SEC-11 CSV formula injection | Medium | ✅ закрыто | 2B-10 (sanitizeCSVField: значения + заголовок) |
 | SEC-12 нет rate limiting | Medium | ✅ закрыто | 2B-11 (login/login-qr/checkin) |
 
 Общий authz-хелпер (`internal/handler/authz.go`:
 `requireEventOwnership`/`requireZoneOwnership`/`writeErr`) введён в 2B-1 и применён
 единообразно вместо копипаст-проверок.
+
+**Финальное ревью всей ветки** дополнительно нашло и закрыло 2 блокера, не видимых
+по-задачно: (1) CORS при пустом `CORS_ALLOWED_ORIGINS` молча откатывался к `*`
+(Echo подставляет дефолт при пустом списке) → сделан fail-fast при старте;
+(2) `GetFontFile` (`GET /fonts/:id/file`) не проверял tenant → добавлена
+`requireEventOwnership` + регресс-тест.
+
+⚠️ **Деплой:** `CORS_ALLOWED_ORIGINS` теперь обязателен — сервер не стартует без
+него (как `JWT_SECRET`/`DATABASE_URL`). Для desktop (Tauri) в проде origin —
+кастомная схема (`tauri://localhost`), её нужно добавить в список.
 
 ## Backlog (осознанно отложено)
 
