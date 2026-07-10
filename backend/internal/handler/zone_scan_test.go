@@ -95,6 +95,8 @@ func TestZoneScan_NotRegisteredVerdict(t *testing.T) {
 	zoneID := uuid.New()
 	attendeeID := uuid.New()
 
+	var scanLogVerdict string
+
 	fs := &fakeStore{
 		getEventZoneByID: func(id uuid.UUID) (*models.EventZone, error) {
 			return &models.EventZone{ID: id, EventID: eventID, IsActive: true, RequiresRegistration: true}, nil
@@ -105,7 +107,8 @@ func TestZoneScan_NotRegisteredVerdict(t *testing.T) {
 		getAttendeeByCode: func(_ uuid.UUID, _ string) (*models.Attendee, error) {
 			return &models.Attendee{ID: attendeeID, EventID: eventID, RegisteredAt: nil}, nil
 		},
-		createZoneScanLog: func(_ uuid.UUID, _ *uuid.UUID, _ string) error {
+		createZoneScanLog: func(_ uuid.UUID, _ *uuid.UUID, verdict string) error {
+			scanLogVerdict = verdict
 			return nil
 		},
 	}
@@ -126,5 +129,57 @@ func TestZoneScan_NotRegisteredVerdict(t *testing.T) {
 	}
 	if resp.Verdict != "not_registered" {
 		t.Fatalf("expected verdict 'not_registered', got %q", resp.Verdict)
+	}
+	if scanLogVerdict != "not_registered" {
+		t.Fatalf("expected scan log verdict 'not_registered', got %q", scanLogVerdict)
+	}
+}
+
+func TestZoneScan_NoAccessVerdictWhenCategoryDenied(t *testing.T) {
+	tenantID := uuid.New()
+	eventID := uuid.New()
+	zoneID := uuid.New()
+	attendeeID := uuid.New()
+
+	var scanLogVerdict string
+
+	fs := &fakeStore{
+		getEventZoneByID: func(id uuid.UUID) (*models.EventZone, error) {
+			return &models.EventZone{ID: id, EventID: eventID, IsActive: false}, nil
+		},
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: tenantID}, nil
+		},
+		getAttendeeByCode: func(_ uuid.UUID, _ string) (*models.Attendee, error) {
+			return &models.Attendee{ID: attendeeID, EventID: eventID}, nil
+		},
+		createZoneScanLog: func(_ uuid.UUID, _ *uuid.UUID, verdict string) error {
+			scanLogVerdict = verdict
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/zones/"+zoneID.String()+"/scan", `{"code":"ABCD1234"}`, tenantID.String(), "admin")
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zoneID.String())
+	if err := h.ZoneScan(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (verdict is not an HTTP error), got %d", rec.Code)
+	}
+	var resp models.ZoneScanResponse
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Verdict != "no_access" {
+		t.Fatalf("expected verdict 'no_access', got %q", resp.Verdict)
+	}
+	if resp.Reason != "Zone is closed" {
+		t.Fatalf("expected reason 'Zone is closed', got %q", resp.Reason)
+	}
+	if scanLogVerdict != "no_access" {
+		t.Fatalf("expected scan log verdict 'no_access', got %q", scanLogVerdict)
 	}
 }

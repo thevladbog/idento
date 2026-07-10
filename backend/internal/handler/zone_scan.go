@@ -63,6 +63,7 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 	}
 
 	now := time.Now()
+	today := now.Truncate(24 * time.Hour)
 	regInfo := &models.RegistrationInfo{Passed: attendee.RegisteredAt != nil, At: attendee.RegisteredAt}
 	if attendee.RegistrationZoneID != nil {
 		if regZone, err := h.Store.GetEventZoneByID(c.Request().Context(), *attendee.RegistrationZoneID); err == nil && regZone != nil {
@@ -104,7 +105,7 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 		})
 	}
 
-	existing, err := h.Store.CheckAttendeeZoneCheckin(c.Request().Context(), attendee.ID, zoneID, now)
+	existing, err := h.Store.CheckAttendeeZoneCheckin(c.Request().Context(), attendee.ID, zoneID, today)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check idempotency"})
 	}
@@ -114,7 +115,7 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 			AttendeeID:  attendee.ID,
 			ZoneID:      zoneID,
 			CheckedInBy: &callerID,
-			EventDay:    now,
+			EventDay:    today,
 			Metadata:    map[string]interface{}{"source": "mobile_scan"},
 		}); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record zone entry"})
