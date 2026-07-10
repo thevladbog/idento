@@ -24,9 +24,11 @@ export async function agentPost(path: string, body?: string): Promise<string> {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<string>("agent_request", { method: "POST", path, body: body ?? null });
   }
+  // The agent requires Content-Type: application/json on every mutating request,
+  // so set it unconditionally (even for body-less POSTs).
   const res = await fetch(`${FALLBACK_AGENT_URL}${path}`, {
     method: "POST",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: { "Content-Type": "application/json" },
     body,
   });
   if (!res.ok) throw new Error(`Agent error: ${res.status}`);

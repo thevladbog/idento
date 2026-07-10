@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"idento/agent/internal/httpauth"
 	"idento/agent/internal/printer"
 	"idento/agent/internal/scanner"
 	"log"
@@ -36,6 +39,14 @@ type AgentConfig struct {
 	NetworkPrinters []NetworkPrinterConfig `json:"network_printers"`
 	ScannerPorts    []string               `json:"scanner_ports"`
 	DefaultPrinter  string                 `json:"default_printer"`
+	AuthToken       string                 `json:"auth_token,omitempty"`
+	// AllowedOrigins intentionally has no ",omitempty": resolveAllowedOrigins
+	// distinguishes nil ("unset", fall back to dev defaults) from a non-nil
+	// empty slice ("explicitly disabled" via allowed_origins: []). omitempty
+	// would drop a marshaled []string{} from the JSON entirely, so it would
+	// round-trip back as nil on the next load and silently re-enable the dev
+	// default origins the operator turned off. Do not add it back.
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 // configMu serializes config load-modify-save; use RLock for read-only access.
@@ -89,11 +100,19 @@ func defaultConfig() *AgentConfig {
 func loadConfig() (*AgentConfig, error) {
 	configDir, err := getConfigDir()
 	if err != nil {
-		return defaultConfig(), nil
+		// Unusual (home dir undiscoverable) — not "config absent". Surface the
+		// error so the caller can decide: the auth path Fatals rather than
+		// silently falling back to defaultConfig() and later overwriting a
+		// real config with an empty one plus a freshly generated token.
+		return nil, err
 	}
 	root, err := os.OpenRoot(configDir)
 	if err != nil {
-		return defaultConfig(), nil
+		if os.IsNotExist(err) {
+			// ~/.idento doesn't exist yet — benign first run.
+			return defaultConfig(), nil
+		}
+		return nil, err
 	}
 	defer func() {
 		if closeErr := root.Close(); closeErr != nil {
@@ -137,15 +156,70 @@ func saveConfig(config *AgentConfig) error {
 			log.Printf("close config root: %v", closeErr)
 		}
 	}()
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(config, "", "  ") // #nosec G117 -- AuthToken field is intentionally serialized to config file
 	if err != nil {
 		return err
 	}
-	return root.WriteFile("agent_config.json", data, 0600)
+	if err := root.WriteFile("agent_config.json", data, 0600); err != nil {
+		return err
+	}
+	// WriteFile does not change the mode of a pre-existing file, so a config
+	// file that predates 0600 enforcement (or was hand-edited looser) would
+	// otherwise keep leaking the bearer token to other local users. Force the
+	// mode on every save regardless of whether the file already existed.
+	return root.Chmod("agent_config.json", 0600)
+}
+
+// generateAuthToken returns a 32-byte cryptographically-random token, hex-encoded.
+func generateAuthToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// ensureAuthToken sets cfg.AuthToken if empty. Returns whether it changed cfg.
+func ensureAuthToken(cfg *AgentConfig) (bool, error) {
+	if cfg.AuthToken != "" {
+		return false, nil
+	}
+	tok, err := generateAuthToken()
+	if err != nil {
+		return false, err
+	}
+	cfg.AuthToken = tok
+	return true, nil
+}
+
+// resolveAllowedOrigins returns the browser Origin allowlist: env override
+// (AGENT_ALLOWED_ORIGINS, CSV) first, then config, then dev defaults.
+//
+// An operator must be able to explicitly disable browser Origin auth by
+// setting AGENT_ALLOWED_ORIGINS="" or allowed_origins: [] in the config, so
+// we distinguish "unset" from "explicitly empty": the env var is honored
+// whenever it is present at all (even empty), and the config allowlist is
+// honored whenever it is non-nil (even an empty, explicit []). Only when
+// both are absent do we fall back to the dev defaults.
+func resolveAllowedOrigins(cfg *AgentConfig) []string {
+	if raw, ok := os.LookupEnv("AGENT_ALLOWED_ORIGINS"); ok {
+		var out []string
+		for _, o := range strings.Split(raw, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				out = append(out, o)
+			}
+		}
+		return out
+	}
+	if cfg.AllowedOrigins != nil {
+		return cfg.AllowedOrigins
+	}
+	return []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000"}
 }
 
 func main() {
 	port := flag.String("port", "12345", "Port to run the agent on")
+	host := flag.String("host", "127.0.0.1", "Host/interface to bind (default loopback; set 0.0.0.0 only if you understand the risk)")
 	useMock := flag.Bool("mock", false, "Use mock printers instead of real hardware")
 	flag.Parse()
 
@@ -1017,20 +1091,62 @@ func main() {
 		}
 	})
 
+	// Load config to obtain/create the agent auth token and origin allowlist.
+	//
+	// loadConfig only returns (defaultConfig(), nil) when the config is
+	// genuinely absent (no ~/.idento dir yet, or no agent_config.json in it —
+	// a benign first run). Any other failure — home dir undiscoverable,
+	// ~/.idento unreadable for a reason other than not existing, the file
+	// existing but malformed or unreadable — is surfaced as a non-nil error.
+	// Falling back to defaultConfig() here on error would be dangerous:
+	// ensureAuthToken below would then generate a new token,
+	// tokenJustGenerated would be true, and the subsequent saveConfig would
+	// overwrite the operator's real (network_printers, scanner_ports,
+	// default_printer, allowed_origins) with an empty config — permanent
+	// data loss. Fail loudly instead so the operator can fix or remove the
+	// file.
+	authCfg, err := loadConfig()
+	if err != nil {
+		log.Fatalf("Failed to load agent config from ~/.idento/agent_config.json: %v — fix or remove this file and restart the agent", err)
+	}
+	tokenJustGenerated, err := ensureAuthToken(authCfg)
+	if err != nil {
+		log.Fatalf("Failed to generate agent auth token: %v", err)
+	}
+	if tokenJustGenerated {
+		// A freshly generated token MUST be persisted: desktop reads the
+		// token only from the config file, so an in-memory-only token would
+		// make every desktop request 401 until the agent is restarted.
+		if err := saveConfig(authCfg); err != nil {
+			log.Fatalf("Failed to persist newly generated agent auth token to ~/.idento/agent_config.json: %v", err)
+		}
+	}
+	allowedOrigins := resolveAllowedOrigins(authCfg)
+	authorizer := httpauth.New(authCfg.AuthToken, allowedOrigins)
+
 	// Setup CORS to allow requests from localhost web app
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 	})
 
-	handler := c.Handler(mux)
+	// cors handles preflight/response headers; authorizer enforces server-side.
+	handler := c.Handler(authorizer.Middleware(mux))
 
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("🖨️  Idento Hardware Agent\n")
 	fmt.Printf("========================================\n")
-	fmt.Printf("Listening on: http://localhost:%s\n", *port)
+	fmt.Printf("Listening on: http://%s:%s\n", *host, *port)
+	if tokenJustGenerated {
+		// Print the freshly-generated token once so an operator can note it;
+		// on subsequent starts we avoid echoing the secret into logs.
+		fmt.Printf("🔑 New auth token generated (also saved to ~/.idento/agent_config.json):\n   %s\n", authCfg.AuthToken)
+	} else {
+		fmt.Printf("🔑 Auth token loaded from ~/.idento/agent_config.json (enabled)\n")
+	}
+	fmt.Printf("🌐 Allowed browser origins: %v\n", allowedOrigins)
 	fmt.Printf("\n📄 Available printers: %d\n", len(pm.ListPrinters()))
 	for _, name := range pm.ListPrinters() {
 		fmt.Printf("  - %s\n", name)
@@ -1042,7 +1158,7 @@ func main() {
 	fmt.Printf("========================================\n\n")
 
 	server := &http.Server{
-		Addr:              ":" + *port,
+		Addr:              *host + ":" + *port,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

@@ -5,6 +5,18 @@ use std::time::Duration;
 pub const AGENT_PORT: u16 = 12345;
 pub const AGENT_PORT_STR: &str = "12345";
 
+/// Read the shared agent auth token written by the agent to
+/// `~/.idento/agent_config.json` (key `auth_token`).
+fn read_agent_token() -> Option<String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()?;
+    let path = format!("{}/.idento/agent_config.json", home);
+    let data = std::fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&data).ok()?;
+    v.get("auth_token")?.as_str().map(|s| s.to_string())
+}
+
 /// Proxy a request to the local agent (avoids CORS from WebView).
 /// Body: { "method": "GET"|"POST", "path": "/health", "body": optional_string }
 #[tauri::command]
@@ -19,17 +31,29 @@ pub async fn agent_request(
         .build()
         .map_err(|e| e.to_string())?;
 
+    let token = read_agent_token();
+
     let response = match method.to_uppercase().as_str() {
-        "GET" => client.get(&url).send().await,
-        "POST" => {
-            let req = client.post(&url);
-            if let Some(ref b) = body {
-                req.header("Content-Type", "application/json").body(b.clone())
-            } else {
-                req
+        "GET" => {
+            let mut req = client.get(&url);
+            if let Some(ref t) = token {
+                req = req.header("Authorization", format!("Bearer {}", t));
             }
-            .send()
-            .await
+            req.send().await
+        }
+        "POST" => {
+            // The agent requires Content-Type: application/json on every mutating
+            // request, so set it unconditionally (even for body-less POSTs).
+            let mut req = client
+                .post(&url)
+                .header("Content-Type", "application/json");
+            if let Some(ref t) = token {
+                req = req.header("Authorization", format!("Bearer {}", t));
+            }
+            if let Some(ref b) = body {
+                req = req.body(b.clone());
+            }
+            req.send().await
         }
         _ => return Err(format!("Unsupported method: {}", method)),
     }

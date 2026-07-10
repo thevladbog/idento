@@ -141,7 +141,9 @@ export const agentApi = {
 
   clearLastScan: async () => {
     try {
-      await axios.post(`${AGENT_URL}/scan/clear`);
+      // Send an empty JSON body so the request carries Content-Type:
+      // application/json, which the agent requires on all mutating requests.
+      await axios.post(`${AGENT_URL}/scan/clear`, {});
     } catch (error) {
       console.error("Failed to clear scan", error);
     }
