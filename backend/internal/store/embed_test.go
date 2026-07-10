@@ -23,4 +23,7 @@ func TestEmbeddedMigrationsPresent(t *testing.T) {
 	if found["seed.sql"] {
 		t.Error("seed.sql must NOT be embedded (glob is *.up.sql)")
 	}
+	if found["000002_add_user_permissions.down.sql"] {
+		t.Error("*.down.sql files must NOT be embedded (glob is *.up.sql)")
+	}
 }
