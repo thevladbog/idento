@@ -299,8 +299,8 @@ func Generate(cfg Config, elements []BadgeElement, data map[string]interface{}) 
 	var b strings.Builder
 	b.WriteString("^XA\n")
 	b.WriteString("^CI28\n") // UTF-8
-	b.WriteString(fmt.Sprintf("^PW%d\n", widthDots))
-	b.WriteString(fmt.Sprintf("^LL%d\n", heightDots))
+	fmt.Fprintf(&b, "^PW%d\n", widthDots)
+	fmt.Fprintf(&b, "^LL%d\n", heightDots)
 	b.WriteString("^PR4\n")
 	b.WriteString("^LH0,0\n")
 

@@ -15,7 +15,7 @@ func main() {
 	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
+		log.Fatal("DATABASE_URL is not set (copy .env.example to .env for local development)")
 	}
 
 	pool, err := pgxpool.New(context.Background(), dbURL)
@@ -39,8 +39,8 @@ func main() {
 
 	rowsAffected := result.RowsAffected()
 	if rowsAffected == 0 {
-		log.Printf("❌ User with email '%s' not found", email)
+		log.Println("❌ No user found for the provided email")
 	} else {
-		log.Printf("✅ User '%s' is now a super admin!", email)
+		log.Println("✅ The provided user is now a super admin!")
 	}
 }
