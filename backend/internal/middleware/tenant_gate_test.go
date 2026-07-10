@@ -74,6 +74,26 @@ func TestGateBlocksExpiredSubscription(t *testing.T) {
 	}
 }
 
+// Pins the EndDate-based branch on its own: a non-active status that is NOT
+// in the expired/cancelled switch, with a past end_date, must block.
+func TestGateBlocksPastEndDateNonActiveStatus(t *testing.T) {
+	past := time.Now().Add(-24 * time.Hour)
+	fs := &gateFakeStore{status: "active", sub: &models.Subscription{Status: "trial", EndDate: &past}}
+	if rec := gateRequest(t, fs, 0, "/api/events"); rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (past end_date on non-active sub must block)", rec.Code)
+	}
+}
+
+// An active-status subscription is never blocked by end_date (billing may
+// lag); only non-active statuses combine with end_date.
+func TestGateAllowsActiveSubPastEndDate(t *testing.T) {
+	past := time.Now().Add(-24 * time.Hour)
+	fs := &gateFakeStore{status: "active", sub: &models.Subscription{Status: "active", EndDate: &past}}
+	if rec := gateRequest(t, fs, 0, "/api/events"); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (active sub passes regardless of end_date)", rec.Code)
+	}
+}
+
 func TestGateSkipsExemptPaths(t *testing.T) {
 	fs := &gateFakeStore{status: "suspended"}
 	if rec := gateRequest(t, fs, 0, "/api/me"); rec.Code != http.StatusOK {
