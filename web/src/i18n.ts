@@ -754,6 +754,17 @@ i18n
           lifecycle_archive_confirm: "Archive",
           lifecycle_archive_done: "Organization archived",
 
+          // Analytics
+          totalTenants: "Total Tenants",
+          paidTenants: "Paid Tenants",
+          paidConversion: "Paid Conversion",
+          activeEventsNow: "Active Events",
+          tenantsByStatus: "Tenants by Status",
+          tenantsByPlan: "Tenants by Plan",
+          signupsByWeek: "Signups by Week",
+          noDataYet: "No data yet",
+          analyticsLoadFailed: "Failed to load analytics",
+
           // Misc
           manage: "Manage",
           noEventsFound:
@@ -1598,6 +1609,17 @@ i18n
           lifecycle_archive_description: "«{{tenant}}» будет заблокирована для чтения и поставлена в очередь на удаление по истечении срока хранения. Это действие нельзя отменить из интерфейса.",
           lifecycle_archive_confirm: "Архивировать",
           lifecycle_archive_done: "Организация архивирована",
+
+          // Analytics
+          totalTenants: "Всего организаций",
+          paidTenants: "Платящих организаций",
+          paidConversion: "Конверсия в оплату",
+          activeEventsNow: "Активных мероприятий",
+          tenantsByStatus: "Организации по статусу",
+          tenantsByPlan: "Организации по тарифу",
+          signupsByWeek: "Регистрации по неделям",
+          noDataYet: "Данных пока нет",
+          analyticsLoadFailed: "Не удалось загрузить аналитику",
 
           // Misc
           manage: "Управление",
