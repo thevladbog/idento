@@ -446,7 +446,11 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
 	}
 	if status != "active" {
-		return c.JSON(http.StatusConflict, map[string]string{"error": "tenant is " + status + " — reactivate before impersonating"})
+		hint := "reactivate before impersonating"
+		if status == "archived" {
+			hint = "archived tenants cannot be impersonated"
+		}
+		return c.JSON(http.StatusConflict, map[string]string{"error": "tenant is " + status + " — " + hint})
 	}
 	token, expiresAt, err := generateImpersonationToken(claims.UserID, tenantID.String())
 	if err != nil {

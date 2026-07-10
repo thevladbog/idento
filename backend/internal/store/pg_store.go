@@ -9,6 +9,7 @@ import (
 	"idento/backend/migrations"
 	"io/fs"
 	"log"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -1062,6 +1063,9 @@ func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAna
 		a.TotalTenants += count
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tenants by status: %w", err)
+	}
 
 	rows, err = s.db.Query(ctx, `
 		SELECT COALESCE(p.slug, 'none'), COUNT(*)
@@ -1081,6 +1085,9 @@ func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAna
 		a.TenantsByPlan = append(a.TenantsByPlan, pc)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tenants by plan: %w", err)
+	}
 
 	rows, err = s.db.Query(ctx, `
 		SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD'), COUNT(*)
@@ -1099,6 +1106,9 @@ func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAna
 		a.SignupsByWeek = append(a.SignupsByWeek, tc)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("signups by week: %w", err)
+	}
 
 	if err := s.db.QueryRow(ctx, `
 		SELECT COUNT(*) FROM events
@@ -1125,6 +1135,9 @@ func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAna
 		a.CheckinsByDay = append(a.CheckinsByDay, tc)
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("checkins by day: %w", err)
+	}
 
 	if err := s.db.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT t.id)
@@ -1550,6 +1563,18 @@ func (s *PGStore) CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid
 
 // Audit
 
+// auditIPValue normalizes a client-supplied IP for the INET audit column.
+// c.RealIP() can carry spoofed/malformed forwarded values; an invalid string
+// would fail the INSERT and silently drop the audit row (callers are
+// best-effort), so invalid input degrades to NULL instead.
+func auditIPValue(ip string) interface{} {
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		return addr.String()
+	}
+	return nil
+}
+
+// LogAdminAction records a platform-operator action with request attribution.
 func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 	changesJSON, err := json.Marshal(changes)
 	if err != nil {
@@ -1559,7 +1584,7 @@ func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action 
 	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes, ip_address, user_agent)
 	          VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON, ip, userAgent)
+	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON, auditIPValue(ip), userAgent)
 	return execErr
 }
 
