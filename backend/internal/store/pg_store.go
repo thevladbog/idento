@@ -824,14 +824,6 @@ func (s *PGStore) DeleteFont(ctx context.Context, id uuid.UUID) error {
 
 // Multi-organization support methods
 
-func (s *PGStore) AddUserToTenant(ctx context.Context, userTenant *models.UserTenant) error {
-	query := `INSERT INTO user_tenants (id, user_id, tenant_id, role, joined_at) 
-			  VALUES ($1, $2, $3, $4, $5)
-			  ON CONFLICT (user_id, tenant_id) DO NOTHING`
-	_, err := s.db.Exec(ctx, query, userTenant.ID, userTenant.UserID, userTenant.TenantID, userTenant.Role, userTenant.JoinedAt)
-	return err
-}
-
 func (s *PGStore) RemoveUserFromTenant(ctx context.Context, userID, tenantID uuid.UUID) error {
 	query := `DELETE FROM user_tenants WHERE user_id = $1 AND tenant_id = $2`
 	_, err := s.db.Exec(ctx, query, userID, tenantID)
@@ -888,8 +880,8 @@ func (s *PGStore) UpdateUserTenantRole(ctx context.Context, userID, tenantID uui
 func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error) {
 	query := `
 		SELECT
-			t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
-			s.id as sub_id, s.plan_id as sub_plan_id, s.status, s.start_date, s.end_date,
+			t.id, t.name, t.status AS tenant_status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
+			s.id as sub_id, s.plan_id as sub_plan_id, s.status AS subscription_status, s.start_date, s.end_date,
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
 			COUNT(DISTINCT e.id) as events_count,
@@ -1248,28 +1240,6 @@ func (s *PGStore) UpdateSubscriptionPlan(ctx context.Context, plan *models.Subsc
 }
 
 // Subscriptions
-
-func (s *PGStore) CreateSubscription(ctx context.Context, sub *models.Subscription) error {
-	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom limits: %w", err)
-	}
-	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom features: %w", err)
-	}
-
-	query := `INSERT INTO subscriptions
-	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
-	           custom_limits, custom_features, payment_method, admin_notes, created_by)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	          RETURNING id, created_at, updated_at`
-
-	return s.db.QueryRow(ctx, query,
-		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
-		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,
-	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt)
-}
 
 // UpsertSubscription inserts or replaces the tenant's single subscription
 // row atomically — concurrent create attempts cannot 500 on UNIQUE(tenant_id).

@@ -38,7 +38,6 @@ type Store interface {
 	UpdateUserQRToken(ctx context.Context, userID uuid.UUID, token string, createdAt time.Time) error
 
 	// Multi-organization support
-	AddUserToTenant(ctx context.Context, userTenant *models.UserTenant) error
 	RemoveUserFromTenant(ctx context.Context, userID, tenantID uuid.UUID) error
 	GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*models.Tenant, error)
 	GetUserTenantRole(ctx context.Context, userID, tenantID uuid.UUID) (string, error)
@@ -96,7 +95,6 @@ type Store interface {
 	GetAllUsers(ctx context.Context, search string, tenantIDFilter string, limit int, offset int) ([]*models.User, int, error)
 
 	// Subscriptions
-	CreateSubscription(ctx context.Context, sub *models.Subscription) error
 	UpsertSubscription(ctx context.Context, sub *models.Subscription) error
 	GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.UUID) (*models.Subscription, error)
 	UpdateSubscription(ctx context.Context, sub *models.Subscription) error

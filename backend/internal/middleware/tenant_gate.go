@@ -27,6 +27,19 @@ type gateEntry struct {
 	expires time.Time
 }
 
+// sweepExpiredLocked removes expired entries; callers hold the write lock.
+// Bounded work: runs only when the cache exceeds maxGateCacheEntries, which
+// caps memory at roughly the live-tenant cardinality.
+const maxGateCacheEntries = 1024
+
+func sweepExpiredLocked(cache map[string]gateEntry, now time.Time) {
+	for k, v := range cache {
+		if now.After(v.expires) {
+			delete(cache, k)
+		}
+	}
+}
+
 func tenantGateWithTTL(s store.Store, ttl time.Duration) echo.MiddlewareFunc {
 	var (
 		mu    sync.RWMutex
@@ -67,6 +80,9 @@ func tenantGateWithTTL(s store.Store, ttl time.Duration) echo.MiddlewareFunc {
 			}
 			if ttl > 0 {
 				mu.Lock()
+				if len(cache) >= maxGateCacheEntries {
+					sweepExpiredLocked(cache, time.Now())
+				}
 				cache[claims.TenantID] = gateEntry{blocked: blocked, expires: time.Now().Add(ttl)}
 				mu.Unlock()
 			}

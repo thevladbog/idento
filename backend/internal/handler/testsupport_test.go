@@ -38,11 +38,9 @@ type fakeStore struct {
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
 	createUser                          func(u *models.User) error
-	addUserToTenant                     func(ut *models.UserTenant) error
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
 
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
-	createSubscription        func(sub *models.Subscription) error
 	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error
@@ -139,17 +137,11 @@ func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.Use
 	return f.getUserByEmail(email)
 }
 func (f *fakeStore) CreateUser(_ context.Context, u *models.User) error { return f.createUser(u) }
-func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) error {
-	return f.addUserToTenant(ut)
-}
 func (f *fakeStore) GetUserTenants(_ context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
 	return f.getUserTenants(userID)
 }
 func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (*models.Subscription, error) {
 	return f.getSubscriptionByTenantID(id)
-}
-func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
-	return f.createSubscription(sub)
 }
 func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.upsertSubscription(sub)
