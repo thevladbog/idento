@@ -85,6 +85,8 @@ type Store interface {
 	// Super Admin - Organizations Management
 	GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error)
 	GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*models.TenantWithStats, error)
+	// GetPlatformAnalytics aggregates operator-facing platform metrics (P1.6).
+	GetPlatformAnalytics(ctx context.Context) (*models.PlatformAnalytics, error)
 
 	// Subscription Plans
 	CreateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error
@@ -94,7 +96,6 @@ type Store interface {
 	GetAllUsers(ctx context.Context, search string, tenantIDFilter string, limit int, offset int) ([]*models.User, int, error)
 
 	// Subscriptions
-	CreateSubscription(ctx context.Context, sub *models.Subscription) error
 	UpsertSubscription(ctx context.Context, sub *models.Subscription) error
 	GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.UUID) (*models.Subscription, error)
 	UpdateSubscription(ctx context.Context, sub *models.Subscription) error
@@ -107,7 +108,9 @@ type Store interface {
 	CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 
 	// Audit
-	LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}) error
+	// LogAdminAction records a platform-operator action with request
+	// attribution (ip/user_agent from the HTTP request that caused it).
+	LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error
 	GetAuditLog(ctx context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error)
 
 	// Event Zones

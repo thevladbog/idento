@@ -20,10 +20,9 @@ type CreateEventRequest struct {
 
 // CreateEvent creates an event for the tenant from JWT; returns 400/500 on error.
 func (h *Handler) CreateEvent(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	tenantID, err := tenantIDFromContext(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
+		return writeErr(c, err)
 	}
 
 	req := new(CreateEventRequest)
@@ -59,10 +58,9 @@ func (h *Handler) CreateEvent(c echo.Context) error {
 }
 
 func (h *Handler) GetEvents(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	tenantID, err := tenantIDFromContext(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token claims"})
+		return writeErr(c, err)
 	}
 
 	events, err := h.Store.GetEventsByTenantID(c.Request().Context(), tenantID)

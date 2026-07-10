@@ -42,10 +42,9 @@ type SyncPushEntityChanges struct {
 }
 
 func (h *Handler) SyncPull(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	tenantID, err := tenantIDFromContext(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+		return writeErr(c, err)
 	}
 
 	lastPulledAtRaw := c.QueryParam("last_pulled_at")
@@ -107,10 +106,9 @@ func (h *Handler) SyncPull(c echo.Context) error {
 }
 
 func (h *Handler) SyncPush(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	tenantID, err := tenantIDFromContext(c)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+		return writeErr(c, err)
 	}
 
 	var req SyncPushRequest

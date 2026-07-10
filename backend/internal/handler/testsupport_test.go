@@ -47,10 +47,10 @@ type fakeStore struct {
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
 
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
-	createSubscription        func(sub *models.Subscription) error
 	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
-	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
+	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error
+	getAuditLog               func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error)
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
@@ -65,6 +65,8 @@ type fakeStore struct {
 	getEventStats         func(eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 
 	checkAttendeeLimit func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
+
+	getPlatformAnalytics func() (*models.PlatformAnalytics, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -171,17 +173,17 @@ func (f *fakeStore) GetUserTenants(_ context.Context, userID uuid.UUID) ([]*mode
 func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (*models.Subscription, error) {
 	return f.getSubscriptionByTenantID(id)
 }
-func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
-	return f.createSubscription(sub)
-}
 func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.upsertSubscription(sub)
 }
 func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.updateSubscription(sub)
 }
-func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
-	return f.logAdminAction(adminID, action, targetType, targetID, changes)
+func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+	return f.logAdminAction(adminID, action, targetType, targetID, changes, ip, userAgent)
+}
+func (f *fakeStore) GetAuditLog(_ context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error) {
+	return f.getAuditLog(filters, limit, offset)
 }
 func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.UUID) (string, error) {
 	return f.getUserTenantRole(userID, tenantID)
@@ -218,12 +220,16 @@ func (f *fakeStore) GetEventStats(_ context.Context, eventID uuid.UUID, zoneID *
 func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
 	return f.checkAttendeeLimit(tenantID, eventID, adding)
 }
+func (f *fakeStore) GetPlatformAnalytics(_ context.Context) (*models.PlatformAnalytics, error) {
+	return f.getPlatformAnalytics()
+}
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",
 // mimicking what middleware.JWT does, so handlers can be tested without a token.
 func newAuthedContext(e *echo.Echo, method, path, body, tenantID, role string) (echo.Context, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.Header.Set("User-Agent", "test-agent")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.Set("user", &models.JWTCustomClaims{

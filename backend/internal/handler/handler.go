@@ -54,6 +54,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api := e.Group("/api")
 	api.Use(middleware.JWT())
 	api.Use(middleware.TenantGate(h.Store))
+	api.Use(middleware.ImpersonationAudit(h.Store))
 	api.GET("/me", h.GetMe)
 	api.POST("/auth/switch-tenant", h.SwitchTenant)
 
@@ -167,6 +168,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		superAdmin.POST("/tenants/:id/suspend", h.SuspendTenant)
 		superAdmin.POST("/tenants/:id/reactivate", h.ReactivateTenant)
 		superAdmin.POST("/tenants/:id/archive", h.ArchiveTenant)
+		superAdmin.POST("/tenants/:id/impersonate", h.ImpersonateTenant)
 
 		// Users
 		superAdmin.GET("/users", h.GetAllUsersSuper)

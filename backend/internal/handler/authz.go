@@ -29,11 +29,21 @@ func writeErr(c echo.Context, err error) error {
 	return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal error"})
 }
 
-// tenantIDFromContext parses the caller's tenant UUID from JWT claims set by middleware.JWT.
-func tenantIDFromContext(c echo.Context) (uuid.UUID, error) {
+// claimsFromContext returns the JWT claims set by middleware.JWT, or a 401
+// httpError — handlers must never panic on a missing/mistyped context value.
+func claimsFromContext(c echo.Context) (*models.JWTCustomClaims, error) {
 	claims, ok := c.Get("user").(*models.JWTCustomClaims)
 	if !ok || claims == nil {
-		return uuid.Nil, newHTTPError(http.StatusUnauthorized, "Invalid token")
+		return nil, newHTTPError(http.StatusUnauthorized, "Invalid token")
+	}
+	return claims, nil
+}
+
+// tenantIDFromContext parses the caller's tenant UUID from JWT claims set by middleware.JWT.
+func tenantIDFromContext(c echo.Context) (uuid.UUID, error) {
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return uuid.Nil, err
 	}
 	tenantID, err := uuid.Parse(claims.TenantID)
 	if err != nil {

@@ -170,12 +170,15 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 	if isNew {
 		action = "create_subscription"
 	}
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "subscription", sub.ID, map[string]interface{}{
 		"old": oldSub,
 		"new": sub,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -212,11 +215,14 @@ func (h *Handler) CreateSubscriptionPlan(c echo.Context) error {
 	}
 
 	// Log admin action
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -248,11 +254,14 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	}
 
 	// Log admin action
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -298,12 +307,13 @@ func (h *Handler) GetTenantUsage(c echo.Context) error {
 	})
 }
 
-// GetSystemAnalytics returns overall system analytics
+// GetSystemAnalytics returns operator-facing platform aggregates (P1.6).
 func (h *Handler) GetSystemAnalytics(c echo.Context) error {
-	// TODO: Implement comprehensive system analytics
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Analytics coming soon",
-	})
+	analytics, err := h.Store.GetPlatformAnalytics(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute analytics"})
+	}
+	return c.JSON(http.StatusOK, analytics)
 }
 
 // GetAuditLog returns admin audit log
@@ -328,6 +338,9 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 	}
 
 	filters := make(map[string]interface{})
+	if action := c.QueryParam("action"); action != "" {
+		filters["action"] = action
+	}
 
 	logs, total, err := h.Store.GetAuditLog(c.Request().Context(), filters, limit, offset)
 	if err != nil {
@@ -357,9 +370,12 @@ func (h *Handler) CreateTenantSuper(c echo.Context) error {
 	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
 	}
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}); err != nil {
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusCreated, tenant)
@@ -393,9 +409,12 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 	if err := h.Store.UpdateTenantStatus(c.Request().Context(), tenantID, tr.to); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update tenant status"})
 	}
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}); err != nil {
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": tr.to})
@@ -404,3 +423,46 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 func (h *Handler) SuspendTenant(c echo.Context) error    { return h.setTenantStatus(c, "suspend") }
 func (h *Handler) ReactivateTenant(c echo.Context) error { return h.setTenantStatus(c, "reactivate") }
 func (h *Handler) ArchiveTenant(c echo.Context) error    { return h.setTenantStatus(c, "archive") }
+
+// ImpersonateTenant mints a 30-minute support session inside the target
+// tenant. Requires an active tenant; refuses nested impersonation.
+func (h *Handler) ImpersonateTenant(c echo.Context) error {
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	if claims.ImpersonatedBy != "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "nested impersonation is not allowed"})
+	}
+	tenantID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
+	}
+	status, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
+	}
+	if status == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
+	}
+	if status != "active" {
+		hint := "reactivate before impersonating"
+		if status == "archived" {
+			hint = "archived tenants cannot be impersonated"
+		}
+		return c.JSON(http.StatusConflict, map[string]string{"error": "tenant is " + status + " — " + hint})
+	}
+	token, expiresAt, err := generateImpersonationToken(claims.UserID, tenantID.String())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to mint impersonation token"})
+	}
+	adminID := uuid.MustParse(claims.UserID)
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "impersonate_tenant", "tenant", tenantID, map[string]interface{}{"expires_at": expiresAt}, c.RealIP(), c.Request().UserAgent()); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"token":      token,
+		"expires_at": expiresAt,
+		"tenant_id":  tenantID,
+	})
+}

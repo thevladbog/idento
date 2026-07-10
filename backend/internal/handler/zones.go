@@ -320,7 +320,10 @@ func (h *Handler) AssignStaffToZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	assignedByID := uuid.MustParse(claims.UserID)
 
 	assignment := &models.StaffZoneAssignment{
@@ -441,7 +444,13 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	}
 
 	// 1b. Only admin/manager or staff assigned to this zone may check attendees in.
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		if he, ok := err.(*httpError); ok {
+			return c.JSON(he.status, models.ZoneCheckInResponse{Success: false, Error: he.msg})
+		}
+		return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{Success: false, Error: "Internal error"})
+	}
 	if claims.Role != "admin" && claims.Role != "manager" {
 		callerID, err := uuid.Parse(claims.UserID)
 		if err != nil {
@@ -671,7 +680,10 @@ func (h *Handler) GetAvailableZones(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID := uuid.MustParse(claims.UserID)
 
 	ctx := c.Request().Context()

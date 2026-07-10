@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"idento/backend/internal/models"
 	"log"
 	"net/http"
 
@@ -11,7 +10,10 @@ import (
 
 // GetUserTenants returns all organizations/tenants the current user belongs to
 func (h *Handler) GetUserTenants(c echo.Context) error {
-	userClaims := c.Get("user").(*models.JWTCustomClaims)
+	userClaims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
@@ -57,7 +59,10 @@ func (h *Handler) GetTenant(c echo.Context) error {
 	}
 
 	// Verify user has access to this tenant
-	userClaims := c.Get("user").(*models.JWTCustomClaims)
+	userClaims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
@@ -94,7 +99,10 @@ func (h *Handler) UpdateTenant(c echo.Context) error {
 	}
 
 	// Verify user has admin access to this tenant
-	userClaims := c.Get("user").(*models.JWTCustomClaims)
+	userClaims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})

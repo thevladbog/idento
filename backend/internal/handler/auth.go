@@ -151,7 +151,10 @@ func (h *Handler) Login(c echo.Context) error {
 
 func (h *Handler) GetMe(c echo.Context) error {
 	// This will rely on middleware setting the user in context
-	user := c.Get("user").(*models.JWTCustomClaims)
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	return c.JSON(http.StatusOK, map[string]string{
 		"user_id":   user.UserID,
 		"tenant_id": user.TenantID,
@@ -179,13 +182,44 @@ func generateTokenForTenant(user *models.User, tenantID string, role string) (st
 	return token.SignedString([]byte(secret))
 }
 
+// generateImpersonationToken mints a short-lived token that acts inside the
+// target tenant with admin role but attributes every action to the operator:
+// UserID and ImpersonatedBy are both the super admin's id.
+func generateImpersonationToken(superAdminID, tenantID string) (string, time.Time, error) {
+	expiresAt := time.Now().Add(30 * time.Minute)
+	claims := &models.JWTCustomClaims{
+		UserID:         superAdminID,
+		TenantID:       tenantID,
+		Role:           "admin",
+		ImpersonatedBy: superAdminID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	secret := config.JWTSecret()
+	if secret == "" {
+		return "", time.Time{}, fmt.Errorf("JWT_SECRET environment variable not set")
+	}
+	signed, err := token.SignedString([]byte(secret))
+	return signed, expiresAt, err
+}
+
 type SwitchTenantRequest struct {
 	TenantID string `json:"tenant_id"`
 }
 
 func (h *Handler) SwitchTenant(c echo.Context) error {
 	// Get user from JWT token (set by middleware)
-	userClaims := c.Get("user").(*models.JWTCustomClaims)
+	userClaims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	// Impersonation sessions are sealed: no switching out of the target
+	// tenant (and no laundering an imp token into a clean 72h token).
+	if userClaims.ImpersonatedBy != "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "tenant switching is not available during impersonation"})
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})

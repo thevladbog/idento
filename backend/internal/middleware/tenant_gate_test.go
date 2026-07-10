@@ -153,4 +153,19 @@ func TestGateCachesDecision(t *testing.T) {
 	}
 }
 
+func TestSweepExpiredLocked(t *testing.T) {
+	now := time.Now()
+	cache := map[string]gateEntry{
+		"live":    {expires: now.Add(time.Minute)},
+		"expired": {expires: now.Add(-time.Minute)},
+	}
+	sweepExpiredLocked(cache, now)
+	if _, ok := cache["expired"]; ok {
+		t.Error("expired entry survived sweep")
+	}
+	if _, ok := cache["live"]; !ok {
+		t.Error("live entry was swept")
+	}
+}
+
 func contains(s, sub string) bool { return len(s) >= len(sub) && strings.Contains(s, sub) }

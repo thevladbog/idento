@@ -165,6 +165,30 @@ type AdminAuditLog struct {
 	CreatedAt   time.Time              `json:"created_at"`
 }
 
+// TimeCount is a single point in a time-bucketed series (signups, checkins).
+type TimeCount struct {
+	Period string `json:"period"` // YYYY-MM-DD (day) or ISO week start date
+	Count  int    `json:"count"`
+}
+
+// PlanCount is the tenant count for a single subscription plan.
+type PlanCount struct {
+	Plan  string `json:"plan"` // plan slug; "none" when tenant has no subscription
+	Count int    `json:"count"`
+}
+
+// PlatformAnalytics aggregates operator-facing platform metrics (P1.6).
+type PlatformAnalytics struct {
+	TenantsByStatus map[string]int `json:"tenants_by_status"`
+	TenantsByPlan   []PlanCount    `json:"tenants_by_plan"`
+	SignupsByWeek   []TimeCount    `json:"signups_by_week"` // last 8 weeks
+	ActiveEvents    int            `json:"active_events"`   // running today
+	CheckinsByDay   []TimeCount    `json:"checkins_by_day"` // last 14 days
+	TotalTenants    int            `json:"total_tenants"`
+	PaidTenants     int            `json:"paid_tenants"`    // active sub on a plan with price_monthly > 0
+	PaidConversion  float64        `json:"paid_conversion"` // paid / total, 0 when no tenants
+}
+
 // Event Zones models
 type EventZone struct {
 	ID                   uuid.UUID              `json:"id"`

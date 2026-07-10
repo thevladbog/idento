@@ -9,6 +9,7 @@ import (
 	"idento/backend/migrations"
 	"io/fs"
 	"log"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
@@ -900,8 +901,8 @@ func (s *PGStore) UpdateUserTenantRole(ctx context.Context, userID, tenantID uui
 func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error) {
 	query := `
 		SELECT
-			t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
-			s.id as sub_id, s.plan_id as sub_plan_id, s.status, s.start_date, s.end_date,
+			t.id, t.name, t.status AS tenant_status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
+			s.id as sub_id, s.plan_id as sub_plan_id, s.status AS subscription_status, s.start_date, s.end_date,
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
 			COUNT(DISTINCT e.id) as events_count,
@@ -1041,6 +1042,116 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	return &tws, nil
 }
 
+// GetPlatformAnalytics aggregates operator-facing platform metrics. All
+// queries are cheap index scans/aggregates over small operator tables;
+// callers are super-admin only.
+func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAnalytics, error) {
+	a := &models.PlatformAnalytics{TenantsByStatus: map[string]int{}}
+
+	rows, err := s.db.Query(ctx, `SELECT status, COUNT(*) FROM tenants GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("tenants by status: %w", err)
+	}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.TenantsByStatus[status] = count
+		a.TotalTenants += count
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tenants by status: %w", err)
+	}
+
+	rows, err = s.db.Query(ctx, `
+		SELECT COALESCE(p.slug, 'none'), COUNT(*)
+		FROM tenants t
+		LEFT JOIN subscriptions s ON s.tenant_id = t.id
+		LEFT JOIN subscription_plans p ON p.id = s.plan_id
+		GROUP BY 1 ORDER BY 2 DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("tenants by plan: %w", err)
+	}
+	for rows.Next() {
+		var pc models.PlanCount
+		if err := rows.Scan(&pc.Plan, &pc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.TenantsByPlan = append(a.TenantsByPlan, pc)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("tenants by plan: %w", err)
+	}
+
+	rows, err = s.db.Query(ctx, `
+		SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD'), COUNT(*)
+		FROM tenants
+		WHERE created_at >= date_trunc('week', NOW()) - INTERVAL '7 weeks'
+		GROUP BY 1 ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("signups by week: %w", err)
+	}
+	for rows.Next() {
+		var tc models.TimeCount
+		if err := rows.Scan(&tc.Period, &tc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.SignupsByWeek = append(a.SignupsByWeek, tc)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("signups by week: %w", err)
+	}
+
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE deleted_at IS NULL
+		  AND (start_date IS NULL OR start_date <= NOW())
+		  AND (end_date IS NULL OR end_date >= NOW())`).Scan(&a.ActiveEvents); err != nil {
+		return nil, fmt.Errorf("active events: %w", err)
+	}
+
+	rows, err = s.db.Query(ctx, `
+		SELECT to_char(date_trunc('day', checked_in_at), 'YYYY-MM-DD'), COUNT(*)
+		FROM attendees
+		WHERE checked_in_at >= NOW() - INTERVAL '14 days'
+		GROUP BY 1 ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("checkins by day: %w", err)
+	}
+	for rows.Next() {
+		var tc models.TimeCount
+		if err := rows.Scan(&tc.Period, &tc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.CheckinsByDay = append(a.CheckinsByDay, tc)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("checkins by day: %w", err)
+	}
+
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT t.id)
+		FROM tenants t
+		JOIN subscriptions s ON s.tenant_id = t.id AND s.status = 'active'
+		JOIN subscription_plans p ON p.id = s.plan_id AND p.price_monthly > 0`).Scan(&a.PaidTenants); err != nil {
+		return nil, fmt.Errorf("paid tenants: %w", err)
+	}
+	if a.TotalTenants > 0 {
+		a.PaidConversion = float64(a.PaidTenants) / float64(a.TotalTenants)
+	}
+	return a, nil
+}
+
 // Subscription Plans
 
 func (s *PGStore) CreateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error {
@@ -1162,28 +1273,6 @@ func (s *PGStore) UpdateSubscriptionPlan(ctx context.Context, plan *models.Subsc
 }
 
 // Subscriptions
-
-func (s *PGStore) CreateSubscription(ctx context.Context, sub *models.Subscription) error {
-	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom limits: %w", err)
-	}
-	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
-	if err != nil {
-		return fmt.Errorf("failed to marshal custom features: %w", err)
-	}
-
-	query := `INSERT INTO subscriptions
-	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
-	           custom_limits, custom_features, payment_method, admin_notes, created_by)
-	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	          RETURNING id, created_at, updated_at`
-
-	return s.db.QueryRow(ctx, query,
-		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
-		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,
-	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt)
-}
 
 // UpsertSubscription inserts or replaces the tenant's single subscription
 // row atomically — concurrent create attempts cannot 500 on UNIQUE(tenant_id).
@@ -1474,26 +1563,43 @@ func (s *PGStore) CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid
 
 // Audit
 
-func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}) error {
+// auditIPValue normalizes a client-supplied IP for the INET audit column.
+// c.RealIP() can carry spoofed/malformed forwarded values; an invalid string
+// would fail the INSERT and silently drop the audit row (callers are
+// best-effort), so invalid input degrades to NULL instead.
+func auditIPValue(ip string) interface{} {
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		return addr.String()
+	}
+	return nil
+}
+
+// LogAdminAction records a platform-operator action with request attribution.
+func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 	changesJSON, err := json.Marshal(changes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
 	}
 
-	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes)
-	          VALUES ($1, $2, $3, $4, $5)`
+	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes, ip_address, user_agent)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON)
+	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON, auditIPValue(ip), userAgent)
 	return execErr
 }
 
 func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error) {
-	query := `SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address, user_agent, created_at
-	          FROM admin_audit_log
+	where := ""
+	args := []interface{}{}
+	if action, ok := filters["action"].(string); ok && action != "" {
+		where = "WHERE action = $1"
+		args = append(args, action)
+	}
+	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address::text, user_agent, created_at
+	          FROM admin_audit_log %s
 	          ORDER BY created_at DESC
-	          LIMIT $1 OFFSET $2`
-
-	rows, err := s.db.Query(ctx, query, limit, offset)
+	          LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
+	rows, err := s.db.Query(ctx, query, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1522,8 +1628,9 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 	}
 
 	// Get total count
+	countQuery := "SELECT COUNT(*) FROM admin_audit_log " + where
 	var total int
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM admin_audit_log`).Scan(&total); err != nil {
+	if err := s.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("get audit log total count: %w", err)
 	}
 
