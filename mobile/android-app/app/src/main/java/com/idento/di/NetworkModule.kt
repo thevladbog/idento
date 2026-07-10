@@ -1,5 +1,6 @@
 package com.idento.di
 
+import com.idento.BuildConfig
 import com.idento.data.api.AuthInterceptor
 import com.idento.data.api.IdentoApi
 import com.idento.data.local.TokenManager
@@ -17,10 +18,7 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
-    
-    // Base URL - для эмулятора используем 10.0.2.2
-    private const val BASE_URL = "http://10.0.2.2:8080/"
-    
+
     @Provides
     @Singleton
     fun provideAuthInterceptor(tokenManager: TokenManager): AuthInterceptor {
@@ -31,7 +29,15 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(authInterceptor: AuthInterceptor): OkHttpClient {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            // Never log request/response bodies (login body carries the plaintext
+            // password; responses carry the JWT). HEADERS only, and only in debug.
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.HEADERS
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
+            redactHeader("Authorization")
+            redactHeader("Cookie")
         }
         
         return OkHttpClient.Builder()
@@ -47,7 +53,7 @@ object NetworkModule {
     @Singleton
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
         return Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(BuildConfig.BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
