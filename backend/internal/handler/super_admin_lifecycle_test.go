@@ -81,3 +81,25 @@ func TestCreateTenantSuper(t *testing.T) {
 		t.Fatalf("status=%d created=%v; want 201 + store call", rec.Code, created)
 	}
 }
+
+func TestGetAuditLogWithActionFilter(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return []*models.AdminAuditLog{}, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x?action=impersonate_tenant", "", uuid.New().String(), "admin")
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d; want 200", rec.Code)
+	}
+	if action, ok := capturedFilters["action"]; !ok || action != "impersonate_tenant" {
+		t.Errorf("filters[\"action\"]=%v; want 'impersonate_tenant'", action)
+	}
+}

@@ -328,6 +328,9 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 	}
 
 	filters := make(map[string]interface{})
+	if action := c.QueryParam("action"); action != "" {
+		filters["action"] = action
+	}
 
 	logs, total, err := h.Store.GetAuditLog(c.Request().Context(), filters, limit, offset)
 	if err != nil {
