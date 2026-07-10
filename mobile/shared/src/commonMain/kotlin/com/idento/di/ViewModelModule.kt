@@ -2,6 +2,7 @@ package com.idento.di
 
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.repository.AuthRepository
+import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
 import com.idento.platform.camera.CameraService
 import com.idento.presentation.attendees.AttendeesListViewModel
@@ -11,7 +12,11 @@ import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.settings.SettingsViewModel
 import com.idento.presentation.setup.AuthTokenSaver
+import com.idento.presentation.setup.CurrentUserIdProvider
+import com.idento.presentation.setup.EventLister
 import com.idento.presentation.setup.ManagerAuthenticator
+import com.idento.presentation.setup.ProvisioningTokenMinter
+import com.idento.presentation.setup.SetupEventViewModel
 import com.idento.presentation.setup.SetupLoginViewModel
 import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.template.DisplayTemplateViewModel
@@ -43,6 +48,24 @@ val viewModelModule = module {
             stationProvisioner = StationProvisioner(stationRepository::provisionStation),
             managerAuthenticator = ManagerAuthenticator(authRepository::login),
             authTokenSaver = AuthTokenSaver(authPreferences::saveAuthToken),
+            draft = get(),
+        )
+    }
+    factory {
+        // Same rationale as SetupLoginViewModel above — SetupEventViewModel takes narrow
+        // fun-interface seams (see SetupEventViewModel.kt) instead of these concrete classes
+        // directly. StationProvisioner/AuthTokenSaver are the exact same seams reused from
+        // SetupLoginViewModel.kt (same shape, same underlying method references).
+        val eventRepository: EventRepository = get()
+        val stationRepository: StationRepository = get()
+        val authRepository: AuthRepository = get()
+        val authPreferences: AuthPreferences = get()
+        SetupEventViewModel(
+            eventLister = EventLister(eventRepository::getEvents),
+            provisioningTokenMinter = ProvisioningTokenMinter(stationRepository::createProvisioningToken),
+            stationProvisioner = StationProvisioner(stationRepository::provisionStation),
+            authTokenSaver = AuthTokenSaver(authPreferences::saveAuthToken),
+            currentUserIdProvider = CurrentUserIdProvider(authRepository::getUserId),
             draft = get(),
         )
     }
