@@ -40,7 +40,13 @@ type AgentConfig struct {
 	ScannerPorts    []string               `json:"scanner_ports"`
 	DefaultPrinter  string                 `json:"default_printer"`
 	AuthToken       string                 `json:"auth_token,omitempty"`
-	AllowedOrigins  []string               `json:"allowed_origins,omitempty"`
+	// AllowedOrigins intentionally has no ",omitempty": resolveAllowedOrigins
+	// distinguishes nil ("unset", fall back to dev defaults) from a non-nil
+	// empty slice ("explicitly disabled" via allowed_origins: []). omitempty
+	// would drop a marshaled []string{} from the JSON entirely, so it would
+	// round-trip back as nil on the next load and silently re-enable the dev
+	// default origins the operator turned off. Do not add it back.
+	AllowedOrigins []string `json:"allowed_origins"`
 }
 
 // configMu serializes config load-modify-save; use RLock for read-only access.
@@ -94,11 +100,19 @@ func defaultConfig() *AgentConfig {
 func loadConfig() (*AgentConfig, error) {
 	configDir, err := getConfigDir()
 	if err != nil {
-		return defaultConfig(), nil
+		// Unusual (home dir undiscoverable) — not "config absent". Surface the
+		// error so the caller can decide: the auth path Fatals rather than
+		// silently falling back to defaultConfig() and later overwriting a
+		// real config with an empty one plus a freshly generated token.
+		return nil, err
 	}
 	root, err := os.OpenRoot(configDir)
 	if err != nil {
-		return defaultConfig(), nil
+		if os.IsNotExist(err) {
+			// ~/.idento doesn't exist yet — benign first run.
+			return defaultConfig(), nil
+		}
+		return nil, err
 	}
 	defer func() {
 		if closeErr := root.Close(); closeErr != nil {
@@ -1079,12 +1093,15 @@ func main() {
 
 	// Load config to obtain/create the agent auth token and origin allowlist.
 	//
-	// loadConfig only returns an error when the file exists but is malformed
-	// or unreadable (an absent file is not an error — it yields
-	// defaultConfig(), nil). Falling back to defaultConfig() here on error
-	// would be dangerous: ensureAuthToken below would then generate a new
-	// token, tokenJustGenerated would be true, and the subsequent saveConfig
-	// would overwrite the operator's real (network_printers, scanner_ports,
+	// loadConfig only returns (defaultConfig(), nil) when the config is
+	// genuinely absent (no ~/.idento dir yet, or no agent_config.json in it —
+	// a benign first run). Any other failure — home dir undiscoverable,
+	// ~/.idento unreadable for a reason other than not existing, the file
+	// existing but malformed or unreadable — is surfaced as a non-nil error.
+	// Falling back to defaultConfig() here on error would be dangerous:
+	// ensureAuthToken below would then generate a new token,
+	// tokenJustGenerated would be true, and the subsequent saveConfig would
+	// overwrite the operator's real (network_printers, scanner_ports,
 	// default_printer, allowed_origins) with an empty config — permanent
 	// data loss. Fail loudly instead so the operator can fix or remove the
 	// file.
