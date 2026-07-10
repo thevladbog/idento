@@ -4,6 +4,7 @@ import com.idento.data.preferences.AuthPreferences
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
+import com.idento.data.repository.ZoneRepository
 import com.idento.platform.camera.CameraService
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
@@ -13,13 +14,17 @@ import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.settings.SettingsViewModel
 import com.idento.presentation.setup.AuthTokenSaver
 import com.idento.presentation.setup.CurrentUserIdProvider
+import com.idento.presentation.setup.EventDaysCalculator
 import com.idento.presentation.setup.EventLister
+import com.idento.presentation.setup.EventLoader
 import com.idento.presentation.setup.ManagerAuthenticator
 import com.idento.presentation.setup.ProvisioningTokenMinter
+import com.idento.presentation.setup.SetupDayZoneViewModel
 import com.idento.presentation.setup.SetupEventViewModel
 import com.idento.presentation.setup.SetupLoginViewModel
 import com.idento.presentation.setup.SetupModeViewModel
 import com.idento.presentation.setup.StationProvisioner
+import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.template.DisplayTemplateViewModel
 import com.idento.presentation.template.TemplateEditorViewModel
 import org.koin.dsl.module
@@ -71,4 +76,19 @@ val viewModelModule = module {
         )
     }
     factory { SetupModeViewModel(draft = get()) }
+    factory {
+        // Same rationale as SetupEventViewModel above — SetupDayZoneViewModel takes narrow
+        // fun-interface seams (see SetupDayZoneViewModel.kt) instead of EventRepository/
+        // ZoneRepository directly. EventDaysCalculator wraps ZoneRepository.getEventDays, a
+        // plain non-suspend pure function, purely to keep the concrete repository type out of
+        // the ViewModel's constructor (see that file's kdoc).
+        val eventRepository: EventRepository = get()
+        val zoneRepository: ZoneRepository = get()
+        SetupDayZoneViewModel(
+            eventLoader = EventLoader(eventRepository::getEvent),
+            zoneLister = ZoneLister(zoneRepository::getStaffZones),
+            eventDaysCalculator = EventDaysCalculator(zoneRepository::getEventDays),
+            draft = get(),
+        )
+    }
 }
