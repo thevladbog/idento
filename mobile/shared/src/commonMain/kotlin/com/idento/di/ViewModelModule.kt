@@ -6,6 +6,8 @@ import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
 import com.idento.data.repository.ZoneRepository
 import com.idento.platform.camera.CameraService
+import com.idento.platform.printer.BluetoothPrinterService
+import com.idento.platform.printer.EthernetPrinterService
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
@@ -13,7 +15,9 @@ import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.settings.SettingsViewModel
 import com.idento.presentation.setup.AuthTokenSaver
+import com.idento.presentation.setup.BluetoothPrinterGateway
 import com.idento.presentation.setup.CurrentUserIdProvider
+import com.idento.presentation.setup.EthernetPrinterGateway
 import com.idento.presentation.setup.EventDaysCalculator
 import com.idento.presentation.setup.EventLister
 import com.idento.presentation.setup.EventLoader
@@ -23,6 +27,7 @@ import com.idento.presentation.setup.SetupDayZoneViewModel
 import com.idento.presentation.setup.SetupEventViewModel
 import com.idento.presentation.setup.SetupLoginViewModel
 import com.idento.presentation.setup.SetupModeViewModel
+import com.idento.presentation.setup.SetupPrinterViewModel
 import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.template.DisplayTemplateViewModel
@@ -88,6 +93,24 @@ val viewModelModule = module {
             eventLoader = EventLoader(eventRepository::getEvent),
             zoneLister = ZoneLister(zoneRepository::getStaffZones),
             eventDaysCalculator = EventDaysCalculator(zoneRepository::getEventDays),
+            draft = get(),
+        )
+    }
+    factory {
+        // Same rationale as the seams above — SetupPrinterViewModel takes narrow interface seams
+        // (see SetupPrinterViewModel.kt) instead of BluetoothPrinterService/EthernetPrinterService
+        // directly. Both are `expect class` themselves (rather than a plain class wrapping one)
+        // but the effect is identical: no `actual` exists outside androidMain/iosMain, so neither
+        // can be constructed from commonTest. BluetoothPrinterGateway needs two methods, so it's
+        // adapted via an anonymous object rather than a single method reference.
+        val bluetoothPrinterService: BluetoothPrinterService = get()
+        val ethernetPrinterService: EthernetPrinterService = get()
+        SetupPrinterViewModel(
+            bluetoothPrinterService = object : BluetoothPrinterGateway {
+                override suspend fun getPairedPrinters() = bluetoothPrinterService.getPairedPrinters()
+                override suspend fun printTest(address: String) = bluetoothPrinterService.printTest(address)
+            },
+            ethernetPrinterService = EthernetPrinterGateway(ethernetPrinterService::printTest),
             draft = get(),
         )
     }
