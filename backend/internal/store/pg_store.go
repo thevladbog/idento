@@ -193,16 +193,16 @@ func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, emai
 
 	user := &models.User{Email: email}
 	err = tx.QueryRow(ctx,
-		`SELECT id, tenant_id, role FROM users WHERE email = $1`, email).
-		Scan(&user.ID, &user.TenantID, &user.Role)
+		`SELECT id, tenant_id, role, is_super_admin, created_at, updated_at FROM users WHERE email = $1`, email).
+		Scan(&user.ID, &user.TenantID, &user.Role, &user.IsSuperAdmin, &user.CreatedAt, &user.UpdatedAt)
 	switch {
 	case err == pgx.ErrNoRows:
 		user.TenantID = tenant.ID
 		user.Role = "admin"
 		user.PasswordHash = passwordHash
 		if err := tx.QueryRow(ctx,
-			`INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id, created_at`,
-			user.TenantID, user.Email, user.PasswordHash).Scan(&user.ID, &user.CreatedAt); err != nil {
+			`INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id, created_at, updated_at`,
+			user.TenantID, user.Email, user.PasswordHash).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt); err != nil {
 			return nil, nil, err
 		}
 	case err != nil:
