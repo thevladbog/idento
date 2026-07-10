@@ -1,9 +1,12 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()] as any,
+  // vitest bundles vite@5.x internally; @vitejs/plugin-react resolves against the
+  // top-level vite@8.x, so react()'s Plugin type doesn't structurally match
+  // vitest's UserConfig['plugins'] — narrow, typed cast instead of `any`.
+  plugins: [react() as Plugin[]],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
