@@ -16,7 +16,7 @@ import kotlinx.serialization.json.Json
  * Заменяет Retrofit из Android версии
  */
 class ApiClient(
-    private val baseUrl: String = "http://10.0.2.2:8080", // Android emulator localhost
+    private val baseUrl: String = getDefaultBaseUrl(),
     private val tokenProvider: () -> String? = { null }
 ) {
     
@@ -36,10 +36,13 @@ class ApiClient(
             })
         }
         
-        // Logging
+        // Logging — HEADERS only (never bodies: the login body carries the plaintext
+        // password and responses carry the JWT), gated to debug, with the bearer token
+        // redacted from the header dump.
         install(Logging) {
             logger = Logger.DEFAULT
-            level = LogLevel.BODY
+            level = logLevelFor(isDebugBuild())
+            sanitizeHeader { header -> header.equals(HttpHeaders.Authorization, ignoreCase = true) }
         }
         
         // Authentication
@@ -84,3 +87,6 @@ class ApiClient(
  * Platform-specific HTTP client engine configuration
  */
 expect fun createPlatformHttpClient(config: HttpClientConfig<*>.() -> Unit): HttpClient
+
+/** HEADERS in debug (no bodies, so no password/JWT), NONE in release. Pure → unit-testable. */
+fun logLevelFor(isDebug: Boolean): LogLevel = if (isDebug) LogLevel.HEADERS else LogLevel.NONE

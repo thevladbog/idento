@@ -30,3 +30,10 @@ object NetworkConstants {
  * Get platform-specific base URL
  */
 expect fun getDefaultBaseUrl(): String
+
+/**
+ * Selects the base URL for the current build. Pure function so it can be unit-tested
+ * without a platform.
+ */
+fun resolveBaseUrl(isDebug: Boolean, devUrl: String, prodUrl: String): String =
+    if (isDebug) devUrl else prodUrl
