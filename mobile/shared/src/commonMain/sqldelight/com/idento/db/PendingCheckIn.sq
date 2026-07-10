@@ -11,13 +11,16 @@ CREATE TABLE PendingCheckIn (
 
 insert:
 INSERT INTO PendingCheckIn(attendeeCode, zoneId, eventDay, checkedInAt, attemptCount, lastAttemptAt, errorMessage)
-VALUES (?, ?, ?, ?, 0, NULL, NULL);
+VALUES (?, ?, ?, ?, ?, ?, ?);
 
 lastInsertRowId:
 SELECT last_insert_rowid();
 
 selectAll:
 SELECT * FROM PendingCheckIn ORDER BY id ASC;
+
+updateAttempt:
+UPDATE PendingCheckIn SET attemptCount = ?, lastAttemptAt = ?, errorMessage = ? WHERE id = ?;
 
 deleteById:
 DELETE FROM PendingCheckIn WHERE id = ?;

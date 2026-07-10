@@ -21,6 +21,9 @@ class SqlDelightOfflineDatabase(driverFactory: SqlDriverFactory) : OfflineDataba
                 zoneId = checkIn.zoneId,
                 eventDay = checkIn.eventDay,
                 checkedInAt = checkIn.checkedInAt,
+                attemptCount = checkIn.attemptCount.toLong(),
+                lastAttemptAt = checkIn.lastAttemptAt,
+                errorMessage = checkIn.errorMessage,
             )
             queries.lastInsertRowId().executeAsOne()
         }
