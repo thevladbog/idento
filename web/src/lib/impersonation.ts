@@ -37,6 +37,16 @@ export function endImpersonation(): void {
   window.location.href = '/super-admin/organizations';
 }
 
+/**
+ * Removes any impersonation artifacts WITHOUT restoring the parked token.
+ * Called on every successful authentication: a fresh login is a hard auth
+ * boundary — no prior operator session may survive it.
+ */
+export function clearImpersonationArtifacts(): void {
+  localStorage.removeItem(OPERATOR_TOKEN_KEY);
+  localStorage.removeItem(SESSION_KEY);
+}
+
 export function getImpersonation(): ImpersonationSession | null {
   const raw = localStorage.getItem(SESSION_KEY);
   if (!raw) return null;

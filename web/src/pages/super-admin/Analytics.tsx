@@ -184,7 +184,7 @@ export default function Analytics() {
 
         <Card>
           <CardHeader>
-            <CardTitle>{t('checkinsByDay')}</CardTitle>
+            <CardTitle>{t('platformCheckinsByDay')}</CardTitle>
           </CardHeader>
           <CardContent>
             {checkinsByDay.length === 0 ? (

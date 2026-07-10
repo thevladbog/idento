@@ -10,5 +10,9 @@ const styles: Record<string, string> = {
 export function StatusBadge({ status }: { status?: string }) {
   const { t } = useTranslation();
   const s = status || 'active';
-  return <Badge className={styles[s] ?? ''}>{t(`tenantStatus_${s}`, s)}</Badge>;
+  return (
+    <Badge variant={styles[s] ? undefined : 'outline'} className={styles[s] ?? ''}>
+      {t(`tenantStatus_${s}`, s)}
+    </Badge>
+  );
 }

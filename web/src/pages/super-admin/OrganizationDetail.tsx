@@ -106,7 +106,7 @@ export default function OrganizationDetail() {
       const { data } = await api.post(`/api/super-admin/tenants/${id}/impersonate`);
       startImpersonation(data.token, {
         tenantId: data.tenant_id,
-        tenantName: tenant?.tenant?.name ?? '',
+        tenantName: tenant?.tenant?.name || id || '',
         expiresAt: data.expires_at,
       });
     } catch (error: unknown) {

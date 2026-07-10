@@ -29,7 +29,7 @@ i18n
           error: "Error",
           created_at: "Created",
           tenantSuspended: "This organization is suspended. Contact support to restore access.",
-          impersonationBanner: "Support session: you are inside \"{{tenant}}\" — {{minutes}} min left",
+          impersonationBanner: "Support session: you are inside “{{tenant}}” — {{minutes}} min left",
           impersonationExit: "Exit session",
 
           // Auth
@@ -766,6 +766,7 @@ i18n
           tenantsByStatus: "Tenants by Status",
           tenantsByPlan: "Tenants by Plan",
           signupsByWeek: "Signups by Week",
+          platformCheckinsByDay: "Check-ins by Day",
           noDataYet: "No data yet",
           analyticsLoadFailed: "Failed to load analytics",
 
@@ -1626,6 +1627,7 @@ i18n
           tenantsByStatus: "Организации по статусу",
           tenantsByPlan: "Организации по тарифу",
           signupsByWeek: "Регистрации по неделям",
+          platformCheckinsByDay: "Чек-ины по дням",
           noDataYet: "Данных пока нет",
           analyticsLoadFailed: "Не удалось загрузить аналитику",
 
