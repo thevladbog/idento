@@ -45,7 +45,7 @@ type fakeStore struct {
 	createSubscription        func(sub *models.Subscription) error
 	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
-	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
+	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
@@ -154,8 +154,8 @@ func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscripti
 func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.updateSubscription(sub)
 }
-func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
-	return f.logAdminAction(adminID, action, targetType, targetID, changes)
+func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+	return f.logAdminAction(adminID, action, targetType, targetID, changes, ip, userAgent)
 }
 func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.UUID) (string, error) {
 	return f.getUserTenantRole(userID, tenantID)
@@ -172,6 +172,7 @@ func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid
 func newAuthedContext(e *echo.Echo, method, path, body, tenantID, role string) (echo.Context, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	req.Header.Set("User-Agent", "test-agent")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.Set("user", &models.JWTCustomClaims{

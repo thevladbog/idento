@@ -22,7 +22,7 @@ func TestUpdateTenantSubscriptionCreatesWhenMissing(t *testing.T) {
 			created = sub
 			return nil
 		},
-		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 			return nil
 		},
 	}

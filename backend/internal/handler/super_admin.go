@@ -175,7 +175,7 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "subscription", sub.ID, map[string]interface{}{
 		"old": oldSub,
 		"new": sub,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func (h *Handler) CreateSubscriptionPlan(c echo.Context) error {
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -252,7 +252,7 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
 		"plan": plan,
-	}); err != nil {
+	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 
@@ -359,7 +359,7 @@ func (h *Handler) CreateTenantSuper(c echo.Context) error {
 	}
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}); err != nil {
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusCreated, tenant)
@@ -395,7 +395,7 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 	}
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}); err != nil {
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": tr.to})

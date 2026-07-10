@@ -1462,16 +1462,16 @@ func (s *PGStore) CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid
 
 // Audit
 
-func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}) error {
+func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 	changesJSON, err := json.Marshal(changes)
 	if err != nil {
 		return fmt.Errorf("failed to marshal changes: %w", err)
 	}
 
-	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes)
-	          VALUES ($1, $2, $3, $4, $5)`
+	query := `INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes, ip_address, user_agent)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
-	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON)
+	_, execErr := s.db.Exec(ctx, query, adminID, action, targetType, targetID, changesJSON, ip, userAgent)
 	return execErr
 }
 

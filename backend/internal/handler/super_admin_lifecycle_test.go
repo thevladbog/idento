@@ -24,10 +24,12 @@ func lifecycleCtx(t *testing.T, fs *fakeStore, target uuid.UUID, action string) 
 func TestSuspendTenantFromActive(t *testing.T) {
 	target := uuid.New()
 	var saved string
+	var gotAction, gotIP, gotUA string
 	fs := &fakeStore{
 		getTenantStatus:    func(id uuid.UUID) (string, error) { return "active", nil },
 		updateTenantStatus: func(id uuid.UUID, s string) error { saved = s; return nil },
-		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+			gotAction, gotIP, gotUA = action, ip, userAgent
 			return nil
 		},
 	}
@@ -37,6 +39,9 @@ func TestSuspendTenantFromActive(t *testing.T) {
 	}
 	if code() != http.StatusOK || saved != "suspended" {
 		t.Fatalf("status=%d saved=%q; want 200/suspended", code(), saved)
+	}
+	if gotAction != "suspend_tenant" || gotIP == "" || gotUA == "" {
+		t.Errorf("audit attribution missing: action=%q ip=%q ua=%q", gotAction, gotIP, gotUA)
 	}
 }
 
@@ -63,7 +68,7 @@ func TestCreateTenantSuper(t *testing.T) {
 			created = true
 			return nil
 		},
-		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 			return nil
 		},
 	}
