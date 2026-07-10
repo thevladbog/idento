@@ -249,7 +249,17 @@ export default function UsersPage() {
         </div>
 
         {/* QR Token Dialog */}
-        <Dialog open={!!qrDialogUser} onOpenChange={(open) => !open && setQrDialogUser(null)}>
+        <Dialog
+          open={!!qrDialogUser}
+          onOpenChange={(open) => {
+            if (!open) {
+              // Drop the login credential from memory when the dialog closes
+              // (setting qrToken clears qrDataUrl via the effect above).
+              setQrDialogUser(null);
+              setQrToken('');
+            }
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t('qrAccessToken')}</DialogTitle>
