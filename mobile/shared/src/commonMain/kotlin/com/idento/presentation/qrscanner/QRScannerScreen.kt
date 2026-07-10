@@ -5,8 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -67,7 +66,7 @@ fun QRScannerScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Icon(
-                        Icons.Default.Search,
+                        AppIcons.Search,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = Color.White.copy(alpha = 0.7f)
@@ -106,7 +105,7 @@ fun QRScannerScreen(
                     .background(Color.Black.copy(alpha = 0.5f))
             ) {
                 Icon(
-                    Icons.Default.Close,
+                    AppIcons.Close,
                     contentDescription = "Close",
                     tint = Color.White
                 )
@@ -176,7 +175,7 @@ fun QRScannerScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Icon(
-                        Icons.Default.CheckCircle,
+                        AppIcons.CheckCircle,
                         contentDescription = null,
                         modifier = Modifier.size(80.dp),
                         tint = Color.White
@@ -227,7 +226,7 @@ fun QRScannerScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Icon(
-                        Icons.Default.Warning,
+                        AppIcons.Warning,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = Color.White
@@ -286,7 +285,7 @@ fun QRScannerScreen(
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Icon(Icons.Default.Edit, contentDescription = null)
+                    Icon(AppIcons.Edit, contentDescription = null)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Test Scan (Demo)")
                 }

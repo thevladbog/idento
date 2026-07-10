@@ -11,9 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -173,27 +171,27 @@ fun CheckinScreen(
         actions = listOf(
             ActionSheetItem(
                 title = stringResource(StringKey.VIEW_ALL_ATTENDEES),
-                icon = Icons.Default.Person,
+                icon = AppIcons.Person,
                 onClick = onNavigateToAttendeesList
             ),
             ActionSheetItem(
                 title = stringResource(StringKey.TERMINAL_MODE),
-                icon = Icons.Default.Search,
+                icon = AppIcons.Search,
                 onClick = onNavigateToQRScanner
             ),
             ActionSheetItem(
                 title = stringResource(StringKey.BADGE_TEMPLATE),
-                icon = Icons.Default.Edit,
+                icon = AppIcons.Edit,
                 onClick = onNavigateToTemplateEditor
             ),
             ActionSheetItem(
                 title = stringResource(StringKey.DISPLAY_SETTINGS),
-                icon = Icons.Default.Face,
+                icon = AppIcons.Face,
                 onClick = onNavigateToDisplayTemplate
             ),
             ActionSheetItem(
                 title = stringResource(StringKey.PRINT_SETTINGS),
-                icon = Icons.Default.Settings,
+                icon = AppIcons.Settings,
                 onClick = { showPrintSettings = true }
             )
         )
@@ -244,7 +242,7 @@ fun CheckinScreen(
                         }
                     }) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            AppIcons.AutoMirrored.ArrowBack,
                             contentDescription = "Back",
                             tint = if (isColoredStatus) Color.White else MaterialTheme.colorScheme.onBackground
                         )
@@ -254,7 +252,7 @@ fun CheckinScreen(
                     if (!isColoredStatus) {
                         IconButton(onClick = { showMenu = true }) {
                             Icon(
-                                Icons.Default.MoreVert,
+                                AppIcons.MoreVert,
                                 contentDescription = "Menu",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -327,7 +325,7 @@ fun CheckinScreen(
                                 )
                             } else {
                                 Icon(
-                                    Icons.Default.Check,
+                                    AppIcons.Check,
                                     contentDescription = null,
                                     modifier = Modifier.size(28.dp)
                                 )
@@ -410,7 +408,7 @@ private fun AttendeeInfoCard(
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        Icons.Default.Close,
+                        AppIcons.Close,
                         contentDescription = "Close",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -464,10 +462,10 @@ private fun StatusIndicatorSection(
         ) {
             Icon(
                 imageVector = when (status) {
-                    CheckinDisplayStatus.SUCCESS -> Icons.Default.Check
-                    CheckinDisplayStatus.REPEAT -> Icons.Default.Warning
-                    CheckinDisplayStatus.BLOCKED -> Icons.Default.Close
-                    else -> Icons.Default.Check
+                    CheckinDisplayStatus.SUCCESS -> AppIcons.Check
+                    CheckinDisplayStatus.REPEAT -> AppIcons.Warning
+                    CheckinDisplayStatus.BLOCKED -> AppIcons.Close
+                    else -> AppIcons.Check
                 },
                 contentDescription = null,
                 modifier = Modifier.size(60.dp),
@@ -556,7 +554,7 @@ private fun StatusIndicatorSection(
                         )
                     } else {
                         Icon(
-                            Icons.Default.Create,
+                            AppIcons.Create,
                             contentDescription = null,
                             tint = StatusGreen
                         )
@@ -582,7 +580,7 @@ private fun StatusIndicatorSection(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
-                    Icons.Default.Close,
+                    AppIcons.Close,
                     contentDescription = null,
                     tint = Color.White
                 )
@@ -648,7 +646,7 @@ private fun SearchSuggestionsCard(
                     }
                     
                     Icon(
-                        Icons.Default.KeyboardArrowRight,
+                        AppIcons.KeyboardArrowRight,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -774,7 +772,7 @@ private fun EmptyStateCard() {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Icon(
-            Icons.Default.Search,
+            AppIcons.Search,
             contentDescription = null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)

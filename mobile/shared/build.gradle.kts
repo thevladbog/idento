@@ -50,12 +50,9 @@ kotlin {
             implementation(compose.ui)
             implementation(compose.components.resources)
             implementation(compose.components.uiToolingPreview)
-            // Compose Multiplatform stopped publishing Material icons after 1.7.3 (the DSL
-            // accessor compose.materialIconsExtended was removed). Pin the last published
-            // multiplatform artifact so the existing androidx.compose.material.icons.* API keeps
-            // resolving on Android + iOS. TODO(mobile): vendor the ~24 used icons or adopt a
-            // maintained KMP icon library to drop this frozen dependency.
-            implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+            // Material icons: the ~24 icons used by the shared UI are vendored as plain
+            // ImageVectors in presentation/components/AppIcons.kt, so we no longer depend on the
+            // frozen `material-icons-extended:1.7.3` artifact (Compose MP stopped publishing it).
 
             // Kotlinx
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")

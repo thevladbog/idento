@@ -4,9 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.runtime.*
@@ -51,7 +49,7 @@ fun ZoneSelectScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = Strings.back)
+                        Icon(AppIcons.AutoMirrored.ArrowBack, contentDescription = Strings.back)
                     }
                 }
             )
@@ -62,7 +60,7 @@ fun ZoneSelectScreen(
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(
-                    imageVector = Icons.Default.Search,
+                    imageVector = AppIcons.Search,
                     contentDescription = Strings.scanZoneQR
                 )
             }
@@ -186,7 +184,7 @@ private fun ZoneCard(
                         label = { Text(Strings.registration) },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                                imageVector = AppIcons.CheckCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -208,17 +206,17 @@ private fun ZoneCard(
                     StatItem(
                         label = Strings.today,
                         value = zone.todayCheckins.toString(),
-                        icon = Icons.Default.DateRange
+                        icon = AppIcons.DateRange
                     )
                     StatItem(
                         label = Strings.total,
                         value = zone.totalCheckins.toString(),
-                        icon = Icons.Default.CheckCircle
+                        icon = AppIcons.CheckCircle
                     )
                     StatItem(
                         label = Strings.unique,
                         value = zone.uniqueAttendees.toString(),
-                        icon = Icons.Default.Person
+                        icon = AppIcons.Person
                     )
                 }
             }
@@ -230,7 +228,7 @@ private fun ZoneCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Info,
+                        imageVector = AppIcons.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -277,10 +275,10 @@ private fun StatItem(
 
 private fun getZoneIcon(zoneType: String): androidx.compose.ui.graphics.vector.ImageVector {
     return when (zoneType) {
-        "registration" -> Icons.Default.Check
-        "vip" -> Icons.Default.Star
-        "workshop" -> Icons.Default.Build
-        else -> Icons.Default.LocationOn
+        "registration" -> AppIcons.Check
+        "vip" -> AppIcons.Star
+        "workshop" -> AppIcons.Build
+        else -> AppIcons.LocationOn
     }
 }
 
