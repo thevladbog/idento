@@ -26,6 +26,8 @@ type fakeStore struct {
 	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
 	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
+	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
+	revokeAPIKey              func(id uuid.UUID) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -57,6 +59,12 @@ func (f *fakeStore) GetAttendeeZoneAccessByID(_ context.Context, id uuid.UUID) (
 }
 func (f *fakeStore) GetStaffZoneAssignments(_ context.Context, userID uuid.UUID) ([]*models.StaffZoneAssignment, error) {
 	return f.getStaffZoneAssignments(userID)
+}
+func (f *fakeStore) GetAPIKeysByEventID(_ context.Context, eventID uuid.UUID) ([]*models.APIKey, error) {
+	return f.getAPIKeysByEventID(eventID)
+}
+func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
+	return f.revokeAPIKey(id)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

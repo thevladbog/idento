@@ -100,6 +100,25 @@ func (h *Handler) RevokeAPIKey(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid key ID"})
 	}
 
+	// Verify the key actually belongs to eventID before revoking it. Without
+	// this check, ownership of *any* event would let a caller revoke *any*
+	// API key in the system by pairing their own event_id with a victim's
+	// key_id from another tenant's event (cross-tenant IDOR).
+	keys, err := h.Store.GetAPIKeysByEventID(context.Background(), eventID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch API keys"})
+	}
+	found := false
+	for _, k := range keys {
+		if k.ID == keyID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "API key not found"})
+	}
+
 	if err := h.Store.RevokeAPIKey(context.Background(), keyID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to revoke API key"})
 	}
