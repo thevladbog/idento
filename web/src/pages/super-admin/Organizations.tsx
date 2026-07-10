@@ -57,8 +57,8 @@ export default function Organizations() {
       setDialogOpen(false);
       await loadTenants();
     } catch (error: unknown) {
-      const errorMessage = (error instanceof Error && error.message) || t('createTenantFailed');
-      toast.error(errorMessage || t('createTenantFailed'));
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('createTenantFailed'));
     } finally {
       setCreating(false);
     }
@@ -138,10 +138,7 @@ export default function Organizations() {
           <h1 className="text-3xl font-bold mb-2">{t('organizations')}</h1>
           <p className="text-muted-foreground">{t('manageAllOrganizations')}</p>
         </div>
-        <Button
-          onClick={() => setDialogOpen(true)}
-          className="mb-2"
-        >
+        <Button onClick={() => setDialogOpen(true)}>
           + {t('createTenant')}
         </Button>
       </div>
