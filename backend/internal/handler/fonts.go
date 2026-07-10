@@ -314,6 +314,10 @@ func (h *Handler) DeleteEventFont(c echo.Context) error {
 		})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	// Verify font belongs to event
 	font, err := h.Store.GetFontByID(c.Request().Context(), fontID)
 	if err != nil {

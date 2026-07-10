@@ -30,3 +30,25 @@ func TestGetEventFonts_ForbidsForeignTenant(t *testing.T) {
 		t.Fatalf("expected 403, got %d", rec.Code)
 	}
 }
+
+func TestDeleteEventFont_ForbidsForeignTenant(t *testing.T) {
+	ownerTenant := uuid.New()
+	caller := uuid.New()
+	eventID := uuid.New()
+	fontID := uuid.New()
+	fs := &fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: ownerTenant}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodDelete, "/", "", caller.String(), "admin")
+	c.SetParamNames("event_id", "font_id")
+	c.SetParamValues(eventID.String(), fontID.String())
+
+	_ = h.DeleteEventFont(c)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
