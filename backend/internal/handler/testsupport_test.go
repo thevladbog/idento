@@ -53,8 +53,8 @@ type fakeStore struct {
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
 	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
-	applyBatchCheckin        func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
-	createCheckinOverride    func(o *models.CheckinOverride) error
+	applyBatchCheckin     func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+	createCheckinOverride func(o *models.CheckinOverride) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
