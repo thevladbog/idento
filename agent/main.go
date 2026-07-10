@@ -653,7 +653,7 @@ func main() {
 			return
 		}
 
-		log.Printf("Querying printer '%s' for fonts...", printerName)
+		log.Print("Querying printer for fonts...")
 
 		// Send comprehensive ZPL commands to query fonts from different memory locations
 		// Note: Most printers will PRINT the response on a label, not send it back via network

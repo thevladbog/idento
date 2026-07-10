@@ -22,20 +22,21 @@ const (
 
 // runDiscoveryCmd runs an external command with a timeout and retries with exponential backoff
 // on transient errors (including context.DeadlineExceeded). Cancels on timeout so the goroutine cannot hang.
-func runDiscoveryCmd(name string, args ...string) ([]byte, error) {
+// The command is built by newCmd at each attempt; callers pass a constant command name so the
+// executed binary is never derived from external input. label is used only for logging.
+func runDiscoveryCmd(label string, newCmd func(ctx context.Context) *exec.Cmd) ([]byte, error) {
 	var lastErr error
 	backoff := discoveryInitialBackoff
 	for attempt := 0; attempt < discoveryMaxRetries; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), discoveryCallTimeout)
-		cmd := exec.CommandContext(ctx, name, args...)
-		output, err := cmd.Output()
+		output, err := newCmd(ctx).Output()
 		cancel() // release resources and signal process to exit on timeout
 		if err == nil {
 			return output, nil
 		}
 		lastErr = err
 		if attempt < discoveryMaxRetries-1 {
-			log.Printf("discovery %s attempt %d failed: %v; retrying in %v", name, attempt+1, lastErr, backoff)
+			log.Printf("discovery %s attempt %d failed: %v; retrying in %v", label, attempt+1, lastErr, backoff)
 			time.Sleep(backoff)
 			backoff *= 2
 		}
@@ -72,10 +73,14 @@ func DiscoverSystemPrinters() ([]string, error) {
 // Falls back to lpstat -a if -p fails or returns empty; logs a warning if no printers found.
 func discoverMacOSPrinters() ([]string, error) {
 	// Use full path so discovery works when PATH is minimal (e.g. launchd)
-	output, err := runDiscoveryCmd("/usr/bin/lpstat", "-p")
+	output, err := runDiscoveryCmd("lpstat", func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "/usr/bin/lpstat", "-p")
+	})
 	if err != nil || len(output) == 0 {
 		// Fallback: all printers (lpstat -a), first column is printer name
-		output, err = runDiscoveryCmd("/usr/bin/lpstat", "-a")
+		output, err = runDiscoveryCmd("lpstat", func(ctx context.Context) *exec.Cmd {
+			return exec.CommandContext(ctx, "/usr/bin/lpstat", "-a")
+		})
 		if err != nil {
 			log.Printf("lpstat failed: %v", err)
 			return nil, fmt.Errorf("failed to execute lpstat: %w", err)
@@ -116,7 +121,9 @@ func discoverMacOSPrinters() ([]string, error) {
 // discoverLinuxPrinters discovers printers on Linux using lpstat (CUPS)
 func discoverLinuxPrinters() ([]string, error) {
 	// Same as macOS - both use CUPS
-	output, err := runDiscoveryCmd("lpstat", "-p")
+	output, err := runDiscoveryCmd("lpstat", func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "lpstat", "-p")
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute lpstat: %w", err)
 	}
@@ -139,7 +146,9 @@ func discoverLinuxPrinters() ([]string, error) {
 // Prefers PowerShell (Get-Printer) for reliable one-name-per-line output; falls back to wmic.
 func discoverWindowsPrinters() ([]string, error) {
 	// Primary: PowerShell, one printer name per line, no table header
-	output, err := runDiscoveryCmd("powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name")
+	output, err := runDiscoveryCmd("powershell", func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", "Get-Printer | Select-Object -ExpandProperty Name")
+	})
 	if err == nil && len(output) > 0 {
 		var printers []string
 		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
@@ -155,7 +164,9 @@ func discoverWindowsPrinters() ([]string, error) {
 	}
 
 	// Fallback: wmic (deprecated but still present on many Windows 10/11)
-	output, err = runDiscoveryCmd("wmic", "printer", "get", "name")
+	output, err = runDiscoveryCmd("wmic", func(ctx context.Context) *exec.Cmd {
+		return exec.CommandContext(ctx, "wmic", "printer", "get", "name")
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover printers (PowerShell and wmic): %w", err)
 	}

@@ -21,7 +21,7 @@ func main() {
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
+		log.Fatal("DATABASE_URL is not set (copy .env.example to .env for local development)")
 	}
 
 	// Connect to database
