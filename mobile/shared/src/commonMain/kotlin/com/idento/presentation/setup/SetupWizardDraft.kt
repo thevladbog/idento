@@ -10,13 +10,12 @@ import com.idento.data.model.StationMode
  * instance per `koinInject()` call site), so this plain holder is what actually survives
  * navigation between the wizard's screens.
  *
- * [deviceNumber] and [staffName] are deliberately NOT fields here: they are never chosen by
- * the user on any wizard screen — they're issued by the backend inside the provisioning
- * response (`ProvisionStationResponseDto.deviceNumber` / `ProvisionedStationConfigDto.staffName`,
- * see StationRepository.provisionStation), and only become known at the exact moment the
- * Complete screen calls that endpoint. Passing them straight into [toStationConfig] keeps that
- * data flow explicit and avoids a would-be "set it then immediately call toStationConfig()"
- * dance where a forgotten assignment could silently leave a stale/default value behind.
+ * [deviceNumber] and [staffName] are issued by the backend inside the provisioning response
+ * (`ProvisionStationResponseDto.deviceNumber` / `ProvisionedStationConfigDto.staffName`, see
+ * StationRepository.provisionStation) — never chosen by the user. The QR login path (Task 3)
+ * stashes them here the moment provisioning succeeds; the Complete screen (Task 8) reads them
+ * back out and passes them into [toStationConfig] explicitly, so the final build step keeps
+ * its data flow explicit rather than silently reaching into this draft.
  */
 class SetupWizardDraft {
     var eventId: String = ""
@@ -27,6 +26,8 @@ class SetupWizardDraft {
     var workPointName: String = ""
     var printer: PrinterConfig? = null
     var autoPrint: Boolean = false
+    var deviceNumber: Int = 0
+    var staffName: String = ""
 
     fun reset() {
         eventId = ""
@@ -37,6 +38,8 @@ class SetupWizardDraft {
         workPointName = ""
         printer = null
         autoPrint = false
+        deviceNumber = 0
+        staffName = ""
     }
 
     /**

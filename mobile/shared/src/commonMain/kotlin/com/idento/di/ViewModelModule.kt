@@ -1,11 +1,19 @@
 package com.idento.di
 
+import com.idento.data.preferences.AuthPreferences
+import com.idento.data.repository.AuthRepository
+import com.idento.data.repository.StationRepository
+import com.idento.platform.camera.CameraService
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
 import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.settings.SettingsViewModel
+import com.idento.presentation.setup.AuthTokenSaver
+import com.idento.presentation.setup.ManagerAuthenticator
+import com.idento.presentation.setup.SetupLoginViewModel
+import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.template.DisplayTemplateViewModel
 import com.idento.presentation.template.TemplateEditorViewModel
 import org.koin.dsl.module
@@ -23,4 +31,19 @@ val viewModelModule = module {
     factory { AttendeesListViewModel(get()) }
     factory { TemplateEditorViewModel(get()) }
     factory { DisplayTemplateViewModel(get(), get(), get()) }
+    factory {
+        // SetupLoginViewModel takes narrow fun-interface seams (see SetupLoginViewModel.kt)
+        // instead of these concrete classes directly, so it stays unit-testable with plain
+        // fakes — adapt the real singletons into them here via method references.
+        val stationRepository: StationRepository = get()
+        val authRepository: AuthRepository = get()
+        val authPreferences: AuthPreferences = get()
+        SetupLoginViewModel(
+            cameraService = get<CameraService>(),
+            stationProvisioner = StationProvisioner(stationRepository::provisionStation),
+            managerAuthenticator = ManagerAuthenticator(authRepository::login),
+            authTokenSaver = AuthTokenSaver(authPreferences::saveAuthToken),
+            draft = get(),
+        )
+    }
 }
