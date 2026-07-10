@@ -58,17 +58,17 @@ kotlin {
             implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
 
             // Kotlinx
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
             implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
             implementation("org.jetbrains.kotlinx:atomicfu:0.27.0")
             
             // Ktor (Network)
-            implementation("io.ktor:ktor-client-core:3.0.2")
-            implementation("io.ktor:ktor-client-content-negotiation:3.0.2")
-            implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.2")
-            implementation("io.ktor:ktor-client-logging:3.0.2")
-            implementation("io.ktor:ktor-client-auth:3.0.2")
+            implementation("io.ktor:ktor-client-core:3.5.1")
+            implementation("io.ktor:ktor-client-content-negotiation:3.5.1")
+            implementation("io.ktor:ktor-serialization-kotlinx-json:3.5.1")
+            implementation("io.ktor:ktor-client-logging:3.5.1")
+            implementation("io.ktor:ktor-client-auth:3.5.1")
             
             // Koin DI
             implementation("io.insert-koin:koin-core:4.0.0")
@@ -86,7 +86,7 @@ kotlin {
         
         androidMain.dependencies {
             // Ktor Android Engine
-            implementation("io.ktor:ktor-client-okhttp:3.0.2")
+            implementation("io.ktor:ktor-client-okhttp:3.5.1")
             
             // Koin Android
             implementation("io.insert-koin:koin-android:4.0.0")
@@ -97,12 +97,12 @@ kotlin {
         
         iosMain.dependencies {
             // Ktor iOS Engine
-            implementation("io.ktor:ktor-client-darwin:3.0.2")
+            implementation("io.ktor:ktor-client-darwin:3.5.1")
         }
         
         commonTest.dependencies {
             implementation(kotlin("test"))
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
         }
     }
 }
