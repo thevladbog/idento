@@ -74,7 +74,11 @@ func CheckAttendeeLimits(s store.Store) echo.MiddlewareFunc {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 			}
 			allowed, current, max, err := s.CheckAttendeeLimit(c.Request().Context(), tenantID, eventID, 1)
-			if err != nil || !allowed {
+			if err != nil {
+				// Store failure is not a limit violation — surface it honestly.
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check attendee limit"})
+			}
+			if !allowed {
 				return c.JSON(http.StatusForbidden, map[string]interface{}{
 					"error":            "Limit exceeded for attendees_per_event",
 					"current":          current,

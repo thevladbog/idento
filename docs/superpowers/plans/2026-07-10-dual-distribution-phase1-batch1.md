@@ -23,7 +23,7 @@
 
 ## File Structure
 
-```
+```text
 backend/
 ├── internal/handler/handler.go          (mod)  — RegisterRoutes(e, mode); TenantGate wiring; new attendee-limit middleware wiring; lifecycle routes
 ├── internal/handler/routes_mode_test.go (new)

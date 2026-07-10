@@ -397,9 +397,13 @@ func (h *Handler) GetUserZoneAssignments(c echo.Context) error {
 	}
 
 	// Membership in the caller's ACTIVE tenant (user_tenants) authorizes;
-	// non-members and unknown ids are the same uniform 404.
+	// non-members and unknown ids are the same uniform 404. A store failure
+	// is neither — surface it as 500 like the assignments lookup below.
 	role, err := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenantID)
-	if err != nil || role == "" {
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to verify user membership"})
+	}
+	if role == "" {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 

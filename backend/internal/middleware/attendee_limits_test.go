@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,10 +18,11 @@ type limitFakeStore struct {
 	store.Store
 	allowed      bool
 	current, max int
+	err          error
 }
 
 func (f *limitFakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
-	return f.allowed, f.current, f.max, nil
+	return f.allowed, f.current, f.max, f.err
 }
 
 func attendeeLimitRequest(t *testing.T, fs *limitFakeStore) *httptest.ResponseRecorder {
@@ -50,5 +52,14 @@ func TestAttendeeLimitPassesWhenUnderLimit(t *testing.T) {
 	rec := attendeeLimitRequest(t, &limitFakeStore{allowed: true, current: 3, max: 50})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+}
+
+// A store failure is not a limit violation — it must surface as 500, not a
+// misleading 403 with upgrade_required (PR #26 review).
+func TestAttendeeLimitStoreErrorIs500(t *testing.T) {
+	rec := attendeeLimitRequest(t, &limitFakeStore{err: errors.New("connection refused")})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
 }

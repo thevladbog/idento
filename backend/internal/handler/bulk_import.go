@@ -55,7 +55,10 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 
 	// P1.3: validate the whole batch against attendees_per_event before inserting.
 	allowed, current, max, err := h.Store.CheckAttendeeLimit(c.Request().Context(), event.TenantID, eventID, len(req.Attendees))
-	if err != nil || !allowed {
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to check attendee limit")
+	}
+	if !allowed {
 		return c.JSON(http.StatusForbidden, map[string]interface{}{
 			"error":            "Limit exceeded for attendees_per_event",
 			"current":          current,

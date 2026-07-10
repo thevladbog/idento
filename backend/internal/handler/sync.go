@@ -176,6 +176,9 @@ func (h *Handler) SyncPush(c echo.Context) error {
 	blockedEvents := make(map[uuid.UUID]bool, len(countByEvent))
 	for eventID, adding := range countByEvent {
 		allowed, _, _, err := h.Store.CheckAttendeeLimit(c.Request().Context(), tenantID, eventID, adding)
+		if err != nil {
+			c.Logger().Errorf("sync: attendee limit check failed (tenant %s, event %s): %v — failing closed", tenantID, eventID, err)
+		}
 		if err != nil || !allowed {
 			blockedEvents[eventID] = true
 		}
@@ -186,6 +189,7 @@ func (h *Handler) SyncPush(c echo.Context) error {
 			continue // event is at/over attendees_per_event; skip silently like other sync guards
 		}
 		if err := h.Store.CreateAttendee(c.Request().Context(), p.attendee); err != nil {
+			c.Logger().Errorf("sync: create attendee failed (tenant %s, event %s, attendee %s): %v", tenantID, p.eventID, p.attendee.ID, err)
 			continue
 		}
 	}
