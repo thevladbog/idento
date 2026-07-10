@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import api from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
 
@@ -18,6 +20,9 @@ export default function Organizations() {
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [tenantName, setTenantName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     loadTenants();
@@ -37,6 +42,32 @@ export default function Organizations() {
       console.error('Failed to load tenants:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateTenant = async () => {
+    const trimmedName = tenantName.trim();
+    if (!trimmedName) return;
+
+    setCreating(true);
+    try {
+      await api.post('/api/super-admin/tenants', { name: trimmedName });
+      toast.success(t('createTenantDone'));
+      setTenantName('');
+      setDialogOpen(false);
+      await loadTenants();
+    } catch (error: unknown) {
+      const errorMessage = (error instanceof Error && error.message) || t('createTenantFailed');
+      toast.error(errorMessage || t('createTenantFailed'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setTenantName('');
     }
   };
 
@@ -102,9 +133,17 @@ export default function Organizations() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">{t('organizations')}</h1>
-        <p className="text-muted-foreground">{t('manageAllOrganizations')}</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">{t('organizations')}</h1>
+          <p className="text-muted-foreground">{t('manageAllOrganizations')}</p>
+        </div>
+        <Button
+          onClick={() => setDialogOpen(true)}
+          className="mb-2"
+        >
+          + {t('createTenant')}
+        </Button>
       </div>
 
       {/* Filters */}
@@ -205,6 +244,43 @@ export default function Organizations() {
       <div className="mt-4 text-sm text-muted-foreground">
         {t('showing')} {filteredTenants.length} {t('of')} {tenants.length} {t('organizations')}
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('createTenantTitle')}</DialogTitle>
+            <DialogDescription>{t('createTenantDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Input
+              placeholder={t('tenantNamePlaceholder')}
+              value={tenantName}
+              onChange={(e) => setTenantName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && tenantName.trim() && !creating) {
+                  handleCreateTenant();
+                }
+              }}
+              disabled={creating}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => handleDialogOpenChange(false)}
+              disabled={creating}
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={handleCreateTenant}
+              disabled={creating || !tenantName.trim()}
+            >
+              {creating ? t('creating') : t('create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -661,6 +661,12 @@ i18n
           organizationName: "Organization Name",
           websitePlaceholder: "https://example.com",
           contactEmailPlaceholder: "contact@example.com",
+          createTenant: "Create Tenant",
+          createTenantTitle: "Create New Organization",
+          createTenantDescription: "The organization gets the default plan automatically.",
+          tenantNamePlaceholder: "Organization name",
+          createTenantDone: "Organization created successfully",
+          createTenantFailed: "Failed to create organization",
           
           // Super Admin
           superAdmin: "Super Admin",
@@ -1500,6 +1506,12 @@ i18n
           organizationName: "Название организации",
           websitePlaceholder: "https://example.com",
           contactEmailPlaceholder: "contact@example.com",
+          createTenant: "Создать организацию",
+          createTenantTitle: "Создать новую организацию",
+          createTenantDescription: "Организация получит план по умолчанию автоматически.",
+          tenantNamePlaceholder: "Название организации",
+          createTenantDone: "Организация успешно создана",
+          createTenantFailed: "Не удалось создать организацию",
           
           // Super Admin
           superAdmin: "Супер Админ",
