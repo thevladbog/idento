@@ -10,13 +10,16 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Users, Calendar, UserCheck } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
+import { StatusBadge } from '@/components/StatusBadge';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
+import { startImpersonation } from '@/lib/impersonation';
 
 export default function OrganizationDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
   interface TenantDetail {
-    tenant?: { id?: string; name?: string; website?: string; contact_email?: string; created_at?: string };
+    tenant?: { id?: string; name?: string; status?: string; website?: string; contact_email?: string; created_at?: string };
     subscription?: { plan_id?: string; status?: string; plan?: { name?: string } };
     users_count?: number;
     events_count?: number;
@@ -26,11 +29,13 @@ export default function OrganizationDetail() {
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
-  
+
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [customLimits, setCustomLimits] = useState('{}');
   const [adminNotes, setAdminNotes] = useState('');
   const [subscriptionStatus, setSubscriptionStatus] = useState('active');
+  const [impersonateOpen, setImpersonateOpen] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -93,6 +98,23 @@ export default function OrganizationDetail() {
     }
   };
 
+  const impersonate = async () => {
+    setImpersonating(true);
+    try {
+      const { data } = await api.post(`/api/super-admin/tenants/${id}/impersonate`);
+      startImpersonation(data.token, {
+        tenantId: data.tenant_id,
+        tenantName: tenant?.tenant?.name ?? '',
+        expiresAt: data.expires_at,
+      });
+    } catch (error: unknown) {
+      const err = error as { response?: { status?: number; data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('impersonateFailed'));
+      setImpersonating(false);
+      setImpersonateOpen(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8">
@@ -119,15 +141,30 @@ export default function OrganizationDetail() {
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/super-admin/organizations')}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold">{tenant.tenant?.name}</h1>
-          <p className="text-muted-foreground">{t('organizationDetails')}</p>
+      <div className="flex items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/super-admin/organizations')}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-3xl font-bold">{tenant.tenant?.name}</h1>
+              <StatusBadge status={tenant.tenant?.status} />
+            </div>
+            <p className="text-muted-foreground">{t('organizationDetails')}</p>
+          </div>
         </div>
+        <Button variant="outline" onClick={() => setImpersonateOpen(true)}>{t('impersonate')}</Button>
       </div>
+      <ConfirmActionDialog
+        open={impersonateOpen}
+        onOpenChange={setImpersonateOpen}
+        title={t('impersonateTitle')}
+        description={t('impersonateDescription', { tenant: tenant.tenant?.name })}
+        confirmLabel={t('impersonateConfirm')}
+        onConfirm={impersonate}
+        busy={impersonating}
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

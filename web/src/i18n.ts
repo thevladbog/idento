@@ -720,6 +720,15 @@ i18n
           myOrganizations: "My Organizations",
           yourRole: "Your role",
           switchedToOrganization: "Switched to {{name}}",
+          tenantStatus_active: "Active",
+          tenantStatus_suspended: "Suspended",
+          tenantStatus_archived: "Archived",
+          typeToConfirm: "Type “{{text}}” to confirm:",
+          impersonate: "Impersonate",
+          impersonateTitle: "Start support session?",
+          impersonateDescription: "You will act inside “{{tenant}}” with admin rights for 30 minutes. Every action is audit-logged and attributed to you.",
+          impersonateConfirm: "Start session",
+          impersonateFailed: "Failed to start impersonation session",
 
           // Misc
           manage: "Manage",
@@ -1532,6 +1541,15 @@ i18n
           myOrganizations: "Мои организации",
           yourRole: "Ваша роль",
           switchedToOrganization: "Переключено на {{name}}",
+          tenantStatus_active: "Активна",
+          tenantStatus_suspended: "Приостановлена",
+          tenantStatus_archived: "В архиве",
+          typeToConfirm: "Введите «{{text}}» для подтверждения:",
+          impersonate: "Войти как поддержка",
+          impersonateTitle: "Начать сессию поддержки?",
+          impersonateDescription: "Вы будете действовать внутри организации «{{tenant}}» с правами администратора 30 минут. Каждое действие попадает в аудит с вашей атрибуцией.",
+          impersonateConfirm: "Начать сессию",
+          impersonateFailed: "Не удалось начать сессию поддержки",
 
           // Misc
           manage: "Управление",
