@@ -51,6 +51,11 @@ actual class CameraService(private val context: Context) {
             val providerFuture = ProcessCameraProvider.getInstance(context)
             providerFuture.addListener({
                 val provider = providerFuture.get()
+                if (!isCurrentlyScanning) {
+                    // stopScanning() ran while the provider future was still resolving —
+                    // don't bind a camera the caller already asked to stop.
+                    return@addListener
+                }
                 cameraProvider = provider
 
                 val analysis = ImageAnalysis.Builder()
