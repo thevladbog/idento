@@ -77,6 +77,12 @@ configurations.all {
 }
 
 dependencies {
+    // KMP shared module — the mobile-redesign UI (design system, wizard, registration screens)
+    implementation(project(":shared"))
+
+    // Koin (bootstraps :shared's DI graph)
+    implementation("io.insert-koin:koin-android:4.0.0")
+
     // Core Android
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

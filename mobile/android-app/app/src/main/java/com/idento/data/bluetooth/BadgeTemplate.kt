@@ -79,9 +79,9 @@ object BadgeTemplate {
             appendLine()
             
             // Компания
-            if (attendee.company.isNotEmpty()) {
+            if (!attendee.company.isNullOrEmpty()) {
                 append(ZplImageText.generateSmartText(
-                    text = attendee.company,
+                    text = attendee.company.orEmpty(),
                     x = 50,
                     y = 280,
                     fontHeight = 50,
@@ -93,10 +93,10 @@ object BadgeTemplate {
             }
             
             // Должность
-            if (attendee.position.isNotEmpty()) {
-                val yPos = if (attendee.company.isNotEmpty()) 350 else 280
+            if (!attendee.position.isNullOrEmpty()) {
+                val yPos = if (!attendee.company.isNullOrEmpty()) 350 else 280
                 append(ZplImageText.generateSmartText(
-                    text = attendee.position,
+                    text = attendee.position.orEmpty(),
                     x = 50,
                     y = yPos,
                     fontHeight = 40,
@@ -158,9 +158,9 @@ object BadgeTemplate {
             appendLine()
             
             // Компания (если есть)
-            if (attendee.company.isNotEmpty()) {
+            if (!attendee.company.isNullOrEmpty()) {
                 append(ZplImageText.generateSmartText(
-                    text = attendee.company,
+                    text = attendee.company.orEmpty(),
                     x = 20,
                     y = 100,
                     fontHeight = 30,
@@ -228,14 +228,14 @@ object BadgeTemplate {
             appendLine("^FO50,220^A0N,90,90^FD${escapeZPL(fullName)}^FS")
             
             // Компания
-            if (attendee.company.isNotEmpty()) {
-                appendLine("^FO50,350^A0N,55,55^FD${escapeZPL(attendee.company)}^FS")
+            if (!attendee.company.isNullOrEmpty()) {
+                appendLine("^FO50,350^A0N,55,55^FD${escapeZPL(attendee.company.orEmpty())}^FS")
             }
             
             // Должность
-            if (attendee.position.isNotEmpty()) {
-                val yPos = if (attendee.company.isNotEmpty()) 430 else 350
-                appendLine("^FO50,$yPos^A0N,45,45^FD${escapeZPL(attendee.position)}^FS")
+            if (!attendee.position.isNullOrEmpty()) {
+                val yPos = if (!attendee.company.isNullOrEmpty()) 430 else 350
+                appendLine("^FO50,$yPos^A0N,45,45^FD${escapeZPL(attendee.position.orEmpty())}^FS")
             }
             
             // Большой QR код
@@ -259,9 +259,9 @@ object BadgeTemplate {
         return template
             .replace("{{first_name}}", escapeZPL(attendee.firstName))
             .replace("{{last_name}}", escapeZPL(attendee.lastName))
-            .replace("{{company}}", escapeZPL(attendee.company))
-            .replace("{{position}}", escapeZPL(attendee.position))
-            .replace("{{email}}", escapeZPL(attendee.email))
+            .replace("{{company}}", escapeZPL(attendee.company.orEmpty()))
+            .replace("{{position}}", escapeZPL(attendee.position.orEmpty()))
+            .replace("{{email}}", escapeZPL(attendee.email.orEmpty()))
             .replace("{{code}}", attendee.code)
             .replace("{{full_name}}", escapeZPL("${attendee.firstName} ${attendee.lastName}"))
     }
@@ -412,9 +412,9 @@ object BadgeTemplate {
             "first_name" -> attendee.firstName
             "last_name" -> attendee.lastName
             "full_name" -> "${attendee.firstName} ${attendee.lastName}"
-            "company" -> attendee.company
-            "position" -> attendee.position
-            "email" -> attendee.email
+            "company" -> attendee.company ?: ""
+            "position" -> attendee.position ?: ""
+            "email" -> attendee.email ?: ""
             "code" -> attendee.code
             else -> {
                 // Ищем в custom fields
