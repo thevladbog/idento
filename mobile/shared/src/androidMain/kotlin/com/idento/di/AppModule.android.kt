@@ -2,6 +2,7 @@ package com.idento.di
 
 import android.content.Context
 import com.idento.data.storage.DataStoreFactory
+import com.idento.data.storage.SecureStore
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -10,6 +11,10 @@ import org.koin.core.component.KoinComponent
 
 actual fun createDataStoreFactory(): DataStoreFactory {
     return DataStoreFactory(object : KoinComponent {}.getKoin().get())
+}
+
+actual fun createSecureStore(): SecureStore {
+    return SecureStore(object : KoinComponent {}.getKoin().get())
 }
 
 actual fun createBluetoothPrinterService(): BluetoothPrinterService {
@@ -30,6 +35,7 @@ actual fun createCameraService(): CameraService {
 val androidModule = org.koin.dsl.module {
     single<Context> { androidContext() }
     single { DataStoreFactory(get()) }
+    single { SecureStore(get()) }
     single { BluetoothPrinterService(get()) }
     single { EthernetPrinterService() }
     single { CameraService(get()) }

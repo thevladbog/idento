@@ -40,6 +40,27 @@ kotlin {
             }
         }
     }
+
+    // MOBILE-SEC-03: the K/N static-cache builder throws when it tries to cache
+    // org.jetbrains.androidx.navigation:navigation-runtime:2.8.0-alpha10 while linking the
+    // *test* binaries only (a reified inline fun's synthetic "AUXILIARY_GENERATED_DECLARATION"
+    // isn't found while building the library cache; main framework linking is unaffected).
+    // Disabling the native cache for just the test executables unblocks
+    // `:shared:iosSimulatorArm64Test` without touching the shipped app framework's cache.
+    // Safe to remove once the alpha navigation-compose artifact is upgraded and this no longer
+    // reproduces.
+    @OptIn(org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeCacheApi::class)
+    targets.filterIsInstance<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().forEach { target ->
+        target.binaries.all {
+            if (this is org.jetbrains.kotlin.gradle.plugin.mpp.TestExecutable) {
+                disableNativeCache(
+                    org.jetbrains.kotlin.gradle.plugin.mpp.DisableCacheInKotlinVersion.`2_3_21`,
+                    "navigation-runtime:2.8.0-alpha10 static-cache build fails for test binaries " +
+                        "(AUXILIARY_GENERATED_DECLARATION getBackStackEntry not found)"
+                )
+            }
+        }
+    }
     
     sourceSets {
         commonMain.dependencies {

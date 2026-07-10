@@ -15,6 +15,7 @@ import com.idento.data.repository.EventRepository
 import com.idento.data.repository.ZoneRepository
 import com.idento.data.repository.OfflineCheckInRepository
 import com.idento.data.storage.DataStoreFactory
+import com.idento.data.storage.SecureStore
 import com.idento.data.storage.OfflineDatabaseImpl
 import com.idento.data.sync.SyncService
 import com.idento.data.sync.NetworkMonitorImpl
@@ -31,10 +32,13 @@ import org.koin.dsl.module
 val appModule = module {
     // DataStore Factory (platform-specific)
     single { createDataStoreFactory() }
-    
+
+    // Secure store (platform-specific: iOS Keychain / Android Keystore)
+    single { createSecureStore() }
+
     // Preferences (lazy - don't initialize until needed)
     single { AppPreferences(get()) }
-    single { AuthPreferences(get()) }
+    single { AuthPreferences(get(), get()) }
     single { DisplayTemplatePreferences(get()) }
     
     // API Client
@@ -81,6 +85,7 @@ val appModule = module {
  * Platform-specific service creation
  */
 expect fun createDataStoreFactory(): DataStoreFactory
+expect fun createSecureStore(): SecureStore
 expect fun createBluetoothPrinterService(): BluetoothPrinterService
 expect fun createEthernetPrinterService(): EthernetPrinterService
 expect fun createCameraService(): CameraService
