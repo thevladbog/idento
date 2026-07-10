@@ -40,6 +40,33 @@ func TestAuthorize(t *testing.T) {
 		{"wrong token", newReq("GET", "/printers", "127.0.0.1:12345", "", "", "Bearer nope"), http.StatusUnauthorized, false},
 		{"non-loopback host", newReq("GET", "/printers", "evil.example.com", "http://localhost:5173", "", "Bearer secret-token-abc"), http.StatusForbidden, false},
 		{"POST without json content-type", newReq("POST", "/print", "127.0.0.1:12345", "http://localhost:5173", "text/plain", ""), http.StatusUnsupportedMediaType, false},
+		{"IPv6 loopback host with valid token", newReq("GET", "/printers", "[::1]:12345", "", "", "Bearer secret-token-abc"), http.StatusOK, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			status, ok := a.authorize(c.req)
+			if ok != c.wantOK || status != c.want {
+				t.Fatalf("authorize() = (%d, %v), want (%d, %v)", status, ok, c.want, c.wantOK)
+			}
+		})
+	}
+}
+
+// TestAuthorize_EmptyTokenConfig ensures that disabling token auth (empty
+// configured token) never lets an empty or absent bearer credential through;
+// only an allow-listed Origin may authorize the request in that mode.
+func TestAuthorize_EmptyTokenConfig(t *testing.T) {
+	a := New("", []string{"http://localhost:5173"})
+
+	cases := []struct {
+		name   string
+		req    *http.Request
+		want   int
+		wantOK bool
+	}{
+		{"empty bearer token rejected", newReq("GET", "/printers", "127.0.0.1:12345", "", "", "Bearer "), http.StatusUnauthorized, false},
+		{"no auth header rejected", newReq("GET", "/printers", "127.0.0.1:12345", "", "", ""), http.StatusUnauthorized, false},
+		{"allowlisted origin still passes", newReq("GET", "/printers", "127.0.0.1:12345", "http://localhost:5173", "", ""), http.StatusOK, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
