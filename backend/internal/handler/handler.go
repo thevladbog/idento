@@ -109,6 +109,9 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.GET("/zones/:zone_id/checkins", h.GetZoneCheckins)
 	api.GET("/attendees/:attendee_id/zone-history", h.GetAttendeeZoneHistory)
 
+	// Mobile zone-control scan (structured verdict, no rate limit — legitimate high-frequency op)
+	api.POST("/zones/:zone_id/scan", h.ZoneScan)
+
 	// Mobile API - filtered by staff permissions
 	api.GET("/mobile/events/:event_id/zones", h.GetAvailableZones)
 	api.GET("/mobile/zones/:zone_id/days", h.GetZoneDays)

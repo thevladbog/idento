@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"time"
@@ -24,6 +25,10 @@ type fakeStore struct {
 	getUserByID               func(id uuid.UUID) (*models.User, error)
 	getUsersByTenantID        func(tenantID uuid.UUID) ([]*models.User, error)
 	getZoneStaffAssign        func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
+	checkZoneAccessAt         func(attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error)
+	createZoneScanLog         func(zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error
+	checkAttendeeZoneCheckin  func(attendeeID, zoneID uuid.UUID, date time.Time) (*models.ZoneCheckin, error)
+	createZoneCheckin         func(checkin *models.ZoneCheckin) error
 	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
 	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
@@ -86,6 +91,18 @@ func (f *fakeStore) GetUsersByTenantID(_ context.Context, tenantID uuid.UUID) ([
 }
 func (f *fakeStore) GetZoneStaffAssignments(_ context.Context, zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error) {
 	return f.getZoneStaffAssign(zoneID)
+}
+func (f *fakeStore) CheckZoneAccessAt(_ context.Context, attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error) {
+	return f.checkZoneAccessAt(attendeeID, zoneID, at)
+}
+func (f *fakeStore) CreateZoneScanLog(_ context.Context, zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error {
+	return f.createZoneScanLog(zoneID, attendeeID, verdict)
+}
+func (f *fakeStore) CheckAttendeeZoneCheckin(_ context.Context, attendeeID, zoneID uuid.UUID, date time.Time) (*models.ZoneCheckin, error) {
+	return f.checkAttendeeZoneCheckin(attendeeID, zoneID, date)
+}
+func (f *fakeStore) CreateZoneCheckin(_ context.Context, checkin *models.ZoneCheckin) error {
+	return f.createZoneCheckin(checkin)
 }
 func (f *fakeStore) GetAttendeeByCode(_ context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
 	return f.getAttendeeByCode(eventID, code)
@@ -170,4 +187,9 @@ func newAuthedContextWithUserID(e *echo.Echo, method, path, body, tenantID strin
 		Role:     role,
 	})
 	return c, rec
+}
+
+// jsonUnmarshalBody decodes a recorded response body into v.
+func jsonUnmarshalBody(rec *httptest.ResponseRecorder, v interface{}) error {
+	return json.Unmarshal(rec.Body.Bytes(), v)
 }
