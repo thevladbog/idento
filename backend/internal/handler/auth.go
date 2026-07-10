@@ -2,10 +2,10 @@ package handler
 
 import (
 	"fmt"
+	"idento/backend/internal/config"
 	"idento/backend/internal/models"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -201,8 +201,7 @@ func generateTokenForTenant(user *models.User, tenantID string, role string) (st
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	// Get secret from env - fail if not set for security
-	secret := os.Getenv("JWT_SECRET")
+	secret := config.JWTSecret()
 	if secret == "" {
 		return "", fmt.Errorf("JWT_SECRET environment variable not set")
 	}

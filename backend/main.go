@@ -1,12 +1,11 @@
 package main
 
 import (
+	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
 	"idento/backend/internal/store"
 	"log"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -386,23 +385,20 @@ security:
 `
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load("../.env"); err != nil {
-		log.Println("No .env file found, relying on environment variables")
+	// Try .env in cwd first (Docker/packaged runs), then repo root (make dev runs from backend/).
+	if err := godotenv.Load(".env"); err != nil {
+		if err := godotenv.Load("../.env"); err != nil {
+			log.Println("No .env file found, relying on environment variables")
+		}
 	}
 
-	if os.Getenv("JWT_SECRET") == "" {
-		log.Fatal("JWT_SECRET is not set — refusing to start (set it in .env / environment)")
-	}
-
-	// Database connection string
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL is not set (copy .env.example to .env for local development)")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// Initialize Store
-	pgStore, err := store.NewPGStore(dbURL)
+	pgStore, err := store.NewPGStore(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
@@ -422,19 +418,8 @@ func main() {
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	corsOrigins := []string{}
-	if raw := os.Getenv("CORS_ALLOWED_ORIGINS"); raw != "" {
-		for _, o := range strings.Split(raw, ",") {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				corsOrigins = append(corsOrigins, trimmed)
-			}
-		}
-	}
-	if len(corsOrigins) == 0 {
-		log.Fatal("CORS_ALLOWED_ORIGINS is not set — refusing to start (set it in .env / environment; see .env.example)")
-	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: corsOrigins,
+		AllowOrigins: cfg.CORSAllowedOrigins,
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
 
@@ -478,9 +463,5 @@ func main() {
 	})
 
 	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8008"
-	}
-	e.Logger.Fatal(e.Start(":" + port))
+	e.Logger.Fatal(e.Start(":" + cfg.Port))
 }
