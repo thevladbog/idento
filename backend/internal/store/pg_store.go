@@ -15,12 +15,23 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 )
 
+// dbConn is the subset of *pgxpool.Pool the store uses, narrowed to an
+// interface so tests can substitute an in-memory mock (pgxmock).
+type dbConn interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Close()
+}
+
 type PGStore struct {
-	db *pgxpool.Pool
+	db dbConn
 }
 
 func NewPGStore(dbURL string) (*PGStore, error) {
@@ -823,6 +834,15 @@ func (s *PGStore) DeleteFont(ctx context.Context, id uuid.UUID) error {
 }
 
 // Multi-organization support methods
+
+func (s *PGStore) AddUserToTenant(ctx context.Context, userTenant *models.UserTenant) error {
+	userTenant.ID = uuid.New()
+	query := `INSERT INTO user_tenants (id, user_id, tenant_id, role, joined_at)
+			  VALUES ($1, $2, $3, $4, $5)
+			  ON CONFLICT (user_id, tenant_id) DO NOTHING`
+	_, err := s.db.Exec(ctx, query, userTenant.ID, userTenant.UserID, userTenant.TenantID, userTenant.Role, userTenant.JoinedAt)
+	return err
+}
 
 func (s *PGStore) RemoveUserFromTenant(ctx context.Context, userID, tenantID uuid.UUID) error {
 	query := `DELETE FROM user_tenants WHERE user_id = $1 AND tenant_id = $2`

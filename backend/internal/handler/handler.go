@@ -46,6 +46,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	auth.POST("/login", h.Login, authLimiter)
 	auth.POST("/login-qr", h.LoginWithQR, authLimiter)
 
+	// Station provisioning (public — the device has no JWT yet; rate-limited
+	// like login since it's an unauthenticated, token-guessable surface).
+	e.POST("/api/stations/provision", h.ProvisionStation, authLimiter)
+
 	// Protected routes
 	api := e.Group("/api")
 	api.Use(middleware.JWT())
@@ -70,8 +74,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/events", h.CreateEvent, middleware.CheckLimits(h.Store, "events_per_month"))
 	api.PUT("/events/:id", h.UpdateEvent)
 	api.POST("/events/:id/badge-zpl", h.BadgeZPL)
+	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
 	api.POST("/events/:event_id/staff", h.AssignStaffToEvent)
+	api.POST("/events/:event_id/stations/provisioning-token", h.CreateStationProvisioningToken)
 
 	// Attendees
 	api.GET("/events/:event_id/attendees", h.GetAttendees)
@@ -115,6 +121,15 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/zones/checkin", h.ZoneCheckIn, authLimiter)
 	api.GET("/zones/:zone_id/checkins", h.GetZoneCheckins)
 	api.GET("/attendees/:attendee_id/zone-history", h.GetAttendeeZoneHistory)
+
+	// Mobile offline-sync batch check-in (idempotent by client_uuid)
+	api.POST("/events/:event_id/checkins/batch", h.BatchCheckin)
+
+	// Check-in override audit log
+	api.POST("/events/:event_id/checkins/override", h.CreateCheckinOverride)
+
+	// Mobile zone-control scan (structured verdict, no rate limit — legitimate high-frequency op)
+	api.POST("/zones/:zone_id/scan", h.ZoneScan)
 
 	// Mobile API - filtered by staff permissions
 	api.GET("/mobile/events/:event_id/zones", h.GetAvailableZones)
