@@ -187,6 +187,8 @@ type ZoneAccessRule struct {
 	ZoneID    uuid.UUID `json:"zone_id"`
 	Category  string    `json:"category"`
 	Allowed   bool      `json:"allowed"`
+	TimeFrom  *string   `json:"time_from,omitempty"` // "HH:MM", inclusive lower bound; nil = no lower bound
+	TimeTo    *string   `json:"time_to,omitempty"`   // "HH:MM", inclusive upper bound; nil = no upper bound
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -254,4 +256,120 @@ type MovementHistoryEntry struct {
 	ZoneCheckin *ZoneCheckin `json:"checkin"`
 	ZoneName    string       `json:"zone_name"`
 	ZoneType    string       `json:"zone_type"`
+}
+
+// Station represents a provisioned mobile check-in/zone-control/kiosk device.
+type Station struct {
+	ID           uuid.UUID              `json:"id"`
+	EventID      uuid.UUID              `json:"event_id"`
+	DeviceNumber int                    `json:"device_number"`
+	StaffUserID  uuid.UUID              `json:"staff_user_id"`
+	DeviceInfo   map[string]interface{} `json:"device_info,omitempty"`
+	CreatedAt    time.Time              `json:"created_at"`
+}
+
+// StationProvisioningToken is a one-time, short-lived token a manager generates
+// (shown as a QR in the web console) to bind a new station to a specific staff user.
+type StationProvisioningToken struct {
+	Token       string     `json:"-"`
+	EventID     uuid.UUID  `json:"event_id"`
+	StaffUserID uuid.UUID  `json:"staff_user_id"`
+	CreatedBy   uuid.UUID  `json:"created_by"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	ConsumedAt  *time.Time `json:"consumed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type CreateProvisioningTokenRequest struct {
+	StaffUserID uuid.UUID `json:"staff_user_id"`
+}
+
+type CreateProvisioningTokenResponse struct {
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type ProvisionStationRequest struct {
+	Token      string                 `json:"token"`
+	DeviceInfo map[string]interface{} `json:"device_info,omitempty"`
+}
+
+type ProvisionedStationConfig struct {
+	EventID   uuid.UUID `json:"event_id"`
+	EventName string    `json:"event_name"`
+	StaffName string    `json:"staff_name"`
+}
+
+type ProvisionStationResponse struct {
+	StationConfig ProvisionedStationConfig `json:"station_config"`
+	StaffJWT      string                   `json:"staff_jwt"`
+	DeviceNumber  int                      `json:"device_number"`
+}
+
+// ZoneScanRequest is the body of POST /api/zones/:zone_id/scan.
+type ZoneScanRequest struct {
+	Code string `json:"code"`
+}
+
+type RegistrationInfo struct {
+	Passed bool       `json:"passed"`
+	At     *time.Time `json:"at,omitempty"`
+	Point  string     `json:"point,omitempty"`
+}
+
+// ZoneScanResponse is always HTTP 200 for the three designed verdicts (allowed,
+// no_access, not_registered) — they are valid business outcomes the mobile UI
+// renders as distinct screens, not error states.
+type ZoneScanResponse struct {
+	Verdict      string            `json:"verdict"`
+	Reason       string            `json:"reason,omitempty"`
+	Attendee     *Attendee         `json:"attendee,omitempty"`
+	Registration *RegistrationInfo `json:"registration,omitempty"`
+	CheckedInAt  *time.Time        `json:"checked_in_at,omitempty"`
+	FirstEntry   bool              `json:"first_entry"`
+}
+
+// CheckinOverride is the audit-logged staff override ("Всё равно пропустить").
+type CheckinOverride struct {
+	ID          uuid.UUID  `json:"id"`
+	AttendeeID  uuid.UUID  `json:"attendee_id"`
+	ZoneID      *uuid.UUID `json:"zone_id,omitempty"`
+	Context     string     `json:"context"`
+	StaffUserID uuid.UUID  `json:"staff_user_id"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type CreateCheckinOverrideRequest struct {
+	AttendeeID uuid.UUID  `json:"attendee_id"`
+	Context    string     `json:"context"`
+	ZoneID     *uuid.UUID `json:"zone_id,omitempty"`
+}
+
+// BatchCheckinItem is one entry of the offline-sync batch submitted by a mobile
+// client; ClientUUID is the idempotency key for retried submissions.
+type BatchCheckinItem struct {
+	ClientUUID   uuid.UUID  `json:"client_uuid"`
+	AttendeeID   uuid.UUID  `json:"attendee_id"`
+	At           time.Time  `json:"at"`
+	DeviceNumber int        `json:"device_number"`
+	Kind         string     `json:"kind"` // "checkin" | "zone_entry"
+	ZoneID       *uuid.UUID `json:"zone_id,omitempty"`
+}
+
+type BatchCheckinResult struct {
+	ClientUUID uuid.UUID `json:"client_uuid"`
+	Status     string    `json:"status"` // "created" | "already_exists" | "error"
+	Error      string    `json:"error,omitempty"`
+}
+
+type ZoneScanStats struct {
+	Allowed       int `json:"allowed"`
+	NoAccess      int `json:"no_access"`
+	NotRegistered int `json:"not_registered"`
+}
+
+type EventStatsResponse struct {
+	TotalAttendees int            `json:"total_attendees"`
+	CheckedIn      int            `json:"checked_in"`
+	ZoneStats      *ZoneScanStats `json:"zone_stats,omitempty"`
 }

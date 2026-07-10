@@ -3,6 +3,7 @@ import { useParams, useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
+import QRCode from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { APIKeysManager } from "@/components/APIKeysManager";
 import { FontManager } from "@/components/FontManager";
 import {
@@ -54,6 +63,45 @@ export default function EventSettings() {
     end_date: "",
     location: "",
   });
+  const [staffUsers, setStaffUsers] = useState<Array<{ id: string; email: string }>>([]);
+  const [selectedStaffId, setSelectedStaffId] = useState<string>("");
+  const [provisionDialogOpen, setProvisionDialogOpen] = useState(false);
+  const [provisionToken, setProvisionToken] = useState<string>("");
+  const [provisionExpiresAt, setProvisionExpiresAt] = useState<string>("");
+  const [provisionQrDataUrl, setProvisionQrDataUrl] = useState<string>("");
+
+  // Render the QR code locally in the browser. The provisioning token is a
+  // credential precursor (it can be redeemed for a device auth token), so it
+  // must never be sent to a third-party image service — mirrors the pattern
+  // in Users.tsx (WEB-SEC-01).
+  useEffect(() => {
+    if (!provisionToken) {
+      setProvisionQrDataUrl("");
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(provisionToken, {
+      width: 256,
+      margin: 2,
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+      .then((url) => {
+        if (!cancelled) setProvisionQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setProvisionQrDataUrl("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provisionToken]);
+
+  useEffect(() => {
+    api
+      .get<Array<{ id: string; email: string }>>("/api/users")
+      .then((res) => setStaffUsers(res.data || []))
+      .catch(() => setStaffUsers([]));
+  }, []);
 
   useEffect(() => {
     if (event) {
@@ -118,6 +166,33 @@ export default function EventSettings() {
 
   const insertField = (field: string) => {
     setAttendeeTemplate((prev) => prev + `{${field}}`);
+  };
+
+  const handleGenerateProvisioningQR = async () => {
+    if (!selectedStaffId) return;
+    try {
+      const response = await api.post<{ token: string; expires_at: string }>(
+        `/api/events/${eventId}/stations/provisioning-token`,
+        { staff_user_id: selectedStaffId }
+      );
+      setProvisionToken(response.data.token);
+      setProvisionExpiresAt(response.data.expires_at);
+      setProvisionDialogOpen(true);
+    } catch (error) {
+      console.error("Failed to generate provisioning token", error);
+      toast.error(t("failedToGenerateStationQR"));
+    }
+  };
+
+  // Close the dialog and drop the provisioning token from memory. Used for
+  // every close path (overlay/Escape via onOpenChange and the footer button)
+  // so the credential never lingers regardless of how the dialog is
+  // dismissed. Clearing provisionToken also resets provisionQrDataUrl via
+  // the effect above.
+  const closeProvisionDialog = () => {
+    setProvisionDialogOpen(false);
+    setProvisionToken("");
+    setProvisionExpiresAt("");
   };
 
   const getPreviewData = (): Record<string, unknown> => {
@@ -405,6 +480,58 @@ export default function EventSettings() {
 
       {/* Custom Fonts Section */}
       {eventId && <FontManager eventId={eventId} />}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("stationProvisioning")}</CardTitle>
+          <CardDescription>{t("stationProvisioningDesc")}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center gap-3">
+          <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder={t("selectStaffMember")} />
+            </SelectTrigger>
+            <SelectContent>
+              {staffUsers.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button onClick={handleGenerateProvisioningQR} disabled={!selectedStaffId}>
+            {t("generateStationQR")}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={provisionDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeProvisionDialog();
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("stationQrTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("stationQrDesc")} {provisionExpiresAt && new Date(provisionExpiresAt).toLocaleTimeString()}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center py-4">
+            {provisionQrDataUrl ? (
+              <img src={provisionQrDataUrl} alt="Station provisioning QR" className="w-64 h-64 border rounded" />
+            ) : (
+              <div className="w-64 h-64 border rounded flex items-center justify-center text-sm text-muted-foreground">
+                …
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={closeProvisionDialog}>{t("close")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-destructive/50">
         <CardHeader>

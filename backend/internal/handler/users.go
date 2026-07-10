@@ -87,6 +87,18 @@ func (h *Handler) CreateUser(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to create user")
 	}
 
+	// Add the new user to user_tenants so GetUserTenantRole (used by
+	// GenerateQRToken and CreateStationProvisioningToken) can find them.
+	userTenant := &models.UserTenant{
+		UserID:   newUser.ID,
+		TenantID: tenantID,
+		Role:     req.Role,
+		JoinedAt: time.Now(),
+	}
+	if err := h.Store.AddUserToTenant(c.Request().Context(), userTenant); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to add user to tenant")
+	}
+
 	// Log usage
 	if err := h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
 		TenantID:     tenantID,

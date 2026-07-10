@@ -836,7 +836,8 @@ func (s *PGStore) DeleteFont(ctx context.Context, id uuid.UUID) error {
 // Multi-organization support methods
 
 func (s *PGStore) AddUserToTenant(ctx context.Context, userTenant *models.UserTenant) error {
-	query := `INSERT INTO user_tenants (id, user_id, tenant_id, role, joined_at) 
+	userTenant.ID = uuid.New()
+	query := `INSERT INTO user_tenants (id, user_id, tenant_id, role, joined_at)
 			  VALUES ($1, $2, $3, $4, $5)
 			  ON CONFLICT (user_id, tenant_id) DO NOTHING`
 	_, err := s.db.Exec(ctx, query, userTenant.ID, userTenant.UserID, userTenant.TenantID, userTenant.Role, userTenant.JoinedAt)

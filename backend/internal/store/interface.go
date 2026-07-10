@@ -123,6 +123,8 @@ type Store interface {
 	GetZoneAccessRules(ctx context.Context, zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
 	DeleteZoneAccessRule(ctx context.Context, id uuid.UUID) error
 	BulkUpdateZoneAccessRules(ctx context.Context, zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
+	CheckZoneAccessAt(ctx context.Context, attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error)
+	CreateZoneScanLog(ctx context.Context, zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error
 
 	// Attendee Zone Access (individual overrides)
 	CreateAttendeeZoneAccess(ctx context.Context, access *models.AttendeeZoneAccess) error
@@ -146,4 +148,18 @@ type Store interface {
 
 	// Access Validation
 	CheckZoneAccess(ctx context.Context, attendeeID, zoneID uuid.UUID) (bool, string, error) // allowed, reason, error
+
+	// Station Provisioning
+	CreateProvisioningToken(ctx context.Context, tok *models.StationProvisioningToken) error
+	ConsumeProvisioningToken(ctx context.Context, token string) (*models.StationProvisioningToken, error)
+	CreateStation(ctx context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
+
+	// Mobile offline-sync batch check-in (idempotent by client_uuid)
+	ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+
+	// Check-in Overrides (audit log)
+	CreateCheckinOverride(ctx context.Context, o *models.CheckinOverride) error
+
+	// Event Stats (KPI counters for mobile status bar)
+	GetEventStats(ctx context.Context, eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 }
