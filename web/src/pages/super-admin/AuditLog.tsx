@@ -71,7 +71,7 @@ export default function AuditLog() {
               <TableHead>{t('action')}</TableHead>
               <TableHead>{t('targetType')}</TableHead>
               <TableHead>{t('targetId')}</TableHead>
-              <TableHead>{t('ipAddress')}</TableHead>
+              <TableHead>{t('auditIpAddress')}</TableHead>
               <TableHead>{t('userAgent')}</TableHead>
             </TableRow>
           </TableHeader>
