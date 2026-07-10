@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import api from "@/lib/api";
 import type { Event, Attendee } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -728,7 +729,7 @@ export default function CheckinFullscreenPage() {
 
                 {/* Render custom template or default display */}
                 <div className="markdown-preview text-center">
-                  <ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
                     {renderMarkdownTemplate(
                       String(selectedEvent?.custom_fields?.attendeeTemplate ?? getDefaultAttendeeTemplate()),
                       {

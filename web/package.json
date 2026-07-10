@@ -42,6 +42,7 @@
     "react-konva": "^18.2.14",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.18.1",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0",

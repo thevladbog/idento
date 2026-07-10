@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -377,7 +378,7 @@ export default function EventSettings() {
               </div>
               <div className="border rounded-md p-6 min-h-[200px] bg-muted/30">
                 <div className="markdown-preview">
-                  <ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
                     {renderMarkdownTemplate(attendeeTemplate, getPreviewData())}
                   </ReactMarkdown>
                 </div>

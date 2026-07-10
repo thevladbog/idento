@@ -59,6 +59,18 @@ function getZPLFont(fontSize: number, _bold: boolean = false): string {
 }
 
 /**
+ * Escape ZPL special characters in data destined for a ^FD (Field Data) command.
+ * Prevents ZPL injection when interpolating untrusted values (e.g. attendee-controlled
+ * field data) into text, QR code, or barcode fields.
+ */
+export function escapeZplData(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\") // Escape backslashes
+    .replace(/\^/g, "\\^") // Escape caret (ZPL command prefix)
+    .replace(/~/g, "\\~"); // Escape tilde (special character in ZPL)
+}
+
+/**
  * Get ZPL alignment code
  */
 function getZPLAlignment(align: "left" | "center" | "right" = "left"): string {
@@ -115,10 +127,7 @@ async function generateTextZPL(
   // Escape special ZPL characters for regular text
   // Note: With ^CI28 (UTF-8), Cyrillic and other Unicode characters are supported directly
   // BUT built-in ZPL fonts don't support them - that's why we use images above
-  textContent = textContent
-    .replace(/\\/g, "\\\\") // Escape backslashes
-    .replace(/\^/g, "\\^") // Escape caret (ZPL command prefix)
-    .replace(/~/g, "\\~"); // Escape tilde (special character in ZPL)
+  textContent = escapeZplData(textContent);
 
   const fontSize = element.fontSize || 12;
   const rotation = element.rotation || 0;
@@ -199,7 +208,7 @@ function generateQRCodeZPL(
   // ^BQ<orientation>,<model>,<magnification>
   // Model 2 is most common (QR Code Model 2)
   // Magnification 1-10
-  const zpl = `^FO${x},${y}^BQN,2,${moduleSize}^FDQA,${qrData}^FS`;
+  const zpl = `^FO${x},${y}^BQN,2,${moduleSize}^FDQA,${escapeZplData(qrData)}^FS`;
 
   return zpl;
 }
@@ -225,7 +234,7 @@ function generateBarcodeZPL(
 
   // ^BC = Code 128
   // ^BC<orientation>,<height>,<print interpretation line>,<print interpretation line above>,<UCC check digit>
-  const zpl = `^FO${x},${y}^BCN,${height},Y,N,N^FD${barcodeData}^FS`;
+  const zpl = `^FO${x},${y}^BCN,${height},Y,N,N^FD${escapeZplData(barcodeData)}^FS`;
 
   return zpl;
 }
