@@ -74,8 +74,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 
 	// Attendees
 	api.GET("/events/:event_id/attendees", h.GetAttendees)
-	api.POST("/events/:event_id/attendees", h.CreateAttendee, middleware.CheckLimits(h.Store, "attendees_per_event"))
-	api.POST("/events/:event_id/attendees/bulk", h.BulkCreateAttendees, middleware.CheckLimits(h.Store, "attendees_per_event"))
+	api.POST("/events/:event_id/attendees", h.CreateAttendee, middleware.CheckAttendeeLimits(h.Store))
+	api.POST("/events/:event_id/attendees/bulk", h.BulkCreateAttendees)
 	api.POST("/events/:event_id/attendees/generate-codes", h.GenerateAttendeeCodes)
 	api.GET("/events/:event_id/attendees/export", h.ExportAttendeesCSV)
 	api.GET("/attendees/:id/qr", h.GetAttendeeQR)

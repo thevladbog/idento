@@ -106,3 +106,29 @@ func TestStoreErrorIs500Not404(t *testing.T) {
 		t.Errorf("status = %d, want 500 (store error must not read as not-found)", rec.Code)
 	}
 }
+
+// Bulk import must validate the batch size against the plan limit before inserting.
+func TestBulkImportRejectsOverLimitBatch(t *testing.T) {
+	e := echo.New()
+	tenant := uuid.New()
+	eventID := uuid.New()
+	fs := &fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: eventID, TenantID: tenant}, nil
+		},
+		checkAttendeeLimit: func(_, _ uuid.UUID, adding int) (bool, int, int, error) {
+			return false, 45, 50, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	body := `{"attendees":[{"first_name":"a"},{"first_name":"b"},{"first_name":"c"},{"first_name":"d"},{"first_name":"e"},{"first_name":"f"}]}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", body, tenant.String(), "admin")
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+	if err := h.BulkCreateAttendees(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (batch over limit)", rec.Code)
+	}
+}

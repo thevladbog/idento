@@ -63,6 +63,19 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
 	}
 
+	// P1.3: validate the whole batch against attendees_per_event before inserting.
+	allowed, current, max, err := h.Store.CheckAttendeeLimit(c.Request().Context(), event.TenantID, eventID, len(req.Attendees))
+	if err != nil || !allowed {
+		return c.JSON(http.StatusForbidden, map[string]interface{}{
+			"error":            "Limit exceeded for attendees_per_event",
+			"current":          current,
+			"max":              max,
+			"adding":           len(req.Attendees),
+			"upgrade_required": true,
+			"limit_type":       "attendees_per_event",
+		})
+	}
+
 	// Update event field schema if provided
 	if len(req.FieldSchema) > 0 {
 		event.FieldSchema = req.FieldSchema

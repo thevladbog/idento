@@ -1258,33 +1258,39 @@ func (s *PGStore) GetUsageStats(ctx context.Context, tenantID uuid.UUID, startDa
 	return stats, nil
 }
 
-func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) {
-	// Get subscription with plan
+// resolveTenantLimit returns the effective value for limitType: custom
+// subscription limits override plan limits; 0 means "not configured".
+func (s *PGStore) resolveTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (float64, error) {
 	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
 	if err != nil || sub == nil {
-		return false, 0, 0, fmt.Errorf("no active subscription")
+		return 0, fmt.Errorf("no active subscription")
 	}
-
-	// Get limit value (custom limits override plan limits)
 	var maxLimit float64
 	if sub.CustomLimits != nil {
 		if val, ok := sub.CustomLimits[limitType]; ok {
-			if floatVal, ok := val.(float64); ok {
-				maxLimit = floatVal
-			} else {
-				return false, 0, 0, fmt.Errorf("invalid custom limit type for %s", limitType)
+			floatVal, ok := val.(float64)
+			if !ok {
+				return 0, fmt.Errorf("invalid custom limit type for %s", limitType)
 			}
+			maxLimit = floatVal
 		}
 	}
-
 	if maxLimit == 0 && sub.Plan != nil && sub.Plan.Limits != nil {
 		if val, ok := sub.Plan.Limits[limitType]; ok {
-			if floatVal, ok := val.(float64); ok {
-				maxLimit = floatVal
-			} else {
-				return false, 0, 0, fmt.Errorf("invalid plan limit type for %s", limitType)
+			floatVal, ok := val.(float64)
+			if !ok {
+				return 0, fmt.Errorf("invalid plan limit type for %s", limitType)
 			}
+			maxLimit = floatVal
 		}
+	}
+	return maxLimit, nil
+}
+
+func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) {
+	maxLimit, err := s.resolveTenantLimit(ctx, tenantID, limitType)
+	if err != nil {
+		return false, 0, 0, err
 	}
 
 	// -1 means unlimited
@@ -1297,16 +1303,12 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 	switch limitType {
 	case "events_per_month":
 		if err := s.db.QueryRow(ctx, `
-			SELECT COUNT(*) FROM events 
-			WHERE tenant_id = $1 AND deleted_at IS NULL 
+			SELECT COUNT(*) FROM events
+			WHERE tenant_id = $1 AND deleted_at IS NULL
 			  AND created_at >= date_trunc('month', NOW())
 		`, tenantID).Scan(&current); err != nil {
 			return false, 0, 0, fmt.Errorf("failed to count events: %w", err)
 		}
-	case "attendees_per_event":
-		// This should be checked per event, not tenant-wide
-		// Implementation depends on context
-		current = 0
 	case "users":
 		if err := s.db.QueryRow(ctx, `
 			SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1
@@ -1317,6 +1319,26 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 
 	allowed := current < int(maxLimit)
 	return allowed, current, int(maxLimit), nil
+}
+
+// CheckAttendeeLimit enforces attendees_per_event for one event, counting
+// soft-deleted attendees out. adding is the number about to be created
+// (1 for single create, len(batch) for bulk import).
+func (s *PGStore) CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
+	maxLimit, err := s.resolveTenantLimit(ctx, tenantID, "attendees_per_event")
+	if err != nil {
+		return false, 0, 0, err
+	}
+	if maxLimit == -1 {
+		return true, 0, -1, nil
+	}
+	var current int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`,
+		eventID).Scan(&current); err != nil {
+		return false, 0, 0, fmt.Errorf("failed to count attendees: %w", err)
+	}
+	return current+adding <= int(maxLimit), current, int(maxLimit), nil
 }
 
 // Audit
