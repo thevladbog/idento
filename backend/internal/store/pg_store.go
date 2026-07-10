@@ -154,6 +154,74 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 	return tx.Commit(ctx)
 }
 
+// ProvisionTenantWithAdmin registers a tenant, its default-plan subscription,
+// the admin user (created or reused by email — an existing user's password is
+// left untouched), and the user_tenants membership row in a single
+// transaction, so a mid-way failure (or a killed process) leaves no orphan
+// tenant/user/subscription rows.
+func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, passwordHash string) (*models.Tenant, *models.User, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback tenant registration: %v", err)
+		}
+	}()
+
+	tenant := &models.Tenant{Name: tenantName}
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`,
+		tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+		return nil, nil, err
+	}
+
+	var planID uuid.UUID
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM subscription_plans WHERE is_default AND is_active ORDER BY sort_order LIMIT 1`).Scan(&planID); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil, fmt.Errorf("no default subscription plan configured: %w", err)
+		}
+		return nil, nil, fmt.Errorf("lookup default subscription plan: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO subscriptions (tenant_id, plan_id, status, start_date) VALUES ($1, $2, 'active', NOW())`,
+		tenant.ID, planID); err != nil {
+		return nil, nil, err
+	}
+
+	user := &models.User{Email: email}
+	err = tx.QueryRow(ctx,
+		`SELECT id, tenant_id, role FROM users WHERE email = $1`, email).
+		Scan(&user.ID, &user.TenantID, &user.Role)
+	switch {
+	case err == pgx.ErrNoRows:
+		user.TenantID = tenant.ID
+		user.Role = "admin"
+		user.PasswordHash = passwordHash
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id, created_at`,
+			user.TenantID, user.Email, user.PasswordHash).Scan(&user.ID, &user.CreatedAt); err != nil {
+			return nil, nil, err
+		}
+	case err != nil:
+		return nil, nil, err
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO user_tenants (user_id, tenant_id, role, joined_at) VALUES ($1, $2, 'admin', NOW())
+		 ON CONFLICT (user_id, tenant_id) DO NOTHING`,
+		user.ID, tenant.ID); err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	return tenant, user, nil
+}
+
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
 	var t models.Tenant
 	var settingsJSON []byte

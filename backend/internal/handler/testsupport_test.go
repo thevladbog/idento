@@ -31,6 +31,7 @@ type fakeStore struct {
 	revokeAPIKey              func(id uuid.UUID) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
+	provisionTenantWithAdmin            func(tenantName, email, passwordHash string) (*models.Tenant, *models.User, error)
 	getTenantStatus                     func(id uuid.UUID) (string, error)
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
@@ -112,6 +113,9 @@ func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
 	return f.createTenantWithDefaultSubscription(tenant)
+}
+func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, passwordHash string) (*models.Tenant, *models.User, error) {
+	return f.provisionTenantWithAdmin(tenantName, email, passwordHash)
 }
 func (f *fakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string, error) {
 	return f.getTenantStatus(id)
