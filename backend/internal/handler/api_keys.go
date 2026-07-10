@@ -149,6 +149,21 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
 	}
 
+	// P1.3: validate the whole batch against attendees_per_event before
+	// inserting, same as the JWT-authed BulkCreateAttendees path — otherwise
+	// an API key alone lets a caller bypass the plan's attendee limit.
+	allowed, current, max, err := h.Store.CheckAttendeeLimit(context.Background(), event.TenantID, event.ID, len(req.Data))
+	if err != nil || !allowed {
+		return c.JSON(http.StatusForbidden, map[string]interface{}{
+			"error":            "Limit exceeded for attendees_per_event",
+			"current":          current,
+			"max":              max,
+			"adding":           len(req.Data),
+			"upgrade_required": true,
+			"limit_type":       "attendees_per_event",
+		})
+	}
+
 	// Track import results
 	var created, failed int
 	var errors []string

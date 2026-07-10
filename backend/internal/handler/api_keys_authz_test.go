@@ -2,8 +2,11 @@ package handler
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"idento/backend/internal/middleware"
 	"idento/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -111,4 +114,52 @@ func TestRevokeAPIKey_AllowsRevokingOwnKey(t *testing.T) {
 	if !revokeCalled {
 		t.Fatal("expected Store.RevokeAPIKey to be called for a key belonging to the owned event")
 	}
+}
+
+// TestExternalImportRejectsOverLimitBatch mirrors
+// TestBulkImportRejectsOverLimitBatch (tenant_isolation_test.go) but for the
+// public API-key import route (POST /api/external/import). ExternalImport
+// derives its event from the API-key context that middleware.APIKeyAuth
+// populates (EventIDKey), not from JWT claims, so the fixture sets that
+// context key directly instead of going through newAuthedContext.
+func TestExternalImportRejectsOverLimitBatch(t *testing.T) {
+	e := echo.New()
+	tenant := uuid.New()
+	eventID := uuid.New()
+
+	checkAttendeeLimitCalled := false
+	fs := &fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: eventID, TenantID: tenant}, nil
+		},
+		checkAttendeeLimit: func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
+			checkAttendeeLimitCalled = true
+			return false, 45, 50, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	body := `{"data":[` +
+		`{"first_name":"a","last_name":"b","email":"a@x.com"},` +
+		`{"first_name":"c","last_name":"d","email":"c@x.com"}` +
+		`]}`
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(string(middleware.EventIDKey), eventID)
+
+	if err := h.ExternalImport(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (batch over limit); body: %s", rec.Code, rec.Body.String())
+	}
+	if !checkAttendeeLimitCalled {
+		t.Fatal("expected Store.CheckAttendeeLimit to be called")
+	}
+	// fakeStore has no createAttendee override, so if the handler fell
+	// through to the creation loop despite the limit being exceeded, this
+	// test would panic on a nil embedded Store.CreateAttendee call rather
+	// than merely fail the status assertion above.
 }
