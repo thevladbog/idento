@@ -108,8 +108,10 @@ export default function SuperAdminLayout() {
           </div>
         </form>
         <div className="flex items-center gap-3">
-          <ModeToggle />
-          <LanguageToggle />
+          <div className="flex items-center gap-2 [&_button]:bg-transparent! [&_button]:border-white/20! [&_button:hover]:bg-white/10! [&_svg]:text-[hsl(var(--console-chrome-foreground))]">
+            <ModeToggle />
+            <LanguageToggle />
+          </div>
           <div
             className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
             title={user.email}
