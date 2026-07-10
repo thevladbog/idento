@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"idento/agent/internal/httpauth"
 	"idento/agent/internal/printer"
 	"idento/agent/internal/scanner"
 	"log"
@@ -192,6 +193,7 @@ func resolveAllowedOrigins(cfg *AgentConfig) []string {
 
 func main() {
 	port := flag.String("port", "12345", "Port to run the agent on")
+	host := flag.String("host", "127.0.0.1", "Host/interface to bind (default loopback; set 0.0.0.0 only if you understand the risk)")
 	useMock := flag.Bool("mock", false, "Use mock printers instead of real hardware")
 	flag.Parse()
 
@@ -1063,20 +1065,38 @@ func main() {
 		}
 	})
 
+	// Load config to obtain/create the agent auth token and origin allowlist.
+	authCfg, err := loadConfig()
+	if err != nil {
+		authCfg = defaultConfig()
+	}
+	if changed, err := ensureAuthToken(authCfg); err != nil {
+		log.Fatalf("Failed to generate agent auth token: %v", err)
+	} else if changed {
+		if err := saveConfig(authCfg); err != nil {
+			log.Printf("Warning: could not persist agent auth token: %v", err)
+		}
+	}
+	allowedOrigins := resolveAllowedOrigins(authCfg)
+	authorizer := httpauth.New(authCfg.AuthToken, allowedOrigins)
+
 	// Setup CORS to allow requests from localhost web app
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
 		AllowCredentials: true,
 	})
 
-	handler := c.Handler(mux)
+	// cors handles preflight/response headers; authorizer enforces server-side.
+	handler := c.Handler(authorizer.Middleware(mux))
 
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("🖨️  Idento Hardware Agent\n")
 	fmt.Printf("========================================\n")
 	fmt.Printf("Listening on: http://localhost:%s\n", *port)
+	fmt.Printf("🔑 Auth token (desktop reads it from ~/.idento/agent_config.json):\n   %s\n", authCfg.AuthToken)
+	fmt.Printf("🌐 Allowed browser origins: %v\n", allowedOrigins)
 	fmt.Printf("\n📄 Available printers: %d\n", len(pm.ListPrinters()))
 	for _, name := range pm.ListPrinters() {
 		fmt.Printf("  - %s\n", name)
@@ -1088,7 +1108,7 @@ func main() {
 	fmt.Printf("========================================\n\n")
 
 	server := &http.Server{
-		Addr:              ":" + *port,
+		Addr:              *host + ":" + *port,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
