@@ -145,14 +145,47 @@ func (h *Handler) SyncPush(c echo.Context) error {
 	}
 
 	// Process created attendees (if mobile app allows creating new attendees)
-	for _, attendee := range req.Changes.Attendees.Created {
+	//
+	// P1.3: offline-created attendees must respect attendees_per_event just
+	// like the JWT-authed bulk-create and API-key import paths — otherwise a
+	// mobile client can bypass the plan's limit simply by queueing creations
+	// offline and pushing them through sync. We first resolve ownership per
+	// item (so foreign-tenant events are skipped as before), then group the
+	// surviving creations by event and check the limit once per event for
+	// the whole batch size, so a request can't dodge the limit by hiding
+	// several creations for the same event under one sync push.
+	type pendingCreate struct {
+		attendee *models.Attendee
+		eventID  uuid.UUID
+	}
+	var pending []pendingCreate
+	countByEvent := make(map[uuid.UUID]int)
+	for i := range req.Changes.Attendees.Created {
+		attendee := &req.Changes.Attendees.Created[i]
+
 		// Verify event belongs to tenant
 		event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
 		if err != nil || event == nil || event.TenantID != tenantID {
 			continue
 		}
 
-		if err := h.Store.CreateAttendee(c.Request().Context(), &attendee); err != nil {
+		pending = append(pending, pendingCreate{attendee: attendee, eventID: attendee.EventID})
+		countByEvent[attendee.EventID]++
+	}
+
+	blockedEvents := make(map[uuid.UUID]bool, len(countByEvent))
+	for eventID, adding := range countByEvent {
+		allowed, _, _, err := h.Store.CheckAttendeeLimit(c.Request().Context(), tenantID, eventID, adding)
+		if err != nil || !allowed {
+			blockedEvents[eventID] = true
+		}
+	}
+
+	for _, p := range pending {
+		if blockedEvents[p.eventID] {
+			continue // event is at/over attendees_per_event; skip silently like other sync guards
+		}
+		if err := h.Store.CreateAttendee(c.Request().Context(), p.attendee); err != nil {
 			continue
 		}
 	}

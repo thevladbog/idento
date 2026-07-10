@@ -29,6 +29,8 @@ type fakeStore struct {
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
+	createAttendee            func(attendee *models.Attendee) error
+	updateAttendee            func(attendee *models.Attendee) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, passwordHash string) (*models.Tenant, *models.User, error)
@@ -110,6 +112,12 @@ func (f *fakeStore) GetAPIKeysByEventID(_ context.Context, eventID uuid.UUID) ([
 }
 func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 	return f.revokeAPIKey(id)
+}
+func (f *fakeStore) CreateAttendee(_ context.Context, attendee *models.Attendee) error {
+	return f.createAttendee(attendee)
+}
+func (f *fakeStore) UpdateAttendee(_ context.Context, attendee *models.Attendee) error {
+	return f.updateAttendee(attendee)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
