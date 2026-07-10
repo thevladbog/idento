@@ -671,6 +671,8 @@ i18n
           // Super Admin
           superAdmin: "Super Admin",
           superAdminPanel: "Super Admin Panel",
+          platformConsole: "PLATFORM CONSOLE",
+          searchTenantsPlaceholder: "Search tenants by name, slug, owner email…",
           backToUserDashboard: "Back to User Dashboard",
           allUsers: "All Users",
           subscriptionPlans: "Subscription Plans",
@@ -1533,6 +1535,8 @@ i18n
           // Super Admin
           superAdmin: "Супер Админ",
           superAdminPanel: "Панель Супер Админа",
+          platformConsole: "ПЛАТФОРМЕННАЯ КОНСОЛЬ",
+          searchTenantsPlaceholder: "Поиск тенантов по имени, slug, email владельца…",
           backToUserDashboard: "Вернуться к панели пользователя",
           allUsers: "Все пользователи",
           subscriptionPlans: "Тарифные планы",
