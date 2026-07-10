@@ -18,6 +18,7 @@ import com.idento.presentation.setup.ManagerAuthenticator
 import com.idento.presentation.setup.ProvisioningTokenMinter
 import com.idento.presentation.setup.SetupEventViewModel
 import com.idento.presentation.setup.SetupLoginViewModel
+import com.idento.presentation.setup.SetupModeViewModel
 import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.template.DisplayTemplateViewModel
 import com.idento.presentation.template.TemplateEditorViewModel
@@ -69,4 +70,5 @@ val viewModelModule = module {
             draft = get(),
         )
     }
+    factory { SetupModeViewModel(draft = get()) }
 }
