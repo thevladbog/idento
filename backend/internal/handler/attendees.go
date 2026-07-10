@@ -46,19 +46,11 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 	}
 
 	// Validate Event belongs to Tenant (security check)
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	event, err := h.requireEventOwnership(c, eventID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+		return writeErr(c, err)
 	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
-	}
-	if event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
-	}
+	tenantID := event.TenantID
 
 	attendee := &models.Attendee{
 		EventID:      eventID,
@@ -120,25 +112,9 @@ func (h *Handler) UpdateAttendeeInfo(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
-	// Get existing attendee
-	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || attendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
-	}
-
-	// Security check: ensure the user has access to this event
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
-	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
-	if err != nil || event == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
-	}
-	if event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return writeErr(c, err)
 	}
 
 	// Bind update request
@@ -189,13 +165,8 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
-	// Get existing attendee
-	existingAttendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || existingAttendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
-	}
-
-	if _, err := h.requireEventOwnership(c, existingAttendee.EventID); err != nil {
+	existingAttendee, err := h.requireAttendeeOwnership(c, attendeeID)
+	if err != nil {
 		return writeErr(c, err)
 	}
 
@@ -267,21 +238,9 @@ func (h *Handler) BlockAttendee(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || attendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
-	}
-
-	// Security check
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
-	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
-	if err != nil || event == nil || event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return writeErr(c, err)
 	}
 
 	// Block attendee with reason
@@ -303,21 +262,9 @@ func (h *Handler) UnblockAttendee(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
-	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || attendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
-	}
-
-	// Security check
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
-	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
-	if err != nil || event == nil || event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return writeErr(c, err)
 	}
 
 	// Unblock attendee
@@ -339,21 +286,9 @@ func (h *Handler) DeleteAttendee(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
-	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil || attendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
-	}
-
-	// Security check
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
-	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
-	if err != nil || event == nil || event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return writeErr(c, err)
 	}
 
 	// Soft delete
