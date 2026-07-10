@@ -48,6 +48,7 @@ type fakeStore struct {
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
+	logUsage          func(log *models.UsageLog) error
 
 	createProvisioningToken  func(tok *models.StationProvisioningToken) error
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
@@ -161,6 +162,9 @@ func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.U
 }
 func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
 	return f.updateUserQRToken(userID, token, createdAt)
+}
+func (f *fakeStore) LogUsage(_ context.Context, log *models.UsageLog) error {
+	return f.logUsage(log)
 }
 
 func (f *fakeStore) CreateProvisioningToken(_ context.Context, tok *models.StationProvisioningToken) error {
