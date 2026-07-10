@@ -381,9 +381,10 @@ func (h *Handler) RemoveStaffFromZone(c echo.Context) error {
 // GetUserZoneAssignments retrieves all zone assignments for a user. The
 // target user_id is caller-supplied and unrelated to any event/zone, so
 // requireEventOwnership/requireZoneOwnership don't apply directly; instead we
-// verify the target user belongs to the caller's own tenant before returning
-// their assignments (a cross-tenant user lookup would otherwise leak which
-// zones/staff another org has configured).
+// verify the target user is a member of the caller's ACTIVE tenant (not the
+// target's home users.tenant_id — P1.9, same class as the P0.2 users.go fix)
+// before returning their assignments (a cross-tenant lookup would otherwise
+// leak which zones/staff another org has configured).
 func (h *Handler) GetUserZoneAssignments(c echo.Context) error {
 	userID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
@@ -395,12 +396,11 @@ func (h *Handler) GetUserZoneAssignments(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	targetUser, err := h.Store.GetUserByID(c.Request().Context(), userID)
-	if err != nil || targetUser == nil {
+	// Membership in the caller's ACTIVE tenant (user_tenants) authorizes;
+	// non-members and unknown ids are the same uniform 404.
+	role, err := h.Store.GetUserTenantRole(c.Request().Context(), userID, tenantID)
+	if err != nil || role == "" {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
-	}
-	if targetUser.TenantID != tenantID {
-		return writeErr(c, newHTTPError(http.StatusForbidden, "Access denied"))
 	}
 
 	assignments, err := h.Store.GetStaffZoneAssignments(c.Request().Context(), userID)

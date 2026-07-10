@@ -47,20 +47,10 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "No attendees provided")
 	}
 
-	// Get user claims
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "Invalid token")
-	}
-
 	// Verify event belongs to tenant
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil {
-		return echo.NewHTTPError(http.StatusNotFound, "Event not found")
-	}
-	if event.TenantID != tenantID {
-		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	event, err := h.requireEventOwnership(c, eventID)
+	if err != nil {
+		return writeErr(c, err)
 	}
 
 	// P1.3: validate the whole batch against attendees_per_event before inserting.
