@@ -15,7 +15,7 @@
 
 | Стек | Было | Стало |
 |---|---|---|
-| Android `:app` | `usesCleartextTraffic="true"` глобально; `NetworkModule` хардкодит `http://10.0.2.2:8080/` | Удалён `usesCleartextTraffic`; добавлен `network_security_config.xml` (`base-config` запрещает cleartext, `debug-overrides` разрешает cleartext только для `10.0.2.2`/`localhost`/`127.0.0.1` и только в debuggable-сборках). `BuildConfig.BASE_URL`: debug=`http://10.0.2.2:8080/`, release=`https://api.idento.app/`; Retrofit читает его |
+| Android `:app` | `usesCleartextTraffic="true"` глобально; `NetworkModule` хардкодит `http://10.0.2.2:8080/` | Удалён `usesCleartextTraffic`; `network_security_config.xml` через **variant-split**: `src/main` (release) полностью запрещает cleartext (`base-config cleartextTrafficPermitted="false"`); `src/debug` дополнительно разрешает cleartext только для `10.0.2.2`/`localhost`/`127.0.0.1`. (Первоначальный `debug-overrides`-подход отклоняется Android-линтом — вложенный `domain-config` там запрещён; variant-split даёт полностью cleartext-free release.) `BuildConfig.BASE_URL`: debug=`http://10.0.2.2:8080/`, release=`https://api.idento.app/`; Retrofit читает его |
 | iOS `:shared` | `getDefaultBaseUrl()` всегда dev HTTP; `PROD_BASE_URL` объявлен, но не используется | Введён `expect/actual isDebugBuild()` (iOS → `Platform.isDebugBinary`, Android → `BuildConfig.DEBUG`); `getDefaultBaseUrl()` = `resolveBaseUrl(isDebugBuild(), dev, PROD_BASE_URL)` → в release отдаёт prod HTTPS. (На iOS cleartext и так блокируется ATS по умолчанию — ATS-исключений в Info.plist нет.) |
 
 ## MOBILE-SEC-02 — Полное логирование тела/заголовков HTTP (JWT + пароль) без гейтинга (High)
