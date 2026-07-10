@@ -98,6 +98,15 @@ kotlin {
 
             // SQLDelight Android driver
             implementation("app.cash.sqldelight:android-driver:2.1.0")
+
+            // CameraX (barcode-scanning camera pipeline)
+            implementation("androidx.camera:camera-camera2:1.4.0")
+            implementation("androidx.camera:camera-lifecycle:1.4.0")
+            implementation("androidx.camera:camera-view:1.4.0")
+            implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
+            // Process-level lifecycle owner for the long-lived CameraService Koin singleton
+            implementation("androidx.lifecycle:lifecycle-process:2.8.7")
         }
 
         iosMain.dependencies {
