@@ -24,6 +24,10 @@ func (h *Handler) GetEventFonts(c echo.Context) error {
 		})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	fonts, err := h.Store.GetFontsByEventID(c.Request().Context(), eventID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -45,6 +49,10 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid event ID",
 		})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	// Safely extract user from context
@@ -256,6 +264,10 @@ func (h *Handler) GetEventFontCSS(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid event ID",
 		})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	fonts, err := h.Store.GetFontsByEventID(c.Request().Context(), eventID)
