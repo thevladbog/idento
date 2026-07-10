@@ -34,10 +34,15 @@ class TokenManager @Inject constructor(
     }
 
     suspend fun saveAuthData(token: String, email: String, name: String) {
+        // Encrypt all three up front: if any field fails, abort the whole write so we
+        // never persist a mismatched (partly-updated) token/email/name triple.
+        val encToken = cryptoManager.encrypt(token) ?: return
+        val encEmail = cryptoManager.encrypt(email) ?: return
+        val encName = cryptoManager.encrypt(name) ?: return
         dataStore.edit { preferences ->
-            cryptoManager.encrypt(token)?.let { preferences[TOKEN_KEY] = it }
-            cryptoManager.encrypt(email)?.let { preferences[USER_EMAIL_KEY] = it }
-            cryptoManager.encrypt(name)?.let { preferences[USER_NAME_KEY] = it }
+            preferences[TOKEN_KEY] = encToken
+            preferences[USER_EMAIL_KEY] = encEmail
+            preferences[USER_NAME_KEY] = encName
         }
     }
 
