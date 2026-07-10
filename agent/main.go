@@ -1094,7 +1094,7 @@ func main() {
 	fmt.Printf("\n========================================\n")
 	fmt.Printf("🖨️  Idento Hardware Agent\n")
 	fmt.Printf("========================================\n")
-	fmt.Printf("Listening on: http://localhost:%s\n", *port)
+	fmt.Printf("Listening on: http://%s:%s\n", *host, *port)
 	fmt.Printf("🔑 Auth token (desktop reads it from ~/.idento/agent_config.json):\n   %s\n", authCfg.AuthToken)
 	fmt.Printf("🌐 Allowed browser origins: %v\n", allowedOrigins)
 	fmt.Printf("\n📄 Available printers: %d\n", len(pm.ListPrinters()))
