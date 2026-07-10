@@ -431,7 +431,7 @@ func main() {
 	e.POST("/api/util/printers/generate-qr", h.GeneratePrinterQR)
 
 	// Register Routes
-	h.RegisterRoutes(e)
+	h.RegisterRoutes(e, cfg.DeploymentMode)
 
 	// Health Check
 	e.GET("/health", func(c echo.Context) error {
