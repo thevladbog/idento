@@ -749,7 +749,7 @@ func (s *PGStore) RemoveUserFromTenant(ctx context.Context, userID, tenantID uui
 }
 
 func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
-	query := `SELECT t.id, t.name, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at
+	query := `SELECT t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at
 			  FROM tenants t
 			  INNER JOIN user_tenants ut ON t.id = ut.tenant_id
 			  WHERE ut.user_id = $1
@@ -764,7 +764,7 @@ func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*mode
 	for rows.Next() {
 		var t models.Tenant
 		var settingsJSON []byte
-		if err := rows.Scan(&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
@@ -797,8 +797,8 @@ func (s *PGStore) UpdateUserTenantRole(ctx context.Context, userID, tenantID uui
 
 func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error) {
 	query := `
-		SELECT 
-			t.id, t.name, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
+		SELECT
+			t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
 			s.id as sub_id, s.plan_id as sub_plan_id, s.status, s.start_date, s.end_date,
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
@@ -833,7 +833,7 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		var sEndDate *time.Time
 
 		err := rows.Scan(
-			&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+			&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 			&subID, &subPlanID, &sStatus, &sStartDate, &sEndDate,
 			&spID, &spName, &spSlug, &spTier,
 			&tws.UsersCount, &tws.EventsCount, &tws.AttendeesCount,
@@ -893,10 +893,10 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	var t models.Tenant
 	var settingsJSON []byte
 
-	query := `SELECT id, name, settings, logo_url, website, contact_email, created_at, updated_at 
+	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at
 	          FROM tenants WHERE id = $1`
 	err := s.db.QueryRow(ctx, query, tenantID).Scan(
-		&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+		&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

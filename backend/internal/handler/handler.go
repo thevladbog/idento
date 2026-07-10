@@ -147,6 +147,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		superAdmin.GET("/tenants", h.GetAllTenants)
 		superAdmin.GET("/tenants/:id/stats", h.GetTenantStats)
 		superAdmin.PATCH("/tenants/:id/subscription", h.UpdateTenantSubscription)
+		superAdmin.POST("/tenants", h.CreateTenantSuper)
+		superAdmin.POST("/tenants/:id/suspend", h.SuspendTenant)
+		superAdmin.POST("/tenants/:id/reactivate", h.ReactivateTenant)
+		superAdmin.POST("/tenants/:id/archive", h.ArchiveTenant)
 
 		// Users
 		superAdmin.GET("/users", h.GetAllUsersSuper)

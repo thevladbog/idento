@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"fmt"
 	"idento/backend/internal/models"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -341,3 +343,64 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 		"offset": offset,
 	})
 }
+
+// CreateTenantSuper lets a platform operator provision an organization
+// manually (subscription to the default plan is created transactionally).
+func (h *Handler) CreateTenantSuper(c echo.Context) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.Bind(&req); err != nil || strings.TrimSpace(req.Name) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+	}
+	tenant := &models.Tenant{Name: strings.TrimSpace(req.Name)}
+	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
+	}
+	claims := c.Get("user").(*models.JWTCustomClaims)
+	adminID := uuid.MustParse(claims.UserID)
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
+	return c.JSON(http.StatusCreated, tenant)
+}
+
+// lifecycle transition table: action → (required current state, new state).
+var tenantTransitions = map[string]struct{ from, to string }{
+	"suspend":    {"active", "suspended"},
+	"reactivate": {"suspended", "active"},
+	"archive":    {"suspended", "archived"},
+}
+
+func (h *Handler) setTenantStatus(c echo.Context, action string) error {
+	tr := tenantTransitions[action]
+	tenantID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
+	}
+	current, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
+	}
+	if current == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
+	}
+	if current != tr.from {
+		return c.JSON(http.StatusConflict, map[string]string{
+			"error": fmt.Sprintf("cannot %s a tenant in state %q (requires %q)", action, current, tr.from),
+		})
+	}
+	if err := h.Store.UpdateTenantStatus(c.Request().Context(), tenantID, tr.to); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update tenant status"})
+	}
+	claims := c.Get("user").(*models.JWTCustomClaims)
+	adminID := uuid.MustParse(claims.UserID)
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, map[string]interface{}{"from": current, "to": tr.to}); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": tr.to})
+}
+
+func (h *Handler) SuspendTenant(c echo.Context) error    { return h.setTenantStatus(c, "suspend") }
+func (h *Handler) ReactivateTenant(c echo.Context) error { return h.setTenantStatus(c, "reactivate") }
+func (h *Handler) ArchiveTenant(c echo.Context) error    { return h.setTenantStatus(c, "archive") }
