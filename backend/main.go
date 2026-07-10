@@ -12,6 +12,10 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
+// version is the build version, injected at build time via
+// -ldflags "-X main.version=v1.2.3". "dev" for local builds.
+var version = "dev"
+
 const backendOpenAPISpec = `openapi: 3.0.3
 info:
   title: Idento Backend API
@@ -432,6 +436,18 @@ func main() {
 	// Health Check
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// Version / instance metadata (public: web reads the mode before login).
+	e.GET("/api/version", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"version": version})
+	})
+	e.GET("/api/instance", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"mode":    cfg.DeploymentMode,
+			"version": version,
+			"license": nil,
+		})
 	})
 
 	// OpenAPI spec endpoint
