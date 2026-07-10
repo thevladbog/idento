@@ -24,7 +24,10 @@ export function ConfirmActionDialog({
 }: Props) {
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
-  const locked = Boolean(confirmText) && typed !== confirmText;
+  // Fail closed: an accidental empty-string confirmText must LOCK the confirm
+  // button entirely, not silently bypass the typed gate.
+  const requireText = confirmText !== undefined;
+  const locked = requireText && (confirmText === '' || typed !== confirmText);
 
   const close = (o: boolean) => {
     setTyped('');
@@ -42,7 +45,7 @@ export function ConfirmActionDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
-        {confirmText && (
+        {requireText && confirmText !== '' && (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">{t('typeToConfirm', { text: confirmText })}</p>
             <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={confirmText} />

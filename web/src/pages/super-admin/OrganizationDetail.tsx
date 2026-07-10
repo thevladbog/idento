@@ -156,6 +156,8 @@ export default function OrganizationDetail() {
     );
   }
 
+  const action = lifecycleAction ?? 'suspend';
+
   return (
     <div className="p-8 space-y-6">
       {/* Header */}
@@ -197,11 +199,11 @@ export default function OrganizationDetail() {
       <ConfirmActionDialog
         open={lifecycleAction !== null}
         onOpenChange={(o) => !o && setLifecycleAction(null)}
-        title={t(`lifecycle_${lifecycleAction ?? 'suspend'}_title`)}
-        description={t(`lifecycle_${lifecycleAction ?? 'suspend'}_description`, { tenant: tenant.tenant?.name })}
-        confirmLabel={t(`lifecycle_${lifecycleAction ?? 'suspend'}_confirm`)}
+        title={t(`lifecycle_${action}_title`)}
+        description={t(`lifecycle_${action}_description`, { tenant: tenant.tenant?.name })}
+        confirmLabel={t(`lifecycle_${action}_confirm`)}
         onConfirm={runLifecycle}
-        confirmText={lifecycleAction === 'reactivate' ? undefined : tenant.tenant?.name}
+        confirmText={lifecycleAction === 'reactivate' ? undefined : (tenant.tenant?.name || id)}
         destructive={lifecycleAction !== 'reactivate'}
         busy={lifecycleBusy}
       />
