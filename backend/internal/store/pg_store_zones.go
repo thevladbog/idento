@@ -328,6 +328,33 @@ func (s *PGStore) GetAttendeeZoneAccess(ctx context.Context, attendeeID, zoneID 
 	return &access, nil
 }
 
+// GetAttendeeZoneAccessByID retrieves a single access override by its own ID.
+// Used by handlers that operate on the override's ID (rather than
+// attendee_id/zone_id) so they can resolve the owning zone/event/tenant for
+// an authorization check before mutating the record.
+func (s *PGStore) GetAttendeeZoneAccessByID(ctx context.Context, id uuid.UUID) (*models.AttendeeZoneAccess, error) {
+	query := `
+		SELECT id, attendee_id, zone_id, allowed, notes, created_at, updated_at
+		FROM attendee_zone_access
+		WHERE id = $1
+	`
+
+	var access models.AttendeeZoneAccess
+	err := s.db.QueryRow(ctx, query, id).Scan(
+		&access.ID, &access.AttendeeID, &access.ZoneID,
+		&access.Allowed, &access.Notes, &access.CreatedAt, &access.UpdatedAt,
+	)
+
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &access, nil
+}
+
 // GetAttendeeZoneAccessList retrieves all access overrides for an attendee
 func (s *PGStore) GetAttendeeZoneAccessList(ctx context.Context, attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error) {
 	query := `

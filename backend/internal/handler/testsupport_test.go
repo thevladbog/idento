@@ -16,13 +16,16 @@ import (
 // any un-set method panics if called (which surfaces an unexpected dependency).
 type fakeStore struct {
 	store.Store
-	getEventByID       func(id uuid.UUID) (*models.Event, error)
-	getEventZoneByID   func(id uuid.UUID) (*models.EventZone, error)
-	getAttendeeByID    func(id uuid.UUID) (*models.Attendee, error)
-	getFontByID        func(id uuid.UUID) (*models.Font, error)
-	getUsersByTenantID func(tenantID uuid.UUID) ([]*models.User, error)
-	getZoneStaffAssign func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
-	getAttendeeByCode  func(eventID uuid.UUID, code string) (*models.Attendee, error)
+	getEventByID              func(id uuid.UUID) (*models.Event, error)
+	getEventZoneByID          func(id uuid.UUID) (*models.EventZone, error)
+	getAttendeeByID           func(id uuid.UUID) (*models.Attendee, error)
+	getFontByID               func(id uuid.UUID) (*models.Font, error)
+	getUserByID               func(id uuid.UUID) (*models.User, error)
+	getUsersByTenantID        func(tenantID uuid.UUID) ([]*models.User, error)
+	getZoneStaffAssign        func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
+	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
+	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
+	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -45,6 +48,15 @@ func (f *fakeStore) GetZoneStaffAssignments(_ context.Context, zoneID uuid.UUID)
 }
 func (f *fakeStore) GetAttendeeByCode(_ context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
 	return f.getAttendeeByCode(eventID, code)
+}
+func (f *fakeStore) GetUserByID(_ context.Context, id uuid.UUID) (*models.User, error) {
+	return f.getUserByID(id)
+}
+func (f *fakeStore) GetAttendeeZoneAccessByID(_ context.Context, id uuid.UUID) (*models.AttendeeZoneAccess, error) {
+	return f.getAttendeeZoneAccessByID(id)
+}
+func (f *fakeStore) GetStaffZoneAssignments(_ context.Context, userID uuid.UUID) ([]*models.StaffZoneAssignment, error) {
+	return f.getStaffZoneAssignments(userID)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

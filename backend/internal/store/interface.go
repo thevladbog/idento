@@ -106,6 +106,7 @@ type Store interface {
 	// Attendee Zone Access (individual overrides)
 	CreateAttendeeZoneAccess(ctx context.Context, access *models.AttendeeZoneAccess) error
 	GetAttendeeZoneAccess(ctx context.Context, attendeeID, zoneID uuid.UUID) (*models.AttendeeZoneAccess, error)
+	GetAttendeeZoneAccessByID(ctx context.Context, id uuid.UUID) (*models.AttendeeZoneAccess, error)
 	GetAttendeeZoneAccessList(ctx context.Context, attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error)
 	UpdateAttendeeZoneAccess(ctx context.Context, access *models.AttendeeZoneAccess) error
 	DeleteAttendeeZoneAccess(ctx context.Context, id uuid.UUID) error
