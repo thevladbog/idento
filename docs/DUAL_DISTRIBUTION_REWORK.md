@@ -4,9 +4,11 @@ Companion to the approved design: [docs/superpowers/specs/2026-07-10-saas-onprem
 
 Work is ordered in three phases. Every item lists the affected files and an acceptance criterion. Items within a phase are roughly independent unless noted.
 
+> **Status (2026-07-10): Phase 0 complete** — merged to main via [PR #23](https://github.com/thevladbog/idento/pull/23) (squash `b20311b`), all P0 acceptance criteria verified. Items P1.9–P1.10 below were added from Phase 0 review findings.
+
 ---
 
-## Phase 0 — Foundation (shared by both editions)
+## Phase 0 — Foundation (shared by both editions) ✅ DONE (PR #23)
 
 ### P0.1 Fix broken SaaS onboarding (bug, blocks everything)
 - **Problem:** `Register` (`backend/internal/handler/auth.go`) creates a tenant but no subscription; `store.CreateSubscription` is never called anywhere. `CheckTenantLimit` (`backend/internal/store/pg_store.go`) returns "no active subscription" → new orgs get 403 from `CheckLimits` middleware on any create.
@@ -76,6 +78,16 @@ Work is ordered in three phases. Every item lists the affected files and an acce
 
 ### P1.8 Tenant-management admin UI
 - Per design brief: [docs/design-briefs/saas-tenant-admin.md](design-briefs/saas-tenant-admin.md).
+
+### P1.9 Isolation sweep — remaining existence oracles (from Phase 0 final review)
+- **Problem:** Phase 0 unified cross-tenant responses to 404 only for the migrated surface. `badge_zpl.go`, `attendee_codes.go` (two handlers), and `bulk_import.go` still return 403-for-foreign vs 404-for-missing — a cross-tenant existence oracle. Separately, `zones.go` `GetUserZoneAssignments` still authorizes via the target user's home `users.tenant_id` instead of active-tenant membership (`user_tenants`) — the same real bug class fixed in `users.go` during P0.2; multi-org staff get spurious 403s.
+- **Change:** migrate those handlers onto `requireEventOwnership`/scoped getters; switch `GetUserZoneAssignments` to `GetUserTenantRole` against the caller's active tenant. Extend the isolation test suite to cover them.
+- **Accept:** isolation suite covers every event/attendee-id-taking route; no handler distinguishes foreign from missing; no authz path reads `users.tenant_id`.
+
+### P1.10 Registration atomicity + subscription upsert race (deferred from PR #23 review)
+- **Problem:** (a) `Register` commits tenant+subscription before user creation — a failure in `CreateUser`/`AddUserToTenant` leaves an inert orphaned tenant (window predates Phase 0). (b) Concurrent super-admin subscription PATCHes for a subscription-less tenant race to insert; the loser 500s on `UNIQUE(tenant_id)` (data stays correct).
+- **Change:** wrap the full registration flow (tenant, subscription, user, membership) in one transaction — new store method or tx-scoped store; make the upsert race-safe (`ON CONFLICT (tenant_id)` or reload-and-retry in the handler).
+- **Accept:** killing the process mid-registration leaves no orphan rows; concurrent PATCH upserts both succeed (one create, one update).
 
 ---
 
