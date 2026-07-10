@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"idento/backend/internal/config"
 	"idento/backend/internal/models"
+	"idento/backend/internal/store"
 	"log"
 	"net/http"
 	"strings"
@@ -48,16 +50,16 @@ func (h *Handler) Register(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	// Hash before opening the transaction (bcrypt is slow; don't hold a tx).
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to process password"})
-	}
-
 	// One transaction: tenant + subscription + user + membership (P1.10).
+	// The store hashes/verifies the password itself: attaching a new org to
+	// an EXISTING email requires the correct password (SEC — otherwise any
+	// caller knowing an email could mint a token for that account).
 	tenant, existingUser, err := h.Store.ProvisionTenantWithAdmin(
-		c.Request().Context(), req.TenantName, req.Email, string(hashedPassword))
+		c.Request().Context(), req.TenantName, req.Email, req.Password)
 	if err != nil {
+		if errors.Is(err, store.ErrInvalidCredentials) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
 	}
 

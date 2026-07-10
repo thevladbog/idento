@@ -18,9 +18,11 @@ type Store interface {
 	// without a subscription is 403-blocked by the limits middleware).
 	CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error
 	// ProvisionTenantWithAdmin registers a tenant end-to-end in one
-	// transaction: tenant, default-plan subscription, admin user (created or
-	// reused by email), user_tenants membership. No orphan rows on failure.
-	ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, passwordHash string) (*models.Tenant, *models.User, error)
+	// transaction: tenant, default-plan subscription, admin user (created, or
+	// reused by email only after the plaintext password verifies against the
+	// stored hash — ErrInvalidCredentials otherwise), user_tenants membership.
+	// No orphan rows on failure.
+	ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error)
 	// EnsureSeedData seeds mode-appropriate subscription plans (idempotent).
 	EnsureSeedData(ctx context.Context, mode string) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)

@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PGStore struct {
@@ -154,12 +155,25 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 	return tx.Commit(ctx)
 }
 
+// ErrInvalidCredentials is returned when registration hits an existing email
+// and the supplied password does not match that account's password hash.
+var ErrInvalidCredentials = errors.New("invalid credentials for existing user")
+
 // ProvisionTenantWithAdmin registers a tenant, its default-plan subscription,
-// the admin user (created or reused by email — an existing user's password is
-// left untouched), and the user_tenants membership row in a single
-// transaction, so a mid-way failure (or a killed process) leaves no orphan
-// tenant/user/subscription rows.
-func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, passwordHash string) (*models.Tenant, *models.User, error) {
+// the admin user (created, or reused by email after verifying the supplied
+// password against the stored hash — attaching a new org to an account
+// requires proving you own it), and the user_tenants membership row in a
+// single transaction, so a mid-way failure (or a killed process) leaves no
+// orphan tenant/user/subscription rows.
+func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
+	// Hash before opening the transaction (bcrypt is slow; don't hold a tx).
+	// Hashing unconditionally also keeps register timing flat whether or not
+	// the email already exists.
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hash password: %w", err)
+	}
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -192,14 +206,15 @@ func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, emai
 	}
 
 	user := &models.User{Email: email}
+	var storedHash string
 	err = tx.QueryRow(ctx,
-		`SELECT id, tenant_id, role, is_super_admin, created_at, updated_at FROM users WHERE email = $1`, email).
-		Scan(&user.ID, &user.TenantID, &user.Role, &user.IsSuperAdmin, &user.CreatedAt, &user.UpdatedAt)
+		`SELECT id, tenant_id, role, is_super_admin, password_hash, created_at, updated_at FROM users WHERE email = $1`, email).
+		Scan(&user.ID, &user.TenantID, &user.Role, &user.IsSuperAdmin, &storedHash, &user.CreatedAt, &user.UpdatedAt)
 	switch {
 	case err == pgx.ErrNoRows:
 		user.TenantID = tenant.ID
 		user.Role = "admin"
-		user.PasswordHash = passwordHash
+		user.PasswordHash = string(passwordHash)
 		if err := tx.QueryRow(ctx,
 			`INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id, created_at, updated_at`,
 			user.TenantID, user.Email, user.PasswordHash).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt); err != nil {
@@ -207,6 +222,13 @@ func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, emai
 		}
 	case err != nil:
 		return nil, nil, err
+	default:
+		// Existing account: the caller must prove ownership before this
+		// registration mints a token for it (SEC: without this, knowing an
+		// email was enough to obtain that user's JWT).
+		if bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) != nil {
+			return nil, nil, ErrInvalidCredentials
+		}
 	}
 
 	if _, err := tx.Exec(ctx,

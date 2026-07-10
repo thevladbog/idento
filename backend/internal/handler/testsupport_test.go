@@ -33,7 +33,7 @@ type fakeStore struct {
 	updateAttendee            func(attendee *models.Attendee) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
-	provisionTenantWithAdmin            func(tenantName, email, passwordHash string) (*models.Tenant, *models.User, error)
+	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
 	getTenantStatus                     func(id uuid.UUID) (string, error)
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
@@ -123,8 +123,8 @@ func (f *fakeStore) UpdateAttendee(_ context.Context, attendee *models.Attendee)
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
 	return f.createTenantWithDefaultSubscription(tenant)
 }
-func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, passwordHash string) (*models.Tenant, *models.User, error) {
-	return f.provisionTenantWithAdmin(tenantName, email, passwordHash)
+func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
+	return f.provisionTenantWithAdmin(tenantName, email, password)
 }
 func (f *fakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string, error) {
 	return f.getTenantStatus(id)
