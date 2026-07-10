@@ -298,12 +298,13 @@ func (h *Handler) GetTenantUsage(c echo.Context) error {
 	})
 }
 
-// GetSystemAnalytics returns overall system analytics
+// GetSystemAnalytics returns operator-facing platform aggregates (P1.6).
 func (h *Handler) GetSystemAnalytics(c echo.Context) error {
-	// TODO: Implement comprehensive system analytics
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Analytics coming soon",
-	})
+	analytics, err := h.Store.GetPlatformAnalytics(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute analytics"})
+	}
+	return c.JSON(http.StatusOK, analytics)
 }
 
 // GetAuditLog returns admin audit log

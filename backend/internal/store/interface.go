@@ -85,6 +85,8 @@ type Store interface {
 	// Super Admin - Organizations Management
 	GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error)
 	GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*models.TenantWithStats, error)
+	// GetPlatformAnalytics aggregates operator-facing platform metrics (P1.6).
+	GetPlatformAnalytics(ctx context.Context) (*models.PlatformAnalytics, error)
 
 	// Subscription Plans
 	CreateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error

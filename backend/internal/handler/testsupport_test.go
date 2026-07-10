@@ -52,6 +52,8 @@ type fakeStore struct {
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
 
 	checkAttendeeLimit func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
+
+	getPlatformAnalytics func() (*models.PlatformAnalytics, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -169,6 +171,9 @@ func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token
 }
 func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
 	return f.checkAttendeeLimit(tenantID, eventID, adding)
+}
+func (f *fakeStore) GetPlatformAnalytics(_ context.Context) (*models.PlatformAnalytics, error) {
+	return f.getPlatformAnalytics()
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

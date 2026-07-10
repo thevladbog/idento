@@ -1029,6 +1029,104 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	return &tws, nil
 }
 
+// GetPlatformAnalytics aggregates operator-facing platform metrics. All
+// queries are cheap index scans/aggregates over small operator tables;
+// callers are super-admin only.
+func (s *PGStore) GetPlatformAnalytics(ctx context.Context) (*models.PlatformAnalytics, error) {
+	a := &models.PlatformAnalytics{TenantsByStatus: map[string]int{}}
+
+	rows, err := s.db.Query(ctx, `SELECT status, COUNT(*) FROM tenants GROUP BY status`)
+	if err != nil {
+		return nil, fmt.Errorf("tenants by status: %w", err)
+	}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.TenantsByStatus[status] = count
+		a.TotalTenants += count
+	}
+	rows.Close()
+
+	rows, err = s.db.Query(ctx, `
+		SELECT COALESCE(p.slug, 'none'), COUNT(*)
+		FROM tenants t
+		LEFT JOIN subscriptions s ON s.tenant_id = t.id
+		LEFT JOIN subscription_plans p ON p.id = s.plan_id
+		GROUP BY 1 ORDER BY 2 DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("tenants by plan: %w", err)
+	}
+	for rows.Next() {
+		var pc models.PlanCount
+		if err := rows.Scan(&pc.Plan, &pc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.TenantsByPlan = append(a.TenantsByPlan, pc)
+	}
+	rows.Close()
+
+	rows, err = s.db.Query(ctx, `
+		SELECT to_char(date_trunc('week', created_at), 'YYYY-MM-DD'), COUNT(*)
+		FROM tenants
+		WHERE created_at >= date_trunc('week', NOW()) - INTERVAL '7 weeks'
+		GROUP BY 1 ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("signups by week: %w", err)
+	}
+	for rows.Next() {
+		var tc models.TimeCount
+		if err := rows.Scan(&tc.Period, &tc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.SignupsByWeek = append(a.SignupsByWeek, tc)
+	}
+	rows.Close()
+
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE deleted_at IS NULL
+		  AND (start_date IS NULL OR start_date <= NOW())
+		  AND (end_date IS NULL OR end_date >= NOW())`).Scan(&a.ActiveEvents); err != nil {
+		return nil, fmt.Errorf("active events: %w", err)
+	}
+
+	rows, err = s.db.Query(ctx, `
+		SELECT to_char(date_trunc('day', checked_in_at), 'YYYY-MM-DD'), COUNT(*)
+		FROM attendees
+		WHERE checked_in_at >= NOW() - INTERVAL '14 days'
+		GROUP BY 1 ORDER BY 1`)
+	if err != nil {
+		return nil, fmt.Errorf("checkins by day: %w", err)
+	}
+	for rows.Next() {
+		var tc models.TimeCount
+		if err := rows.Scan(&tc.Period, &tc.Count); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		a.CheckinsByDay = append(a.CheckinsByDay, tc)
+	}
+	rows.Close()
+
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT t.id)
+		FROM tenants t
+		JOIN subscriptions s ON s.tenant_id = t.id AND s.status = 'active'
+		JOIN subscription_plans p ON p.id = s.plan_id AND p.price_monthly > 0`).Scan(&a.PaidTenants); err != nil {
+		return nil, fmt.Errorf("paid tenants: %w", err)
+	}
+	if a.TotalTenants > 0 {
+		a.PaidConversion = float64(a.PaidTenants) / float64(a.TotalTenants)
+	}
+	return a, nil
+}
+
 // Subscription Plans
 
 func (s *PGStore) CreateSubscriptionPlan(ctx context.Context, plan *models.SubscriptionPlan) error {
