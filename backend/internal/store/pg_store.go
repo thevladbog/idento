@@ -393,6 +393,9 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &e.CreatedAt, &e.UpdatedAt,
 	)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
