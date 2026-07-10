@@ -42,12 +42,16 @@ pub async fn agent_request(
             req.send().await
         }
         "POST" => {
-            let mut req = client.post(&url);
+            // The agent requires Content-Type: application/json on every mutating
+            // request, so set it unconditionally (even for body-less POSTs).
+            let mut req = client
+                .post(&url)
+                .header("Content-Type", "application/json");
             if let Some(ref t) = token {
                 req = req.header("Authorization", format!("Bearer {}", t));
             }
             if let Some(ref b) = body {
-                req = req.header("Content-Type", "application/json").body(b.clone());
+                req = req.body(b.clone());
             }
             req.send().await
         }
