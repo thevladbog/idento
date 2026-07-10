@@ -2,6 +2,7 @@ package com.idento.di
 
 import com.idento.data.storage.DataStoreFactory
 import com.idento.data.storage.SecureStore
+import com.idento.data.storage.SqlDriverFactory
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -12,6 +13,10 @@ actual fun createDataStoreFactory(): DataStoreFactory {
 
 actual fun createSecureStore(): SecureStore {
     return SecureStore()
+}
+
+actual fun createSqlDriverFactory(): SqlDriverFactory {
+    return SqlDriverFactory()
 }
 
 actual fun createBluetoothPrinterService(): BluetoothPrinterService {
@@ -32,6 +37,7 @@ actual fun createCameraService(): CameraService {
 val iosModule = org.koin.dsl.module {
     single { DataStoreFactory() }
     single { SecureStore() }
+    single { SqlDriverFactory() }
     single { BluetoothPrinterService() }
     single { EthernetPrinterService() }
     single { CameraService() }

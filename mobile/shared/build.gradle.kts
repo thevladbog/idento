@@ -4,6 +4,7 @@ plugins {
     id("org.jetbrains.compose") version "1.11.1"
     id("org.jetbrains.kotlin.plugin.compose") version "2.3.21"
     kotlin("plugin.serialization") version "2.3.21"
+    id("app.cash.sqldelight") version "2.1.0"
 }
 
 kotlin {
@@ -70,9 +71,13 @@ kotlin {
             // Koin DI
             implementation("io.insert-koin:koin-core:4.0.0")
             implementation("io.insert-koin:koin-compose:4.0.0")
-            
+
             // DataStore
             implementation("androidx.datastore:datastore-preferences-core:1.1.1")
+
+            // SQLDelight (offline persistence)
+            implementation("app.cash.sqldelight:runtime:2.1.0")
+            implementation("app.cash.sqldelight:coroutines-extensions:2.1.0")
             
             // Lifecycle ViewModel
             implementation("androidx.lifecycle:lifecycle-viewmodel:2.8.7")
@@ -84,17 +89,23 @@ kotlin {
         androidMain.dependencies {
             // Ktor Android Engine
             implementation("io.ktor:ktor-client-okhttp:3.5.1")
-            
+
             // Koin Android
             implementation("io.insert-koin:koin-android:4.0.0")
-            
+
             // Android DataStore
             implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+            // SQLDelight Android driver
+            implementation("app.cash.sqldelight:android-driver:2.1.0")
         }
-        
+
         iosMain.dependencies {
             // Ktor iOS Engine
             implementation("io.ktor:ktor-client-darwin:3.5.1")
+
+            // SQLDelight native driver
+            implementation("app.cash.sqldelight:native-driver:2.1.0")
         }
         
         commonTest.dependencies {
@@ -119,5 +130,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+sqldelight {
+    databases {
+        create("IdentoDatabase") {
+            packageName.set("com.idento.db")
+        }
     }
 }

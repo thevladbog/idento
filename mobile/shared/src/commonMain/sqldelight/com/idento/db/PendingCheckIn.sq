@@ -1,0 +1,29 @@
+CREATE TABLE PendingCheckIn (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    attendeeCode TEXT NOT NULL,
+    zoneId TEXT NOT NULL,
+    eventDay TEXT NOT NULL,
+    checkedInAt INTEGER NOT NULL,
+    attemptCount INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt INTEGER,
+    errorMessage TEXT
+);
+
+insert:
+INSERT INTO PendingCheckIn(attendeeCode, zoneId, eventDay, checkedInAt, attemptCount, lastAttemptAt, errorMessage)
+VALUES (?, ?, ?, ?, 0, NULL, NULL);
+
+lastInsertRowId:
+SELECT last_insert_rowid();
+
+selectAll:
+SELECT * FROM PendingCheckIn ORDER BY id ASC;
+
+deleteById:
+DELETE FROM PendingCheckIn WHERE id = ?;
+
+deleteAll:
+DELETE FROM PendingCheckIn;
+
+countAll:
+SELECT COUNT(*) FROM PendingCheckIn;
