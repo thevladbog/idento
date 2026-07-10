@@ -42,20 +42,32 @@ func tenantIDFromContext(c echo.Context) (uuid.UUID, error) {
 	return tenantID, nil
 }
 
-// requireEventOwnership loads the event and verifies it belongs to the caller's tenant.
+// requireEventOwnership loads the event scoped to the caller's tenant.
+// Missing and foreign events are both 404 — no existence oracle.
 func (h *Handler) requireEventOwnership(c echo.Context, eventID uuid.UUID) (*models.Event, error) {
 	tenantID, err := tenantIDFromContext(c)
 	if err != nil {
 		return nil, err
 	}
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
+	event, err := h.Store.GetEventByIDForTenant(c.Request().Context(), eventID, tenantID)
 	if err != nil || event == nil {
 		return nil, newHTTPError(http.StatusNotFound, "Event not found")
 	}
-	if event.TenantID != tenantID {
-		return nil, newHTTPError(http.StatusForbidden, "Access denied")
-	}
 	return event, nil
+}
+
+// requireAttendeeOwnership loads the attendee scoped to the caller's tenant
+// (via its event). Missing and foreign are both 404.
+func (h *Handler) requireAttendeeOwnership(c echo.Context, attendeeID uuid.UUID) (*models.Attendee, error) {
+	tenantID, err := tenantIDFromContext(c)
+	if err != nil {
+		return nil, err
+	}
+	attendee, err := h.Store.GetAttendeeByIDForTenant(c.Request().Context(), attendeeID, tenantID)
+	if err != nil || attendee == nil {
+		return nil, newHTTPError(http.StatusNotFound, "Attendee not found")
+	}
+	return attendee, nil
 }
 
 // requireZoneOwnership resolves a zone to its event and verifies tenant ownership.

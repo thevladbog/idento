@@ -44,11 +44,35 @@ type fakeStore struct {
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
 	return f.getEventByID(id)
 }
+
+func (f *fakeStore) GetEventByIDForTenant(_ context.Context, id, tenantID uuid.UUID) (*models.Event, error) {
+	ev, err := f.getEventByID(id)
+	if err != nil || ev == nil {
+		return ev, err
+	}
+	if ev.TenantID != tenantID {
+		return nil, nil
+	}
+	return ev, nil
+}
+
 func (f *fakeStore) GetEventZoneByID(_ context.Context, id uuid.UUID) (*models.EventZone, error) {
 	return f.getEventZoneByID(id)
 }
 func (f *fakeStore) GetAttendeeByID(_ context.Context, id uuid.UUID) (*models.Attendee, error) {
 	return f.getAttendeeByID(id)
+}
+
+func (f *fakeStore) GetAttendeeByIDForTenant(_ context.Context, id, tenantID uuid.UUID) (*models.Attendee, error) {
+	a, err := f.getAttendeeByID(id)
+	if err != nil || a == nil {
+		return a, err
+	}
+	ev, err := f.getEventByID(a.EventID)
+	if err != nil || ev == nil || ev.TenantID != tenantID {
+		return nil, nil
+	}
+	return a, nil
 }
 func (f *fakeStore) GetFontByID(_ context.Context, id uuid.UUID) (*models.Font, error) {
 	return f.getFontByID(id)

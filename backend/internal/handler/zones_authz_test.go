@@ -28,8 +28,8 @@ func TestGetEventZones_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.GetEventZones(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -49,8 +49,8 @@ func TestCreateEventZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.CreateEventZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -70,8 +70,8 @@ func TestGetAvailableZones_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.GetAvailableZones(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -100,8 +100,8 @@ func TestGetEventZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetEventZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestUpdateEventZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.UpdateEventZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -134,8 +134,8 @@ func TestDeleteEventZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.DeleteEventZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -151,8 +151,8 @@ func TestCreateZoneAccessRule_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.CreateZoneAccessRule(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -168,8 +168,8 @@ func TestGetZoneAccessRules_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetZoneAccessRules(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -185,8 +185,8 @@ func TestBulkUpdateZoneAccessRules_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.BulkUpdateZoneAccessRules(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -202,8 +202,8 @@ func TestAssignStaffToZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.AssignStaffToZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -219,8 +219,8 @@ func TestGetZoneStaff_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetZoneStaff(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -236,8 +236,8 @@ func TestRemoveStaffFromZone_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String(), uuid.New().String())
 
 	_ = h.RemoveStaffFromZone(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -253,8 +253,8 @@ func TestGetZoneCheckins_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetZoneCheckins(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -270,8 +270,8 @@ func TestGetZoneDays_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetZoneDays(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -287,8 +287,8 @@ func TestGetZoneQRCode_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(zoneID.String())
 
 	_ = h.GetZoneQRCode(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -314,8 +314,8 @@ func TestCreateAttendeeZoneAccess_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(attendeeID.String())
 
 	_ = h.CreateAttendeeZoneAccess(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -339,8 +339,8 @@ func TestGetAttendeeZoneAccess_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(attendeeID.String())
 
 	_ = h.GetAttendeeZoneAccess(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -364,8 +364,8 @@ func TestGetAttendeeZoneHistory_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(attendeeID.String())
 
 	_ = h.GetAttendeeZoneHistory(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -396,8 +396,8 @@ func TestUpdateAttendeeZoneAccess_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(accessID.String())
 
 	_ = h.UpdateAttendeeZoneAccess(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -425,8 +425,8 @@ func TestDeleteAttendeeZoneAccess_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(accessID.String())
 
 	_ = h.DeleteAttendeeZoneAccess(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 

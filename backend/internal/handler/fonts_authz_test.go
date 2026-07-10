@@ -26,8 +26,8 @@ func TestGetEventFonts_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.GetEventFonts(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -51,8 +51,8 @@ func TestGetFontFile_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(fontID.String())
 
 	_ = h.GetFontFile(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 
@@ -73,7 +73,7 @@ func TestDeleteEventFont_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String(), fontID.String())
 
 	_ = h.DeleteEventFont(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }

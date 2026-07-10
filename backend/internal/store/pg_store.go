@@ -403,6 +403,17 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 	return &e, nil
 }
 
+func (s *PGStore) GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Event, error) {
+	event, err := s.GetEventByID(ctx, id)
+	if err != nil || event == nil {
+		return event, err
+	}
+	if event.TenantID != tenantID {
+		return nil, nil
+	}
+	return event, nil
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error
@@ -497,6 +508,21 @@ func (s *PGStore) GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.At
 		}
 	}
 	return &a, nil
+}
+
+func (s *PGStore) GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Attendee, error) {
+	attendee, err := s.GetAttendeeByID(ctx, id)
+	if err != nil || attendee == nil {
+		return attendee, err
+	}
+	event, err := s.GetEventByIDForTenant(ctx, attendee.EventID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if event == nil {
+		return nil, nil
+	}
+	return attendee, nil
 }
 
 func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee) error {
