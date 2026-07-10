@@ -27,12 +27,18 @@ class AuthRepository @Inject constructor(
                 val response = api.login(LoginRequest(email, password))
                 if (response.isSuccessful && response.body() != null) {
                     val loginResponse = response.body()!!
-                    tokenManager.saveAuthData(
+                    val saved = tokenManager.saveAuthData(
                         token = loginResponse.token,
                         email = loginResponse.user.email,
                         name = loginResponse.user.email // используем email как name
                     )
-                    Result.success(loginResponse)
+                    if (saved) {
+                        Result.success(loginResponse)
+                    } else {
+                        // Don't report success if the token couldn't be stored securely — the
+                        // session wouldn't survive relaunch and requests would be unauthenticated.
+                        Result.failure(Exception("Login failed: could not securely store credentials"))
+                    }
                 } else {
                     Result.failure(Exception("Login failed: ${response.message()}"))
                 }
@@ -48,12 +54,16 @@ class AuthRepository @Inject constructor(
                 val response = api.qrLogin(QRLoginRequest(qrToken))
                 if (response.isSuccessful && response.body() != null) {
                     val loginResponse = response.body()!!
-                    tokenManager.saveAuthData(
+                    val saved = tokenManager.saveAuthData(
                         token = loginResponse.token,
                         email = loginResponse.user.email,
                         name = loginResponse.user.email // используем email как name
                     )
-                    Result.success(loginResponse)
+                    if (saved) {
+                        Result.success(loginResponse)
+                    } else {
+                        Result.failure(Exception("QR Login failed: could not securely store credentials"))
+                    }
                 } else {
                     Result.failure(Exception("QR Login failed: ${response.message()}"))
                 }

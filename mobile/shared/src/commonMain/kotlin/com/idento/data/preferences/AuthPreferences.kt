@@ -118,11 +118,18 @@ class AuthPreferences(dataStoreFactory: DataStoreFactory, private val secureStor
         preferences[USER_ROLE]
     }
     
-    suspend fun saveAuthToken(token: String) {
-        // Update in-memory cache immediately
-        cachedToken.value = token
-        // Persist to the platform secure store (iOS Keychain / Android Keystore)
-        secureStore.putString(SecureStoreKeys.AUTH_TOKEN, token)
+    /**
+     * Persists the token to the platform secure store. Returns false if the write failed,
+     * and in that case does NOT update the in-memory cache — so the caller can fail the
+     * login instead of reporting success for a token that was never stored (which would
+     * work for the current process only and silently drop the session on next launch).
+     */
+    suspend fun saveAuthToken(token: String): Boolean {
+        val stored = secureStore.putString(SecureStoreKeys.AUTH_TOKEN, token)
+        if (stored) {
+            cachedToken.value = token
+        }
+        return stored
     }
     
     suspend fun saveUserInfo(
