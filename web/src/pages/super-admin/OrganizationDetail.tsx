@@ -36,6 +36,8 @@ export default function OrganizationDetail() {
   const [subscriptionStatus, setSubscriptionStatus] = useState('active');
   const [impersonateOpen, setImpersonateOpen] = useState(false);
   const [impersonating, setImpersonating] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<null | 'suspend' | 'reactivate' | 'archive'>(null);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -115,6 +117,22 @@ export default function OrganizationDetail() {
     }
   };
 
+  const runLifecycle = async () => {
+    if (!lifecycleAction) return;
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/api/super-admin/tenants/${id}/${lifecycleAction}`);
+      toast.success(t(`lifecycle_${lifecycleAction}_done`));
+      setLifecycleAction(null);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('lifecycleFailed'));
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8">
@@ -154,7 +172,18 @@ export default function OrganizationDetail() {
             <p className="text-muted-foreground">{t('organizationDetails')}</p>
           </div>
         </div>
-        <Button variant="outline" onClick={() => setImpersonateOpen(true)}>{t('impersonate')}</Button>
+        <div className="flex items-center gap-2">
+          {tenant.tenant?.status === 'active' && (
+            <Button variant="destructive" onClick={() => setLifecycleAction('suspend')}>{t('suspendTenant')}</Button>
+          )}
+          {tenant.tenant?.status === 'suspended' && (
+            <>
+              <Button onClick={() => setLifecycleAction('reactivate')}>{t('reactivateTenant')}</Button>
+              <Button variant="destructive" onClick={() => setLifecycleAction('archive')}>{t('archiveTenant')}</Button>
+            </>
+          )}
+          <Button variant="outline" onClick={() => setImpersonateOpen(true)}>{t('impersonate')}</Button>
+        </div>
       </div>
       <ConfirmActionDialog
         open={impersonateOpen}
@@ -164,6 +193,17 @@ export default function OrganizationDetail() {
         confirmLabel={t('impersonateConfirm')}
         onConfirm={impersonate}
         busy={impersonating}
+      />
+      <ConfirmActionDialog
+        open={lifecycleAction !== null}
+        onOpenChange={(o) => !o && setLifecycleAction(null)}
+        title={t(`lifecycle_${lifecycleAction ?? 'suspend'}_title`)}
+        description={t(`lifecycle_${lifecycleAction ?? 'suspend'}_description`, { tenant: tenant.tenant?.name })}
+        confirmLabel={t(`lifecycle_${lifecycleAction ?? 'suspend'}_confirm`)}
+        onConfirm={runLifecycle}
+        confirmText={lifecycleAction === 'reactivate' ? undefined : tenant.tenant?.name}
+        destructive={lifecycleAction !== 'reactivate'}
+        busy={lifecycleBusy}
       />
 
       {/* Stats Cards */}
