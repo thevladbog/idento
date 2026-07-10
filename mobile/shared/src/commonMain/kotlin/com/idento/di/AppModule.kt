@@ -4,6 +4,7 @@ import com.idento.data.network.ApiClient
 import com.idento.data.network.AttendeeApiService
 import com.idento.data.network.AuthApiService
 import com.idento.data.network.EventApiService
+import com.idento.data.network.StationApiService
 import com.idento.data.network.ZoneApiService
 import com.idento.data.network.getDefaultBaseUrl
 import com.idento.data.preferences.AppPreferences
@@ -12,6 +13,7 @@ import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
+import com.idento.data.repository.StationRepository
 import com.idento.data.repository.ZoneRepository
 import com.idento.data.repository.OfflineCheckInRepository
 import com.idento.data.storage.DataStoreFactory
@@ -58,12 +60,14 @@ val appModule = module {
     single { EventApiService(get()) }
     single { AttendeeApiService(get()) }
     single { ZoneApiService(get()) }
-    
+    single { StationApiService(get()) }
+
     // Repositories
     single { AuthRepository(get(), get()) }
     single { EventRepository(get()) }
     single { AttendeeRepository(get()) }
     single { ZoneRepository(get()) }
+    single { StationRepository(get()) }
     single { OfflineCheckInRepository(get(), get()) }
     
     // Offline storage
