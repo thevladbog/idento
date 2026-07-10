@@ -10,12 +10,12 @@ import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.network.ApiResult
 import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * ViewModel for Display Template Editor

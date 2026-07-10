@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
-import org.koin.mp.KoinPlatform
+import org.koin.core.component.KoinComponent
 
 @HiltAndroidApp
 class IdentoApplication : Application() {
@@ -21,9 +21,15 @@ class IdentoApplication : Application() {
             androidLogger()
             androidContext(this@IdentoApplication)
         }
-        val authPreferences = KoinPlatform.getKoin().get<AuthPreferences>()
-        CoroutineScope(Dispatchers.Default).launch {
-            migrateLegacyAndroidSession(this@IdentoApplication, authPreferences)
+        // Best-effort: a failure here (e.g. Keystore unavailable) must not crash app startup
+        // for every user just to migrate a legacy session for upgrading users.
+        try {
+            val authPreferences = object : KoinComponent {}.getKoin().get<AuthPreferences>()
+            CoroutineScope(Dispatchers.Default).launch {
+                migrateLegacyAndroidSession(this@IdentoApplication, authPreferences)
+            }
+        } catch (e: Exception) {
+            // Nothing to migrate, or the graph isn't ready — safe to ignore.
         }
     }
 }
