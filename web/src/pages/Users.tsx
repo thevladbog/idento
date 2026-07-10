@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useTranslation } from 'react-i18next';
 import { Plus, QrCode, Shield } from 'lucide-react';
+import QRCode from 'qrcode';
 import api from '@/lib/api';
 import type { User } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,34 @@ export default function UsersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [qrDialogUser, setQrDialogUser] = useState<User | null>(null);
   const [qrToken, setQrToken] = useState<string>('');
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+
+  // Render the QR code locally in the browser. The qr_token is a passwordless
+  // 30-day login credential, so it must never be sent to a third-party image
+  // service (e.g. api.qrserver.com) — that would leak it via the URL. See
+  // WEB-SEC-01.
+  useEffect(() => {
+    if (!qrToken) {
+      setQrDataUrl('');
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(qrToken, {
+      width: 256,
+      margin: 2,
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch((error) => {
+        console.error('Failed to render QR code', error);
+        if (!cancelled) setQrDataUrl('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qrToken]);
 
   const { register, handleSubmit, reset, setValue, formState: { errors, isSubmitting } } = useForm<CreateUserFormValues>({
     resolver: zodResolver(createUserSchema),
@@ -90,6 +119,15 @@ export default function UsersPage() {
     } catch (error) {
       console.error('Failed to generate QR token', error);
     }
+  };
+
+  // Close the QR dialog and drop the login credential from memory. Used for
+  // every close path (overlay/Escape via onOpenChange and the footer button)
+  // so the token never lingers regardless of how the dialog is dismissed.
+  // Clearing qrToken also resets qrDataUrl via the effect above.
+  const closeQrDialog = () => {
+    setQrDialogUser(null);
+    setQrToken('');
   };
 
   const getRoleBadge = (role: string) => {
@@ -220,7 +258,12 @@ export default function UsersPage() {
         </div>
 
         {/* QR Token Dialog */}
-        <Dialog open={!!qrDialogUser} onOpenChange={(open) => !open && setQrDialogUser(null)}>
+        <Dialog
+          open={!!qrDialogUser}
+          onOpenChange={(open) => {
+            if (!open) closeQrDialog();
+          }}
+        >
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t('qrAccessToken')}</DialogTitle>
@@ -230,11 +273,17 @@ export default function UsersPage() {
             </DialogHeader>
             <div className="py-4">
               <div className="flex justify-center mb-4">
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(qrToken)}`}
-                  alt="QR Code"
-                  className="w-64 h-64 border rounded"
-                />
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="QR Code"
+                    className="w-64 h-64 border rounded"
+                  />
+                ) : (
+                  <div className="w-64 h-64 border rounded flex items-center justify-center text-sm text-muted-foreground">
+                    …
+                  </div>
+                )}
               </div>
               <div className="text-center">
                 <p className="text-sm text-muted-foreground mb-2">{t('tokenValue')}:</p>
@@ -244,7 +293,7 @@ export default function UsersPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={() => setQrDialogUser(null)}>{t('close')}</Button>
+              <Button onClick={closeQrDialog}>{t('close')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
