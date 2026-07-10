@@ -10,6 +10,7 @@ import com.idento.data.network.getDefaultBaseUrl
 import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
+import com.idento.data.preferences.StationConfigPreferences
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
@@ -26,6 +27,7 @@ import com.idento.data.sync.NetworkMonitorImpl
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
+import com.idento.presentation.setup.SetupWizardDraft
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
@@ -44,7 +46,9 @@ val appModule = module {
     single { AppPreferences(get()) }
     single { AuthPreferences(get(), get()) }
     single { DisplayTemplatePreferences(get()) }
-    
+    single { StationConfigPreferences(get()) }
+    single { SetupWizardDraft() }
+
     // API Client
     single { 
         val authPreferences: AuthPreferences = get()
