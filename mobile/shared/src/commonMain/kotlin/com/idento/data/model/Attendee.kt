@@ -2,6 +2,9 @@ package com.idento.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 data class Attendee(
@@ -18,7 +21,7 @@ data class Attendee(
     @SerialName("checked_in_at") val checkedInAt: String? = null,
     @SerialName("checked_in_by") val checkedInBy: String? = null,
     @SerialName("checked_in_by_email") val checkedInByEmail: String? = null,
-    @SerialName("custom_fields") val customFields: Map<String, String> = emptyMap(),
+    @SerialName("custom_fields") val customFields: Map<String, JsonElement> = emptyMap(),
     @SerialName("blocked") val isBlocked: Boolean = false,
     @SerialName("block_reason") val blockReason: String? = null,
     @SerialName("printed_count") val printedCount: Int = 0,
@@ -27,7 +30,16 @@ data class Attendee(
 ) {
     val fullName: String
         get() = "$firstName $lastName".trim()
-    
+
     val isCheckedIn: Boolean
         get() = checkinStatus || checkedInAt != null
+}
+
+/** Best-effort plain-text rendering of a custom-field value for badge/template placeholders. */
+fun Attendee.customFieldsText(): Map<String, String> = customFields.mapValues { (_, value) ->
+    when (value) {
+        is JsonNull -> ""
+        is JsonPrimitive -> value.content
+        else -> value.toString()
+    }
 }

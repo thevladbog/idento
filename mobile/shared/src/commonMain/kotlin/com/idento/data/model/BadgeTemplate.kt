@@ -31,7 +31,7 @@ data class BadgeTemplate(
         zpl = zpl.replace("{code}", attendee.code)
         
         // Replace custom fields
-        attendee.customFields.forEach { (key, value) ->
+        attendee.customFieldsText().forEach { (key, value) ->
             zpl = zpl.replace("{$key}", value)
         }
         

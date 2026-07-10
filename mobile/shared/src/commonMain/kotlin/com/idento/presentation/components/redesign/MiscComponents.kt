@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.idento.data.localization.StringKey
+import com.idento.data.localization.stringResource
 import com.idento.presentation.theme.IdentoColors
 import com.idento.presentation.theme.IdentoRadius
 
@@ -31,8 +33,14 @@ fun OfflineBanner(queuedCount: Int, lastSyncLabel: String, modifier: Modifier = 
         Box(modifier = Modifier.size(8.dp).background(IdentoColors.Queue, CircleShape))
         Spacer(modifier = Modifier.width(10.dp))
         Column {
-            Text("Офлайн · $queuedCount чек-инов в очереди", color = IdentoColors.AmberText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-            Text("Синхронизируются автоматически · посл. синх. $lastSyncLabel", color = IdentoColors.TextMuted, fontSize = 11.sp)
+            Text(
+                stringResource(StringKey.OFFLINE_QUEUED_TEMPLATE).replace("{count}", queuedCount.toString()),
+                color = IdentoColors.AmberText, fontSize = 12.sp, fontWeight = FontWeight.Medium
+            )
+            Text(
+                stringResource(StringKey.OFFLINE_LAST_SYNC_TEMPLATE).replace("{time}", lastSyncLabel),
+                color = IdentoColors.TextMuted, fontSize = 11.sp
+            )
         }
     }
 }

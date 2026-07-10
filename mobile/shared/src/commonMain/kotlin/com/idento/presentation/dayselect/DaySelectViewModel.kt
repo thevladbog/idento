@@ -30,7 +30,8 @@ class DaySelectViewModel(
                     val event = result.data
                     val days = zoneRepository.getEventDays(
                         startDate = event.startDate,
-                        endDate = event.endDate
+                        // Backend allows omitting end_date; treat as a single-day event when absent.
+                        endDate = event.endDate ?: event.startDate
                     )
                     
                     if (days.isNotEmpty()) {

@@ -41,7 +41,6 @@ val androidModule = org.koin.dsl.module {
     single<Context> { androidContext() }
     single { DataStoreFactory(get()) }
     single { SecureStore(get()) }
-    single { SqlDriverFactory(get()) }
     single { BluetoothPrinterService(get()) }
     single { EthernetPrinterService() }
     single { CameraService(get()) }

@@ -16,7 +16,7 @@ class SqlDelightOfflineDatabase(driverFactory: SqlDriverFactory) : OfflineDataba
 
     override suspend fun savePendingCheckIn(checkIn: PendingZoneCheckIn): Long = withContext(Dispatchers.Default) {
         queries.transactionWithResult {
-            queries.insert(
+            queries.insertOrIgnore(
                 attendeeCode = checkIn.attendeeCode,
                 zoneId = checkIn.zoneId,
                 eventDay = checkIn.eventDay,
@@ -25,7 +25,7 @@ class SqlDelightOfflineDatabase(driverFactory: SqlDriverFactory) : OfflineDataba
                 lastAttemptAt = checkIn.lastAttemptAt,
                 errorMessage = checkIn.errorMessage,
             )
-            queries.lastInsertRowId().executeAsOne()
+            queries.selectByKey(checkIn.attendeeCode, checkIn.zoneId, checkIn.eventDay).executeAsOne().id
         }
     }
 

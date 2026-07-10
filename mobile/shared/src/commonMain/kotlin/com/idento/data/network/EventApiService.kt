@@ -78,7 +78,7 @@ class EventApiService(private val apiClient: ApiClient) {
     }
 
     /** GET /api/events/:event_id/stats?zone= — KPI counters for the mobile status bar. */
-    suspend fun getEventStats(eventId: String, zoneId: String? = null): Result<com.idento.data.model.EventStatsResponseDto> = runCatching {
+    suspend fun getEventStats(eventId: String, zoneId: String? = null): Result<com.idento.data.model.EventStatsResponseDto> = apiRunCatching {
         apiClient.httpClient.get("/api/events/$eventId/stats") {
             if (zoneId != null) {
                 parameter("zone", zoneId)

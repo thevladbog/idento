@@ -37,7 +37,6 @@ actual fun createCameraService(): CameraService {
 val iosModule = org.koin.dsl.module {
     single { DataStoreFactory() }
     single { SecureStore() }
-    single { SqlDriverFactory() }
     single { BluetoothPrinterService() }
     single { EthernetPrinterService() }
     single { CameraService() }

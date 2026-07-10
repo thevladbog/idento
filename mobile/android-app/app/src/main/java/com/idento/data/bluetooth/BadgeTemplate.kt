@@ -5,6 +5,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.MultiFormatWriter
 import com.google.zxing.common.BitMatrix
 import com.idento.data.model.Attendee
+import com.idento.data.model.customFieldsText
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
@@ -418,8 +419,8 @@ object BadgeTemplate {
             "code" -> attendee.code
             else -> {
                 // Ищем в custom fields
-                customFields?.get(fieldName)?.toString() 
-                    ?: attendee.customFields?.get(fieldName)?.toString() 
+                customFields?.get(fieldName)?.toString()
+                    ?: attendee.customFieldsText()[fieldName]
                     ?: ""
             }
         }

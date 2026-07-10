@@ -6,15 +6,19 @@ CREATE TABLE PendingCheckIn (
     checkedInAt INTEGER NOT NULL,
     attemptCount INTEGER NOT NULL DEFAULT 0,
     lastAttemptAt INTEGER,
-    errorMessage TEXT
+    errorMessage TEXT,
+    UNIQUE(attendeeCode, zoneId, eventDay)
 );
 
-insert:
-INSERT INTO PendingCheckIn(attendeeCode, zoneId, eventDay, checkedInAt, attemptCount, lastAttemptAt, errorMessage)
+insertOrIgnore:
+INSERT OR IGNORE INTO PendingCheckIn(attendeeCode, zoneId, eventDay, checkedInAt, attemptCount, lastAttemptAt, errorMessage)
 VALUES (?, ?, ?, ?, ?, ?, ?);
 
 lastInsertRowId:
 SELECT last_insert_rowid();
+
+selectByKey:
+SELECT * FROM PendingCheckIn WHERE attendeeCode = ? AND zoneId = ? AND eventDay = ?;
 
 selectAll:
 SELECT * FROM PendingCheckIn ORDER BY id ASC;

@@ -30,7 +30,7 @@ class SqlDelightOfflineDatabaseTest {
             private val queries = database.pendingCheckInQueries
             override suspend fun savePendingCheckIn(checkIn: PendingZoneCheckIn): Long {
                 return queries.transactionWithResult {
-                    queries.insert(
+                    queries.insertOrIgnore(
                         attendeeCode = checkIn.attendeeCode,
                         zoneId = checkIn.zoneId,
                         eventDay = checkIn.eventDay,
@@ -39,7 +39,7 @@ class SqlDelightOfflineDatabaseTest {
                         lastAttemptAt = checkIn.lastAttemptAt,
                         errorMessage = checkIn.errorMessage,
                     )
-                    queries.lastInsertRowId().executeAsOne()
+                    queries.selectByKey(checkIn.attendeeCode, checkIn.zoneId, checkIn.eventDay).executeAsOne().id
                 }
             }
             override suspend fun getPendingCheckIns(): List<PendingZoneCheckIn> =
@@ -99,5 +99,17 @@ class SqlDelightOfflineDatabaseTest {
 
         db.clearPendingCheckIns()
         assertEquals(0, db.getPendingCheckInsCount())
+    }
+
+    @Test
+    fun duplicateScanOfSameAttendeeZoneDayDoesNotCreateASecondRow() = runTest {
+        val first = db.savePendingCheckIn(
+            PendingZoneCheckIn(attendeeCode = "DUP1", zoneId = "zone-1", eventDay = "2026-07-10", checkedInAt = 1L)
+        )
+        val second = db.savePendingCheckIn(
+            PendingZoneCheckIn(attendeeCode = "DUP1", zoneId = "zone-1", eventDay = "2026-07-10", checkedInAt = 2L)
+        )
+        assertEquals(first, second)
+        assertEquals(1, db.getPendingCheckInsCount())
     }
 }

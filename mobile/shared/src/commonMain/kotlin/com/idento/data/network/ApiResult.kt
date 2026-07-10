@@ -1,5 +1,20 @@
 package com.idento.data.network
 
+import kotlin.coroutines.cancellation.CancellationException
+
+/**
+ * Like [runCatching], but rethrows [CancellationException] instead of wrapping it in
+ * [Result.failure] — cancelling a suspend API call must actually cancel the coroutine.
+ */
+suspend inline fun <T> apiRunCatching(crossinline block: suspend () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
+    }
+
 /**
  * Sealed class for API call results
  * Better type-safety than Result<T>

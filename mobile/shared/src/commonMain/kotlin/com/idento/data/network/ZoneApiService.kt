@@ -45,7 +45,7 @@ class ZoneApiService(private val apiClient: ApiClient) {
      * outcomes) — POST /api/zones/:zone_id/scan. Distinct from the legacy performZoneCheckIn
      * above, which stays untouched.
      */
-    suspend fun scanZone(zoneId: String, code: String): Result<com.idento.data.model.ZoneScanResponseDto> = runCatching {
+    suspend fun scanZone(zoneId: String, code: String): Result<com.idento.data.model.ZoneScanResponseDto> = apiRunCatching {
         apiClient.httpClient.post("/api/zones/$zoneId/scan") {
             contentType(ContentType.Application.Json)
             setBody(com.idento.data.model.ZoneScanRequestDto(code = code))

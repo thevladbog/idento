@@ -93,7 +93,7 @@ data class DisplayTemplate(
         result = result.replace("{{code}}", attendee.code)
         
         // Replace custom field placeholders
-        attendee.customFields.forEach { (key, value) ->
+        attendee.customFieldsText().forEach { (key, value) ->
             result = result.replace("{{custom.$key}}", value)
         }
         
@@ -130,7 +130,7 @@ data class DisplayTemplate(
                 "position" -> !attendee.position.isNullOrBlank()
                 "phone" -> !attendee.phone.isNullOrBlank()
                 "code" -> attendee.code.isNotBlank()
-                else -> attendee.customFields[field]?.isNotBlank() == true
+                else -> attendee.customFieldsText()[field]?.isNotBlank() == true
             }
             
             if (hasValue) content else ""

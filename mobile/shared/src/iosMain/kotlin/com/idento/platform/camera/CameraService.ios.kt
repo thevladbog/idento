@@ -20,7 +20,9 @@ import platform.AVFoundation.AVMetadataObjectTypeQRCode
 import platform.AVFoundation.authorizationStatusForMediaType
 import platform.AVFoundation.requestAccessForMediaType
 import platform.darwin.NSObject
+import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_queue_create
 
 /**
  * iOS Camera Service — AVCaptureSession + AVCaptureMetadataOutput (QR + linear barcodes).
@@ -31,6 +33,7 @@ actual class CameraService {
     private val _scanResults = MutableSharedFlow<String>(replay = 0)
     private var captureSession: AVCaptureSession? = null
     private var isCurrentlyScanning = false
+    private val sessionQueue = dispatch_queue_create("com.idento.cameraservice.session", null)
 
     private val metadataDelegate = object : NSObject(), AVCaptureMetadataOutputObjectsDelegateProtocol {
         override fun captureOutput(
@@ -81,16 +84,25 @@ actual class CameraService {
                 }
 
                 captureSession = session
-                session.startRunning()
+                dispatch_async(sessionQueue) {
+                    session.startRunning()
+                }
+            } else {
+                isCurrentlyScanning = false
             }
         }
         return _scanResults.asSharedFlow()
     }
 
     actual fun stopScanning() {
-        captureSession?.stopRunning()
+        val session = captureSession
         captureSession = null
         isCurrentlyScanning = false
+        if (session != null) {
+            dispatch_async(sessionQueue) {
+                session.stopRunning()
+            }
+        }
     }
 
     actual fun isScanning(): Boolean = isCurrentlyScanning
