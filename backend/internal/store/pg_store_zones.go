@@ -193,13 +193,13 @@ func (s *PGStore) CreateZoneAccessRule(ctx context.Context, rule *models.ZoneAcc
 	rule.CreatedAt = time.Now()
 
 	query := `
-		INSERT INTO zone_access_rules (id, zone_id, category, allowed, created_at)
-		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (zone_id, category) DO UPDATE SET allowed = EXCLUDED.allowed
+		INSERT INTO zone_access_rules (id, zone_id, category, allowed, time_from, time_to, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (zone_id, category) DO UPDATE SET allowed = EXCLUDED.allowed, time_from = EXCLUDED.time_from, time_to = EXCLUDED.time_to
 	`
 
 	_, err := s.db.Exec(ctx, query,
-		rule.ID, rule.ZoneID, rule.Category, rule.Allowed, rule.CreatedAt,
+		rule.ID, rule.ZoneID, rule.Category, rule.Allowed, rule.TimeFrom, rule.TimeTo, rule.CreatedAt,
 	)
 
 	return err
@@ -208,7 +208,7 @@ func (s *PGStore) CreateZoneAccessRule(ctx context.Context, rule *models.ZoneAcc
 // GetZoneAccessRules retrieves all access rules for a zone
 func (s *PGStore) GetZoneAccessRules(ctx context.Context, zoneID uuid.UUID) ([]*models.ZoneAccessRule, error) {
 	query := `
-		SELECT id, zone_id, category, allowed, created_at
+		SELECT id, zone_id, category, allowed, time_from, time_to, created_at
 		FROM zone_access_rules
 		WHERE zone_id = $1
 		ORDER BY category ASC
@@ -225,7 +225,7 @@ func (s *PGStore) GetZoneAccessRules(ctx context.Context, zoneID uuid.UUID) ([]*
 		var rule models.ZoneAccessRule
 		err := rows.Scan(
 			&rule.ID, &rule.ZoneID, &rule.Category,
-			&rule.Allowed, &rule.CreatedAt,
+			&rule.Allowed, &rule.TimeFrom, &rule.TimeTo, &rule.CreatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -268,8 +268,8 @@ func (s *PGStore) BulkUpdateZoneAccessRules(ctx context.Context, zoneID uuid.UUI
 		rule.CreatedAt = time.Now()
 
 		_, err = tx.Exec(ctx,
-			`INSERT INTO zone_access_rules (id, zone_id, category, allowed, created_at) VALUES ($1, $2, $3, $4, $5)`,
-			rule.ID, rule.ZoneID, rule.Category, rule.Allowed, rule.CreatedAt,
+			`INSERT INTO zone_access_rules (id, zone_id, category, allowed, time_from, time_to, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			rule.ID, rule.ZoneID, rule.Category, rule.Allowed, rule.TimeFrom, rule.TimeTo, rule.CreatedAt,
 		)
 		if err != nil {
 			return err
@@ -644,6 +644,85 @@ func (s *PGStore) CheckZoneAccess(ctx context.Context, attendeeID, zoneID uuid.U
 
 	// 5. Default: allow if no rules defined
 	return true, "Access granted (default)", nil
+}
+
+// evaluateZoneAccessRules decides admission for one attendee category against the
+// zone's rules at a point in time. Pure and unexported for direct unit testing.
+// Semantics: no rules at all → allow (default); rules exist but attendee has no
+// category → deny; a category with no matching rule → deny; a matching rule's
+// time window (time_from/time_to, "HH:MM", either bound optional) is checked
+// before its Allowed flag.
+func evaluateZoneAccessRules(category string, rules []*models.ZoneAccessRule, at time.Time) (bool, string) {
+	if len(rules) == 0 {
+		return true, "Access granted (default)"
+	}
+	if category == "" {
+		return false, "Attendee has no category assigned"
+	}
+
+	var categoryRule *models.ZoneAccessRule
+	for _, rule := range rules {
+		if rule.Category == category {
+			categoryRule = rule
+			break
+		}
+	}
+	if categoryRule == nil {
+		return false, fmt.Sprintf("Category not authorized for this zone: %s", category)
+	}
+
+	nowStr := at.Format("15:04")
+	if categoryRule.TimeFrom != nil && nowStr < *categoryRule.TimeFrom {
+		return false, fmt.Sprintf("Category not authorized before %s: %s", *categoryRule.TimeFrom, category)
+	}
+	if categoryRule.TimeTo != nil && nowStr > *categoryRule.TimeTo {
+		return false, fmt.Sprintf("Category not authorized after %s: %s", *categoryRule.TimeTo, category)
+	}
+	if !categoryRule.Allowed {
+		return false, fmt.Sprintf("Access denied for category: %s", category)
+	}
+	return true, "Access granted by category"
+}
+
+// CheckZoneAccessAt is the time-aware counterpart of CheckZoneAccess, used by the
+// new mobile zone-control scan endpoint. It intentionally denies when the
+// attendee has no category and zone rules exist (CheckZoneAccess instead
+// defaults to allow in that case) — a deliberate tightening for this new,
+// stricter zone-control surface; CheckZoneAccess itself is untouched.
+func (s *PGStore) CheckZoneAccessAt(ctx context.Context, attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error) {
+	attendee, err := s.GetAttendeeByID(ctx, attendeeID)
+	if err != nil {
+		return false, "Attendee not found", err
+	}
+	if attendee.Blocked {
+		return false, "Attendee is blocked", nil
+	}
+
+	override, err := s.GetAttendeeZoneAccess(ctx, attendeeID, zoneID)
+	if err == nil && override != nil {
+		if !override.Allowed {
+			return false, "Access denied (individual override)", nil
+		}
+		return true, "Access granted (individual override)", nil
+	}
+
+	category, _ := attendee.CustomFields["category"].(string)
+	rules, err := s.GetZoneAccessRules(ctx, zoneID)
+	if err != nil {
+		return false, "Failed to load access rules", err
+	}
+
+	allowed, reason := evaluateZoneAccessRules(category, rules, at)
+	return allowed, reason, nil
+}
+
+// CreateZoneScanLog records one mobile zone-scan outcome, feeding GetEventStats.
+func (s *PGStore) CreateZoneScanLog(ctx context.Context, zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error {
+	_, err := s.db.Exec(ctx,
+		`INSERT INTO zone_scan_log (id, zone_id, attendee_id, verdict, created_at) VALUES ($1, $2, $3, $4, $5)`,
+		uuid.New(), zoneID, attendeeID, verdict, time.Now(),
+	)
+	return err
 }
 
 // Helper functions

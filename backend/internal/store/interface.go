@@ -111,6 +111,8 @@ type Store interface {
 	GetZoneAccessRules(ctx context.Context, zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
 	DeleteZoneAccessRule(ctx context.Context, id uuid.UUID) error
 	BulkUpdateZoneAccessRules(ctx context.Context, zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
+	CheckZoneAccessAt(ctx context.Context, attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error)
+	CreateZoneScanLog(ctx context.Context, zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error
 
 	// Attendee Zone Access (individual overrides)
 	CreateAttendeeZoneAccess(ctx context.Context, access *models.AttendeeZoneAccess) error
