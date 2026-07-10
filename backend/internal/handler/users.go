@@ -32,6 +32,10 @@ func (h *Handler) GetUsers(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to fetch users")
 	}
 
+	for _, u := range users {
+		u.HasQRToken = u.QRToken != nil
+	}
+
 	return c.JSON(http.StatusOK, users)
 }
 
