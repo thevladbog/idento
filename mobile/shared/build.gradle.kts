@@ -120,6 +120,11 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+        }
+
+        androidUnitTest.dependencies {
+            // JVM-only SQLite driver for round-trip testing SQLDelight queries; has no
+            // native/klib variant, so it cannot live in commonTest (shared with iOS targets).
             implementation("app.cash.sqldelight:sqlite-driver:2.1.0")
         }
     }
