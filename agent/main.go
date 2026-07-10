@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -36,6 +38,8 @@ type AgentConfig struct {
 	NetworkPrinters []NetworkPrinterConfig `json:"network_printers"`
 	ScannerPorts    []string               `json:"scanner_ports"`
 	DefaultPrinter  string                 `json:"default_printer"`
+	AuthToken       string                 `json:"auth_token,omitempty"`
+	AllowedOrigins  []string               `json:"allowed_origins,omitempty"`
 }
 
 // configMu serializes config load-modify-save; use RLock for read-only access.
@@ -137,11 +141,53 @@ func saveConfig(config *AgentConfig) error {
 			log.Printf("close config root: %v", closeErr)
 		}
 	}()
-	data, err := json.MarshalIndent(config, "", "  ")
+	data, err := json.MarshalIndent(config, "", "  ") // #nosec G117 -- AuthToken field is intentionally serialized to config file
 	if err != nil {
 		return err
 	}
 	return root.WriteFile("agent_config.json", data, 0600)
+}
+
+// generateAuthToken returns a 32-byte cryptographically-random token, hex-encoded.
+func generateAuthToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// ensureAuthToken sets cfg.AuthToken if empty. Returns whether it changed cfg.
+func ensureAuthToken(cfg *AgentConfig) (bool, error) {
+	if cfg.AuthToken != "" {
+		return false, nil
+	}
+	tok, err := generateAuthToken()
+	if err != nil {
+		return false, err
+	}
+	cfg.AuthToken = tok
+	return true, nil
+}
+
+// resolveAllowedOrigins returns the browser Origin allowlist: env override
+// (AGENT_ALLOWED_ORIGINS, CSV) first, then config, then dev defaults.
+func resolveAllowedOrigins(cfg *AgentConfig) []string {
+	if raw := os.Getenv("AGENT_ALLOWED_ORIGINS"); raw != "" {
+		var out []string
+		for _, o := range strings.Split(raw, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				out = append(out, o)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	if len(cfg.AllowedOrigins) > 0 {
+		return cfg.AllowedOrigins
+	}
+	return []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000"}
 }
 
 func main() {
