@@ -250,6 +250,10 @@ func (h *Handler) GetFontFile(c echo.Context) error {
 		})
 	}
 
+	if _, err := h.requireEventOwnership(c, font.EventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	// Set cache headers (fonts rarely change)
 	c.Response().Header().Set("Cache-Control", "public, max-age=31536000")
 	c.Response().Header().Set("Content-Type", font.MimeType)

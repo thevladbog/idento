@@ -31,6 +31,31 @@ func TestGetEventFonts_ForbidsForeignTenant(t *testing.T) {
 	}
 }
 
+func TestGetFontFile_ForbidsForeignTenant(t *testing.T) {
+	ownerTenant := uuid.New()
+	caller := uuid.New()
+	eventID := uuid.New()
+	fontID := uuid.New()
+	fs := &fakeStore{
+		getFontByID: func(id uuid.UUID) (*models.Font, error) {
+			return &models.Font{ID: id, EventID: eventID, MimeType: "font/woff2"}, nil
+		},
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: ownerTenant}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/", "", caller.String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(fontID.String())
+
+	_ = h.GetFontFile(c)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
 func TestDeleteEventFont_ForbidsForeignTenant(t *testing.T) {
 	ownerTenant := uuid.New()
 	caller := uuid.New()

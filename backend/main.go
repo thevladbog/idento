@@ -430,6 +430,9 @@ func main() {
 			}
 		}
 	}
+	if len(corsOrigins) == 0 {
+		log.Fatal("CORS_ALLOWED_ORIGINS is not set — refusing to start (set it in .env / environment; see .env.example)")
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: corsOrigins,
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
