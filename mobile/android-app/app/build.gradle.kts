@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
-    kotlin("plugin.serialization") version "2.1.0"
+    kotlin("plugin.serialization") version "2.3.21"
 }
 
 android {
@@ -45,10 +45,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -58,6 +54,23 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// Hilt 2.58 (newest release compatible with AGP 8.x; 2.59+ requires AGP 9.0) ships
+// kotlin-metadata-jvm 2.2.20, which cannot read Kotlin 2.3 metadata and fails
+// :app:hiltJavaCompileDebug with "Provided Metadata instance has version 2.3.0,
+// while maximum supported version is 2.2.0". Dagger 2.57 unshaded this library, so we
+// force the matching kotlin-metadata-jvm to let Hilt read Kotlin 2.3.x metadata.
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-metadata-jvm:2.3.21")
     }
 }
 
@@ -81,8 +94,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.4")
     
     // Hilt Dependency Injection
-    implementation("com.google.dagger:hilt-android:2.54")
-    ksp("com.google.dagger:hilt-compiler:2.54")
+    implementation("com.google.dagger:hilt-android:2.58")
+    ksp("com.google.dagger:hilt-compiler:2.58")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     
     // Networking

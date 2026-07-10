@@ -11,10 +11,10 @@ actual class NetworkMonitorImpl : NetworkMonitor {
     
     private val _isOnline = MutableStateFlow(true) // Default to online
     
-    override val isOnline: Flow<Boolean>
+    actual override val isOnline: Flow<Boolean>
         get() = _isOnline
-    
-    override suspend fun checkConnectivity(): Boolean {
+
+    actual override suspend fun checkConnectivity(): Boolean {
         // TODO: Implement actual connectivity check
         // Use ConnectivityManager to check network state
         return true

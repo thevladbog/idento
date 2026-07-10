@@ -6,7 +6,8 @@ import com.idento.data.storage.OfflineDatabase
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import kotlinx.datetime.Clock
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * Repository for offline check-in management
@@ -48,6 +49,7 @@ class OfflineCheckInRepository(
     /**
      * Save check-in to offline storage
      */
+    @OptIn(ExperimentalTime::class)
     private suspend fun saveOfflineCheckIn(request: ZoneCheckInRequest): Long {
         val pending = PendingZoneCheckIn(
             attendeeCode = request.attendeeCode,
