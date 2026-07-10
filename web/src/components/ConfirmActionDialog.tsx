@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -26,8 +26,17 @@ export function ConfirmActionDialog({
   const [typed, setTyped] = useState('');
   const locked = Boolean(confirmText) && typed !== confirmText;
 
+  const close = (o: boolean) => {
+    setTyped('');
+    onOpenChange(o);
+  };
+
+  useEffect(() => {
+    if (open) setTyped('');
+  }, [open]);
+
   return (
-    <Dialog open={open} onOpenChange={(o) => { setTyped(''); onOpenChange(o); }}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -40,7 +49,7 @@ export function ConfirmActionDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
+          <Button variant="outline" onClick={() => close(false)}>{t('cancel')}</Button>
           <Button variant={destructive ? 'destructive' : 'default'} disabled={locked || busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
