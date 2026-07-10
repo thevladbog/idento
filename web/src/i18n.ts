@@ -441,6 +441,15 @@ i18n
           failedToAddAttendee: "Failed to add attendee",
           location: "Location",
 
+          // Station Provisioning
+          stationProvisioning: "Station provisioning",
+          stationProvisioningDesc:
+            "Generate a one-time QR code to set up a new mobile check-in/zone-control device for this event.",
+          generateStationQR: "Generate station QR",
+          stationQrTitle: "Station provisioning QR",
+          stationQrDesc: "Scan this on the device. Expires at",
+          failedToGenerateStationQR: "Failed to generate station QR",
+
           // Equipment Settings
           equipmentSettings: "Equipment Settings",
           equipmentSettingsDesc: "Configure printers and scanners",
@@ -1240,6 +1249,15 @@ i18n
           failedToGenerateCodes: "Не удалось сгенерировать коды",
           failedToAddAttendee: "Не удалось добавить участника",
           location: "Место",
+
+          // Station Provisioning
+          stationProvisioning: "Провижининг станции",
+          stationProvisioningDesc:
+            "Сгенерируйте одноразовый QR-код для настройки нового мобильного устройства (чек-ин/контроль зоны) для этого мероприятия.",
+          generateStationQR: "Сгенерировать QR станции",
+          stationQrTitle: "QR для настройки станции",
+          stationQrDesc: "Отсканируйте на устройстве. Истекает в",
+          failedToGenerateStationQR: "Не удалось сгенерировать QR станции",
 
           // Equipment Settings
           equipmentSettings: "Настройки оборудования",
