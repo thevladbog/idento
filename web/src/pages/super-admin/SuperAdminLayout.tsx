@@ -4,6 +4,7 @@ import { Shield, Building2, Users, BarChart3, FileText, Settings, Home } from 'l
 import { Button } from '@/components/ui/button';
 import { ModeToggle } from '@/components/mode-toggle';
 import { LanguageToggle } from '@/components/language-toggle';
+import { ImpersonationBanner } from '@/components/ImpersonationBanner';
 
 export default function SuperAdminLayout() {
   const { t } = useTranslation();
@@ -28,8 +29,10 @@ export default function SuperAdminLayout() {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
+    <div className="flex flex-col h-screen bg-background">
+      <ImpersonationBanner />
+      <div className="flex flex-1">
+        {/* Sidebar */}
       <aside className="w-64 border-r bg-card">
         <div className="p-4 flex items-center gap-2 border-b">
           <Shield className="h-6 w-6 text-primary" />
@@ -82,6 +85,7 @@ export default function SuperAdminLayout() {
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
+      </div>
       </div>
     </div>
   );

@@ -29,6 +29,8 @@ i18n
           error: "Error",
           created_at: "Created",
           tenantSuspended: "This organization is suspended. Contact support to restore access.",
+          impersonationBanner: "Support session: you are inside \"{{tenant}}\" — {{minutes}} min left",
+          impersonationExit: "Exit session",
 
           // Auth
           login: "Login",
@@ -833,6 +835,8 @@ i18n
           error: "Ошибка",
           created_at: "Создано",
           tenantSuspended: "Организация приостановлена. Обратитесь в поддержку для восстановления доступа.",
+          impersonationBanner: "Режим поддержки: вы в организации «{{tenant}}» — осталось {{minutes}} мин",
+          impersonationExit: "Выйти из сессии",
 
           // Auth
           login: "Вход",
