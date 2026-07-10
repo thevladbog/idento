@@ -23,6 +23,18 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 152 100% 29%;
     --radius: 0.5rem;
+
+    /* Platform Console dark top-chrome shell — same values in light and dark mode by design. */
+    --console-chrome: 240 4% 7%; /* #101013 */
+    --console-chrome-active: 240 3% 15%; /* #232327 */
+    --console-chrome-foreground: 0 0% 100%;
+    --console-chrome-muted-foreground: 240 2% 63%; /* #9d9da6 */
+
+    /* Status-quad: trial is the one status color with no existing analog (active/suspended/archived reuse --primary/amber-500/--muted). */
+    --status-trial: 217 91% 60%; /* #2563eb */
+    --status-trial-foreground: 224 76% 48%; /* #1d4ed8 */
+    --status-trial-bg: 214 100% 97%; /* #eff6ff */
+    --status-trial-border: 213 97% 87%; /* #bfdbfe */
   }
 
   .dark {
@@ -45,6 +57,16 @@
     --border: 216 34% 17%;
     --input: 216 34% 17%;
     --ring: 152 50% 42%;
+
+    --console-chrome: 240 4% 7%;
+    --console-chrome-active: 240 3% 15%;
+    --console-chrome-foreground: 0 0% 100%;
+    --console-chrome-muted-foreground: 240 2% 63%;
+
+    --status-trial: 217 91% 60%;
+    --status-trial-foreground: 224 76% 48%;
+    --status-trial-bg: 214 100% 97%;
+    --status-trial-border: 213 97% 87%;
   }
 }
 
@@ -86,6 +108,11 @@
   .border-input { border-color: hsl(var(--input)); }
   
   .ring-ring { --tw-ring-color: hsl(var(--ring)); }
+
+  .bg-console-chrome { background-color: hsl(var(--console-chrome)); }
+  .bg-console-chrome-active { background-color: hsl(var(--console-chrome-active)); }
+  .text-console-chrome-foreground { color: hsl(var(--console-chrome-foreground)); }
+  .text-console-chrome-muted-foreground { color: hsl(var(--console-chrome-muted-foreground)); }
 }
 
 /* Markdown Preview Styles */
