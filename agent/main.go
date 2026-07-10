@@ -146,7 +146,14 @@ func saveConfig(config *AgentConfig) error {
 	if err != nil {
 		return err
 	}
-	return root.WriteFile("agent_config.json", data, 0600)
+	if err := root.WriteFile("agent_config.json", data, 0600); err != nil {
+		return err
+	}
+	// WriteFile does not change the mode of a pre-existing file, so a config
+	// file that predates 0600 enforcement (or was hand-edited looser) would
+	// otherwise keep leaking the bearer token to other local users. Force the
+	// mode on every save regardless of whether the file already existed.
+	return root.Chmod("agent_config.json", 0600)
 }
 
 // generateAuthToken returns a 32-byte cryptographically-random token, hex-encoded.
@@ -173,19 +180,24 @@ func ensureAuthToken(cfg *AgentConfig) (bool, error) {
 
 // resolveAllowedOrigins returns the browser Origin allowlist: env override
 // (AGENT_ALLOWED_ORIGINS, CSV) first, then config, then dev defaults.
+//
+// An operator must be able to explicitly disable browser Origin auth by
+// setting AGENT_ALLOWED_ORIGINS="" or allowed_origins: [] in the config, so
+// we distinguish "unset" from "explicitly empty": the env var is honored
+// whenever it is present at all (even empty), and the config allowlist is
+// honored whenever it is non-nil (even an empty, explicit []). Only when
+// both are absent do we fall back to the dev defaults.
 func resolveAllowedOrigins(cfg *AgentConfig) []string {
-	if raw := os.Getenv("AGENT_ALLOWED_ORIGINS"); raw != "" {
+	if raw, ok := os.LookupEnv("AGENT_ALLOWED_ORIGINS"); ok {
 		var out []string
 		for _, o := range strings.Split(raw, ",") {
 			if o = strings.TrimSpace(o); o != "" {
 				out = append(out, o)
 			}
 		}
-		if len(out) > 0 {
-			return out
-		}
+		return out
 	}
-	if len(cfg.AllowedOrigins) > 0 {
+	if cfg.AllowedOrigins != nil {
 		return cfg.AllowedOrigins
 	}
 	return []string{"http://localhost:5173", "http://localhost:5174", "http://localhost:3000"}
@@ -1066,17 +1078,30 @@ func main() {
 	})
 
 	// Load config to obtain/create the agent auth token and origin allowlist.
+	//
+	// loadConfig only returns an error when the file exists but is malformed
+	// or unreadable (an absent file is not an error — it yields
+	// defaultConfig(), nil). Falling back to defaultConfig() here on error
+	// would be dangerous: ensureAuthToken below would then generate a new
+	// token, tokenJustGenerated would be true, and the subsequent saveConfig
+	// would overwrite the operator's real (network_printers, scanner_ports,
+	// default_printer, allowed_origins) with an empty config — permanent
+	// data loss. Fail loudly instead so the operator can fix or remove the
+	// file.
 	authCfg, err := loadConfig()
 	if err != nil {
-		authCfg = defaultConfig()
+		log.Fatalf("Failed to load agent config from ~/.idento/agent_config.json: %v — fix or remove this file and restart the agent", err)
 	}
 	tokenJustGenerated, err := ensureAuthToken(authCfg)
 	if err != nil {
 		log.Fatalf("Failed to generate agent auth token: %v", err)
 	}
 	if tokenJustGenerated {
+		// A freshly generated token MUST be persisted: desktop reads the
+		// token only from the config file, so an in-memory-only token would
+		// make every desktop request 401 until the agent is restarted.
 		if err := saveConfig(authCfg); err != nil {
-			log.Printf("Warning: could not persist agent auth token: %v", err)
+			log.Fatalf("Failed to persist newly generated agent auth token to ~/.idento/agent_config.json: %v", err)
 		}
 	}
 	allowedOrigins := resolveAllowedOrigins(authCfg)

@@ -1,7 +1,8 @@
-// Package httpauth guards the local printer agent's HTTP endpoints: it binds
-// authorization to a loopback Host, requires JSON content-type on mutations,
-// and accepts either a shared bearer token (desktop) or an allow-listed Origin
-// (browser web app).
+// Package httpauth guards the local printer agent's HTTP endpoints: a valid
+// shared bearer token (desktop) always authorizes a request; otherwise, for
+// browser (Origin-based) clients, it binds authorization to a loopback Host,
+// requires JSON content-type on mutations, and requires an allow-listed
+// Origin.
 package httpauth
 
 import (
@@ -29,8 +30,18 @@ func New(token string, origins []string) *Authorizer {
 
 // authorize decides whether a request may proceed. ok==true means allow;
 // otherwise status is the HTTP rejection code.
+//
+// A valid bearer token authorizes the request regardless of Host: the token
+// is a strong secret that lives only in the agent's 0600 config file and is
+// never exposed to a browser, so it does not need the loopback-Host,
+// Content-Type, or Origin protections that guard the browser (Origin-based)
+// auth path below. Those protections (anti-DNS-rebind, anti-CSRF) only apply
+// once we fall through to the no-token path.
 func (a *Authorizer) authorize(r *http.Request) (int, bool) {
 	if r.URL.Path == "/health" {
+		return http.StatusOK, true
+	}
+	if a.validToken(r) {
 		return http.StatusOK, true
 	}
 	if !isLoopbackHost(r.Host) {
@@ -42,7 +53,7 @@ func (a *Authorizer) authorize(r *http.Request) (int, bool) {
 			return http.StatusUnsupportedMediaType, false
 		}
 	}
-	if a.validToken(r) || a.allowedOrigin(r) {
+	if a.allowedOrigin(r) {
 		return http.StatusOK, true
 	}
 	return http.StatusUnauthorized, false

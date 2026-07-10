@@ -38,7 +38,8 @@ func TestAuthorize(t *testing.T) {
 		{"no auth at all", newReq("GET", "/printers", "127.0.0.1:12345", "", "", ""), http.StatusUnauthorized, false},
 		{"foreign origin", newReq("GET", "/printers", "127.0.0.1:12345", "http://evil.example.com", "", ""), http.StatusUnauthorized, false},
 		{"wrong token", newReq("GET", "/printers", "127.0.0.1:12345", "", "", "Bearer nope"), http.StatusUnauthorized, false},
-		{"non-loopback host", newReq("GET", "/printers", "evil.example.com", "http://localhost:5173", "", "Bearer secret-token-abc"), http.StatusForbidden, false},
+		{"non-loopback host with valid token", newReq("GET", "/printers", "evil.example.com", "http://localhost:5173", "", "Bearer secret-token-abc"), http.StatusOK, true},
+		{"non-loopback host without token", newReq("GET", "/printers", "evil.example.com", "http://localhost:5173", "", ""), http.StatusForbidden, false},
 		{"POST without json content-type", newReq("POST", "/print", "127.0.0.1:12345", "http://localhost:5173", "text/plain", ""), http.StatusUnsupportedMediaType, false},
 		{"IPv6 loopback host with valid token", newReq("GET", "/printers", "[::1]:12345", "", "", "Bearer secret-token-abc"), http.StatusOK, true},
 	}
