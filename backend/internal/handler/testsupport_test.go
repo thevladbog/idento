@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
@@ -39,6 +40,9 @@ type fakeStore struct {
 	createSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
+
+	getUserTenantRole  func(userID, tenantID uuid.UUID) (string, error)
+	updateUserQRToken  func(userID uuid.UUID, token string, createdAt time.Time) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -126,6 +130,12 @@ func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscripti
 }
 func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
 	return f.logAdminAction(adminID, action, targetType, targetID, changes)
+}
+func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.UUID) (string, error) {
+	return f.getUserTenantRole(userID, tenantID)
+}
+func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
+	return f.updateUserQRToken(userID, token, createdAt)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",
