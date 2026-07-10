@@ -3,11 +3,12 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"idento/backend/internal/models"
+	"idento/backend/migrations"
+	"io/fs"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -51,49 +52,17 @@ func (s *PGStore) RunMigrations() error {
 		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
-	// Find migrations directory
-	migrationsDir := "migrations"
-	if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-		wd, wdErr := os.Getwd()
-		if wdErr != nil {
-			return fmt.Errorf("failed to get working directory: %w", wdErr)
-		}
-		migrationsDir = filepath.Join(wd, "migrations")
-		if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-			migrationsDir = filepath.Join(wd, "../migrations")
-		}
-	}
-
-	// Read all migration files
-	entries, err := os.ReadDir(migrationsDir)
+	// Read migration files from the embedded FS (binary is self-contained).
+	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+		return fmt.Errorf("failed to read embedded migrations: %w", err)
 	}
 
-	// Filter and sort .up.sql files
 	var migrationFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" &&
-			(entry.Name() != "seed.sql") &&
-			(len(entry.Name()) > 7 && entry.Name()[len(entry.Name())-7:] == ".up.sql") {
-			migrationFiles = append(migrationFiles, entry.Name())
-		}
+		migrationFiles = append(migrationFiles, entry.Name())
 	}
 	sort.Strings(migrationFiles)
-
-	absDir, err := filepath.Abs(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("migrations dir: %w", err)
-	}
-	root, err := os.OpenRoot(absDir)
-	if err != nil {
-		return fmt.Errorf("open migrations root: %w", err)
-	}
-	defer func() {
-		if closeErr := root.Close(); closeErr != nil {
-			log.Printf("close migrations root: %v", closeErr)
-		}
-	}()
 
 	appliedCount := 0
 	for _, filename := range migrationFiles {
@@ -113,8 +82,8 @@ func (s *PGStore) RunMigrations() error {
 			continue
 		}
 
-		// Read and execute migration (os.Root scopes access to migrations dir)
-		content, err := root.ReadFile(filename)
+		// Read and execute migration
+		content, err := migrations.Files.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", filename, err)
 		}
@@ -148,6 +117,41 @@ func (s *PGStore) RunMigrations() error {
 func (s *PGStore) CreateTenant(ctx context.Context, tenant *models.Tenant) error {
 	query := `INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`
 	return s.db.QueryRow(ctx, query, tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
+}
+
+func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback tenant provisioning: %v", err)
+		}
+	}()
+
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`,
+		tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+		return err
+	}
+
+	var planID uuid.UUID
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM subscription_plans WHERE is_default AND is_active ORDER BY sort_order LIMIT 1`).Scan(&planID); err != nil {
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("no default subscription plan configured: %w", err)
+		}
+		return fmt.Errorf("lookup default subscription plan: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO subscriptions (tenant_id, plan_id, status, start_date) VALUES ($1, $2, 'active', NOW())`,
+		tenant.ID, planID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
@@ -394,6 +398,9 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &e.CreatedAt, &e.UpdatedAt,
 	)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
@@ -402,6 +409,17 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 		}
 	}
 	return &e, nil
+}
+
+func (s *PGStore) GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Event, error) {
+	event, err := s.GetEventByID(ctx, id)
+	if err != nil || event == nil {
+		return event, err
+	}
+	if event.TenantID != tenantID {
+		return nil, nil
+	}
+	return event, nil
 }
 
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
@@ -498,6 +516,21 @@ func (s *PGStore) GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.At
 		}
 	}
 	return &a, nil
+}
+
+func (s *PGStore) GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Attendee, error) {
+	attendee, err := s.GetAttendeeByID(ctx, id)
+	if err != nil || attendee == nil {
+		return attendee, err
+	}
+	event, err := s.GetEventByIDForTenant(ctx, attendee.EventID, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if event == nil {
+		return nil, nil
+	}
+	return attendee, nil
 }
 
 func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee) error {

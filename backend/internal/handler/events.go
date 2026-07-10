@@ -78,18 +78,10 @@ func (h *Handler) GetEvent(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), id)
+	event, err := h.requireEventOwnership(c, id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch event"})
+		return writeErr(c, err)
 	}
-
-	// Security: Check if event belongs to tenant
-	user := c.Get("user").(*models.JWTCustomClaims)
-	if event.TenantID.String() != user.TenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
-	}
-
 	return c.JSON(http.StatusOK, event)
 }
 
@@ -108,16 +100,9 @@ func (h *Handler) UpdateEvent(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
 
-	// Get existing event
-	event, err := h.Store.GetEventByID(c.Request().Context(), id)
+	event, err := h.requireEventOwnership(c, id)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch event"})
-	}
-
-	// Security: Check if event belongs to tenant
-	user := c.Get("user").(*models.JWTCustomClaims)
-	if event.TenantID.String() != user.TenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return writeErr(c, err)
 	}
 
 	// Bind update request

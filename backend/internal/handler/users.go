@@ -122,13 +122,16 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
 
-	// Verify same tenant
+	// Verify the target user is a member of the caller's ACTIVE tenant
+	// (user_tenants), not their home tenant — users can belong to many orgs.
 	currentTenantID, err := uuid.Parse(currentUser.TenantID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")
 	}
-	if targetUser.TenantID != currentTenantID {
-		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	role, err := h.Store.GetUserTenantRole(c.Request().Context(), targetUser.ID, currentTenantID)
+	if err != nil || role == "" {
+		// Uniform 404: don't reveal that the user exists in another tenant.
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
 
 	// Generate random token
@@ -182,15 +185,18 @@ func (h *Handler) AssignStaffToEvent(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
 	}
 
-	// Verify event belongs to tenant
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventUUID)
-	if err != nil || event == nil || event.TenantID != tenantID {
-		return echo.NewHTTPError(http.StatusNotFound, "Event not found")
+	// Verify event belongs to the active tenant (scoped lookup, 404 on foreign).
+	if _, err := h.requireEventOwnership(c, eventUUID); err != nil {
+		return writeErr(c, err)
 	}
 
-	// Verify user belongs to tenant
+	// Verify the target user is a member of the active tenant.
 	targetUser, err := h.Store.GetUserByID(c.Request().Context(), userUUID)
-	if err != nil || targetUser == nil || targetUser.TenantID != tenantID {
+	if err != nil || targetUser == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
+	}
+	role, err := h.Store.GetUserTenantRole(c.Request().Context(), targetUser.ID, tenantID)
+	if err != nil || role == "" {
 		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
 

@@ -26,8 +26,8 @@ func TestCreateAPIKey_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.CreateAPIKey(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
 

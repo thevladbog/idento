@@ -29,11 +29,14 @@ func TestRequireEventOwnership_ForbidsForeignTenant(t *testing.T) {
 
 	_, err := h.requireEventOwnership(c, eventID)
 	if err == nil {
-		t.Fatal("expected forbidden error for foreign tenant, got nil")
+		t.Fatal("expected not-found error for foreign tenant, got nil")
 	}
 	he, ok := err.(*httpError)
-	if !ok || he.status != http.StatusForbidden {
-		t.Fatalf("expected 403 httpError, got %#v", err)
+	if !ok || he.status != http.StatusNotFound {
+		t.Fatalf("expected 404 httpError, got %#v", err)
+	}
+	if he.msg != "Event not found" {
+		t.Fatalf("expected 'Event not found' message, got %q", he.msg)
 	}
 }
 
@@ -79,11 +82,14 @@ func TestRequireZoneOwnership_ForbidsForeignTenant(t *testing.T) {
 
 	_, _, err := h.requireZoneOwnership(c, zoneID)
 	if err == nil {
-		t.Fatal("expected forbidden error for foreign tenant, got nil")
+		t.Fatal("expected not-found error for foreign tenant, got nil")
 	}
 	he, ok := err.(*httpError)
-	if !ok || he.status != http.StatusForbidden {
-		t.Fatalf("expected 403 httpError, got %#v", err)
+	if !ok || he.status != http.StatusNotFound {
+		t.Fatalf("expected 404 httpError, got %#v", err)
+	}
+	if he.msg != "Event not found" {
+		t.Fatalf("expected 'Event not found' message, got %q", he.msg)
 	}
 }
 

@@ -2,10 +2,10 @@ package handler
 
 import (
 	"fmt"
+	"idento/backend/internal/config"
 	"idento/backend/internal/models"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -48,9 +48,9 @@ func (h *Handler) Register(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	// 1. Create Tenant
+	// 1. Create Tenant with its default-plan subscription (one transaction).
 	tenant := &models.Tenant{Name: req.TenantName}
-	if err := h.Store.CreateTenant(c.Request().Context(), tenant); err != nil {
+	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
 	}
 
@@ -201,8 +201,7 @@ func generateTokenForTenant(user *models.User, tenantID string, role string) (st
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	// Get secret from env - fail if not set for security
-	secret := os.Getenv("JWT_SECRET")
+	secret := config.JWTSecret()
 	if secret == "" {
 		return "", fmt.Errorf("JWT_SECRET environment variable not set")
 	}

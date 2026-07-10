@@ -13,6 +13,10 @@ import (
 // Store is the main data access interface; implementations (e.g. PGStore) provide persistence.
 type Store interface {
 	CreateTenant(ctx context.Context, tenant *models.Tenant) error
+	// CreateTenantWithDefaultSubscription creates the tenant and an active
+	// subscription to the default plan in one transaction (P0.1: a tenant
+	// without a subscription is 403-blocked by the limits middleware).
+	CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *models.Tenant) error
 
@@ -38,12 +42,17 @@ type Store interface {
 	CreateEvent(ctx context.Context, event *models.Event) error
 	GetEventsByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.Event, error)
 	GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event, error)
+	// GetEventByIDForTenant returns the event only if it belongs to tenantID;
+	// (nil, nil) otherwise — callers cannot distinguish "missing" from "foreign".
+	GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Event, error)
 	UpdateEvent(ctx context.Context, event *models.Event) error
 
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.Attendee, error)
 	GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error)
 	GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error)
+	// GetAttendeeByIDForTenant scopes the attendee through its event's tenant.
+	GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Attendee, error)
 	UpdateAttendee(ctx context.Context, attendee *models.Attendee) error
 
 	GetEventsChangedSince(ctx context.Context, tenantID uuid.UUID, since time.Time) ([]*models.Event, error)

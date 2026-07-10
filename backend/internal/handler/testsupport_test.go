@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
@@ -28,16 +29,54 @@ type fakeStore struct {
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
+
+	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
+	getUserByEmail                      func(email string) (*models.User, error)
+	createUser                          func(u *models.User) error
+	addUserToTenant                     func(ut *models.UserTenant) error
+	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
+
+	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
+	createSubscription        func(sub *models.Subscription) error
+	updateSubscription        func(sub *models.Subscription) error
+	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
+
+	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
+	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
 	return f.getEventByID(id)
 }
+
+func (f *fakeStore) GetEventByIDForTenant(_ context.Context, id, tenantID uuid.UUID) (*models.Event, error) {
+	ev, err := f.getEventByID(id)
+	if err != nil || ev == nil {
+		return ev, err
+	}
+	if ev.TenantID != tenantID {
+		return nil, nil
+	}
+	return ev, nil
+}
+
 func (f *fakeStore) GetEventZoneByID(_ context.Context, id uuid.UUID) (*models.EventZone, error) {
 	return f.getEventZoneByID(id)
 }
 func (f *fakeStore) GetAttendeeByID(_ context.Context, id uuid.UUID) (*models.Attendee, error) {
 	return f.getAttendeeByID(id)
+}
+
+func (f *fakeStore) GetAttendeeByIDForTenant(_ context.Context, id, tenantID uuid.UUID) (*models.Attendee, error) {
+	a, err := f.getAttendeeByID(id)
+	if err != nil || a == nil {
+		return a, err
+	}
+	ev, err := f.getEventByID(a.EventID)
+	if err != nil || ev == nil || ev.TenantID != tenantID {
+		return nil, nil
+	}
+	return a, nil
 }
 func (f *fakeStore) GetFontByID(_ context.Context, id uuid.UUID) (*models.Font, error) {
 	return f.getFontByID(id)
@@ -65,6 +104,38 @@ func (f *fakeStore) GetAPIKeysByEventID(_ context.Context, eventID uuid.UUID) ([
 }
 func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 	return f.revokeAPIKey(id)
+}
+
+func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
+	return f.createTenantWithDefaultSubscription(tenant)
+}
+func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
+	return f.getUserByEmail(email)
+}
+func (f *fakeStore) CreateUser(_ context.Context, u *models.User) error { return f.createUser(u) }
+func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) error {
+	return f.addUserToTenant(ut)
+}
+func (f *fakeStore) GetUserTenants(_ context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
+	return f.getUserTenants(userID)
+}
+func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (*models.Subscription, error) {
+	return f.getSubscriptionByTenantID(id)
+}
+func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.createSubscription(sub)
+}
+func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.updateSubscription(sub)
+}
+func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
+	return f.logAdminAction(adminID, action, targetType, targetID, changes)
+}
+func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.UUID) (string, error) {
+	return f.getUserTenantRole(userID, tenantID)
+}
+func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
+	return f.updateUserQRToken(userID, token, createdAt)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

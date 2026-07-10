@@ -2,9 +2,9 @@ package middleware
 
 import (
 	"errors"
+	"idento/backend/internal/config"
 	"idento/backend/internal/models"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -27,7 +27,7 @@ func JWT() echo.MiddlewareFunc {
 			tokenString := parts[1]
 
 			token, err := jwt.ParseWithClaims(tokenString, &models.JWTCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
-				secret := os.Getenv("JWT_SECRET")
+				secret := config.JWTSecret()
 				if secret == "" {
 					return nil, errors.New("JWT_SECRET is not configured")
 				}

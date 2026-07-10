@@ -47,3 +47,69 @@ func TestGetUsers_DoesNotLeakQRToken(t *testing.T) {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 }
+
+func TestGenerateQRTokenUsesActiveTenantMembership(t *testing.T) {
+	e := echo.New()
+	activeTenant := uuid.New()
+	homeTenant := uuid.New() // user's users.tenant_id differs from the active tenant
+	targetID := uuid.New()
+
+	saved := false
+	fs := &fakeStore{
+		getUserByID: func(id uuid.UUID) (*models.User, error) {
+			return &models.User{ID: targetID, TenantID: homeTenant, Email: "s@x.y"}, nil
+		},
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			if userID == targetID && tenantID == activeTenant {
+				return "staff", nil // member of the active tenant via user_tenants
+			}
+			return "", nil
+		},
+		updateUserQRToken: func(userID uuid.UUID, token string, _ time.Time) error {
+			saved = true
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", "", activeTenant.String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(targetID.String())
+
+	if err := h.GenerateQRToken(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusOK || !saved {
+		t.Fatalf("status = %d, saved = %v; want 200 with token saved (membership via user_tenants must authorize)", rec.Code, saved)
+	}
+}
+
+// Non-members get a uniform 404 — a 403 would reveal the user exists in
+// another tenant (PR #23 review).
+func TestGenerateQRTokenNonMemberIs404(t *testing.T) {
+	e := echo.New()
+	targetID := uuid.New()
+
+	fs := &fakeStore{
+		getUserByID: func(id uuid.UUID) (*models.User, error) {
+			return &models.User{ID: targetID, TenantID: uuid.New(), Email: "s@x.y"}, nil
+		},
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			return "", nil // not a member of the caller's active tenant
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, _ := newAuthedContext(e, http.MethodPost, "/x", "", uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(targetID.String())
+
+	err := h.GenerateQRToken(c)
+	httpErr, ok := err.(*echo.HTTPError)
+	if !ok {
+		t.Fatalf("expected *echo.HTTPError, got %v", err)
+	}
+	if httpErr.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404 (uniform not-found, no existence leak)", httpErr.Code)
+	}
+}

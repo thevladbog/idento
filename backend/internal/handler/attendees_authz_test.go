@@ -27,7 +27,7 @@ func TestGetAttendees_ForbidsForeignTenant(t *testing.T) {
 	c.SetParamValues(eventID.String())
 
 	_ = h.GetAttendees(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for foreign tenant, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for foreign tenant, got %d", rec.Code)
 	}
 }

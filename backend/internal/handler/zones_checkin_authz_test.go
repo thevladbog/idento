@@ -32,8 +32,8 @@ func TestZoneCheckIn_ForbidsForeignTenant(t *testing.T) {
 	c, rec := newAuthedContext(e, http.MethodPost, "/api/zones/checkin", body, caller.String(), "admin")
 
 	_ = h.ZoneCheckIn(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403 for foreign-tenant zone check-in, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for foreign-tenant zone check-in, got %d", rec.Code)
 	}
 }
 

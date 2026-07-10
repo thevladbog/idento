@@ -145,7 +145,7 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 
 	// Get event to extract field schema
 	event, err := h.Store.GetEventByID(context.Background(), eventID)
-	if err != nil {
+	if err != nil || event == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
 	}
 
