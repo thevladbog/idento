@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -58,8 +59,9 @@ func (s *PGStore) CreateStation(ctx context.Context, eventID, staffUserID uuid.U
 		}
 	}()
 
-	if _, err := tx.Exec(ctx, `SELECT id FROM events WHERE id = $1 FOR UPDATE`, eventID); err != nil {
-		return nil, err
+	var lockedID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT id FROM events WHERE id = $1 FOR UPDATE`, eventID).Scan(&lockedID); err != nil {
+		return nil, fmt.Errorf("lock event %s: %w", eventID, err)
 	}
 
 	var nextNumber int

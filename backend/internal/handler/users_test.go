@@ -20,9 +20,11 @@ func TestCreateUser_AddsUserToTenant(t *testing.T) {
 	tenant := uuid.New()
 
 	var addedUserTenant *models.UserTenant
+	var createdUserID uuid.UUID
 	fs := &fakeStore{
 		createUser: func(u *models.User) error {
 			u.ID = uuid.New()
+			createdUserID = u.ID
 			return nil
 		},
 		addUserToTenant: func(ut *models.UserTenant) error {
@@ -46,6 +48,9 @@ func TestCreateUser_AddsUserToTenant(t *testing.T) {
 
 	if addedUserTenant == nil {
 		t.Fatal("CreateUser did not call AddUserToTenant")
+	}
+	if addedUserTenant.UserID != createdUserID {
+		t.Errorf("AddUserToTenant UserID = %v, want %v (must match the user CreateUser just created)", addedUserTenant.UserID, createdUserID)
 	}
 	if addedUserTenant.TenantID != tenant {
 		t.Errorf("AddUserToTenant TenantID = %v, want %v", addedUserTenant.TenantID, tenant)

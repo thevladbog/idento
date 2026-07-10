@@ -51,6 +51,9 @@ func (h *Handler) CreateStationProvisioningToken(c echo.Context) error {
 		// Uniform 404: don't reveal that the user exists in another tenant.
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Staff user not found"})
 	}
+	if role != "staff" && role != "manager" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Staff user must have a staff or manager role"})
+	}
 
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
@@ -99,12 +102,22 @@ func (h *Handler) ProvisionStation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load staff user"})
 	}
 
+	// Use the user's tenant-scoped role (not the global users.role column):
+	// a user's role can differ per-tenant, and minting the JWT with the global
+	// role risks over-privileging this station with a role from another tenant.
+	// Fail closed (no fallback to the global role) if the tenant-scoped role
+	// can't be determined.
+	tenantRole, err := h.Store.GetUserTenantRole(c.Request().Context(), staffUser.ID, event.TenantID)
+	if err != nil || tenantRole == "" {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to resolve staff user's tenant role"})
+	}
+
 	station, err := h.Store.CreateStation(c.Request().Context(), tok.EventID, tok.StaffUserID, req.DeviceInfo)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create station"})
 	}
 
-	jwtToken, err := generateTokenForTenant(staffUser, event.TenantID.String(), staffUser.Role)
+	jwtToken, err := generateTokenForTenant(staffUser, event.TenantID.String(), tenantRole)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to issue token"})
 	}

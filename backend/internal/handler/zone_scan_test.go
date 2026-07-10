@@ -135,7 +135,7 @@ func TestZoneScan_NotRegisteredVerdict(t *testing.T) {
 	}
 }
 
-func TestZoneScan_NoAccessVerdictWhenCategoryDenied(t *testing.T) {
+func TestZoneScan_NoAccessVerdictWhenZoneInactive(t *testing.T) {
 	tenantID := uuid.New()
 	eventID := uuid.New()
 	zoneID := uuid.New()
@@ -178,6 +178,59 @@ func TestZoneScan_NoAccessVerdictWhenCategoryDenied(t *testing.T) {
 	}
 	if resp.Reason != "Zone is closed" {
 		t.Fatalf("expected reason 'Zone is closed', got %q", resp.Reason)
+	}
+	if scanLogVerdict != "no_access" {
+		t.Fatalf("expected scan log verdict 'no_access', got %q", scanLogVerdict)
+	}
+}
+
+func TestZoneScan_NoAccessVerdictWhenCategoryDenied(t *testing.T) {
+	tenantID := uuid.New()
+	eventID := uuid.New()
+	zoneID := uuid.New()
+	attendeeID := uuid.New()
+
+	const denialReason = "Category not authorized for this zone: Участник"
+	var scanLogVerdict string
+
+	fs := &fakeStore{
+		getEventZoneByID: func(id uuid.UUID) (*models.EventZone, error) {
+			return &models.EventZone{ID: id, EventID: eventID, IsActive: true}, nil
+		},
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: tenantID}, nil
+		},
+		getAttendeeByCode: func(_ uuid.UUID, _ string) (*models.Attendee, error) {
+			return &models.Attendee{ID: attendeeID, EventID: eventID}, nil
+		},
+		checkZoneAccessAt: func(_, _ uuid.UUID, _ time.Time) (bool, string, error) {
+			return false, denialReason, nil
+		},
+		createZoneScanLog: func(_ uuid.UUID, _ *uuid.UUID, verdict string) error {
+			scanLogVerdict = verdict
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/zones/"+zoneID.String()+"/scan", `{"code":"ABCD1234"}`, tenantID.String(), "admin")
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zoneID.String())
+	if err := h.ZoneScan(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (verdict is not an HTTP error), got %d", rec.Code)
+	}
+	var resp models.ZoneScanResponse
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Verdict != "no_access" {
+		t.Fatalf("expected verdict 'no_access', got %q", resp.Verdict)
+	}
+	if resp.Reason != denialReason {
+		t.Fatalf("expected reason %q, got %q", denialReason, resp.Reason)
 	}
 	if scanLogVerdict != "no_access" {
 		t.Fatalf("expected scan log verdict 'no_access', got %q", scanLogVerdict)

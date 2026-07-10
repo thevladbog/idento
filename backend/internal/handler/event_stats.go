@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -25,7 +26,10 @@ func (h *Handler) GetEventStats(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 		}
 		zone, err := h.Store.GetEventZoneByID(c.Request().Context(), parsed)
-		if err != nil || zone == nil || zone.EventID != eventID {
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load zone"})
+		}
+		if zone == nil || zone.EventID != eventID {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Zone not found"})
 		}
 		zoneID = &parsed
@@ -33,6 +37,7 @@ func (h *Handler) GetEventStats(c echo.Context) error {
 
 	stats, err := h.Store.GetEventStats(c.Request().Context(), eventID, zoneID)
 	if err != nil {
+		log.Printf("GetEventStats failed for event %s: %v", eventID, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load stats"})
 	}
 	return c.JSON(http.StatusOK, stats)
