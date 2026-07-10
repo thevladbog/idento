@@ -134,7 +134,10 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 	var planID uuid.UUID
 	if err := tx.QueryRow(ctx,
 		`SELECT id FROM subscription_plans WHERE is_default AND is_active ORDER BY sort_order LIMIT 1`).Scan(&planID); err != nil {
-		return fmt.Errorf("no default subscription plan configured: %w", err)
+		if err == pgx.ErrNoRows {
+			return fmt.Errorf("no default subscription plan configured: %w", err)
+		}
+		return fmt.Errorf("lookup default subscription plan: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx,
