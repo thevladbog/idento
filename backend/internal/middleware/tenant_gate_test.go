@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,6 +21,7 @@ type gateFakeStore struct {
 	status    string
 	statusErr error
 	sub       *models.Subscription
+	subErr    error
 	calls     int
 }
 
@@ -28,7 +30,7 @@ func (f *gateFakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string
 	return f.status, f.statusErr
 }
 func (f *gateFakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (*models.Subscription, error) {
-	return f.sub, nil
+	return f.sub, f.subErr
 }
 
 func gateRequest(t *testing.T, fs *gateFakeStore, ttl time.Duration, path string) *httptest.ResponseRecorder {
@@ -91,6 +93,30 @@ func TestGateAllowsActiveSubPastEndDate(t *testing.T) {
 	fs := &gateFakeStore{status: "active", sub: &models.Subscription{Status: "active", EndDate: &past}}
 	if rec := gateRequest(t, fs, 0, "/api/events"); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (active sub passes regardless of end_date)", rec.Code)
+	}
+}
+
+// TestGateFailsClosedOnStatusLookupError pins the fail-closed branch: if the
+// tenant-status lookup itself errors (e.g. DB unavailable), the gate must
+// not let the request through — availability of the status check must not
+// become a way to bypass suspension.
+func TestGateFailsClosedOnStatusLookupError(t *testing.T) {
+	fs := &gateFakeStore{statusErr: errors.New("db down")}
+	rec := gateRequest(t, fs, 0, "/api/events")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (fail closed on tenant status lookup error)", rec.Code)
+	}
+}
+
+// TestGateFailsOpenOnSubscriptionLookupError pins the fail-open branch
+// documented in IsTenantBlocked: a subscription lookup error must not lock
+// out an active tenant, since the whole API's availability must not hinge
+// on the billing table.
+func TestGateFailsOpenOnSubscriptionLookupError(t *testing.T) {
+	fs := &gateFakeStore{status: "active", subErr: errors.New("db down")}
+	rec := gateRequest(t, fs, 0, "/api/events")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (fail open on subscription lookup error)", rec.Code)
 	}
 }
 

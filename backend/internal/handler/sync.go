@@ -127,8 +127,8 @@ func (h *Handler) SyncPush(c echo.Context) error {
 		}
 
 		// Get event to verify tenant
-		event, err := h.Store.GetEventByID(c.Request().Context(), existingAttendee.EventID)
-		if err != nil || event == nil || event.TenantID != tenantID {
+		event, err := h.Store.GetEventByIDForTenant(c.Request().Context(), existingAttendee.EventID, tenantID)
+		if err != nil || event == nil {
 			continue // Skip if event doesn't belong to tenant
 		}
 
@@ -164,8 +164,8 @@ func (h *Handler) SyncPush(c echo.Context) error {
 		attendee := &req.Changes.Attendees.Created[i]
 
 		// Verify event belongs to tenant
-		event, err := h.Store.GetEventByID(c.Request().Context(), attendee.EventID)
-		if err != nil || event == nil || event.TenantID != tenantID {
+		event, err := h.Store.GetEventByIDForTenant(c.Request().Context(), attendee.EventID, tenantID)
+		if err != nil || event == nil {
 			continue
 		}
 
