@@ -114,6 +114,9 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.GET("/zones/:zone_id/checkins", h.GetZoneCheckins)
 	api.GET("/attendees/:attendee_id/zone-history", h.GetAttendeeZoneHistory)
 
+	// Mobile offline-sync batch check-in (idempotent by client_uuid)
+	api.POST("/events/:event_id/checkins/batch", h.BatchCheckin)
+
 	// Mobile zone-control scan (structured verdict, no rate limit — legitimate high-frequency op)
 	api.POST("/zones/:zone_id/scan", h.ZoneScan)
 

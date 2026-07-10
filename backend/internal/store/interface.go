@@ -141,4 +141,7 @@ type Store interface {
 	CreateProvisioningToken(ctx context.Context, tok *models.StationProvisioningToken) error
 	ConsumeProvisioningToken(ctx context.Context, token string) (*models.StationProvisioningToken, error)
 	CreateStation(ctx context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
+
+	// Mobile offline-sync batch check-in (idempotent by client_uuid)
+	ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
 }
