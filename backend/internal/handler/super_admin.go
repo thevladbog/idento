@@ -106,12 +106,22 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		})
 	}
 
-	// Get existing subscription
+	// Get existing subscription; create one if the tenant has none (upsert).
 	sub, err := h.Store.GetSubscriptionByTenantID(c.Request().Context(), tenantID)
-	if err != nil || sub == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{
-			"error": "Subscription not found",
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to load subscription",
 		})
+	}
+	isNew := false
+	if sub == nil {
+		if req.PlanID == nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "Tenant has no subscription; plan_id is required to create one",
+			})
+		}
+		sub = &models.Subscription{TenantID: tenantID, Status: "active", StartDate: time.Now()}
+		isNew = true
 	}
 
 	// Capture changes for audit
@@ -143,10 +153,14 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		sub.AdminNotes = req.AdminNotes
 	}
 
-	if err := h.Store.UpdateSubscription(c.Request().Context(), sub); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to update subscription",
-		})
+	if isNew {
+		if err := h.Store.CreateSubscription(c.Request().Context(), sub); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create subscription"})
+		}
+	} else {
+		if err := h.Store.UpdateSubscription(c.Request().Context(), sub); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update subscription"})
+		}
 	}
 
 	// Log admin action

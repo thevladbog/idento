@@ -34,6 +34,11 @@ type fakeStore struct {
 	createUser                          func(u *models.User) error
 	addUserToTenant                     func(ut *models.UserTenant) error
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
+
+	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
+	createSubscription        func(sub *models.Subscription) error
+	updateSubscription        func(sub *models.Subscription) error
+	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -85,6 +90,18 @@ func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) er
 }
 func (f *fakeStore) GetUserTenants(_ context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
 	return f.getUserTenants(userID)
+}
+func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (*models.Subscription, error) {
+	return f.getSubscriptionByTenantID(id)
+}
+func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.createSubscription(sub)
+}
+func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.updateSubscription(sub)
+}
+func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error {
+	return f.logAdminAction(adminID, action, targetType, targetID, changes)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",
