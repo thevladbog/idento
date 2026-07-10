@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -72,7 +73,9 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 	}
 
 	if !zone.IsActive || !isWithinZoneTime(zone, now) {
-		_ = h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "no_access")
+		if err := h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "no_access"); err != nil {
+			log.Printf("Failed to log zone scan: %v", err)
+		}
 		return c.JSON(http.StatusOK, models.ZoneScanResponse{
 			Verdict:      "no_access",
 			Reason:       "Zone is closed",
@@ -82,7 +85,9 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 	}
 
 	if zone.RequiresRegistration && attendee.RegisteredAt == nil {
-		_ = h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "not_registered")
+		if err := h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "not_registered"); err != nil {
+			log.Printf("Failed to log zone scan: %v", err)
+		}
 		return c.JSON(http.StatusOK, models.ZoneScanResponse{
 			Verdict:      "not_registered",
 			Reason:       "Attendee has not registered yet",
@@ -96,7 +101,9 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to evaluate zone access"})
 	}
 	if !allowed {
-		_ = h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "no_access")
+		if err := h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "no_access"); err != nil {
+			log.Printf("Failed to log zone scan: %v", err)
+		}
 		return c.JSON(http.StatusOK, models.ZoneScanResponse{
 			Verdict:      "no_access",
 			Reason:       reason,
@@ -121,7 +128,9 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record zone entry"})
 		}
 	}
-	_ = h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "allowed")
+	if err := h.Store.CreateZoneScanLog(c.Request().Context(), zoneID, &attendee.ID, "allowed"); err != nil {
+		log.Printf("Failed to log zone scan: %v", err)
+	}
 
 	return c.JSON(http.StatusOK, models.ZoneScanResponse{
 		Verdict:      "allowed",
