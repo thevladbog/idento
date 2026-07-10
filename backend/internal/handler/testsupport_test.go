@@ -53,7 +53,8 @@ type fakeStore struct {
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
 	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
-	applyBatchCheckin func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+	applyBatchCheckin        func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+	createCheckinOverride    func(o *models.CheckinOverride) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -173,6 +174,10 @@ func (f *fakeStore) CreateStation(_ context.Context, eventID, staffUserID uuid.U
 
 func (f *fakeStore) ApplyBatchCheckin(_ context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error) {
 	return f.applyBatchCheckin(eventID, staffUserID, item)
+}
+
+func (f *fakeStore) CreateCheckinOverride(_ context.Context, o *models.CheckinOverride) error {
+	return f.createCheckinOverride(o)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

@@ -117,6 +117,9 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	// Mobile offline-sync batch check-in (idempotent by client_uuid)
 	api.POST("/events/:event_id/checkins/batch", h.BatchCheckin)
 
+	// Check-in override audit log
+	api.POST("/events/:event_id/checkins/override", h.CreateCheckinOverride)
+
 	// Mobile zone-control scan (structured verdict, no rate limit — legitimate high-frequency op)
 	api.POST("/zones/:zone_id/scan", h.ZoneScan)
 

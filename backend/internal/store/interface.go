@@ -144,4 +144,7 @@ type Store interface {
 
 	// Mobile offline-sync batch check-in (idempotent by client_uuid)
 	ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+
+	// Check-in Overrides (audit log)
+	CreateCheckinOverride(ctx context.Context, o *models.CheckinOverride) error
 }
