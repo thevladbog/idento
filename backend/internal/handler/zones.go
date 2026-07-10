@@ -336,13 +336,37 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// 1. Find attendee by code
-	// First, we need to get the event_id from the zone
-	zone, err := h.Store.GetEventZoneByID(ctx, req.ZoneID)
-	if err != nil || zone == nil {
-		return c.JSON(http.StatusNotFound, models.ZoneCheckInResponse{
-			Success: false,
-			Error:   "Zone not found",
-		})
+	// First, we need to get the event_id from the zone, verifying it belongs
+	// to the caller's tenant.
+	zone, _, err := h.requireZoneOwnership(c, req.ZoneID)
+	if err != nil {
+		if he, ok := err.(*httpError); ok {
+			return c.JSON(he.status, models.ZoneCheckInResponse{Success: false, Error: he.msg})
+		}
+		return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{Success: false, Error: "Internal error"})
+	}
+
+	// 1b. Only admin/manager or staff assigned to this zone may check attendees in.
+	claims := c.Get("user").(*models.JWTCustomClaims)
+	if claims.Role != "admin" && claims.Role != "manager" {
+		callerID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, models.ZoneCheckInResponse{Success: false, Error: "Invalid token"})
+		}
+		assignments, err := h.Store.GetZoneStaffAssignments(ctx, zone.ID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{Success: false, Error: "Internal error"})
+		}
+		assigned := false
+		for _, a := range assignments {
+			if a.UserID == callerID {
+				assigned = true
+				break
+			}
+		}
+		if !assigned {
+			return c.JSON(http.StatusForbidden, models.ZoneCheckInResponse{Success: false, Error: "Not assigned to this zone"})
+		}
 	}
 
 	attendee, err := h.Store.GetAttendeeByCode(ctx, zone.EventID, req.AttendeeCode)
@@ -421,7 +445,6 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	}
 
 	// 8. Create zone check-in record
-	claims := c.Get("user").(*models.JWTCustomClaims)
 	checkinByID := uuid.MustParse(claims.UserID)
 
 	checkin := &models.ZoneCheckin{
