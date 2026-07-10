@@ -24,8 +24,9 @@
 | 1 | pgx v5.7.6 → v5.10.0 (backend) | build + govulncheck: GO-2026-5004 закрыт |
 | 2/5 | Go directive 1.25.4 → 1.26.5 (backend+agent) | build + govulncheck: stdlib closed |
 | 3/6 | echo 4.15.4, jwt 5.3.1, x/crypto 0.54.0, serial 1.7.1 | build + govulncheck clean |
-| 7/8 | vite 7.3.6, axios 1.18.1, react-router-dom 7.18.1 + транзитивные (web/desktop) | build + npm audit: 0 |
+| 7/8 | vite 7→8.1.4, axios 1.18.1, react-router-dom 7.18.1 + транзитивные (web/desktop) | build + npm audit: 0 |
 | 9 | рутинные minor/patch (radix, tailwind, framer-motion, @tauri-apps/api 2.11.1) | build + npm audit: 0 |
+| — | Node 24: `engines.node` → `>=24` (web/desktop/landing), CI `setup-node` 22→24; vite 8 major по запросу | build + npm audit: 0 на Node 24 |
 | 10/11 | tauri 2.9.1 → 2.11.5, tauri-build 2.6.3 (desktop) | cargo build green; CVE-2026-42184 закрыт |
 | 15 | retrofit 2.11.0 → 2.12.0 (mobile) | :app:assembleDebug green |
 | 16 | удалён мёртвый version catalog (MOBILE-QUAL-11) | grep: 0 ссылок `libs.`; build green |
