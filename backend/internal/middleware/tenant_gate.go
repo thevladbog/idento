@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -60,7 +61,7 @@ func tenantGateWithTTL(s store.Store, ttl time.Duration) echo.MiddlewareFunc {
 			if err != nil {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
 			}
-			blocked, err := isTenantBlocked(c, s, tenantID)
+			blocked, err := IsTenantBlocked(c.Request().Context(), s, tenantID)
 			if err != nil {
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to verify tenant status"})
 			}
@@ -77,15 +78,19 @@ func tenantGateWithTTL(s store.Store, ttl time.Duration) echo.MiddlewareFunc {
 	}
 }
 
-func isTenantBlocked(c echo.Context, s store.Store, tenantID uuid.UUID) (bool, error) {
-	status, err := s.GetTenantStatus(c.Request().Context(), tenantID)
+// IsTenantBlocked reports whether a tenant should be blocked (suspended,
+// archived, or with a lapsed subscription). It is exported so non-gate
+// entry points that bypass JWT + TenantGate — e.g. API-key authenticated
+// routes — can apply the same suspension check.
+func IsTenantBlocked(ctx context.Context, s store.Store, tenantID uuid.UUID) (bool, error) {
+	status, err := s.GetTenantStatus(ctx, tenantID)
 	if err != nil {
 		return false, err
 	}
 	if status != "active" { // suspended, archived, or missing ("")
 		return true, nil
 	}
-	sub, err := s.GetSubscriptionByTenantID(c.Request().Context(), tenantID)
+	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
 	if err != nil || sub == nil {
 		// No subscription → the limits middleware already rejects creation;
 		// don't hard-lock reads over it. Errors fail open here by design:
