@@ -121,6 +121,15 @@ export default function UsersPage() {
     }
   };
 
+  // Close the QR dialog and drop the login credential from memory. Used for
+  // every close path (overlay/Escape via onOpenChange and the footer button)
+  // so the token never lingers regardless of how the dialog is dismissed.
+  // Clearing qrToken also resets qrDataUrl via the effect above.
+  const closeQrDialog = () => {
+    setQrDialogUser(null);
+    setQrToken('');
+  };
+
   const getRoleBadge = (role: string) => {
     const styles = {
       admin: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
@@ -252,12 +261,7 @@ export default function UsersPage() {
         <Dialog
           open={!!qrDialogUser}
           onOpenChange={(open) => {
-            if (!open) {
-              // Drop the login credential from memory when the dialog closes
-              // (setting qrToken clears qrDataUrl via the effect above).
-              setQrDialogUser(null);
-              setQrToken('');
-            }
+            if (!open) closeQrDialog();
           }}
         >
           <DialogContent>
@@ -289,7 +293,7 @@ export default function UsersPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={() => setQrDialogUser(null)}>{t('close')}</Button>
+              <Button onClick={closeQrDialog}>{t('close')}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
