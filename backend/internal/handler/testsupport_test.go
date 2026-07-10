@@ -41,8 +41,8 @@ type fakeStore struct {
 	updateSubscription        func(sub *models.Subscription) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
 
-	getUserTenantRole  func(userID, tenantID uuid.UUID) (string, error)
-	updateUserQRToken  func(userID uuid.UUID, token string, createdAt time.Time) error
+	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
+	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {

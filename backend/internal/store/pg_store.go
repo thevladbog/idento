@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"idento/backend/internal/models"
 	"idento/backend/migrations"
@@ -123,7 +124,11 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 	if err != nil {
 		return err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback tenant provisioning: %v", err)
+		}
+	}()
 
 	if err := tx.QueryRow(ctx,
 		`INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`,
