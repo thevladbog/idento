@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Never leak URLs (which have historically carried tokens/ids) to third
+         parties or over downgrades. Defense-in-depth for WEB-SEC-01/04. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/svg+xml" href="/idento-en-letter.svg" />
     <link rel="apple-touch-icon" sizes="512x512" href="/idento-en-letter.svg" />
     <link rel="manifest" href="/manifest.json" />
