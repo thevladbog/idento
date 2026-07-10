@@ -107,3 +107,35 @@ Compose, ktor, kotlinx-serialization/coroutines.
   its versions have diverged — editing it does not affect the build).
 - MOBILE-QUAL-02 android-app/shared architectural unification.
 - retrofit 3.x / okhttp 5.x optional no-CVE majors.
+
+## Outcome (as executed)
+
+Verified gate: `:app:assembleDebug` + `:shared` {metadata, Android, iosArm64,
+iosSimulatorArm64} compile — all green in a forced full recompile (`--rerun-tasks`).
+
+Commits (off `main`):
+1. `f8981a1` Gradle wrapper 8.11.1→8.14.5, AGP 8.7.2→8.13.2.
+2. `3cc0acf` Kotlin→2.3.21, KSP→2.3.10, Compose MP→1.11.1; forced Hilt 2.54→2.58 +
+   `kotlin-metadata-jvm` 2.3.21 force; `kotlinOptions`→`compilerOptions`; brought
+   `:shared` green (dropped iosX64, pinned `material-icons-extended:1.7.3`, fixed
+   pre-existing commonMain errors + expect/actual interface members).
+3. `ff28cee` ktor 3.0.2→3.5.1, kotlinx-serialization 1.7.3→1.11.0, coroutines 1.9.0→1.11.0.
+4. `ce1e0a9` Compose BOM 2024.11.00→2026.06.01.
+
+Deviations from the original spec (all forced by reality, not preference):
+- **Kotlin 2.3.21, not 2.4.0** — no KSP release supports Kotlin 2.4.0 (newest KSP 2.3.10).
+  2.3.x still satisfies the serialization-metadata blocker. (User-confirmed.)
+- **Hilt 2.54→2.58** (not in original scope) — required: 2.54 can't read Kotlin 2.3
+  metadata; 2.59+ requires AGP 9. Plus a `kotlin-metadata-jvm:2.3.21` force.
+- **`:shared` source fixes** (user-confirmed "fix shared to green") — it did not
+  compile on `main`; Compose MP 1.11.1 additionally removed iosX64 + Material icons.
+
+Deferred (documented, not done):
+- Vendor the ~24 used Material icons (or adopt a maintained KMP icon lib) to drop the
+  frozen `material-icons-extended:1.7.3` pin in `:shared`.
+- Navigation artifact alignment (`org.jetbrains.androidx.navigation:...:2.8.0-alpha10`
+  in `:shared` vs `androidx.navigation:...:2.8.4` in `:app`) — compiles green as-is;
+  audit flags it as a separate KMP/iOS decision (MOBILE-QUAL-02/11).
+- `libs.versions.toml` remains unused/divergent (MOBILE-QUAL-11) — housekeeping, batch 16.
+- The offline subsystem impls (`OfflineDatabaseImpl` in-memory, `NetworkMonitor`
+  always-online) now compile but remain placeholders (audit MOBILE-BUG-01/02).
