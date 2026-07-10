@@ -38,11 +38,14 @@ class ApiClient(
         
         // Logging — HEADERS only (never bodies: the login body carries the plaintext
         // password and responses carry the JWT), gated to debug, with the bearer token
-        // redacted from the header dump.
+        // and any session cookie redacted from the header dump (parity with Android).
         install(Logging) {
             logger = Logger.DEFAULT
             level = logLevelFor(isDebugBuild())
-            sanitizeHeader { header -> header.equals(HttpHeaders.Authorization, ignoreCase = true) }
+            sanitizeHeader { header ->
+                header.equals(HttpHeaders.Authorization, ignoreCase = true) ||
+                    header.equals(HttpHeaders.Cookie, ignoreCase = true)
+            }
         }
         
         // Authentication
