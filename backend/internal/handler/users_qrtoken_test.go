@@ -83,3 +83,33 @@ func TestGenerateQRTokenUsesActiveTenantMembership(t *testing.T) {
 		t.Fatalf("status = %d, saved = %v; want 200 with token saved (membership via user_tenants must authorize)", rec.Code, saved)
 	}
 }
+
+// Non-members get a uniform 404 — a 403 would reveal the user exists in
+// another tenant (PR #23 review).
+func TestGenerateQRTokenNonMemberIs404(t *testing.T) {
+	e := echo.New()
+	targetID := uuid.New()
+
+	fs := &fakeStore{
+		getUserByID: func(id uuid.UUID) (*models.User, error) {
+			return &models.User{ID: targetID, TenantID: uuid.New(), Email: "s@x.y"}, nil
+		},
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			return "", nil // not a member of the caller's active tenant
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, _ := newAuthedContext(e, http.MethodPost, "/x", "", uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(targetID.String())
+
+	err := h.GenerateQRToken(c)
+	httpErr, ok := err.(*echo.HTTPError)
+	if !ok {
+		t.Fatalf("expected *echo.HTTPError, got %v", err)
+	}
+	if httpErr.Code != http.StatusNotFound {
+		t.Errorf("code = %d, want 404 (uniform not-found, no existence leak)", httpErr.Code)
+	}
+}

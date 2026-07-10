@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 
@@ -82,5 +83,26 @@ func TestGetEventMissingIs404NotPanic(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+// Store failures must surface as 500, not be masked as 404 — a DB outage is
+// not "event not found" (PR #23 review).
+func TestStoreErrorIs500Not404(t *testing.T) {
+	e := echo.New()
+	fs := &fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return nil, errors.New("connection refused")
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x", "", uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	if err := h.GetEvent(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 (store error must not read as not-found)", rec.Code)
 	}
 }

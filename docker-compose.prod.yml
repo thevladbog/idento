@@ -41,7 +41,7 @@ services:
         VITE_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env (e.g. http://your-host:8008)}
     restart: always
     ports:
-      - "80:80"
+      - "80:8080" # container nginx is unprivileged and listens on 8080
     depends_on:
       - backend
 

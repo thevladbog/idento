@@ -50,7 +50,10 @@ func (h *Handler) requireEventOwnership(c echo.Context, eventID uuid.UUID) (*mod
 		return nil, err
 	}
 	event, err := h.Store.GetEventByIDForTenant(c.Request().Context(), eventID, tenantID)
-	if err != nil || event == nil {
+	if err != nil {
+		return nil, err // store failure → 500 via writeErr, not a masked 404
+	}
+	if event == nil {
 		return nil, newHTTPError(http.StatusNotFound, "Event not found")
 	}
 	return event, nil
@@ -64,7 +67,10 @@ func (h *Handler) requireAttendeeOwnership(c echo.Context, attendeeID uuid.UUID)
 		return nil, err
 	}
 	attendee, err := h.Store.GetAttendeeByIDForTenant(c.Request().Context(), attendeeID, tenantID)
-	if err != nil || attendee == nil {
+	if err != nil {
+		return nil, err // store failure → 500 via writeErr, not a masked 404
+	}
+	if attendee == nil {
 		return nil, newHTTPError(http.StatusNotFound, "Attendee not found")
 	}
 	return attendee, nil

@@ -130,7 +130,8 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 	}
 	role, err := h.Store.GetUserTenantRole(c.Request().Context(), targetUser.ID, currentTenantID)
 	if err != nil || role == "" {
-		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+		// Uniform 404: don't reveal that the user exists in another tenant.
+		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
 
 	// Generate random token

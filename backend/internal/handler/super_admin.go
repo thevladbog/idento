@@ -164,9 +164,13 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 	}
 
 	// Log admin action
+	action := "update_subscription"
+	if isNew {
+		action = "create_subscription"
+	}
 	claims := c.Get("user").(*models.JWTCustomClaims)
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_subscription", "subscription", sub.ID, map[string]interface{}{
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "subscription", sub.ID, map[string]interface{}{
 		"old": oldSub,
 		"new": sub,
 	}); err != nil {
