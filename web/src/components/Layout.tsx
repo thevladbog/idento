@@ -7,6 +7,7 @@ import { ModeToggle } from '@/components/mode-toggle';
 import { LanguageToggle } from '@/components/language-toggle';
 import { OrganizationSwitcher } from '@/components/OrganizationSwitcher';
 import { Logo } from '@/components/Logo';
+import { ImpersonationBanner } from '@/components/ImpersonationBanner';
 import { Calendar, Home, Users, Settings, Shield } from 'lucide-react';
 
 interface LayoutProps {
@@ -44,7 +45,8 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-background">
-      <nav className="border-b bg-card sticky top-0 z-50 text-foreground">
+      <ImpersonationBanner />
+      <nav className="border-b bg-card sticky top-[var(--imp-banner-h,0px)] z-50 text-foreground">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-6 flex-1 min-w-0">
             <Logo />

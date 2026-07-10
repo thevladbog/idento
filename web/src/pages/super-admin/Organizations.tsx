@@ -6,7 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import api from '@/lib/api';
+import { StatusBadge } from '@/components/StatusBadge';
 
 export default function Organizations() {
   const { t } = useTranslation();
@@ -16,6 +19,10 @@ export default function Organizations() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [planFilter, setPlanFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [tenantName, setTenantName] = useState('');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     loadTenants();
@@ -23,8 +30,8 @@ export default function Organizations() {
 
   useEffect(() => {
     filterTenants();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter when search/plan/tenants change
-  }, [searchQuery, planFilter, tenants]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter when search/plan/status/tenants change
+  }, [searchQuery, planFilter, statusFilter, tenants]);
 
   const loadTenants = async () => {
     try {
@@ -38,8 +45,34 @@ export default function Organizations() {
     }
   };
 
+  const handleCreateTenant = async () => {
+    const trimmedName = tenantName.trim();
+    if (!trimmedName) return;
+
+    setCreating(true);
+    try {
+      await api.post('/api/super-admin/tenants', { name: trimmedName });
+      toast.success(t('createTenantDone'));
+      setTenantName('');
+      setDialogOpen(false);
+      await loadTenants();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('createTenantFailed'));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setTenantName('');
+    }
+  };
+
   const filterTenants = () => {
-    type TenantRow = { tenant?: { name?: string; contact_email?: string }; subscription?: { plan?: { slug?: string }; status?: string } };
+    type TenantRow = { tenant?: { name?: string; contact_email?: string; status?: string }; subscription?: { plan?: { slug?: string }; status?: string } };
     let filtered = [...tenants];
 
     // Search filter
@@ -54,6 +87,13 @@ export default function Organizations() {
     if (planFilter !== 'all') {
       filtered = filtered.filter((t: TenantRow) =>
         t.subscription?.plan?.slug === planFilter
+      );
+    }
+
+    // Status filter (tenant lifecycle status, not subscription status)
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((t: TenantRow) =>
+        (t.tenant?.status ?? 'active') === statusFilter
       );
     }
 
@@ -93,9 +133,14 @@ export default function Organizations() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">{t('organizations')}</h1>
-        <p className="text-muted-foreground">{t('manageAllOrganizations')}</p>
+      <div className="mb-8 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">{t('organizations')}</h1>
+          <p className="text-muted-foreground">{t('manageAllOrganizations')}</p>
+        </div>
+        <Button onClick={() => setDialogOpen(true)}>
+          + {t('createTenant')}
+        </Button>
       </div>
 
       {/* Filters */}
@@ -118,6 +163,17 @@ export default function Organizations() {
             <SelectItem value="enterprise">{t("planEnterprise")}</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('allStatuses')}</SelectItem>
+            <SelectItem value="active">{t('tenantStatus_active')}</SelectItem>
+            <SelectItem value="suspended">{t('tenantStatus_suspended')}</SelectItem>
+            <SelectItem value="archived">{t('tenantStatus_archived')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Table */}
@@ -131,6 +187,7 @@ export default function Organizations() {
               <TableHead>{t('events')}</TableHead>
               <TableHead>{t('attendees')}</TableHead>
               <TableHead>{t('status')}</TableHead>
+              <TableHead>{t('tenantStatusColumn')}</TableHead>
               <TableHead>{t('created')}</TableHead>
               <TableHead>{t('actions')}</TableHead>
             </TableRow>
@@ -138,12 +195,12 @@ export default function Organizations() {
           <TableBody>
             {filteredTenants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                   {t('noOrganizationsFound')}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTenants.map((tenant: { tenant?: { id?: string; name?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string }; status?: string }; users_count?: number; events_count?: number; attendees_count?: number }) => (
+              filteredTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string }; status?: string }; users_count?: number; events_count?: number; attendees_count?: number }) => (
                 <TableRow key={tenant.tenant?.id ?? ''}>
                   <TableCell className="font-medium">{tenant.tenant?.name}</TableCell>
                   <TableCell>
@@ -158,6 +215,9 @@ export default function Organizations() {
                     <Badge variant={getStatusBadgeVariant(tenant.subscription?.status ?? '')}>
                       {tenant.subscription?.status || 'N/A'}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={tenant.tenant?.status} />
                   </TableCell>
                   <TableCell>
                     {tenant.tenant?.created_at ? new Date(tenant.tenant.created_at).toLocaleDateString() : '—'}
@@ -181,6 +241,43 @@ export default function Organizations() {
       <div className="mt-4 text-sm text-muted-foreground">
         {t('showing')} {filteredTenants.length} {t('of')} {tenants.length} {t('organizations')}
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('createTenantTitle')}</DialogTitle>
+            <DialogDescription>{t('createTenantDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Input
+              placeholder={t('tenantNamePlaceholder')}
+              value={tenantName}
+              onChange={(e) => setTenantName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && tenantName.trim() && !creating) {
+                  handleCreateTenant();
+                }
+              }}
+              disabled={creating}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => handleDialogOpenChange(false)}
+              disabled={creating}
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={handleCreateTenant}
+              disabled={creating || !tenantName.trim()}
+            >
+              {creating ? t('creating') : t('create')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -36,6 +36,8 @@ api.interceptors.response.use(
       localStorage.removeItem('user');
       localStorage.removeItem('tenants');
       localStorage.removeItem('current_tenant');
+      localStorage.removeItem('operator_token');
+      localStorage.removeItem('impersonation');
       
       // Only redirect if we're not already on login/register pages
       if (!window.location.pathname.startsWith('/login') && 

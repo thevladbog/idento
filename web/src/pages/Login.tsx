@@ -5,6 +5,7 @@ import * as z from "zod";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import api from "@/lib/api";
+import { clearImpersonationArtifacts } from "@/lib/impersonation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +54,7 @@ export default function LoginPage() {
     try {
       setError(null);
       const response = await api.post("/auth/login", data);
+      clearImpersonationArtifacts();
       localStorage.setItem("token", response.data.token);
       localStorage.setItem("user", JSON.stringify(response.data.user));
 
