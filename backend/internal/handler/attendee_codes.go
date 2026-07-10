@@ -130,8 +130,13 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 	var csvData strings.Builder
 	writer := csv.NewWriter(&csvData)
 
-	// Write header
-	if err := writer.Write(fieldOrder); err != nil {
+	// Write header (sanitized: field names can originate from attacker-controlled
+	// custom field keys via ExternalImport, so guard against formula injection here too)
+	sanitizedHeader := make([]string, len(fieldOrder))
+	for i, h := range fieldOrder {
+		sanitizedHeader[i] = sanitizeCSVField(h)
+	}
+	if err := writer.Write(sanitizedHeader); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to write CSV header"})
 	}
 

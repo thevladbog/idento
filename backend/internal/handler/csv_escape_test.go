@@ -8,6 +8,8 @@ func TestSanitizeCSVField(t *testing.T) {
 		"+1":            "'+1",
 		"-1":            "'-1",
 		"@cmd":          "'@cmd",
+		"\tcmd":         "'\tcmd",
+		"\rcmd":         "'\rcmd",
 		"normal":        "normal",
 		"":              "",
 	}
