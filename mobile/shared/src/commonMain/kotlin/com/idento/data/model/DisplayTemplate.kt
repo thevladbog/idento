@@ -113,7 +113,9 @@ data class DisplayTemplate(
      */
     private fun processConditionals(text: String, attendee: Attendee): String {
         var result = text
-        val conditionalRegex = Regex("""\{\{#if\s+(\w+)\}\}(.*?)\{\{/if\}\}""", RegexOption.DOT_MATCHES_ALL)
+        // Use [\s\S] for the "dot matches all" behaviour: RegexOption.DOT_MATCHES_ALL is
+        // JVM-only (the common/native RegexOption only has IGNORE_CASE and MULTILINE).
+        val conditionalRegex = Regex("""\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{/if\}\}""")
         
         result = conditionalRegex.replace(result) { match ->
             val field = match.groupValues[1]

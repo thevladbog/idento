@@ -49,5 +49,11 @@ data class PendingZoneCheckIn(
 /**
  * Platform-specific database implementation
  */
-expect class OfflineDatabaseImpl() : OfflineDatabase
+expect class OfflineDatabaseImpl() : OfflineDatabase {
+    override suspend fun savePendingCheckIn(checkIn: PendingZoneCheckIn): Long
+    override suspend fun getPendingCheckIns(): List<PendingZoneCheckIn>
+    override suspend fun deletePendingCheckIn(id: Long)
+    override suspend fun clearPendingCheckIns()
+    override suspend fun getPendingCheckInsCount(): Int
+}
 

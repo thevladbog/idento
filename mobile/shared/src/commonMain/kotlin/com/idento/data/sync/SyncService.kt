@@ -125,5 +125,8 @@ interface NetworkMonitor {
 /**
  * Platform-specific network monitor implementation
  */
-expect class NetworkMonitorImpl() : NetworkMonitor
+expect class NetworkMonitorImpl() : NetworkMonitor {
+    override val isOnline: kotlinx.coroutines.flow.Flow<Boolean>
+    override suspend fun checkConnectivity(): Boolean
+}
 

@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
-    kotlin("plugin.serialization") version "2.1.0"
+    kotlin("plugin.serialization") version "2.3.21"
 }
 
 android {
@@ -45,10 +45,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -61,6 +57,23 @@ android {
     }
 }
 
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+// Hilt 2.58 (newest release compatible with AGP 8.x; 2.59+ requires AGP 9.0) ships
+// kotlin-metadata-jvm 2.2.20, which cannot read Kotlin 2.3 metadata and fails
+// :app:hiltJavaCompileDebug with "Provided Metadata instance has version 2.3.0,
+// while maximum supported version is 2.2.0". Dagger 2.57 unshaded this library, so we
+// force the matching kotlin-metadata-jvm to let Hilt read Kotlin 2.3.x metadata.
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-metadata-jvm:2.3.21")
+    }
+}
+
 dependencies {
     // Core Android
     implementation("androidx.core:core-ktx:1.15.0")
@@ -68,8 +81,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     
-    // Compose BOM (2024.11.00 - latest stable)
-    implementation(platform("androidx.compose:compose-bom:2024.11.00"))
+    // Compose BOM (2026.06.01 - latest stable)
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -81,8 +94,8 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.4")
     
     // Hilt Dependency Injection
-    implementation("com.google.dagger:hilt-android:2.54")
-    ksp("com.google.dagger:hilt-compiler:2.54")
+    implementation("com.google.dagger:hilt-android:2.58")
+    ksp("com.google.dagger:hilt-compiler:2.58")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     
     // Networking
@@ -93,7 +106,7 @@ dependencies {
     
     // JSON Serialization
     implementation("com.google.code.gson:gson:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     
     // Room Database
     val roomVersion = "2.6.1"
@@ -111,8 +124,8 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
     
     // Coil Image Loading
     implementation("io.coil-kt:coil-compose:2.7.0")
@@ -133,10 +146,10 @@ dependencies {
     
     // Testing
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.11.00"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     
     // Debug

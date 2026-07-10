@@ -89,12 +89,15 @@ class ZoneApiService(private val apiClient: ApiClient) {
         
         val daysInMonth = getDaysInMonth(month, year)
         
+        // String.format is JVM-only; build the ISO date with padStart so it works in commonMain.
         return when {
-            day < daysInMonth -> String.format("%04d-%02d-%02d", year, month, day + 1)
-            month < 12 -> String.format("%04d-%02d-01", year, month + 1)
-            else -> String.format("%04d-01-01", year + 1)
+            day < daysInMonth -> "${year.pad(4)}-${month.pad(2)}-${(day + 1).pad(2)}"
+            month < 12 -> "${year.pad(4)}-${(month + 1).pad(2)}-01"
+            else -> "${(year + 1).pad(4)}-01-01"
         }
     }
+
+    private fun Int.pad(length: Int): String = toString().padStart(length, '0')
     
     /**
      * Helper to get days in month
