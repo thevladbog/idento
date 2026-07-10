@@ -1,8 +1,7 @@
 package com.idento.presentation.navigation
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -212,7 +211,7 @@ private fun PlaceholderScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            AppIcons.AutoMirrored.ArrowBack,
                             contentDescription = "Back"
                         )
                     }

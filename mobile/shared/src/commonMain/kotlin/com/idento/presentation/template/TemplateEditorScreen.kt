@@ -6,9 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,7 +48,7 @@ fun TemplateEditorScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            AppIcons.AutoMirrored.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -105,7 +103,7 @@ fun TemplateEditorScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Icon(
-                        Icons.Default.Info,
+                        AppIcons.Info,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -229,7 +227,7 @@ fun TemplateEditorScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                Icons.Default.Edit,
+                                AppIcons.Edit,
                                 contentDescription = null,
                                 modifier = Modifier.size(32.dp),
                                 tint = Color.Gray.copy(alpha = 0.5f)

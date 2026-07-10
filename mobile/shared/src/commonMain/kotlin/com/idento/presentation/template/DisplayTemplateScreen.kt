@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -53,7 +51,7 @@ fun DisplayTemplateScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(AppIcons.AutoMirrored.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -116,7 +114,7 @@ fun DisplayTemplateScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            Icons.Default.Info,
+                            AppIcons.Info,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -150,7 +148,7 @@ fun DisplayTemplateScreen(
                         Spacer(Modifier.width(8.dp))
                     } else {
                         Icon(
-                            Icons.Default.Refresh,
+                            AppIcons.Refresh,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
@@ -277,7 +275,7 @@ fun DisplayTemplateScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Check,
+                                AppIcons.Check,
                                 contentDescription = null,
                                 tint = Color(0xFF4CAF50)
                             )
@@ -298,7 +296,7 @@ fun DisplayTemplateScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Warning,
+                                AppIcons.Warning,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error
                             )

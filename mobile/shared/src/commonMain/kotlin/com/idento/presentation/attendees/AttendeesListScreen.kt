@@ -7,9 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -62,7 +60,7 @@ fun AttendeesListScreen(
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+                            AppIcons.AutoMirrored.ArrowBack,
                             contentDescription = "Back",
                             tint = MaterialTheme.colorScheme.onBackground
                         )
@@ -71,7 +69,7 @@ fun AttendeesListScreen(
                 actions = {
                     IconButton(onClick = { viewModel.loadAttendees(eventId) }) {
                         Icon(
-                            Icons.Default.Refresh,
+                            AppIcons.Refresh,
                             contentDescription = "Refresh",
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -200,7 +198,7 @@ fun AttendeesListScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Icon(
-                                Icons.Default.Warning,
+                                AppIcons.Warning,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.error
@@ -226,7 +224,7 @@ fun AttendeesListScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
-                                Icons.Default.Person,
+                                AppIcons.Person,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -373,7 +371,7 @@ private fun AttendeeRow(
             // Status indicator
             if (attendee.isCheckedIn) {
                 Icon(
-                    Icons.Default.CheckCircle,
+                    AppIcons.CheckCircle,
                     contentDescription = "Checked in",
                     tint = Color(0xFF4CAF50),
                     modifier = Modifier.size(24.dp)

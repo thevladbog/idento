@@ -6,10 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -96,17 +93,17 @@ fun SettingsScreen(
         actions = listOf(
             ActionSheetItem(
                 title = stringResource(StringKey.SCAN_QR_CODE),
-                icon = Icons.Default.Search,
+                icon = AppIcons.Search,
                 onClick = { viewModel.showPrinterQRScanner() }
             ),
             ActionSheetItem(
                 title = "Bluetooth",
-                icon = Icons.Default.Phone,
+                icon = AppIcons.Phone,
                 onClick = { showBluetoothPrinterSheet = true }
             ),
             ActionSheetItem(
                 title = "Ethernet (IP)",
-                icon = Icons.Default.Settings,
+                icon = AppIcons.Settings,
                 onClick = { showEthernetPrinterDialog = true }
             )
         )
@@ -142,12 +139,12 @@ fun SettingsScreen(
         actions = listOf(
             ActionSheetItem(
                 title = "Camera Scanner",
-                icon = Icons.Default.Search,
+                icon = AppIcons.Search,
                 onClick = { viewModel.setScannerMode("camera") }
             ),
             ActionSheetItem(
                 title = "Hardware Scanner (USB/Bluetooth)",
-                icon = Icons.Default.Phone,
+                icon = AppIcons.Phone,
                 onClick = { viewModel.setScannerMode("hardware") }
             )
         )
@@ -165,7 +162,7 @@ fun SettingsScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(AppIcons.AutoMirrored.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -187,7 +184,7 @@ fun SettingsScreen(
                 SettingsGroup {
                     // Theme
                     SettingsRow(
-                        icon = Icons.Default.Face,
+                        icon = AppIcons.Face,
                         title = "Theme",
                         value = when (uiState.themeMode) {
                             AppPreferences.THEME_LIGHT -> "Light"
@@ -204,7 +201,7 @@ fun SettingsScreen(
                     
                     // Language
                     SettingsRow(
-                        icon = Icons.Default.Place,
+                        icon = AppIcons.Place,
                         title = "Language",
                         value = when (uiState.language) {
                             AppPreferences.LANG_EN -> "English"
@@ -221,7 +218,7 @@ fun SettingsScreen(
                 SettingsGroup {
                     // Printer Selection
                     SettingsRow(
-                        icon = Icons.Default.Create,
+                        icon = AppIcons.Create,
                         title = "Printer",
                         value = uiState.selectedPrinterName ?: "Not configured",
                         valueColor = if (uiState.selectedPrinterName != null) 
@@ -239,7 +236,7 @@ fun SettingsScreen(
                         
                         // Printer Address
                         SettingsRow(
-                            icon = Icons.Default.Info,
+                            icon = AppIcons.Info,
                             title = "Address",
                             value = uiState.selectedPrinterAddress ?: "-",
                             showArrow = false
@@ -252,7 +249,7 @@ fun SettingsScreen(
                         
                         // Test Print
                         SettingsRow(
-                            icon = Icons.Default.Check,
+                            icon = AppIcons.Check,
                             title = "Test Print",
                             value = if (uiState.isTestingPrinter) "Printing..." else "Send test label",
                             valueColor = MaterialTheme.colorScheme.primary,
@@ -267,7 +264,7 @@ fun SettingsScreen(
                         
                         // Clear Printer
                         SettingsRow(
-                            icon = Icons.Default.Delete,
+                            icon = AppIcons.Delete,
                             iconTint = MaterialTheme.colorScheme.error,
                             title = "Remove Printer",
                             titleColor = MaterialTheme.colorScheme.error,
@@ -283,7 +280,7 @@ fun SettingsScreen(
                 SettingsGroup {
                     // Scanner Mode
                     SettingsRow(
-                        icon = Icons.Default.Search,
+                        icon = AppIcons.Search,
                         title = "Scanner Mode",
                         value = when (uiState.scannerMode) {
                             "hardware" -> "Hardware Scanner"
@@ -300,7 +297,7 @@ fun SettingsScreen(
                         
                         // Hardware Scanner Status
                         SettingsRow(
-                            icon = Icons.Default.Check,
+                            icon = AppIcons.Check,
                             title = "Scanner Status",
                             value = if (uiState.isHardwareScannerConnected) "Connected" else "Disconnected",
                             valueColor = if (uiState.isHardwareScannerConnected) 
@@ -317,7 +314,7 @@ fun SettingsScreen(
             SettingsSection(title = "About") {
                 SettingsGroup {
                     SettingsRow(
-                        icon = Icons.Default.Info,
+                        icon = AppIcons.Info,
                         title = "Version",
                         value = "1.0.0",
                         showArrow = false
@@ -338,7 +335,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            Icons.Default.Check,
+                            AppIcons.Check,
                             contentDescription = null,
                             tint = Color(0xFF4CAF50)
                         )
@@ -363,7 +360,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            Icons.Default.Warning,
+                            AppIcons.Warning,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.error
                         )
@@ -458,7 +455,7 @@ private fun SettingsRow(
         if (showArrow && onClick != null) {
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                AppIcons.AutoMirrored.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
@@ -561,7 +558,7 @@ private fun PrinterQRScannerDialog(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.Search,
+                                    AppIcons.Search,
                                     contentDescription = null,
                                     modifier = Modifier.size(48.dp),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant

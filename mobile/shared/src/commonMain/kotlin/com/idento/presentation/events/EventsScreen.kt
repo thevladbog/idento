@@ -3,10 +3,7 @@ package com.idento.presentation.events
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.*
+import com.idento.presentation.components.AppIcons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,13 +38,13 @@ fun EventsScreen(
         actions = listOf(
             ActionSheetItem(
                 title = "Settings",
-                icon = Icons.Default.Settings,
+                icon = AppIcons.Settings,
                 onClick = onNavigateToSettings
             )
         ),
         destructiveAction = ActionSheetItem(
             title = "Logout",
-            icon = Icons.AutoMirrored.Filled.ExitToApp,
+            icon = AppIcons.AutoMirrored.ExitToApp,
             onClick = {
                 viewModel.logout()
                 onLogout()
@@ -79,7 +76,7 @@ fun EventsScreen(
                     // Refresh button
                     IconButton(onClick = { viewModel.loadEvents() }) {
                         Icon(
-                            Icons.Default.Refresh, 
+                            AppIcons.Refresh, 
                             contentDescription = "Refresh",
                             tint = MaterialTheme.colorScheme.primary
                         )
@@ -88,7 +85,7 @@ fun EventsScreen(
                     // Menu button
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
-                            Icons.Default.MoreVert, 
+                            AppIcons.MoreVert, 
                             contentDescription = "Menu",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -136,7 +133,7 @@ fun EventsScreen(
                             modifier = Modifier.padding(32.dp)
                         ) {
                             Icon(
-                                Icons.Default.Warning,
+                                AppIcons.Warning,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.error
@@ -147,7 +144,7 @@ fun EventsScreen(
                                 color = MaterialTheme.colorScheme.error
                             )
                             Button(onClick = { viewModel.loadEvents() }) {
-                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Icon(AppIcons.Refresh, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Retry")
                             }
@@ -167,7 +164,7 @@ fun EventsScreen(
                             modifier = Modifier.padding(32.dp)
                         ) {
                             Icon(
-                                Icons.Default.DateRange,
+                                AppIcons.DateRange,
                                 contentDescription = null,
                                 modifier = Modifier.size(64.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
@@ -226,7 +223,7 @@ private fun EventCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Default.DateRange,
+                        AppIcons.DateRange,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(24.dp)
@@ -252,7 +249,7 @@ private fun EventCard(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Icon(
-                            Icons.Default.LocationOn,
+                            AppIcons.LocationOn,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -270,7 +267,7 @@ private fun EventCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Icon(
-                        Icons.Default.DateRange,
+                        AppIcons.DateRange,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -285,7 +282,7 @@ private fun EventCard(
             
             // iOS-style chevron
             Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                AppIcons.AutoMirrored.KeyboardArrowRight,
                 contentDescription = "Go to event",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
