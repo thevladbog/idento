@@ -390,6 +390,10 @@ func main() {
 		log.Println("No .env file found, relying on environment variables")
 	}
 
+	if os.Getenv("JWT_SECRET") == "" {
+		log.Fatal("JWT_SECRET is not set — refusing to start (set it in .env / environment)")
+	}
+
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
