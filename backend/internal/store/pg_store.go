@@ -157,8 +157,8 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
 	var t models.Tenant
 	var settingsJSON []byte
-	query := `SELECT id, name, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
-	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
+	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
+	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +187,31 @@ func (s *PGStore) UpdateTenant(ctx context.Context, tenant *models.Tenant) error
 		tenant.Name, settingsJSON, tenant.LogoURL, tenant.Website, tenant.ContactEmail, tenant.ID,
 	)
 	return err
+}
+
+// GetTenantStatus returns the lifecycle status, or "" if the tenant does not exist.
+func (s *PGStore) GetTenantStatus(ctx context.Context, id uuid.UUID) (string, error) {
+	var status string
+	err := s.db.QueryRow(ctx, `SELECT status FROM tenants WHERE id = $1`, id).Scan(&status)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return status, nil
+}
+
+// UpdateTenantStatus sets the lifecycle status; transition rules live in the handler.
+func (s *PGStore) UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error {
+	tag, err := s.db.Exec(ctx, `UPDATE tenants SET status = $2, updated_at = NOW() WHERE id = $1`, id, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("tenant %s not found", id)
+	}
+	return nil
 }
 
 func (s *PGStore) CreateUser(ctx context.Context, user *models.User) error {

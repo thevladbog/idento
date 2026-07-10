@@ -21,6 +21,8 @@ type Store interface {
 	EnsureSeedData(ctx context.Context, mode string) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *models.Tenant) error
+	GetTenantStatus(ctx context.Context, id uuid.UUID) (string, error)
+	UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error
 
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
