@@ -55,6 +55,7 @@ type fakeStore struct {
 
 	applyBatchCheckin     func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
 	createCheckinOverride func(o *models.CheckinOverride) error
+	getEventStats         func(eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -178,6 +179,10 @@ func (f *fakeStore) ApplyBatchCheckin(_ context.Context, eventID, staffUserID uu
 
 func (f *fakeStore) CreateCheckinOverride(_ context.Context, o *models.CheckinOverride) error {
 	return f.createCheckinOverride(o)
+}
+
+func (f *fakeStore) GetEventStats(_ context.Context, eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error) {
+	return f.getEventStats(eventID, zoneID)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

@@ -147,4 +147,7 @@ type Store interface {
 
 	// Check-in Overrides (audit log)
 	CreateCheckinOverride(ctx context.Context, o *models.CheckinOverride) error
+
+	// Event Stats (KPI counters for mobile status bar)
+	GetEventStats(ctx context.Context, eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 }
