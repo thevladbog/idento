@@ -22,15 +22,18 @@ export function startImpersonation(token: string, session: ImpersonationSession)
   window.location.href = '/dashboard';
 }
 
-export function endImpersonation(): void {
+function clearSession(restoreToken: boolean): void {
   const operatorToken = localStorage.getItem(OPERATOR_TOKEN_KEY);
-  if (operatorToken) {
-    localStorage.setItem('token', operatorToken);
-  } else {
-    localStorage.removeItem('token'); // fail safe: never keep the imp token
+  if (restoreToken) {
+    if (operatorToken) localStorage.setItem('token', operatorToken);
+    else localStorage.removeItem('token'); // fail safe: never keep the imp token
   }
   localStorage.removeItem(OPERATOR_TOKEN_KEY);
   localStorage.removeItem(SESSION_KEY);
+}
+
+export function endImpersonation(): void {
+  clearSession(true);
   window.location.href = '/super-admin/organizations';
 }
 
@@ -40,8 +43,8 @@ export function getImpersonation(): ImpersonationSession | null {
   try {
     const session = JSON.parse(raw) as ImpersonationSession;
     if (new Date(session.expiresAt).getTime() <= Date.now()) {
-      // Session lapsed: restore the operator silently on next read.
-      endImpersonation();
+      // Session lapsed: restore the operator silently on next read (no redirect).
+      clearSession(true);
       return null;
     }
     return session;
