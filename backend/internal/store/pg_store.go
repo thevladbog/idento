@@ -118,6 +118,34 @@ func (s *PGStore) CreateTenant(ctx context.Context, tenant *models.Tenant) error
 	return s.db.QueryRow(ctx, query, tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt)
 }
 
+func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`,
+		tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+		return err
+	}
+
+	var planID uuid.UUID
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM subscription_plans WHERE is_default AND is_active ORDER BY sort_order LIMIT 1`).Scan(&planID); err != nil {
+		return fmt.Errorf("no default subscription plan configured: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO subscriptions (tenant_id, plan_id, status, start_date) VALUES ($1, $2, 'active', NOW())`,
+		tenant.ID, planID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
 	var t models.Tenant
 	var settingsJSON []byte

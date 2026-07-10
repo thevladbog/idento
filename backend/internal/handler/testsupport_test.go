@@ -28,6 +28,12 @@ type fakeStore struct {
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
+
+	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
+	getUserByEmail                      func(email string) (*models.User, error)
+	createUser                          func(u *models.User) error
+	addUserToTenant                     func(ut *models.UserTenant) error
+	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -65,6 +71,20 @@ func (f *fakeStore) GetAPIKeysByEventID(_ context.Context, eventID uuid.UUID) ([
 }
 func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 	return f.revokeAPIKey(id)
+}
+
+func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
+	return f.createTenantWithDefaultSubscription(tenant)
+}
+func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
+	return f.getUserByEmail(email)
+}
+func (f *fakeStore) CreateUser(_ context.Context, u *models.User) error { return f.createUser(u) }
+func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) error {
+	return f.addUserToTenant(ut)
+}
+func (f *fakeStore) GetUserTenants(_ context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
+	return f.getUserTenants(userID)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

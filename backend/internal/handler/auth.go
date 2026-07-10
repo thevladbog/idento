@@ -48,9 +48,9 @@ func (h *Handler) Register(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	// 1. Create Tenant
+	// 1. Create Tenant with its default-plan subscription (one transaction).
 	tenant := &models.Tenant{Name: req.TenantName}
-	if err := h.Store.CreateTenant(c.Request().Context(), tenant); err != nil {
+	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
 	}
 

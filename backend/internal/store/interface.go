@@ -13,6 +13,10 @@ import (
 // Store is the main data access interface; implementations (e.g. PGStore) provide persistence.
 type Store interface {
 	CreateTenant(ctx context.Context, tenant *models.Tenant) error
+	// CreateTenantWithDefaultSubscription creates the tenant and an active
+	// subscription to the default plan in one transaction (P0.1: a tenant
+	// without a subscription is 403-blocked by the limits middleware).
+	CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *models.Tenant) error
 
