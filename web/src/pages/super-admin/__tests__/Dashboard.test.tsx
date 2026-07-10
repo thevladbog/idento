@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from '../Dashboard';
 import api from '@/lib/api';
@@ -44,10 +44,17 @@ describe('Dashboard', () => {
 
   it('renders the over-limit queue with the tenant that exceeds its limit', async () => {
     render(<MemoryRouter><Dashboard /></MemoryRouter>);
-    // 'Acme Conf Group' legitimately appears twice with this mock data (over-limit queue
-    // + top-tenants-by-usage chart, since it's also the highest-attendee tenant), so assert
-    // presence via getAllByText rather than the singular getByText.
+    // 'Acme Conf Group' legitimately appears twice on the page with this mock data (over-limit
+    // queue + top-tenants-by-usage chart, since it's also the highest-attendee tenant), so we
+    // scope the assertion to the "Over limit" card specifically rather than asserting presence
+    // anywhere on the page — that way this test still fails if the over-limit queue itself is
+    // broken (e.g. renders "Nothing here right now" instead of the tenant).
     await waitFor(() => expect(screen.getAllByText('Acme Conf Group').length).toBeGreaterThan(0));
+
+    const overLimitHeading = screen.getByText(/Over limit|Превышен лимит/);
+    const overLimitCard = overLimitHeading.closest('.rounded-lg');
+    expect(overLimitCard).not.toBeNull();
+    expect(within(overLimitCard as HTMLElement).getByText('Acme Conf Group')).toBeInTheDocument();
   });
 
   it('calls the reactivate endpoint when clicking Reactivate in the recently-suspended queue', async () => {

@@ -39,6 +39,9 @@ export default function SuperAdminDashboard() {
       ]);
       setTenants(tenantsRes.data || []);
       setAnalytics(analyticsRes.data);
+    } catch (error) {
+      console.error('Failed to load data:', error);
+      toast.error(t('error'), { description: t('failedToLoadData') });
     } finally {
       setLoading(false);
     }
@@ -46,6 +49,7 @@ export default function SuperAdminDashboard() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   async function handleReactivate(id: string) {
