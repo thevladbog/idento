@@ -100,6 +100,10 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID)
 	if err != nil {
 		c.Logger().Error("Failed to fetch attendees: ", err)
@@ -189,6 +193,10 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 	existingAttendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
 	if err != nil || existingAttendee == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+	}
+
+	if _, err := h.requireEventOwnership(c, existingAttendee.EventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	// Bind update request
