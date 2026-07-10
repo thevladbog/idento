@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -390,6 +391,10 @@ func main() {
 		log.Println("No .env file found, relying on environment variables")
 	}
 
+	if os.Getenv("JWT_SECRET") == "" {
+		log.Fatal("JWT_SECRET is not set — refusing to start (set it in .env / environment)")
+	}
+
 	// Database connection string
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -417,8 +422,19 @@ func main() {
 	// Middleware
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	corsOrigins := []string{}
+	if raw := os.Getenv("CORS_ALLOWED_ORIGINS"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				corsOrigins = append(corsOrigins, trimmed)
+			}
+		}
+	}
+	if len(corsOrigins) == 0 {
+		log.Fatal("CORS_ALLOWED_ORIGINS is not set — refusing to start (set it in .env / environment; see .env.example)")
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"*"}, // Configure properly for production
+		AllowOrigins: corsOrigins,
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
 

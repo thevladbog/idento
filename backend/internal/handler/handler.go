@@ -4,10 +4,14 @@
 package handler
 
 import (
+	"time"
+
 	"idento/backend/internal/middleware"
 	"idento/backend/internal/store"
 
 	"github.com/labstack/echo/v4"
+	echomw "github.com/labstack/echo/v4/middleware"
+	"golang.org/x/time/rate"
 )
 
 // Handler holds dependencies (e.g. Store) and implements HTTP handlers for the API.
@@ -22,11 +26,20 @@ func New(s store.Store) *Handler {
 
 // RegisterRoutes mounts all API routes on the given Echo instance.
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
+	// In-memory rate limiter: 10 requests / minute per client IP for auth + check-in.
+	authLimiter := echomw.RateLimiterWithConfig(echomw.RateLimiterConfig{
+		Store: echomw.NewRateLimiterMemoryStoreWithConfig(echomw.RateLimiterMemoryStoreConfig{
+			Rate:      rate.Limit(10.0 / 60.0), // 10 per minute
+			Burst:     10,
+			ExpiresIn: 3 * time.Minute,
+		}),
+	})
+
 	// Auth routes
 	auth := e.Group("/auth")
 	auth.POST("/register", h.Register)
-	auth.POST("/login", h.Login)
-	auth.POST("/login-qr", h.LoginWithQR)
+	auth.POST("/login", h.Login, authLimiter)
+	auth.POST("/login-qr", h.LoginWithQR, authLimiter)
 
 	// Protected routes
 	api := e.Group("/api")
@@ -92,7 +105,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.GET("/users/:user_id/zones", h.GetUserZoneAssignments)
 
 	// Zone Check-in
-	api.POST("/zones/checkin", h.ZoneCheckIn)
+	api.POST("/zones/checkin", h.ZoneCheckIn, authLimiter)
 	api.GET("/zones/:zone_id/checkins", h.GetZoneCheckins)
 	api.GET("/attendees/:attendee_id/zone-history", h.GetAttendeeZoneHistory)
 

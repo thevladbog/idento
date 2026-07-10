@@ -24,6 +24,10 @@ func (h *Handler) GetAttendeeQR(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "Attendee not found")
 	}
 
+	if _, err := h.requireEventOwnership(c, attendee.EventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	// Generate QR code (256x256 pixels, medium recovery level)
 	qr, err := qrcode.Encode(attendee.Code, qrcode.Medium, 256)
 	if err != nil {

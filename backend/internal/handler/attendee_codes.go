@@ -52,6 +52,19 @@ func (h *Handler) GenerateAttendeeCodes(c echo.Context) error {
 	})
 }
 
+// sanitizeCSVField neutralizes CSV/formula injection by prefixing a single
+// quote to values starting with a formula trigger (OWASP CSV injection).
+func sanitizeCSVField(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
+}
+
 // ExportAttendeesCSV exports attendees as CSV
 func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 	eventIDStr := c.Param("event_id")
@@ -117,8 +130,13 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 	var csvData strings.Builder
 	writer := csv.NewWriter(&csvData)
 
-	// Write header
-	if err := writer.Write(fieldOrder); err != nil {
+	// Write header (sanitized: field names can originate from attacker-controlled
+	// custom field keys via ExternalImport, so guard against formula injection here too)
+	sanitizedHeader := make([]string, len(fieldOrder))
+	for i, h := range fieldOrder {
+		sanitizedHeader[i] = sanitizeCSVField(h)
+	}
+	if err := writer.Write(sanitizedHeader); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to write CSV header"})
 	}
 
@@ -128,17 +146,17 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 		for i, field := range fieldOrder {
 			switch field {
 			case "code":
-				row[i] = attendee.Code
+				row[i] = sanitizeCSVField(attendee.Code)
 			case "first_name":
-				row[i] = attendee.FirstName
+				row[i] = sanitizeCSVField(attendee.FirstName)
 			case "last_name":
-				row[i] = attendee.LastName
+				row[i] = sanitizeCSVField(attendee.LastName)
 			case "email":
-				row[i] = attendee.Email
+				row[i] = sanitizeCSVField(attendee.Email)
 			case "company":
-				row[i] = attendee.Company
+				row[i] = sanitizeCSVField(attendee.Company)
 			case "position":
-				row[i] = attendee.Position
+				row[i] = sanitizeCSVField(attendee.Position)
 			case "checkin_status":
 				if attendee.CheckinStatus {
 					row[i] = "true"
@@ -148,7 +166,7 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 			default:
 				// Check custom fields
 				if val, ok := attendee.CustomFields[field]; ok {
-					row[i] = fmt.Sprintf("%v", val)
+					row[i] = sanitizeCSVField(fmt.Sprintf("%v", val))
 				}
 			}
 		}

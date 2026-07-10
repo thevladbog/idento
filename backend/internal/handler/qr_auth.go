@@ -1,11 +1,9 @@
 package handler
 
 import (
-	"idento/backend/internal/models"
 	"net/http"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -33,23 +31,13 @@ func (h *Handler) LoginWithQR(c echo.Context) error {
 	}
 
 	// Generate JWT
-	claims := &models.JWTCustomClaims{
-		UserID:   user.ID.String(),
-		TenantID: user.TenantID.String(),
-		Role:     user.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	t, err := token.SignedString([]byte("your-secret-key")) // TODO: use env var
+	tokenString, err := generateTokenForTenant(user, user.TenantID.String(), user.Role)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to generate token")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to issue token"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"token": t,
+		"token": tokenString,
 		"user":  user,
 	})
 }

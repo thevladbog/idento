@@ -40,7 +40,8 @@ type User struct {
 	PasswordHash     string     `json:"-"`
 	Role             string     `json:"role"` // admin, manager, staff
 	IsSuperAdmin     bool       `json:"is_super_admin"`
-	QRToken          *string    `json:"qr_token,omitempty"`
+	QRToken          *string    `json:"-"`
+	HasQRToken       bool       `json:"has_qr_token"`
 	QRTokenCreatedAt *time.Time `json:"qr_token_created_at,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`

@@ -21,6 +21,10 @@ func (h *Handler) CreateEventZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	var zone models.EventZone
 	if err := c.Bind(&zone); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -40,6 +44,10 @@ func (h *Handler) GetEventZones(c echo.Context) error {
 	eventID, err := uuid.Parse(c.Param("event_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	withStats := c.QueryParam("with_stats") == "true"
@@ -67,9 +75,9 @@ func (h *Handler) GetEventZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
-	zone, err := h.Store.GetEventZoneByID(c.Request().Context(), id)
+	zone, _, err := h.requireZoneOwnership(c, id)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Zone not found"})
+		return writeErr(c, err)
 	}
 
 	return c.JSON(http.StatusOK, zone)
@@ -80,6 +88,10 @@ func (h *Handler) UpdateEventZone(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
+	}
+
+	if _, _, err := h.requireZoneOwnership(c, id); err != nil {
+		return writeErr(c, err)
 	}
 
 	var zone models.EventZone
@@ -103,6 +115,10 @@ func (h *Handler) DeleteEventZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
+	if _, _, err := h.requireZoneOwnership(c, id); err != nil {
+		return writeErr(c, err)
+	}
+
 	if err := h.Store.DeleteEventZone(c.Request().Context(), id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete zone"})
 	}
@@ -117,6 +133,10 @@ func (h *Handler) CreateZoneAccessRule(c echo.Context) error {
 	zoneID, err := uuid.Parse(c.Param("zone_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
+	}
+
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
 	}
 
 	var rule models.ZoneAccessRule
@@ -140,6 +160,10 @@ func (h *Handler) GetZoneAccessRules(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
+	}
+
 	rules, err := h.Store.GetZoneAccessRules(c.Request().Context(), zoneID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get access rules"})
@@ -153,6 +177,10 @@ func (h *Handler) BulkUpdateZoneAccessRules(c echo.Context) error {
 	zoneID, err := uuid.Parse(c.Param("zone_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
+	}
+
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
 	}
 
 	var rules []*models.ZoneAccessRule
@@ -176,6 +204,14 @@ func (h *Handler) CreateAttendeeZoneAccess(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
+	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
+	if err != nil || attendee == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+	}
+	if _, err := h.requireEventOwnership(c, attendee.EventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	var access models.AttendeeZoneAccess
 	if err := c.Bind(&access); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -197,6 +233,14 @@ func (h *Handler) GetAttendeeZoneAccess(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
 	}
 
+	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
+	if err != nil || attendee == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+	}
+	if _, err := h.requireEventOwnership(c, attendee.EventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	accesses, err := h.Store.GetAttendeeZoneAccessList(c.Request().Context(), attendeeID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get access overrides"})
@@ -210,6 +254,14 @@ func (h *Handler) UpdateAttendeeZoneAccess(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid ID"})
+	}
+
+	existing, err := h.Store.GetAttendeeZoneAccessByID(c.Request().Context(), id)
+	if err != nil || existing == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Access override not found"})
+	}
+	if _, _, err := h.requireZoneOwnership(c, existing.ZoneID); err != nil {
+		return writeErr(c, err)
 	}
 
 	var access models.AttendeeZoneAccess
@@ -233,6 +285,14 @@ func (h *Handler) DeleteAttendeeZoneAccess(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid ID"})
 	}
 
+	existing, err := h.Store.GetAttendeeZoneAccessByID(c.Request().Context(), id)
+	if err != nil || existing == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Access override not found"})
+	}
+	if _, _, err := h.requireZoneOwnership(c, existing.ZoneID); err != nil {
+		return writeErr(c, err)
+	}
+
 	if err := h.Store.DeleteAttendeeZoneAccess(c.Request().Context(), id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete access override"})
 	}
@@ -247,6 +307,10 @@ func (h *Handler) AssignStaffToZone(c echo.Context) error {
 	zoneID, err := uuid.Parse(c.Param("zone_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
+	}
+
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
 	}
 
 	var req struct {
@@ -279,6 +343,10 @@ func (h *Handler) GetZoneStaff(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
+	}
+
 	assignments, err := h.Store.GetZoneStaffAssignments(c.Request().Context(), zoneID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get staff assignments"})
@@ -299,6 +367,10 @@ func (h *Handler) RemoveStaffFromZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
 	}
 
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
+	}
+
 	if err := h.Store.RemoveStaffFromZone(c.Request().Context(), userID, zoneID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to remove staff"})
 	}
@@ -306,11 +378,29 @@ func (h *Handler) RemoveStaffFromZone(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Staff removed successfully"})
 }
 
-// GetUserZoneAssignments retrieves all zone assignments for a user
+// GetUserZoneAssignments retrieves all zone assignments for a user. The
+// target user_id is caller-supplied and unrelated to any event/zone, so
+// requireEventOwnership/requireZoneOwnership don't apply directly; instead we
+// verify the target user belongs to the caller's own tenant before returning
+// their assignments (a cross-tenant user lookup would otherwise leak which
+// zones/staff another org has configured).
 func (h *Handler) GetUserZoneAssignments(c echo.Context) error {
 	userID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+	}
+
+	tenantID, err := tenantIDFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	targetUser, err := h.Store.GetUserByID(c.Request().Context(), userID)
+	if err != nil || targetUser == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+	}
+	if targetUser.TenantID != tenantID {
+		return writeErr(c, newHTTPError(http.StatusForbidden, "Access denied"))
 	}
 
 	assignments, err := h.Store.GetStaffZoneAssignments(c.Request().Context(), userID)
@@ -336,13 +426,37 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// 1. Find attendee by code
-	// First, we need to get the event_id from the zone
-	zone, err := h.Store.GetEventZoneByID(ctx, req.ZoneID)
-	if err != nil || zone == nil {
-		return c.JSON(http.StatusNotFound, models.ZoneCheckInResponse{
-			Success: false,
-			Error:   "Zone not found",
-		})
+	// First, we need to get the event_id from the zone, verifying it belongs
+	// to the caller's tenant.
+	zone, _, err := h.requireZoneOwnership(c, req.ZoneID)
+	if err != nil {
+		if he, ok := err.(*httpError); ok {
+			return c.JSON(he.status, models.ZoneCheckInResponse{Success: false, Error: he.msg})
+		}
+		return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{Success: false, Error: "Internal error"})
+	}
+
+	// 1b. Only admin/manager or staff assigned to this zone may check attendees in.
+	claims := c.Get("user").(*models.JWTCustomClaims)
+	if claims.Role != "admin" && claims.Role != "manager" {
+		callerID, err := uuid.Parse(claims.UserID)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, models.ZoneCheckInResponse{Success: false, Error: "Invalid token"})
+		}
+		assignments, err := h.Store.GetZoneStaffAssignments(ctx, zone.ID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, models.ZoneCheckInResponse{Success: false, Error: "Internal error"})
+		}
+		assigned := false
+		for _, a := range assignments {
+			if a.UserID == callerID {
+				assigned = true
+				break
+			}
+		}
+		if !assigned {
+			return c.JSON(http.StatusForbidden, models.ZoneCheckInResponse{Success: false, Error: "Not assigned to this zone"})
+		}
 	}
 
 	attendee, err := h.Store.GetAttendeeByCode(ctx, zone.EventID, req.AttendeeCode)
@@ -421,7 +535,6 @@ func (h *Handler) ZoneCheckIn(c echo.Context) error {
 	}
 
 	// 8. Create zone check-in record
-	claims := c.Get("user").(*models.JWTCustomClaims)
 	checkinByID := uuid.MustParse(claims.UserID)
 
 	checkin := &models.ZoneCheckin{
@@ -472,6 +585,10 @@ func (h *Handler) GetZoneCheckins(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
+	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
+		return writeErr(c, err)
+	}
+
 	dateStr := c.QueryParam("date")
 	var date time.Time
 	if dateStr != "" {
@@ -499,6 +616,14 @@ func (h *Handler) GetAttendeeZoneHistory(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+
+	attendee, err := h.Store.GetAttendeeByID(ctx, attendeeID)
+	if err != nil || attendee == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+	}
+	if _, err := h.requireEventOwnership(c, attendee.EventID); err != nil {
+		return writeErr(c, err)
+	}
 
 	// Get all zone check-ins for this attendee
 	checkins, err := h.Store.GetAttendeeZoneCheckins(ctx, attendeeID)
@@ -536,6 +661,10 @@ func (h *Handler) GetAvailableZones(c echo.Context) error {
 	eventID, err := uuid.Parse(c.Param("event_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	claims := c.Get("user").(*models.JWTCustomClaims)
@@ -584,16 +713,9 @@ func (h *Handler) GetZoneDays(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
-	ctx := c.Request().Context()
-
-	zone, err := h.Store.GetEventZoneByID(ctx, zoneID)
+	_, event, err := h.requireZoneOwnership(c, zoneID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Zone not found"})
-	}
-
-	event, err := h.Store.GetEventByID(ctx, zone.EventID)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
+		return writeErr(c, err)
 	}
 
 	// Generate days from start_date to end_date
@@ -628,9 +750,9 @@ func (h *Handler) GetZoneQRCode(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
-	zone, err := h.Store.GetEventZoneByID(c.Request().Context(), zoneID)
+	zone, _, err := h.requireZoneOwnership(c, zoneID)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Zone not found"})
+		return writeErr(c, err)
 	}
 
 	qrData := models.ZoneQRData{

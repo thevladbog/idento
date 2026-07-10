@@ -24,6 +24,10 @@ func (h *Handler) GetEventFonts(c echo.Context) error {
 		})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	fonts, err := h.Store.GetFontsByEventID(c.Request().Context(), eventID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -45,6 +49,10 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid event ID",
 		})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	// Safely extract user from context
@@ -242,6 +250,10 @@ func (h *Handler) GetFontFile(c echo.Context) error {
 		})
 	}
 
+	if _, err := h.requireEventOwnership(c, font.EventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	// Set cache headers (fonts rarely change)
 	c.Response().Header().Set("Cache-Control", "public, max-age=31536000")
 	c.Response().Header().Set("Content-Type", font.MimeType)
@@ -256,6 +268,10 @@ func (h *Handler) GetEventFontCSS(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid event ID",
 		})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	fonts, err := h.Store.GetFontsByEventID(c.Request().Context(), eventID)
@@ -300,6 +316,10 @@ func (h *Handler) DeleteEventFont(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid font ID",
 		})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	// Verify font belongs to event

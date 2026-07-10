@@ -106,3 +106,9 @@ agent/docs/docs.go
 .next/
 out/
 next-env.d.ts
+
+# Compiled Go cmd binaries (built into backend/ during local runs)
+/backend/reset_password
+/backend/create_super_admin
+/backend/migrate
+/backend/mark_migrations
