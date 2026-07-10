@@ -430,15 +430,17 @@ func TestDeleteAttendeeZoneAccess_ForbidsForeignTenant(t *testing.T) {
 	}
 }
 
-// --- GetUserZoneAssignments: user_id must belong to the caller's tenant ---
+// --- GetUserZoneAssignments: user_id must belong to the caller's ACTIVE
+// tenant (user_tenants membership), not the target's home users.tenant_id
+// (P1.9). Cross-tenant/unknown targets are a uniform 404 — no 403 oracle.
 
 func TestGetUserZoneAssignments_ForbidsForeignTenantUser(t *testing.T) {
-	ownerTenant := uuid.New()
 	callerTenant := uuid.New()
 	targetUserID := uuid.New()
 	fs := &fakeStore{
-		getUserByID: func(id uuid.UUID) (*models.User, error) {
-			return &models.User{ID: id, TenantID: ownerTenant}, nil
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			// Target is not a member of the caller's active tenant.
+			return "", nil
 		},
 	}
 	h := &Handler{Store: fs}
@@ -448,8 +450,8 @@ func TestGetUserZoneAssignments_ForbidsForeignTenantUser(t *testing.T) {
 	c.SetParamValues(targetUserID.String())
 
 	_ = h.GetUserZoneAssignments(c)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 (uniform not-found for non-member), got %d", rec.Code)
 	}
 }
 
@@ -457,8 +459,11 @@ func TestGetUserZoneAssignments_AllowsSameTenantUser(t *testing.T) {
 	tenant := uuid.New()
 	targetUserID := uuid.New()
 	fs := &fakeStore{
-		getUserByID: func(id uuid.UUID) (*models.User, error) {
-			return &models.User{ID: id, TenantID: tenant}, nil
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			if userID == targetUserID && tenantID == tenant {
+				return "staff", nil
+			}
+			return "", nil
 		},
 		getStaffZoneAssignments: func(uuid.UUID) ([]*models.StaffZoneAssignment, error) {
 			return []*models.StaffZoneAssignment{}, nil
@@ -472,7 +477,7 @@ func TestGetUserZoneAssignments_AllowsSameTenantUser(t *testing.T) {
 
 	_ = h.GetUserZoneAssignments(c)
 	if rec.Code == http.StatusForbidden {
-		t.Fatalf("expected same-tenant user lookup to be allowed, got 403: %s", rec.Body.String())
+		t.Fatalf("expected same-tenant member lookup to be allowed, got 403: %s", rec.Body.String())
 	}
 }
 
@@ -480,8 +485,8 @@ func TestGetUserZoneAssignments_UserNotFound(t *testing.T) {
 	tenant := uuid.New()
 	targetUserID := uuid.New()
 	fs := &fakeStore{
-		getUserByID: func(uuid.UUID) (*models.User, error) {
-			return nil, nil
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			return "", nil
 		},
 	}
 	h := &Handler{Store: fs}

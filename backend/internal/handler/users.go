@@ -222,22 +222,15 @@ func (h *Handler) AssignStaffToEvent(c echo.Context) error {
 
 // GetEventStaff returns staff assigned to an event
 func (h *Handler) GetEventStaff(c echo.Context) error {
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Invalid tenant ID")
-	}
-
 	eventID := c.Param("event_id")
 	eventUUID, err := uuid.Parse(eventID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid event ID")
 	}
 
-	// Verify event belongs to tenant
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventUUID)
-	if err != nil || event == nil || event.TenantID != tenantID {
-		return echo.NewHTTPError(http.StatusNotFound, "Event not found")
+	// Verify event belongs to tenant (scoped lookup, 404 on foreign).
+	if _, err := h.requireEventOwnership(c, eventUUID); err != nil {
+		return writeErr(c, err)
 	}
 
 	staff, err := h.Store.GetEventStaff(c.Request().Context(), eventUUID)

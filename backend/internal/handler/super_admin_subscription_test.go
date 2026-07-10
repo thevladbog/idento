@@ -18,7 +18,7 @@ func TestUpdateTenantSubscriptionCreatesWhenMissing(t *testing.T) {
 	var created *models.Subscription
 	fs := &fakeStore{
 		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) { return nil, nil },
-		createSubscription: func(sub *models.Subscription) error {
+		upsertSubscription: func(sub *models.Subscription) error {
 			created = sub
 			return nil
 		},
@@ -40,7 +40,7 @@ func TestUpdateTenantSubscriptionCreatesWhenMissing(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
 	if created == nil {
-		t.Fatal("CreateSubscription was not called for a tenant with no subscription")
+		t.Fatal("UpsertSubscription was not called for a tenant with no subscription")
 	}
 	if created.TenantID != tenantID || created.PlanID == nil || *created.PlanID != planID {
 		t.Errorf("created subscription = %+v, want tenant %s plan %s", created, tenantID, planID)

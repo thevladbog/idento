@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"idento/backend/internal/config"
 	"idento/backend/internal/models"
+	"idento/backend/internal/store"
 	"log"
 	"net/http"
 	"strings"
@@ -48,49 +50,17 @@ func (h *Handler) Register(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
-	// 1. Create Tenant with its default-plan subscription (one transaction).
-	tenant := &models.Tenant{Name: req.TenantName}
-	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
-	}
-
-	// 2. Check if user with this email already exists
-	existingUser, err := h.Store.GetUserByEmail(c.Request().Context(), req.Email)
+	// One transaction: tenant + subscription + user + membership (P1.10).
+	// The store hashes/verifies the password itself: attaching a new org to
+	// an EXISTING email requires the correct password (SEC — otherwise any
+	// caller knowing an email could mint a token for that account).
+	tenant, existingUser, err := h.Store.ProvisionTenantWithAdmin(
+		c.Request().Context(), req.TenantName, req.Email, req.Password)
 	if err != nil {
-		// Database error occurred
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check user"})
-	}
-
-	if existingUser == nil {
-		// User doesn't exist, create new one
-		// 2a. Hash Password
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to process password"})
+		if errors.Is(err, store.ErrInvalidCredentials) {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 		}
-
-		// 2b. Create Admin User
-		user := &models.User{
-			TenantID:     tenant.ID,
-			Email:        req.Email,
-			PasswordHash: string(hashedPassword),
-			Role:         "admin",
-		}
-		if err := h.Store.CreateUser(c.Request().Context(), user); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create user"})
-		}
-		existingUser = user
-	}
-
-	// 3. Add user to tenant (with admin role for this tenant)
-	userTenant := &models.UserTenant{
-		UserID:   existingUser.ID,
-		TenantID: tenant.ID,
-		Role:     "admin",
-		JoinedAt: time.Now(),
-	}
-	if err := h.Store.AddUserToTenant(c.Request().Context(), userTenant); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to add user to tenant"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
 	}
 
 	// 4. Generate Token with this tenant

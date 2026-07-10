@@ -61,29 +61,13 @@ func (h *Handler) BadgeZPL(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee_id"})
 	}
 
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	event, err := h.requireEventOwnership(c, eventID)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
+		return writeErr(c, err)
 	}
-
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	if event == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
-	}
-	if event.TenantID != tenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
-	}
-
-	attendee, err := h.Store.GetAttendeeByID(c.Request().Context(), attendeeID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	if attendee == nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+		return writeErr(c, err)
 	}
 	if attendee.EventID != eventID {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Attendee does not belong to this event"})

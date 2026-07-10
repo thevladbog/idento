@@ -5,6 +5,8 @@
  * - Response interceptor clears auth and redirects to /login on 401.
  */
 import axios from 'axios';
+import { toast } from 'sonner';
+import i18n from 'i18next';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8008',
@@ -23,6 +25,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Suspended/blocked organization: one persistent, deduplicated banner.
+    if (error.response?.status === 403 && error.response?.data?.code === 'tenant_suspended') {
+      toast.error(i18n.t('tenantSuspended'), { id: 'tenant-suspended', duration: Infinity });
+    }
+
     if (error.response?.status === 401) {
       // Token is invalid or expired, clear auth data and redirect to login
       localStorage.removeItem('token');

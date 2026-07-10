@@ -29,8 +29,13 @@ type fakeStore struct {
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
+	createAttendee            func(attendee *models.Attendee) error
+	updateAttendee            func(attendee *models.Attendee) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
+	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
+	getTenantStatus                     func(id uuid.UUID) (string, error)
+	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
 	createUser                          func(u *models.User) error
 	addUserToTenant                     func(ut *models.UserTenant) error
@@ -38,11 +43,14 @@ type fakeStore struct {
 
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
 	createSubscription        func(sub *models.Subscription) error
+	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
+
+	checkAttendeeLimit func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -105,9 +113,24 @@ func (f *fakeStore) GetAPIKeysByEventID(_ context.Context, eventID uuid.UUID) ([
 func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 	return f.revokeAPIKey(id)
 }
+func (f *fakeStore) CreateAttendee(_ context.Context, attendee *models.Attendee) error {
+	return f.createAttendee(attendee)
+}
+func (f *fakeStore) UpdateAttendee(_ context.Context, attendee *models.Attendee) error {
+	return f.updateAttendee(attendee)
+}
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
 	return f.createTenantWithDefaultSubscription(tenant)
+}
+func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
+	return f.provisionTenantWithAdmin(tenantName, email, password)
+}
+func (f *fakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string, error) {
+	return f.getTenantStatus(id)
+}
+func (f *fakeStore) UpdateTenantStatus(_ context.Context, id uuid.UUID, status string) error {
+	return f.updateTenantStatus(id, status)
 }
 func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
 	return f.getUserByEmail(email)
@@ -125,6 +148,9 @@ func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (
 func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.createSubscription(sub)
 }
+func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.upsertSubscription(sub)
+}
 func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.updateSubscription(sub)
 }
@@ -136,6 +162,9 @@ func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.U
 }
 func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
 	return f.updateUserQRToken(userID, token, createdAt)
+}
+func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
+	return f.checkAttendeeLimit(tenantID, eventID, adding)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

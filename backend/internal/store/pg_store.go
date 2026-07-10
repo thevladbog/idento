@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PGStore struct {
@@ -154,11 +155,100 @@ func (s *PGStore) CreateTenantWithDefaultSubscription(ctx context.Context, tenan
 	return tx.Commit(ctx)
 }
 
+// ErrInvalidCredentials is returned when registration hits an existing email
+// and the supplied password does not match that account's password hash.
+var ErrInvalidCredentials = errors.New("invalid credentials for existing user")
+
+// ProvisionTenantWithAdmin registers a tenant, its default-plan subscription,
+// the admin user (created, or reused by email after verifying the supplied
+// password against the stored hash — attaching a new org to an account
+// requires proving you own it), and the user_tenants membership row in a
+// single transaction, so a mid-way failure (or a killed process) leaves no
+// orphan tenant/user/subscription rows.
+func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
+	// Hash before opening the transaction (bcrypt is slow; don't hold a tx).
+	// Hashing unconditionally also keeps register timing flat whether or not
+	// the email already exists.
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, nil, fmt.Errorf("hash password: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback tenant registration: %v", err)
+		}
+	}()
+
+	tenant := &models.Tenant{Name: tenantName}
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO tenants (name) VALUES ($1) RETURNING id, created_at, updated_at`,
+		tenant.Name).Scan(&tenant.ID, &tenant.CreatedAt, &tenant.UpdatedAt); err != nil {
+		return nil, nil, err
+	}
+
+	var planID uuid.UUID
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM subscription_plans WHERE is_default AND is_active ORDER BY sort_order LIMIT 1`).Scan(&planID); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil, fmt.Errorf("no default subscription plan configured: %w", err)
+		}
+		return nil, nil, fmt.Errorf("lookup default subscription plan: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO subscriptions (tenant_id, plan_id, status, start_date) VALUES ($1, $2, 'active', NOW())`,
+		tenant.ID, planID); err != nil {
+		return nil, nil, err
+	}
+
+	user := &models.User{Email: email}
+	var storedHash string
+	err = tx.QueryRow(ctx,
+		`SELECT id, tenant_id, role, is_super_admin, password_hash, created_at, updated_at FROM users WHERE email = $1`, email).
+		Scan(&user.ID, &user.TenantID, &user.Role, &user.IsSuperAdmin, &storedHash, &user.CreatedAt, &user.UpdatedAt)
+	switch {
+	case err == pgx.ErrNoRows:
+		user.TenantID = tenant.ID
+		user.Role = "admin"
+		user.PasswordHash = string(passwordHash)
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO users (tenant_id, email, password_hash, role) VALUES ($1, $2, $3, 'admin') RETURNING id, created_at, updated_at`,
+			user.TenantID, user.Email, user.PasswordHash).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt); err != nil {
+			return nil, nil, err
+		}
+	case err != nil:
+		return nil, nil, err
+	default:
+		// Existing account: the caller must prove ownership before this
+		// registration mints a token for it (SEC: without this, knowing an
+		// email was enough to obtain that user's JWT).
+		if bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(password)) != nil {
+			return nil, nil, ErrInvalidCredentials
+		}
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO user_tenants (user_id, tenant_id, role, joined_at) VALUES ($1, $2, 'admin', NOW())
+		 ON CONFLICT (user_id, tenant_id) DO NOTHING`,
+		user.ID, tenant.ID); err != nil {
+		return nil, nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, err
+	}
+	return tenant, user, nil
+}
+
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
 	var t models.Tenant
 	var settingsJSON []byte
-	query := `SELECT id, name, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
-	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
+	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
+	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -187,6 +277,31 @@ func (s *PGStore) UpdateTenant(ctx context.Context, tenant *models.Tenant) error
 		tenant.Name, settingsJSON, tenant.LogoURL, tenant.Website, tenant.ContactEmail, tenant.ID,
 	)
 	return err
+}
+
+// GetTenantStatus returns the lifecycle status, or "" if the tenant does not exist.
+func (s *PGStore) GetTenantStatus(ctx context.Context, id uuid.UUID) (string, error) {
+	var status string
+	err := s.db.QueryRow(ctx, `SELECT status FROM tenants WHERE id = $1`, id).Scan(&status)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return status, nil
+}
+
+// UpdateTenantStatus sets the lifecycle status; transition rules live in the handler.
+func (s *PGStore) UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error {
+	tag, err := s.db.Exec(ctx, `UPDATE tenants SET status = $2, updated_at = NOW() WHERE id = $1`, id, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("tenant %s not found", id)
+	}
+	return nil
 }
 
 func (s *PGStore) CreateUser(ctx context.Context, user *models.User) error {
@@ -724,7 +839,7 @@ func (s *PGStore) RemoveUserFromTenant(ctx context.Context, userID, tenantID uui
 }
 
 func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*models.Tenant, error) {
-	query := `SELECT t.id, t.name, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at
+	query := `SELECT t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at
 			  FROM tenants t
 			  INNER JOIN user_tenants ut ON t.id = ut.tenant_id
 			  WHERE ut.user_id = $1
@@ -739,7 +854,7 @@ func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*mode
 	for rows.Next() {
 		var t models.Tenant
 		var settingsJSON []byte
-		if err := rows.Scan(&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, err
 		}
 		if len(settingsJSON) > 0 && string(settingsJSON) != "null" {
@@ -772,8 +887,8 @@ func (s *PGStore) UpdateUserTenantRole(ctx context.Context, userID, tenantID uui
 
 func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error) {
 	query := `
-		SELECT 
-			t.id, t.name, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
+		SELECT
+			t.id, t.name, t.status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
 			s.id as sub_id, s.plan_id as sub_plan_id, s.status, s.start_date, s.end_date,
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
@@ -808,7 +923,7 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		var sEndDate *time.Time
 
 		err := rows.Scan(
-			&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+			&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 			&subID, &subPlanID, &sStatus, &sStartDate, &sEndDate,
 			&spID, &spName, &spSlug, &spTier,
 			&tws.UsersCount, &tws.EventsCount, &tws.AttendeesCount,
@@ -868,10 +983,10 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	var t models.Tenant
 	var settingsJSON []byte
 
-	query := `SELECT id, name, settings, logo_url, website, contact_email, created_at, updated_at 
+	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at
 	          FROM tenants WHERE id = $1`
 	err := s.db.QueryRow(ctx, query, tenantID).Scan(
-		&t.ID, &t.Name, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+		&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -1046,12 +1161,41 @@ func (s *PGStore) CreateSubscription(ctx context.Context, sub *models.Subscripti
 		return fmt.Errorf("failed to marshal custom features: %w", err)
 	}
 
-	query := `INSERT INTO subscriptions 
-	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date, 
+	query := `INSERT INTO subscriptions
+	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
 	           custom_limits, custom_features, payment_method, admin_notes, created_by)
 	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	          RETURNING id, created_at, updated_at`
 
+	return s.db.QueryRow(ctx, query,
+		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
+		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,
+	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt)
+}
+
+// UpsertSubscription inserts or replaces the tenant's single subscription
+// row atomically — concurrent create attempts cannot 500 on UNIQUE(tenant_id).
+func (s *PGStore) UpsertSubscription(ctx context.Context, sub *models.Subscription) error {
+	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom limits: %w", err)
+	}
+	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom features: %w", err)
+	}
+	query := `INSERT INTO subscriptions
+	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
+	           custom_limits, custom_features, payment_method, admin_notes, created_by)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	          ON CONFLICT (tenant_id) DO UPDATE SET
+	            plan_id = EXCLUDED.plan_id, status = EXCLUDED.status,
+	            start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,
+	            trial_end_date = EXCLUDED.trial_end_date,
+	            custom_limits = EXCLUDED.custom_limits, custom_features = EXCLUDED.custom_features,
+	            payment_method = EXCLUDED.payment_method, admin_notes = EXCLUDED.admin_notes,
+	            updated_at = NOW()
+	          RETURNING id, created_at, updated_at`
 	return s.db.QueryRow(ctx, query,
 		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
 		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,
@@ -1233,33 +1377,39 @@ func (s *PGStore) GetUsageStats(ctx context.Context, tenantID uuid.UUID, startDa
 	return stats, nil
 }
 
-func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) {
-	// Get subscription with plan
+// resolveTenantLimit returns the effective value for limitType: custom
+// subscription limits override plan limits; 0 means "not configured".
+func (s *PGStore) resolveTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (float64, error) {
 	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
 	if err != nil || sub == nil {
-		return false, 0, 0, fmt.Errorf("no active subscription")
+		return 0, fmt.Errorf("no active subscription")
 	}
-
-	// Get limit value (custom limits override plan limits)
 	var maxLimit float64
 	if sub.CustomLimits != nil {
 		if val, ok := sub.CustomLimits[limitType]; ok {
-			if floatVal, ok := val.(float64); ok {
-				maxLimit = floatVal
-			} else {
-				return false, 0, 0, fmt.Errorf("invalid custom limit type for %s", limitType)
+			floatVal, ok := val.(float64)
+			if !ok {
+				return 0, fmt.Errorf("invalid custom limit type for %s", limitType)
 			}
+			maxLimit = floatVal
 		}
 	}
-
 	if maxLimit == 0 && sub.Plan != nil && sub.Plan.Limits != nil {
 		if val, ok := sub.Plan.Limits[limitType]; ok {
-			if floatVal, ok := val.(float64); ok {
-				maxLimit = floatVal
-			} else {
-				return false, 0, 0, fmt.Errorf("invalid plan limit type for %s", limitType)
+			floatVal, ok := val.(float64)
+			if !ok {
+				return 0, fmt.Errorf("invalid plan limit type for %s", limitType)
 			}
+			maxLimit = floatVal
 		}
+	}
+	return maxLimit, nil
+}
+
+func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) {
+	maxLimit, err := s.resolveTenantLimit(ctx, tenantID, limitType)
+	if err != nil {
+		return false, 0, 0, err
 	}
 
 	// -1 means unlimited
@@ -1272,16 +1422,12 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 	switch limitType {
 	case "events_per_month":
 		if err := s.db.QueryRow(ctx, `
-			SELECT COUNT(*) FROM events 
-			WHERE tenant_id = $1 AND deleted_at IS NULL 
+			SELECT COUNT(*) FROM events
+			WHERE tenant_id = $1 AND deleted_at IS NULL
 			  AND created_at >= date_trunc('month', NOW())
 		`, tenantID).Scan(&current); err != nil {
 			return false, 0, 0, fmt.Errorf("failed to count events: %w", err)
 		}
-	case "attendees_per_event":
-		// This should be checked per event, not tenant-wide
-		// Implementation depends on context
-		current = 0
 	case "users":
 		if err := s.db.QueryRow(ctx, `
 			SELECT COUNT(*) FROM user_tenants WHERE tenant_id = $1
@@ -1292,6 +1438,26 @@ func (s *PGStore) CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limi
 
 	allowed := current < int(maxLimit)
 	return allowed, current, int(maxLimit), nil
+}
+
+// CheckAttendeeLimit enforces attendees_per_event for one event, counting
+// soft-deleted attendees out. adding is the number about to be created
+// (1 for single create, len(batch) for bulk import).
+func (s *PGStore) CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
+	maxLimit, err := s.resolveTenantLimit(ctx, tenantID, "attendees_per_event")
+	if err != nil {
+		return false, 0, 0, err
+	}
+	if maxLimit == -1 {
+		return true, 0, -1, nil
+	}
+	var current int
+	if err := s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`,
+		eventID).Scan(&current); err != nil {
+		return false, 0, 0, fmt.Errorf("failed to count attendees: %w", err)
+	}
+	return current+adding <= int(maxLimit), current, int(maxLimit), nil
 }
 
 // Audit

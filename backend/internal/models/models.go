@@ -9,6 +9,7 @@ import (
 type Tenant struct {
 	ID           uuid.UUID              `json:"id"`
 	Name         string                 `json:"name"`
+	Status       string                 `json:"status"`
 	Settings     map[string]interface{} `json:"settings,omitempty"`
 	LogoURL      *string                `json:"logo_url,omitempty"`
 	Website      *string                `json:"website,omitempty"`
