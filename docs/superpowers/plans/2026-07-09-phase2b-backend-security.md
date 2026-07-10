@@ -300,10 +300,11 @@ func TestJWT_RejectsWhenSecretUnset(t *testing.T) {
 	t.Setenv("JWT_SECRET", "") // no secret configured
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	// A token signed with the old hardcoded fallback must NOT be accepted.
-	req.Header.Set("Authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."+
-		"eyJ1c2VyX2lkIjoieCIsInRlbmFudF9pZCI6IngiLCJyb2xlIjoiYWRtaW4ifQ."+
-		"3Qb0m0f8Zk5m3d8n2r7Xv3nJ5xq0Yl1a2b3c4d5e6f") // signed with idento_secret_key_change_me
+	// A token signed with the OLD removed fallback secret must NOT be accepted.
+	// (Build the token at runtime with jwt.NewWithClaims signed by the old
+	// fallback secret — do not embed a token literal in source; see the final
+	// implementation in jwt_test.go which assembles the secret from parts.)
+	req.Header.Set("Authorization", "Bearer "+tokenSignedWithOldFallbackSecret)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
