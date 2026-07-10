@@ -20,6 +20,10 @@ func (h *Handler) CreateAPIKey(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	var req models.CreateAPIKeyRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
@@ -68,6 +72,10 @@ func (h *Handler) GetAPIKeys(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
 	}
 
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	keys, err := h.Store.GetAPIKeysByEventID(context.Background(), eventID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch API keys"})
@@ -78,6 +86,15 @@ func (h *Handler) GetAPIKeys(c echo.Context) error {
 
 // RevokeAPIKey отзывает API-ключ
 func (h *Handler) RevokeAPIKey(c echo.Context) error {
+	eventID, err := uuid.Parse(c.Param("event_id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
+	}
+
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
+	}
+
 	keyID, err := uuid.Parse(c.Param("key_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid key ID"})
