@@ -48,6 +48,10 @@ type fakeStore struct {
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
 	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
+
+	createProvisioningToken  func(tok *models.StationProvisioningToken) error
+	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
+	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -155,6 +159,16 @@ func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token
 	return f.updateUserQRToken(userID, token, createdAt)
 }
 
+func (f *fakeStore) CreateProvisioningToken(_ context.Context, tok *models.StationProvisioningToken) error {
+	return f.createProvisioningToken(tok)
+}
+func (f *fakeStore) ConsumeProvisioningToken(_ context.Context, token string) (*models.StationProvisioningToken, error) {
+	return f.consumeProvisioningToken(token)
+}
+func (f *fakeStore) CreateStation(_ context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error) {
+	return f.createStation(eventID, staffUserID, deviceInfo)
+}
+
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",
 // mimicking what middleware.JWT does, so handlers can be tested without a token.
 func newAuthedContext(e *echo.Echo, method, path, body, tenantID, role string) (echo.Context, *httptest.ResponseRecorder) {
@@ -168,6 +182,15 @@ func newAuthedContext(e *echo.Echo, method, path, body, tenantID, role string) (
 		Role:     role,
 	})
 	return c, rec
+}
+
+// newUnauthedContext builds a plain echo.Context with no "user" set, for
+// endpoints reached before a device has a JWT (e.g. station provisioning).
+func newUnauthedContext(e *echo.Echo, method, path, body string) (echo.Context, *httptest.ResponseRecorder) {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	return e.NewContext(req, rec), rec
 }
 
 // newAuthedContextWithUserID is a variant of newAuthedContext that lets the

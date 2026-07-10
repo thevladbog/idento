@@ -41,6 +41,10 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	auth.POST("/login", h.Login, authLimiter)
 	auth.POST("/login-qr", h.LoginWithQR, authLimiter)
 
+	// Station provisioning (public — the device has no JWT yet; rate-limited
+	// like login since it's an unauthenticated, token-guessable surface).
+	e.POST("/api/stations/provision", h.ProvisionStation, authLimiter)
+
 	// Protected routes
 	api := e.Group("/api")
 	api.Use(middleware.JWT())
@@ -65,6 +69,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	api.POST("/events/:id/badge-zpl", h.BadgeZPL)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
 	api.POST("/events/:event_id/staff", h.AssignStaffToEvent)
+	api.POST("/events/:event_id/stations/provisioning-token", h.CreateStationProvisioningToken)
 
 	// Attendees
 	api.GET("/events/:event_id/attendees", h.GetAttendees)

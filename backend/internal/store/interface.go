@@ -136,4 +136,9 @@ type Store interface {
 
 	// Access Validation
 	CheckZoneAccess(ctx context.Context, attendeeID, zoneID uuid.UUID) (bool, string, error) // allowed, reason, error
+
+	// Station Provisioning
+	CreateProvisioningToken(ctx context.Context, tok *models.StationProvisioningToken) error
+	ConsumeProvisioningToken(ctx context.Context, token string) (*models.StationProvisioningToken, error)
+	CreateStation(ctx context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 }
