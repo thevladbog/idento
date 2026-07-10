@@ -1070,9 +1070,11 @@ func main() {
 	if err != nil {
 		authCfg = defaultConfig()
 	}
-	if changed, err := ensureAuthToken(authCfg); err != nil {
+	tokenJustGenerated, err := ensureAuthToken(authCfg)
+	if err != nil {
 		log.Fatalf("Failed to generate agent auth token: %v", err)
-	} else if changed {
+	}
+	if tokenJustGenerated {
 		if err := saveConfig(authCfg); err != nil {
 			log.Printf("Warning: could not persist agent auth token: %v", err)
 		}
@@ -1095,7 +1097,13 @@ func main() {
 	fmt.Printf("🖨️  Idento Hardware Agent\n")
 	fmt.Printf("========================================\n")
 	fmt.Printf("Listening on: http://%s:%s\n", *host, *port)
-	fmt.Printf("🔑 Auth token (desktop reads it from ~/.idento/agent_config.json):\n   %s\n", authCfg.AuthToken)
+	if tokenJustGenerated {
+		// Print the freshly-generated token once so an operator can note it;
+		// on subsequent starts we avoid echoing the secret into logs.
+		fmt.Printf("🔑 New auth token generated (also saved to ~/.idento/agent_config.json):\n   %s\n", authCfg.AuthToken)
+	} else {
+		fmt.Printf("🔑 Auth token loaded from ~/.idento/agent_config.json (enabled)\n")
+	}
 	fmt.Printf("🌐 Allowed browser origins: %v\n", allowedOrigins)
 	fmt.Printf("\n📄 Available printers: %d\n", len(pm.ListPrinters()))
 	for _, name := range pm.ListPrinters() {
