@@ -41,6 +41,7 @@ type fakeStore struct {
 
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
 	createSubscription        func(sub *models.Subscription) error
+	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}) error
 
@@ -138,6 +139,9 @@ func (f *fakeStore) GetSubscriptionByTenantID(_ context.Context, id uuid.UUID) (
 }
 func (f *fakeStore) CreateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.createSubscription(sub)
+}
+func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscription) error {
+	return f.upsertSubscription(sub)
 }
 func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.updateSubscription(sub)

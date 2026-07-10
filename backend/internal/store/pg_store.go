@@ -1139,12 +1139,41 @@ func (s *PGStore) CreateSubscription(ctx context.Context, sub *models.Subscripti
 		return fmt.Errorf("failed to marshal custom features: %w", err)
 	}
 
-	query := `INSERT INTO subscriptions 
-	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date, 
+	query := `INSERT INTO subscriptions
+	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
 	           custom_limits, custom_features, payment_method, admin_notes, created_by)
 	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	          RETURNING id, created_at, updated_at`
 
+	return s.db.QueryRow(ctx, query,
+		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
+		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,
+	).Scan(&sub.ID, &sub.CreatedAt, &sub.UpdatedAt)
+}
+
+// UpsertSubscription inserts or replaces the tenant's single subscription
+// row atomically — concurrent create attempts cannot 500 on UNIQUE(tenant_id).
+func (s *PGStore) UpsertSubscription(ctx context.Context, sub *models.Subscription) error {
+	customLimitsJSON, err := json.Marshal(sub.CustomLimits)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom limits: %w", err)
+	}
+	customFeaturesJSON, err := json.Marshal(sub.CustomFeatures)
+	if err != nil {
+		return fmt.Errorf("failed to marshal custom features: %w", err)
+	}
+	query := `INSERT INTO subscriptions
+	          (tenant_id, plan_id, status, start_date, end_date, trial_end_date,
+	           custom_limits, custom_features, payment_method, admin_notes, created_by)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+	          ON CONFLICT (tenant_id) DO UPDATE SET
+	            plan_id = EXCLUDED.plan_id, status = EXCLUDED.status,
+	            start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date,
+	            trial_end_date = EXCLUDED.trial_end_date,
+	            custom_limits = EXCLUDED.custom_limits, custom_features = EXCLUDED.custom_features,
+	            payment_method = EXCLUDED.payment_method, admin_notes = EXCLUDED.admin_notes,
+	            updated_at = NOW()
+	          RETURNING id, created_at, updated_at`
 	return s.db.QueryRow(ctx, query,
 		sub.TenantID, sub.PlanID, sub.Status, sub.StartDate, sub.EndDate, sub.TrialEndDate,
 		customLimitsJSON, customFeaturesJSON, sub.PaymentMethod, sub.AdminNotes, sub.CreatedBy,

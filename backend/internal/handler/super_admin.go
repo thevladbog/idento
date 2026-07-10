@@ -156,7 +156,7 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 	}
 
 	if isNew {
-		if err := h.Store.CreateSubscription(c.Request().Context(), sub); err != nil {
+		if err := h.Store.UpsertSubscription(c.Request().Context(), sub); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create subscription"})
 		}
 	} else {

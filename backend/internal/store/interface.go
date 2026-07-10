@@ -93,6 +93,7 @@ type Store interface {
 
 	// Subscriptions
 	CreateSubscription(ctx context.Context, sub *models.Subscription) error
+	UpsertSubscription(ctx context.Context, sub *models.Subscription) error
 	GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.UUID) (*models.Subscription, error)
 	UpdateSubscription(ctx context.Context, sub *models.Subscription) error
 	GetExpiringSubscriptions(ctx context.Context, days int) ([]*models.Subscription, error)
