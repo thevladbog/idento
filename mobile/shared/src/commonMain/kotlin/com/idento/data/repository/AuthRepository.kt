@@ -25,16 +25,23 @@ class AuthRepository(
         val result = authApiService.login(email, password).toApiResult()
         
         if (result is ApiResult.Success) {
-            // Save token and user info
+            // The token is the critical credential: fail the login if it can't be persisted
+            // to the secure store, otherwise we'd report success for a session that drops on
+            // next launch.
+            val tokenSaved = try {
+                authPreferences.saveAuthToken(result.data.token)
+            } catch (e: Exception) {
+                false
+            }
+            if (!tokenSaved) {
+                return ApiResult.Error(
+                    IllegalStateException("Could not securely store credentials"),
+                    "Login failed: could not securely store credentials"
+                )
+            }
+            // User info lives in DataStore, which is best-effort (historically flaky on iOS);
+            // a failure here does not invalidate the already-persisted token/session.
             try {
-                // Fail the login if the token can't be persisted to the secure store —
-                // otherwise we'd report success for a session that drops on next launch.
-                if (!authPreferences.saveAuthToken(result.data.token)) {
-                    return ApiResult.Error(
-                        IllegalStateException("Could not securely store credentials"),
-                        "Login failed: could not securely store credentials"
-                    )
-                }
                 result.data.user.let { user ->
                     authPreferences.saveUserInfo(
                         userId = user.id,
@@ -44,7 +51,7 @@ class AuthRepository(
                     )
                 }
             } catch (e: Exception) {
-                return ApiResult.Error(e, "Login failed: could not store credentials")
+                println("⚠️ Failed to save user info: ${e.message}")
             }
         }
 
@@ -58,13 +65,18 @@ class AuthRepository(
         val result = authApiService.loginWithQR(token).toApiResult()
 
         if (result is ApiResult.Success) {
+            val tokenSaved = try {
+                authPreferences.saveAuthToken(result.data.token)
+            } catch (e: Exception) {
+                false
+            }
+            if (!tokenSaved) {
+                return ApiResult.Error(
+                    IllegalStateException("Could not securely store credentials"),
+                    "QR login failed: could not securely store credentials"
+                )
+            }
             try {
-                if (!authPreferences.saveAuthToken(result.data.token)) {
-                    return ApiResult.Error(
-                        IllegalStateException("Could not securely store credentials"),
-                        "QR login failed: could not securely store credentials"
-                    )
-                }
                 result.data.user.let { user ->
                     authPreferences.saveUserInfo(
                         userId = user.id,
@@ -74,7 +86,7 @@ class AuthRepository(
                     )
                 }
             } catch (e: Exception) {
-                return ApiResult.Error(e, "QR login failed: could not store credentials")
+                println("⚠️ Failed to save user info: ${e.message}")
             }
         }
 
