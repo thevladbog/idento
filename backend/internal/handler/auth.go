@@ -215,6 +215,11 @@ func (h *Handler) SwitchTenant(c echo.Context) error {
 	if err != nil {
 		return writeErr(c, err)
 	}
+	// Impersonation sessions are sealed: no switching out of the target
+	// tenant (and no laundering an imp token into a clean 72h token).
+	if userClaims.ImpersonatedBy != "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "tenant switching is not available during impersonation"})
+	}
 	userID, err := uuid.Parse(userClaims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})

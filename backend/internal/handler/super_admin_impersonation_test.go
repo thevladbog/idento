@@ -89,3 +89,17 @@ func TestImpersonateNestedIs403(t *testing.T) {
 		t.Fatalf("status = %d, want 403 (no nested impersonation)", rec.Code)
 	}
 }
+
+func TestSwitchTenantRejectsImpersonationToken(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", `{"tenant_id":"`+uuid.New().String()+`"}`, uuid.New().String(), "admin")
+	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims.ImpersonatedBy = uuid.New().String()
+	if err := h.SwitchTenant(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 (imp sessions are sealed)", rec.Code)
+	}
+}
