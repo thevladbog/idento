@@ -149,6 +149,39 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
 	}
 
+	// MOBILE-SEC/P1.2: the API-key import path bypasses JWT + TenantGate
+	// entirely, so a suspended tenant's still-valid API key could otherwise
+	// keep importing attendees after the org was locked out of the web/JWT
+	// paths. Apply the same suspension check TenantGate applies there.
+	blocked, err := middleware.IsTenantBlocked(c.Request().Context(), h.Store, event.TenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to verify tenant status"})
+	}
+	if blocked {
+		return c.JSON(http.StatusForbidden, map[string]string{
+			"code":  "tenant_suspended",
+			"error": "This organization is suspended. Contact support.",
+		})
+	}
+
+	// P1.3: validate the whole batch against attendees_per_event before
+	// inserting, same as the JWT-authed BulkCreateAttendees path — otherwise
+	// an API key alone lets a caller bypass the plan's attendee limit.
+	allowed, current, max, err := h.Store.CheckAttendeeLimit(c.Request().Context(), event.TenantID, event.ID, len(req.Data))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check attendee limit"})
+	}
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]interface{}{
+			"error":            "Limit exceeded for attendees_per_event",
+			"current":          current,
+			"max":              max,
+			"adding":           len(req.Data),
+			"upgrade_required": true,
+			"limit_type":       "attendees_per_event",
+		})
+	}
+
 	// Track import results
 	var created, failed int
 	var errors []string

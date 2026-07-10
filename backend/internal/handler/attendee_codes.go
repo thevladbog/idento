@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/csv"
 	"fmt"
-	"idento/backend/internal/models"
 	"net/http"
 	"strings"
 
@@ -20,10 +19,8 @@ func (h *Handler) GenerateAttendeeCodes(c echo.Context) error {
 	}
 
 	// Ensure the user has access to this event
-	user := c.Get("user").(*models.JWTCustomClaims)
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil || event.TenantID.String() != user.TenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+	if _, err := h.requireEventOwnership(c, eventID); err != nil {
+		return writeErr(c, err)
 	}
 
 	// Get all attendees for this event
@@ -74,10 +71,9 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 	}
 
 	// Ensure the user has access to this event
-	user := c.Get("user").(*models.JWTCustomClaims)
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil || event.TenantID.String() != user.TenantID {
-		return c.JSON(http.StatusForbidden, map[string]string{"error": "Access denied"})
+	event, err := h.requireEventOwnership(c, eventID)
+	if err != nil {
+		return writeErr(c, err)
 	}
 
 	// Get all attendees

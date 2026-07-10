@@ -47,20 +47,26 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "No attendees provided")
 	}
 
-	// Get user claims
-	user := c.Get("user").(*models.JWTCustomClaims)
-	tenantID, err := uuid.Parse(user.TenantID)
+	// Verify event belongs to tenant
+	event, err := h.requireEventOwnership(c, eventID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusUnauthorized, "Invalid token")
+		return writeErr(c, err)
 	}
 
-	// Verify event belongs to tenant
-	event, err := h.Store.GetEventByID(c.Request().Context(), eventID)
-	if err != nil || event == nil {
-		return echo.NewHTTPError(http.StatusNotFound, "Event not found")
+	// P1.3: validate the whole batch against attendees_per_event before inserting.
+	allowed, current, max, err := h.Store.CheckAttendeeLimit(c.Request().Context(), event.TenantID, eventID, len(req.Attendees))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to check attendee limit")
 	}
-	if event.TenantID != tenantID {
-		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	if !allowed {
+		return c.JSON(http.StatusForbidden, map[string]interface{}{
+			"error":            "Limit exceeded for attendees_per_event",
+			"current":          current,
+			"max":              max,
+			"adding":           len(req.Attendees),
+			"upgrade_required": true,
+			"limit_type":       "attendees_per_event",
+		})
 	}
 
 	// Update event field schema if provided

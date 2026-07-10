@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
 	"idento/backend/internal/store"
@@ -413,6 +414,10 @@ func main() {
 		log.Fatalf("Migrations failed: %v", err)
 	}
 
+	if err := pgStore.EnsureSeedData(context.Background(), cfg.DeploymentMode); err != nil {
+		log.Fatalf("Seed data failed: %v", err)
+	}
+
 	// Initialize Handler
 	h := handler.New(pgStore)
 
@@ -431,7 +436,7 @@ func main() {
 	e.POST("/api/util/printers/generate-qr", h.GeneratePrinterQR)
 
 	// Register Routes
-	h.RegisterRoutes(e)
+	h.RegisterRoutes(e, cfg.DeploymentMode)
 
 	// Health Check
 	e.GET("/health", func(c echo.Context) error {

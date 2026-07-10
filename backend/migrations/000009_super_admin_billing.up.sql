@@ -95,30 +95,3 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 CREATE INDEX IF NOT EXISTS idx_admin_audit_admin ON admin_audit_log(admin_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_log(target_type, target_id);
 
--- Базовые тарифные планы
-INSERT INTO subscription_plans (name, slug, tier, description, price_monthly, price_yearly, limits, features) VALUES
-('Free', 'free', 'free', 'For small events and testing', 0, 0, 
- '{"events_per_month": 2, "attendees_per_event": 50, "users": 2, "storage_mb": 100}',
- '{"custom_branding": false, "api_access": false, "priority_support": false}'),
- 
-('Starter', 'starter', 'starter', 'For growing organizations', 29, 290,
- '{"events_per_month": 10, "attendees_per_event": 500, "users": 5, "storage_mb": 1000}',
- '{"custom_branding": true, "api_access": false, "priority_support": false}'),
- 
-('Professional', 'pro', 'pro', 'For professional event organizers', 99, 990,
- '{"events_per_month": -1, "attendees_per_event": 5000, "users": 20, "storage_mb": 10000}',
- '{"custom_branding": true, "api_access": true, "priority_support": true}'),
- 
-('Enterprise', 'enterprise', 'enterprise', 'Custom solution for large organizations', 0, 0,
- '{"events_per_month": -1, "attendees_per_event": -1, "users": -1, "storage_mb": -1}',
- '{"custom_branding": true, "api_access": true, "priority_support": true, "dedicated_support": true}')
-ON CONFLICT (slug) DO NOTHING;
-
--- Создаем Free подписки для всех существующих организаций
-INSERT INTO subscriptions (tenant_id, plan_id, status, start_date)
-SELECT t.id, p.id, 'active', NOW()
-FROM tenants t
-CROSS JOIN subscription_plans p
-WHERE p.slug = 'free'
-ON CONFLICT (tenant_id) DO NOTHING;
-

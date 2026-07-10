@@ -54,3 +54,40 @@ func CheckLimits(s store.Store, resourceType string) echo.MiddlewareFunc {
 		}
 	}
 }
+
+// CheckAttendeeLimits enforces attendees_per_event for the event in the
+// route (:event_id). Single-create path only — bulk import validates its
+// batch size in the handler where the count is known.
+func CheckAttendeeLimits(s store.Store) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			claims, ok := c.Get("user").(*models.JWTCustomClaims)
+			if !ok {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			}
+			tenantID, err := uuid.Parse(claims.TenantID)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
+			}
+			eventID, err := uuid.Parse(c.Param("event_id"))
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
+			}
+			allowed, current, max, err := s.CheckAttendeeLimit(c.Request().Context(), tenantID, eventID, 1)
+			if err != nil {
+				// Store failure is not a limit violation — surface it honestly.
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check attendee limit"})
+			}
+			if !allowed {
+				return c.JSON(http.StatusForbidden, map[string]interface{}{
+					"error":            "Limit exceeded for attendees_per_event",
+					"current":          current,
+					"max":              max,
+					"upgrade_required": true,
+					"limit_type":       "attendees_per_event",
+				})
+			}
+			return next(c)
+		}
+	}
+}

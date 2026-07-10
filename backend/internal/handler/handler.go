@@ -6,6 +6,7 @@ package handler
 import (
 	"time"
 
+	"idento/backend/internal/config"
 	"idento/backend/internal/middleware"
 	"idento/backend/internal/store"
 
@@ -25,7 +26,9 @@ func New(s store.Store) *Handler {
 }
 
 // RegisterRoutes mounts all API routes on the given Echo instance.
-func (h *Handler) RegisterRoutes(e *echo.Echo) {
+// mode is config.ModeSaaS or config.ModeOnPrem: in onprem, open registration
+// and the platform super-admin surface are not mounted at all (404).
+func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	// In-memory rate limiter: 10 requests / minute per client IP for auth + check-in.
 	authLimiter := echomw.RateLimiterWithConfig(echomw.RateLimiterConfig{
 		Store: echomw.NewRateLimiterMemoryStoreWithConfig(echomw.RateLimiterMemoryStoreConfig{
@@ -37,7 +40,9 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 
 	// Auth routes
 	auth := e.Group("/auth")
-	auth.POST("/register", h.Register)
+	if mode == config.ModeSaaS {
+		auth.POST("/register", h.Register) // self-serve signup is SaaS-only
+	}
 	auth.POST("/login", h.Login, authLimiter)
 	auth.POST("/login-qr", h.LoginWithQR, authLimiter)
 
@@ -48,6 +53,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	// Protected routes
 	api := e.Group("/api")
 	api.Use(middleware.JWT())
+	api.Use(middleware.TenantGate(h.Store))
 	api.GET("/me", h.GetMe)
 	api.POST("/auth/switch-tenant", h.SwitchTenant)
 
@@ -74,8 +80,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 
 	// Attendees
 	api.GET("/events/:event_id/attendees", h.GetAttendees)
-	api.POST("/events/:event_id/attendees", h.CreateAttendee, middleware.CheckLimits(h.Store, "attendees_per_event"))
-	api.POST("/events/:event_id/attendees/bulk", h.BulkCreateAttendees, middleware.CheckLimits(h.Store, "attendees_per_event"))
+	api.POST("/events/:event_id/attendees", h.CreateAttendee, middleware.CheckAttendeeLimits(h.Store))
+	api.POST("/events/:event_id/attendees/bulk", h.BulkCreateAttendees)
 	api.POST("/events/:event_id/attendees/generate-codes", h.GenerateAttendeeCodes)
 	api.GET("/events/:event_id/attendees/export", h.ExportAttendeesCSV)
 	api.GET("/attendees/:id/qr", h.GetAttendeeQR)
@@ -148,25 +154,31 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	public := e.Group("/api/public")
 	public.POST("/import", h.ExternalImport, middleware.APIKeyAuth(h.Store))
 
-	// Super Admin routes
-	superAdmin := api.Group("/super-admin")
-	superAdmin.Use(middleware.SuperAdminOnly(h.Store))
+	// Super Admin routes (platform console) — SaaS-only surface
+	if mode == config.ModeSaaS {
+		superAdmin := api.Group("/super-admin")
+		superAdmin.Use(middleware.SuperAdminOnly(h.Store))
 
-	// Tenants
-	superAdmin.GET("/tenants", h.GetAllTenants)
-	superAdmin.GET("/tenants/:id/stats", h.GetTenantStats)
-	superAdmin.PATCH("/tenants/:id/subscription", h.UpdateTenantSubscription)
+		// Tenants
+		superAdmin.GET("/tenants", h.GetAllTenants)
+		superAdmin.GET("/tenants/:id/stats", h.GetTenantStats)
+		superAdmin.PATCH("/tenants/:id/subscription", h.UpdateTenantSubscription)
+		superAdmin.POST("/tenants", h.CreateTenantSuper)
+		superAdmin.POST("/tenants/:id/suspend", h.SuspendTenant)
+		superAdmin.POST("/tenants/:id/reactivate", h.ReactivateTenant)
+		superAdmin.POST("/tenants/:id/archive", h.ArchiveTenant)
 
-	// Users
-	superAdmin.GET("/users", h.GetAllUsersSuper)
+		// Users
+		superAdmin.GET("/users", h.GetAllUsersSuper)
 
-	// Plans
-	superAdmin.GET("/plans", h.GetSubscriptionPlansSuper)
-	superAdmin.POST("/plans", h.CreateSubscriptionPlan)
-	superAdmin.PUT("/plans/:id", h.UpdateSubscriptionPlanSuper)
+		// Plans
+		superAdmin.GET("/plans", h.GetSubscriptionPlansSuper)
+		superAdmin.POST("/plans", h.CreateSubscriptionPlan)
+		superAdmin.PUT("/plans/:id", h.UpdateSubscriptionPlanSuper)
 
-	// Usage & Analytics
-	superAdmin.GET("/usage/:tenantId", h.GetTenantUsage)
-	superAdmin.GET("/analytics", h.GetSystemAnalytics)
-	superAdmin.GET("/audit-log", h.GetAuditLog)
+		// Usage & Analytics
+		superAdmin.GET("/usage/:tenantId", h.GetTenantUsage)
+		superAdmin.GET("/analytics", h.GetSystemAnalytics)
+		superAdmin.GET("/audit-log", h.GetAuditLog)
+	}
 }

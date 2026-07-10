@@ -28,6 +28,7 @@ i18n
           equipment: "Equipment",
           error: "Error",
           created_at: "Created",
+          tenantSuspended: "This organization is suspended. Contact support to restore access.",
 
           // Auth
           login: "Login",
@@ -831,6 +832,7 @@ i18n
           equipment: "Оборудование",
           error: "Ошибка",
           created_at: "Создано",
+          tenantSuspended: "Организация приостановлена. Обратитесь в поддержку для восстановления доступа.",
 
           // Auth
           login: "Вход",

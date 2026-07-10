@@ -17,8 +17,18 @@ type Store interface {
 	// subscription to the default plan in one transaction (P0.1: a tenant
 	// without a subscription is 403-blocked by the limits middleware).
 	CreateTenantWithDefaultSubscription(ctx context.Context, tenant *models.Tenant) error
+	// ProvisionTenantWithAdmin registers a tenant end-to-end in one
+	// transaction: tenant, default-plan subscription, admin user (created, or
+	// reused by email only after the plaintext password verifies against the
+	// stored hash — ErrInvalidCredentials otherwise), user_tenants membership.
+	// No orphan rows on failure.
+	ProvisionTenantWithAdmin(ctx context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error)
+	// EnsureSeedData seeds mode-appropriate subscription plans (idempotent).
+	EnsureSeedData(ctx context.Context, mode string) error
 	GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error)
 	UpdateTenant(ctx context.Context, tenant *models.Tenant) error
+	GetTenantStatus(ctx context.Context, id uuid.UUID) (string, error)
+	UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error
 
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
@@ -85,6 +95,7 @@ type Store interface {
 
 	// Subscriptions
 	CreateSubscription(ctx context.Context, sub *models.Subscription) error
+	UpsertSubscription(ctx context.Context, sub *models.Subscription) error
 	GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.UUID) (*models.Subscription, error)
 	UpdateSubscription(ctx context.Context, sub *models.Subscription) error
 	GetExpiringSubscriptions(ctx context.Context, days int) ([]*models.Subscription, error)
@@ -93,6 +104,7 @@ type Store interface {
 	LogUsage(ctx context.Context, log *models.UsageLog) error
 	GetUsageStats(ctx context.Context, tenantID uuid.UUID, startDate, endDate time.Time) (map[string]int, error)
 	CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) // allowed, current, max
+	CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 
 	// Audit
 	LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}) error
