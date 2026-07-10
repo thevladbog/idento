@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"idento/backend/internal/models"
+	"idento/backend/migrations"
+	"io/fs"
 	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -51,49 +51,17 @@ func (s *PGStore) RunMigrations() error {
 		return fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
-	// Find migrations directory
-	migrationsDir := "migrations"
-	if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-		wd, wdErr := os.Getwd()
-		if wdErr != nil {
-			return fmt.Errorf("failed to get working directory: %w", wdErr)
-		}
-		migrationsDir = filepath.Join(wd, "migrations")
-		if _, err := os.Stat(migrationsDir); os.IsNotExist(err) {
-			migrationsDir = filepath.Join(wd, "../migrations")
-		}
-	}
-
-	// Read all migration files
-	entries, err := os.ReadDir(migrationsDir)
+	// Read migration files from the embedded FS (binary is self-contained).
+	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+		return fmt.Errorf("failed to read embedded migrations: %w", err)
 	}
 
-	// Filter and sort .up.sql files
 	var migrationFiles []string
 	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".sql" &&
-			(entry.Name() != "seed.sql") &&
-			(len(entry.Name()) > 7 && entry.Name()[len(entry.Name())-7:] == ".up.sql") {
-			migrationFiles = append(migrationFiles, entry.Name())
-		}
+		migrationFiles = append(migrationFiles, entry.Name())
 	}
 	sort.Strings(migrationFiles)
-
-	absDir, err := filepath.Abs(migrationsDir)
-	if err != nil {
-		return fmt.Errorf("migrations dir: %w", err)
-	}
-	root, err := os.OpenRoot(absDir)
-	if err != nil {
-		return fmt.Errorf("open migrations root: %w", err)
-	}
-	defer func() {
-		if closeErr := root.Close(); closeErr != nil {
-			log.Printf("close migrations root: %v", closeErr)
-		}
-	}()
 
 	appliedCount := 0
 	for _, filename := range migrationFiles {
@@ -113,8 +81,8 @@ func (s *PGStore) RunMigrations() error {
 			continue
 		}
 
-		// Read and execute migration (os.Root scopes access to migrations dir)
-		content, err := root.ReadFile(filename)
+		// Read and execute migration
+		content, err := migrations.Files.ReadFile(filename)
 		if err != nil {
 			return fmt.Errorf("failed to read migration %s: %w", filename, err)
 		}

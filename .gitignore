@@ -112,3 +112,5 @@ next-env.d.ts
 /backend/create_super_admin
 /backend/migrate
 /backend/mark_migrations
+backend/idento-backend
+backend/idento-backend.exe
