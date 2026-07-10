@@ -49,6 +49,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	// Protected routes
 	api := e.Group("/api")
 	api.Use(middleware.JWT())
+	api.Use(middleware.TenantGate(h.Store))
 	api.GET("/me", h.GetMe)
 	api.POST("/auth/switch-tenant", h.SwitchTenant)
 
