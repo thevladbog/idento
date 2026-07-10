@@ -407,3 +407,39 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 func (h *Handler) SuspendTenant(c echo.Context) error    { return h.setTenantStatus(c, "suspend") }
 func (h *Handler) ReactivateTenant(c echo.Context) error { return h.setTenantStatus(c, "reactivate") }
 func (h *Handler) ArchiveTenant(c echo.Context) error    { return h.setTenantStatus(c, "archive") }
+
+// ImpersonateTenant mints a 30-minute support session inside the target
+// tenant. Requires an active tenant; refuses nested impersonation.
+func (h *Handler) ImpersonateTenant(c echo.Context) error {
+	claims := c.Get("user").(*models.JWTCustomClaims) // TODO(Task 6): claimsFromContext sweep
+	if claims.ImpersonatedBy != "" {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "nested impersonation is not allowed"})
+	}
+	tenantID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid tenant ID"})
+	}
+	status, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
+	}
+	if status == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
+	}
+	if status != "active" {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "tenant is " + status + " — reactivate before impersonating"})
+	}
+	token, expiresAt, err := generateImpersonationToken(claims.UserID, tenantID.String())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to mint impersonation token"})
+	}
+	adminID := uuid.MustParse(claims.UserID)
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "impersonate_tenant", "tenant", tenantID, map[string]interface{}{"expires_at": expiresAt}, c.RealIP(), c.Request().UserAgent()); err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"token":      token,
+		"expires_at": expiresAt,
+		"tenant_id":  tenantID,
+	})
+}

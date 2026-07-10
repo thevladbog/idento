@@ -179,6 +179,29 @@ func generateTokenForTenant(user *models.User, tenantID string, role string) (st
 	return token.SignedString([]byte(secret))
 }
 
+// generateImpersonationToken mints a short-lived token that acts inside the
+// target tenant with admin role but attributes every action to the operator:
+// UserID and ImpersonatedBy are both the super admin's id.
+func generateImpersonationToken(superAdminID, tenantID string) (string, time.Time, error) {
+	expiresAt := time.Now().Add(30 * time.Minute)
+	claims := &models.JWTCustomClaims{
+		UserID:         superAdminID,
+		TenantID:       tenantID,
+		Role:           "admin",
+		ImpersonatedBy: superAdminID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	secret := config.JWTSecret()
+	if secret == "" {
+		return "", time.Time{}, fmt.Errorf("JWT_SECRET environment variable not set")
+	}
+	signed, err := token.SignedString([]byte(secret))
+	return signed, expiresAt, err
+}
+
 type SwitchTenantRequest struct {
 	TenantID string `json:"tenant_id"`
 }
