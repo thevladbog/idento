@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
 	"idento/backend/internal/store"
@@ -411,6 +412,10 @@ func main() {
 	// Run migrations on startup (already-applied migrations are skipped and logged)
 	if err := pgStore.RunMigrations(); err != nil {
 		log.Fatalf("Migrations failed: %v", err)
+	}
+
+	if err := pgStore.EnsureSeedData(context.Background(), cfg.DeploymentMode); err != nil {
+		log.Fatalf("Seed data failed: %v", err)
 	}
 
 	// Initialize Handler
