@@ -32,6 +32,7 @@ data class BatchCheckinItemDto(
     @SerialName("device_number") val deviceNumber: Int,
     val kind: String, // "checkin" | "zone_entry"
     @SerialName("zone_id") val zoneId: String? = null,
+    @SerialName("point_name") val pointName: String? = null,
 )
 
 @Serializable
