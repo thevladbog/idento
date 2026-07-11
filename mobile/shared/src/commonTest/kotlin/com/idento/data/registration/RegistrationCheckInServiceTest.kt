@@ -140,7 +140,7 @@ class RegistrationCheckInServiceTest {
 
         assertIs<RegistrationVerdict.Success>(verdict)
         assertEquals(false, enqueueCalled)
-        assertEquals(PrintState.Done, verdict.printState)
+        assertEquals(PrintState.NotRequested, verdict.printState)
     }
 
     @Test
@@ -156,7 +156,7 @@ class RegistrationCheckInServiceTest {
 
         assertIs<RegistrationVerdict.Success>(verdict)
         assertEquals(false, enqueueCalled)
-        assertEquals(PrintState.Done, verdict.printState)
+        assertEquals(PrintState.NotRequested, verdict.printState)
     }
 
     @Test

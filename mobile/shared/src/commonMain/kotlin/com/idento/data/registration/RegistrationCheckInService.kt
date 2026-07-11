@@ -129,11 +129,15 @@ class RegistrationCheckInService(
      * escapes ZPL special characters — see that function's doc) and hands it to
      * [printJobEnqueuer], the real implementation being `PrintQueueRepository.enqueue`.
      *
-     * Returns [PrintState.Done] when no print was attempted at all (autoPrint off, no printer
-     * paired, or no badge template available): there is no pending print job to track in that
-     * case, so "done" (nothing outstanding) is a more accurate resting state than `Queued`, which
-     * would incorrectly imply a job is in flight. [PrintState] has no distinct "not applicable"
-     * case, so this is a deliberate reuse of `Done`.
+     * Returns [PrintState.NotRequested] when no print was attempted at all (autoPrint off, no
+     * printer paired, or no badge template available): there is no pending print job to track in
+     * that case, but that is *not* the same outcome as [PrintState.Done], which means a print
+     * genuinely completed successfully — a future status-cell UI must be able to tell "never
+     * attempted" apart from "printed OK". This method itself never produces [PrintState.Done]:
+     * printing is asynchronous (enqueue now, print later), so the only non-"not applicable" states
+     * reachable from here are [PrintState.Queued] (job handed off) and [PrintState.Failed] (the
+     * enqueue call itself threw). `Done` is set later, once whatever process drains the print
+     * queue marks the job complete.
      *
      * If the enqueue call itself throws — `PrintQueueRepository.enqueue` deliberately lets storage
      * exceptions propagate rather than swallowing them (see that method's doc) — the check-in
@@ -148,7 +152,7 @@ class RegistrationCheckInService(
     ): PrintState {
         val printer = station.printer
         if (!station.autoPrint || printer == null || badgeTemplate == null) {
-            return PrintState.Done
+            return PrintState.NotRequested
         }
         return try {
             val zpl = badgeTemplate.generateZPL(attendee)
