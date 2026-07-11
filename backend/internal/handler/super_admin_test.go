@@ -161,3 +161,61 @@ func TestImpersonateTenant_ReasonPersistedToAuditChanges(t *testing.T) {
 		t.Fatalf("expected reason in audit changes, got %#v", capturedChanges)
 	}
 }
+
+func TestGetAuditLog_TargetIDFilterPassedToStore(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	targetID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?target_id="+targetID.String()+"&action=suspend_tenant", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedFilters["target_id"] != targetID {
+		t.Fatalf("expected target_id filter %v, got %#v", targetID, capturedFilters["target_id"])
+	}
+	if capturedFilters["action"] != "suspend_tenant" {
+		t.Fatalf("expected action filter preserved, got %#v", capturedFilters["action"])
+	}
+}
+
+func TestGetAuditLog_InvalidTargetIDIgnoredNot400(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?target_id=not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (invalid target_id must be ignored, not rejected), got %d", rec.Code)
+	}
+	if _, ok := capturedFilters["target_id"]; ok {
+		t.Fatalf("expected no target_id key when param is invalid, got %#v", capturedFilters)
+	}
+}

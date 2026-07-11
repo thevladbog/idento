@@ -1611,12 +1611,23 @@ func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action 
 }
 
 func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error) {
-	where := ""
-	args := []interface{}{}
+	var conditions []string
+	var args []interface{}
+
 	if action, ok := filters["action"].(string); ok && action != "" {
-		where = "WHERE action = $1"
 		args = append(args, action)
+		conditions = append(conditions, fmt.Sprintf("action = $%d", len(args)))
 	}
+	if targetID, ok := filters["target_id"].(uuid.UUID); ok {
+		args = append(args, targetID)
+		conditions = append(conditions, fmt.Sprintf("target_id = $%d", len(args)))
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
 	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address::text, user_agent, created_at
 	          FROM admin_audit_log %s
 	          ORDER BY created_at DESC
@@ -1649,7 +1660,6 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		logs = append(logs, &auditLog)
 	}
 
-	// Get total count
 	countQuery := "SELECT COUNT(*) FROM admin_audit_log " + where
 	var total int
 	if err := s.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {

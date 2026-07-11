@@ -341,6 +341,11 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 	if action := c.QueryParam("action"); action != "" {
 		filters["action"] = action
 	}
+	if targetIDStr := c.QueryParam("target_id"); targetIDStr != "" {
+		if targetID, err := uuid.Parse(targetIDStr); err == nil {
+			filters["target_id"] = targetID
+		}
+	}
 
 	logs, total, err := h.Store.GetAuditLog(c.Request().Context(), filters, limit, offset)
 	if err != nil {
