@@ -67,4 +67,38 @@ describe('OrganizationDetail', () => {
     renderPage();
     await waitFor(() => expect(screen.getByText('staff@acme.test')).toBeInTheDocument());
   });
+
+  it('renders the Activity section with the full tenant-scoped audit feed', async () => {
+    const auditWithEntries = {
+      logs: [
+        {
+          id: 'a1',
+          admin_user_id: 'op1',
+          action: 'suspend_tenant',
+          target_type: 'tenant',
+          target_id: 't1',
+          changes: { from: 'active', to: 'suspended' },
+          ip_address: null,
+          user_agent: null,
+          created_at: '2026-07-10T10:00:00Z',
+        },
+      ],
+    };
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes('/stats')) return Promise.resolve({ data: mockStats });
+      if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
+      if (url.includes('/audit-log')) return Promise.resolve({ data: auditWithEntries });
+      if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
+      return Promise.reject(new Error('unexpected url ' + url));
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/Status: active → suspended/)).toBeInTheDocument());
+  });
+
+  it('opens the mandatory-reason impersonate dialog', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /impersonate/i }));
+    expect(screen.getByRole('button', { name: /start session/i })).toBeDisabled();
+  });
 });

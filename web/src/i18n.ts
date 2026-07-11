@@ -814,6 +814,8 @@ i18n
           td_nav_lifecycle: "Lifecycle",
           td_nav_users: "Users",
           td_usersEmpty: "No users in this organization yet.",
+          td_nav_activity: "Activity",
+          td_activityEmpty: "No activity recorded for this organization yet.",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1732,6 +1734,8 @@ i18n
           td_nav_lifecycle: "Жизненный цикл",
           td_nav_users: "Пользователи",
           td_usersEmpty: "В этой организации пока нет пользователей.",
+          td_nav_activity: "Активность",
+          td_activityEmpty: "Для этой организации пока не зафиксировано активности.",
 
           // Analytics
           totalTenants: "Всего организаций",

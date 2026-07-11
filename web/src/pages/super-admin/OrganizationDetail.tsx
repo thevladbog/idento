@@ -15,6 +15,8 @@ import { AuditEntryList } from '@/components/AuditEntryList';
 import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
 import { SuspendTenantDialog } from '@/components/SuspendTenantDialog';
 import { ArchiveSheet } from '@/components/ArchiveSheet';
+import { ImpersonateDialog } from '@/components/ImpersonateDialog';
+import { startImpersonation } from '@/lib/impersonation';
 import { useScrollSpy } from '@/hooks/useScrollSpy';
 import { meterTone, meterToneClass } from '@/lib/meters';
 import { resolvedLimit } from '@/lib/tenantQueues';
@@ -43,6 +45,7 @@ const SECTIONS: Array<{ id: string; labelKey: string }> = [
   { id: 'subscription', labelKey: 'td_nav_subscription' },
   { id: 'lifecycle', labelKey: 'td_nav_lifecycle' },
   { id: 'users', labelKey: 'td_nav_users' },
+  { id: 'activity', labelKey: 'td_nav_activity' },
 ];
 
 export default function OrganizationDetail() {
@@ -67,6 +70,8 @@ export default function OrganizationDetail() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [reactivateOpen, setReactivateOpen] = useState(false);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
+  const [impersonateOpen, setImpersonateOpen] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
 
   const activeSection = useScrollSpy(SECTIONS.map((s) => s.id));
 
@@ -180,6 +185,23 @@ export default function OrganizationDetail() {
     }
   };
 
+  const impersonate = async (reason: string) => {
+    setImpersonating(true);
+    try {
+      const { data } = await api.post(`/api/super-admin/tenants/${id}/impersonate`, { reason });
+      startImpersonation(data.token, {
+        tenantId: data.tenant_id,
+        tenantName: tenant?.tenant?.name || id || '',
+        expiresAt: data.expires_at,
+      });
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('impersonateFailed'));
+      setImpersonating(false);
+      setImpersonateOpen(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-8">
@@ -223,9 +245,12 @@ export default function OrganizationDetail() {
       </nav>
 
       <div className="min-w-0 flex-1">
-        <div className="mb-2 flex items-center gap-2">
+        <div className="mb-2 flex items-center justify-between gap-2">
           <Button variant="ghost" size="icon" onClick={() => navigate('/super-admin/organizations')}>
             <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <Button variant="outline" onClick={() => setImpersonateOpen(true)}>
+            {t('impersonate')}
           </Button>
         </div>
         <TenantIdentityHeader
@@ -260,6 +285,13 @@ export default function OrganizationDetail() {
           eventsCount={tenant.events_count ?? 0}
           onConfirm={runArchive}
           busy={lifecycleBusy}
+        />
+        <ImpersonateDialog
+          open={impersonateOpen}
+          onOpenChange={setImpersonateOpen}
+          tenantName={tenant.tenant?.name ?? ''}
+          onConfirm={impersonate}
+          busy={impersonating}
         />
 
         <div className="space-y-10">
@@ -473,6 +505,15 @@ export default function OrganizationDetail() {
                     </TableBody>
                   </Table>
                 )}
+              </CardContent>
+            </Card>
+          </section>
+
+          <section id="activity">
+            <h2 className="mb-4 text-lg font-semibold">{t('td_nav_activity')}</h2>
+            <Card>
+              <CardContent className="pt-6">
+                <AuditEntryList entries={auditEntries} planNames={planNames} emptyLabel={t('td_activityEmpty')} />
               </CardContent>
             </Card>
           </section>
