@@ -46,6 +46,8 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 			attendee.CheckinStatus = true
 			attendee.CheckedInAt = &item.At
 			attendee.CheckedInBy = &staffUserID
+			attendee.CheckedInDeviceNumber = &item.DeviceNumber
+			attendee.CheckedInPointName = item.PointName
 			if err := s.UpdateAttendee(ctx, attendee); err != nil {
 				return false, err
 			}

@@ -71,28 +71,30 @@ type Event struct {
 }
 
 type Attendee struct {
-	ID                 uuid.UUID              `json:"id"`
-	EventID            uuid.UUID              `json:"event_id"`
-	FirstName          string                 `json:"first_name"`
-	LastName           string                 `json:"last_name"`
-	Email              string                 `json:"email"`
-	Company            string                 `json:"company"`
-	Position           string                 `json:"position"`
-	Code               string                 `json:"code"`
-	CheckinStatus      bool                   `json:"checkin_status"`
-	CheckedInAt        *time.Time             `json:"checked_in_at,omitempty"`
-	CheckedInBy        *uuid.UUID             `json:"checked_in_by,omitempty"`
-	CheckedInByEmail   *string                `json:"checked_in_by_email,omitempty"` // Email of user who checked in
-	PrintedCount       int                    `json:"printed_count"`
-	Blocked            bool                   `json:"blocked"`
-	BlockReason        *string                `json:"block_reason,omitempty"`
-	PacketDelivered    bool                   `json:"packet_delivered"`
-	RegisteredAt       *time.Time             `json:"registered_at,omitempty"`
-	RegistrationZoneID *uuid.UUID             `json:"registration_zone_id,omitempty"`
-	CustomFields       map[string]interface{} `json:"custom_fields,omitempty"`
-	CreatedAt          time.Time              `json:"created_at"`
-	UpdatedAt          time.Time              `json:"updated_at"`
-	DeletedAt          *time.Time             `json:"deleted_at,omitempty"`
+	ID                    uuid.UUID              `json:"id"`
+	EventID               uuid.UUID              `json:"event_id"`
+	FirstName             string                 `json:"first_name"`
+	LastName              string                 `json:"last_name"`
+	Email                 string                 `json:"email"`
+	Company               string                 `json:"company"`
+	Position              string                 `json:"position"`
+	Code                  string                 `json:"code"`
+	CheckinStatus         bool                   `json:"checkin_status"`
+	CheckedInAt           *time.Time             `json:"checked_in_at,omitempty"`
+	CheckedInBy           *uuid.UUID             `json:"checked_in_by,omitempty"`
+	CheckedInByEmail      *string                `json:"checked_in_by_email,omitempty"` // Email of user who checked in
+	CheckedInDeviceNumber *int                   `json:"checked_in_device_number,omitempty"`
+	CheckedInPointName    *string                `json:"checked_in_point_name,omitempty"`
+	PrintedCount          int                    `json:"printed_count"`
+	Blocked               bool                   `json:"blocked"`
+	BlockReason           *string                `json:"block_reason,omitempty"`
+	PacketDelivered       bool                   `json:"packet_delivered"`
+	RegisteredAt          *time.Time             `json:"registered_at,omitempty"`
+	RegistrationZoneID    *uuid.UUID             `json:"registration_zone_id,omitempty"`
+	CustomFields          map[string]interface{} `json:"custom_fields,omitempty"`
+	CreatedAt             time.Time              `json:"created_at"`
+	UpdatedAt             time.Time              `json:"updated_at"`
+	DeletedAt             *time.Time             `json:"deleted_at,omitempty"`
 }
 
 // Subscription models
@@ -378,6 +380,7 @@ type BatchCheckinItem struct {
 	DeviceNumber int        `json:"device_number"`
 	Kind         string     `json:"kind"` // "checkin" | "zone_entry"
 	ZoneID       *uuid.UUID `json:"zone_id,omitempty"`
+	PointName    *string    `json:"point_name,omitempty"` // registration work-point name from the station's StationConfig; nil for kind=zone_entry
 }
 
 type BatchCheckinResult struct {

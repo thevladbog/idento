@@ -568,14 +568,14 @@ func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee)
 
 func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.Attendee, error) {
 	query := `
-		SELECT 
-			a.id, a.event_id, a.first_name, a.last_name, a.email, a.company, a.position, a.code, 
-			a.checkin_status, a.checked_in_at, a.checked_in_by, a.printed_count, a.custom_fields, 
+		SELECT
+			a.id, a.event_id, a.first_name, a.last_name, a.email, a.company, a.position, a.code,
+			a.checkin_status, a.checked_in_at, a.checked_in_by, a.checked_in_device_number, a.checked_in_point_name, a.printed_count, a.custom_fields,
 			a.blocked, a.block_reason, a.created_at, a.updated_at,
 			u.email as checked_in_by_email
 		FROM attendees a
 		LEFT JOIN users u ON a.checked_in_by = u.id
-		WHERE a.event_id = $1 AND a.deleted_at IS NULL 
+		WHERE a.event_id = $1 AND a.deleted_at IS NULL
 		ORDER BY a.last_name, a.first_name
 	`
 	rows, err := s.db.Query(ctx, query, eventID)
@@ -588,7 +588,7 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) 
 	for rows.Next() {
 		var a models.Attendee
 		var customFieldsJSON []byte
-		if err := rows.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
+		if err := rows.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
 			return nil, err
 		}
 		if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
@@ -604,10 +604,10 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) 
 func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
 	var a models.Attendee
 	var customFieldsJSON []byte
-	query := `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, printed_count, custom_fields, blocked, block_reason, created_at, updated_at 
+	query := `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at
 			  FROM attendees WHERE event_id = $1 AND code = $2 AND deleted_at IS NULL`
 	err := s.db.QueryRow(ctx, query, eventID, code).Scan(
-		&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -626,10 +626,10 @@ func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code
 func (s *PGStore) GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error) {
 	var a models.Attendee
 	var customFieldsJSON []byte
-	query := `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, printed_count, custom_fields, blocked, block_reason, created_at, updated_at 
+	query := `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at
 			  FROM attendees WHERE id = $1 AND deleted_at IS NULL`
 	err := s.db.QueryRow(ctx, query, id).Scan(
-		&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt,
+		&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -669,14 +669,14 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 			return err
 		}
 	}
-	query := `UPDATE attendees SET 
-			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5, 
-			  checkin_status = $6, checked_in_at = $7, checked_in_by = $8, printed_count = $9, blocked = $10, 
-			  block_reason = $11, custom_fields = $12, deleted_at = $13, updated_at = NOW()
-			  WHERE id = $14`
+	query := `UPDATE attendees SET
+			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5,
+			  checkin_status = $6, checked_in_at = $7, checked_in_by = $8, checked_in_device_number = $9, checked_in_point_name = $10, printed_count = $11, blocked = $12,
+			  block_reason = $13, custom_fields = $14, deleted_at = $15, updated_at = NOW()
+			  WHERE id = $16`
 	_, err = s.db.Exec(ctx, query,
 		attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position,
-		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.PrintedCount, attendee.Blocked,
+		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
 		attendee.BlockReason, customFieldsJSON, attendee.DeletedAt, attendee.ID,
 	)
 	return err
