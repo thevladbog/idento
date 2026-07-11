@@ -1,4 +1,8 @@
 -- Drop indexes
+DROP INDEX IF EXISTS idx_zone_scan_log_attendee;
+DROP INDEX IF EXISTS idx_batch_checkin_log_attendee;
+DROP INDEX IF EXISTS idx_checkin_overrides_attendee;
+DROP INDEX IF EXISTS idx_station_provisioning_tokens_event;
 DROP INDEX IF EXISTS idx_batch_checkin_log_event;
 DROP INDEX IF EXISTS idx_zone_scan_log_zone_created;
 

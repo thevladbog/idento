@@ -56,3 +56,7 @@ CREATE TABLE IF NOT EXISTS zone_scan_log (
 
 CREATE INDEX IF NOT EXISTS idx_zone_scan_log_zone_created ON zone_scan_log(zone_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_batch_checkin_log_event ON batch_checkin_log(event_id);
+CREATE INDEX IF NOT EXISTS idx_station_provisioning_tokens_event ON station_provisioning_tokens(event_id);
+CREATE INDEX IF NOT EXISTS idx_checkin_overrides_attendee ON checkin_overrides(attendee_id);
+CREATE INDEX IF NOT EXISTS idx_batch_checkin_log_attendee ON batch_checkin_log(attendee_id);
+CREATE INDEX IF NOT EXISTS idx_zone_scan_log_attendee ON zone_scan_log(attendee_id);
