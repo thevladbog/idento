@@ -28,4 +28,20 @@ describe('AuditEntryList', () => {
     render(<AuditEntryList entries={[]} emptyLabel="No activity yet" />);
     expect(screen.getByText('No activity yet')).toBeInTheDocument();
   });
+
+  it('renders the day heading for the entry\'s grouped calendar day regardless of the viewer\'s timezone', () => {
+    // Regression test: created_at is 2026-07-11T10:00:00Z, so groupAuditLogByDay buckets it
+    // under '2026-07-11'. A viewer west of UTC (e.g. US Pacific, UTC-7 in July) must still see
+    // a "July 11" heading — not "July 10" — even though new Date('2026-07-11') UTC-parses to a
+    // local instant that falls on July 10 in that timezone.
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      render(<AuditEntryList entries={entries} emptyLabel="No activity" />);
+      expect(screen.getByText('July 11, 2026')).toBeInTheDocument();
+      expect(screen.queryByText('July 10, 2026')).not.toBeInTheDocument();
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
 });

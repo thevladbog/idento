@@ -29,7 +29,11 @@ export function AuditEntryList({ entries, planNames, emptyLabel }: Props) {
       {groups.map((group) => (
         <div key={group.day}>
           <h4 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-            {new Date(group.day).toLocaleDateString(i18n.language, { year: 'numeric', month: 'long', day: 'numeric' })}
+            {(() => {
+              const [year, month, day] = group.day.split('-').map(Number);
+              const localDate = new Date(year, month - 1, day);
+              return localDate.toLocaleDateString(i18n.language, { year: 'numeric', month: 'long', day: 'numeric' });
+            })()}
           </h4>
           <ul className="space-y-2">
             {group.entries.map((entry) => (
