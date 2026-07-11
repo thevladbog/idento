@@ -71,6 +71,13 @@ fun SetupCompleteScreen(
         if (uiState.exited) onExitStation()
     }
 
+    LaunchedEffect(uiState.stationConfig) {
+        val config = uiState.stationConfig ?: return@LaunchedEffect
+        if (config.mode == StationMode.REGISTRATION) {
+            onNavigateToStation()
+        }
+    }
+
     val config = uiState.stationConfig
 
     Column(
