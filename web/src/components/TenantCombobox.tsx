@@ -36,7 +36,7 @@ export function TenantCombobox({ tenants, value, onChange }: Props) {
             <CommandEmpty>{t('auditLog_noTenantsFound')}</CommandEmpty>
             <CommandGroup>
               <CommandItem
-                value="__all__"
+                value={t('auditLog_allTenants')}
                 onSelect={() => {
                   onChange('');
                   setOpen(false);

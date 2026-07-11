@@ -36,4 +36,16 @@ describe('TenantCombobox', () => {
     fireEvent.click(screen.getAllByText(/all tenants/i)[0]);
     expect(onChange).toHaveBeenCalledWith('');
   });
+
+  it('still finds and selects "All tenants" when the user types a matching search query', () => {
+    const onChange = vi.fn();
+    render(<TenantCombobox tenants={tenants} value="t1" onChange={onChange} />);
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.change(screen.getByPlaceholderText(/search tenants by name/i), {
+      target: { value: 'All tenants' },
+    });
+    const match = screen.getByText(/all tenants/i);
+    fireEvent.click(match);
+    expect(onChange).toHaveBeenCalledWith('');
+  });
 });
