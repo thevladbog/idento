@@ -19,6 +19,8 @@ import com.idento.presentation.events.EventsScreen
 import com.idento.presentation.login.LoginScreen
 import com.idento.presentation.qrscanner.QRScannerScreen
 import com.idento.presentation.settings.SettingsScreen
+import com.idento.data.model.StationMode
+import com.idento.presentation.registration.RegistrationHomeScreen
 import com.idento.presentation.setup.SetupCompleteScreen
 import com.idento.presentation.setup.SetupDayZoneScreen
 import com.idento.presentation.setup.SetupEventScreen
@@ -32,9 +34,20 @@ import com.idento.presentation.template.TemplateEditorScreen
  * Per spec §8: an expired/revoked token always routes back to Login, even if a StationConfig
  * is still persisted (queues survive and are re-delivered after signing back in — that's
  * SyncService's job, unrelated to this decision).
+ *
+ * When both [hasStationConfig] and [isLoggedIn] are true the [stationMode] is used to select
+ * the correct home screen: REGISTRATION → [Screen.RegistrationHome]; all other modes (and the
+ * default null) fall back to [Screen.SetupComplete] until M2/M3 implement their screens.
  */
-fun resolveStartDestination(hasStationConfig: Boolean, isLoggedIn: Boolean): String =
-    if (hasStationConfig && isLoggedIn) Screen.SetupComplete.route else Screen.SetupLogin.route
+fun resolveStartDestination(
+    hasStationConfig: Boolean,
+    isLoggedIn: Boolean,
+    stationMode: StationMode? = null,
+): String = when {
+    !hasStationConfig || !isLoggedIn -> Screen.SetupLogin.route
+    stationMode == StationMode.REGISTRATION -> Screen.RegistrationHome.route
+    else -> Screen.SetupComplete.route
+}
 
 /**
  * Main Navigation Host (Cross-platform)
@@ -263,8 +276,17 @@ fun IdentoNavHost(
                     navController.navigate(Screen.SetupLogin.route) {
                         popUpTo(0) { inclusive = true }
                     }
-                }
+                },
+                onNavigateToStation = {
+                    navController.navigate(Screen.RegistrationHome.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
             )
+        }
+
+        composable(Screen.RegistrationHome.route) {
+            RegistrationHomeScreen()
         }
     }
 }

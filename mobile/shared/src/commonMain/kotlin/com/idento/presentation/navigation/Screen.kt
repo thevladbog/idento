@@ -41,4 +41,7 @@ sealed class Screen(val route: String) {
     data object SetupDayZone : Screen("setup_day_zone")
     data object SetupPrinter : Screen("setup_printer")
     data object SetupComplete : Screen("setup_complete")
+
+    // Registration mode (M1d) — screen shown on cold start when stationMode == REGISTRATION.
+    data object RegistrationHome : Screen("registration_home")
 }

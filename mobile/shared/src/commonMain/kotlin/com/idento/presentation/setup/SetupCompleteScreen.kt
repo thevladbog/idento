@@ -60,6 +60,7 @@ private fun modeNameKey(mode: StationMode): StringKey = when (mode) {
 fun SetupCompleteScreen(
     viewModel: SetupCompleteViewModel = koinInject(),
     onExitStation: () -> Unit = {},
+    onNavigateToStation: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showExitConfirm by remember { mutableStateOf(false) }
@@ -68,6 +69,13 @@ fun SetupCompleteScreen(
 
     LaunchedEffect(uiState.exited) {
         if (uiState.exited) onExitStation()
+    }
+
+    LaunchedEffect(uiState.stationConfig) {
+        val config = uiState.stationConfig ?: return@LaunchedEffect
+        if (config.mode == StationMode.REGISTRATION) {
+            onNavigateToStation()
+        }
     }
 
     val config = uiState.stationConfig

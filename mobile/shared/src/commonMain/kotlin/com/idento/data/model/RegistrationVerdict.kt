@@ -29,4 +29,5 @@ sealed interface RegistrationVerdict {
     data class NotFound(val rawCode: String, val hint: String) : RegistrationVerdict
     data class Denied(val attendee: VerdictAttendee, val reason: String) : RegistrationVerdict
     data class PrintError(val attendee: VerdictAttendee, val at: Instant, val printReason: String) : RegistrationVerdict
+    data class LookupError(val message: String) : RegistrationVerdict
 }
