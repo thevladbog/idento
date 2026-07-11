@@ -161,13 +161,13 @@ class RegistrationHomeViewModelTest {
     }
 
     @Test
-    fun scanResultUpdatesVerdictWhenCodeIsUnknown() = runTest(testDispatcher) {
+    fun scanResultUpdatesVerdictWhenLookupFails() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
         val vm = buildViewModel(
             cameraGateway = fakeCameraGateway(codeFlow),
-            // AttendeeLookup returns Error → LookupFailed → NotFound verdict
+            // AttendeeLookup returns Error → LookupFailed → LookupError verdict (not NotFound)
             verdictMapper = RegistrationVerdictMapper(
-                AttendeeLookup { _, _ -> ApiResult.Error(Exception("not found")) },
+                AttendeeLookup { _, _ -> ApiResult.Error(Exception("timeout"), "Network timeout") },
             ),
         )
         vm.onScanResumed()
@@ -176,8 +176,8 @@ class RegistrationHomeViewModelTest {
         // With UnconfinedTestDispatcher, the collector runs eagerly on emit
         val verdict = vm.uiState.value.currentVerdict
         assertTrue(verdict != null)
-        assertTrue(verdict is RegistrationVerdict.NotFound)
-        assertEquals("UNKNOWN-CODE", (verdict as RegistrationVerdict.NotFound).rawCode)
+        assertTrue(verdict is RegistrationVerdict.LookupError)
+        assertEquals("Network timeout", (verdict as RegistrationVerdict.LookupError).message)
     }
 
     @Test

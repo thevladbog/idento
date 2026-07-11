@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
@@ -68,7 +69,7 @@ fun RegistrationHomeScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         StatusBar(
             cells = listOf(
                 StatusCell(
@@ -171,6 +172,7 @@ private fun VerdictCard(
             is RegistrationVerdict.NotFound -> NotFoundVerdictContent(onDismiss)
             is RegistrationVerdict.Denied -> DeniedVerdictContent(verdict, onDismiss)
             is RegistrationVerdict.PrintError -> PrintErrorVerdictContent(verdict, onDismiss)
+            is RegistrationVerdict.LookupError -> LookupErrorVerdictContent(verdict, onDismiss)
         }
     }
 }
@@ -358,6 +360,34 @@ private fun PrintErrorVerdictContent(
             label = stringResource(StringKey.REGISTRATION_ACTION_DISMISS),
             onClick = onDismiss,
             containerColor = IdentoColors.Brand,
+            contentColor = Color.White,
+        ),
+    )
+}
+
+@Composable
+private fun LookupErrorVerdictContent(
+    verdict: RegistrationVerdict.LookupError,
+    onDismiss: () -> Unit,
+) {
+    VerdictBand(
+        word = stringResource(StringKey.REGISTRATION_VERDICT_ERROR_WORD),
+        icon = AppIcons.Warning,
+        color = IdentoColors.Denied,
+    )
+    Spacer(Modifier.height(IdentoSpacing.sm))
+    Text(
+        text = verdict.message,
+        fontSize = 14.sp,
+        color = IdentoColors.TextSecondary,
+        modifier = Modifier.padding(horizontal = IdentoSpacing.md),
+    )
+    Spacer(Modifier.height(IdentoSpacing.lg))
+    ActionStack(
+        primary = ActionButtonSpec(
+            label = stringResource(StringKey.REGISTRATION_ACTION_DISMISS),
+            onClick = onDismiss,
+            containerColor = IdentoColors.Denied,
             contentColor = Color.White,
         ),
     )

@@ -11,7 +11,10 @@ import com.idento.data.registration.DebouncedScanPipeline
 import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationVerdictLookup
 import com.idento.data.registration.RegistrationVerdictMapper
+import com.idento.data.registration.toVerdictAttendee
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -131,7 +134,7 @@ class RegistrationHomeViewModel(
                     printerStatusOk = config.printer != null,
                 )
             }
-            loadBadgeTemplate(config.eventId)
+            viewModelScope.launch { loadBadgeTemplate(config.eventId) }
             if (_uiState.value.currentTab == RegistrationTab.SCAN) {
                 onScanResumed()
             }
@@ -146,9 +149,11 @@ class RegistrationHomeViewModel(
         viewModelScope.launch {
             searchQueryFlow
                 .debounce(300.milliseconds)
-                .filter { it.length >= 2 }
                 .distinctUntilChanged()
-                .collectLatest { query -> executeSearch(query) }
+                .collectLatest { query ->
+                    if (query.length < 2) return@collectLatest
+                    executeSearch(query)
+                }
         }
     }
 
@@ -177,19 +182,18 @@ class RegistrationHomeViewModel(
 
     private suspend fun processScannedCode(config: StationConfig, code: String) {
         val verdict = when (val lookup = verdictMapper.lookup(config.eventId, code)) {
-            is RegistrationVerdictLookup.Found -> checkInService.checkIn(
-                eventId = config.eventId,
-                station = config,
-                attendee = lookup.attendee,
-                badgeTemplate = badgeTemplate,
-            )
+            is RegistrationVerdictLookup.Found -> withContext(NonCancellable) {
+                checkInService.checkIn(
+                    eventId = config.eventId,
+                    station = config,
+                    attendee = lookup.attendee,
+                    badgeTemplate = badgeTemplate,
+                )
+            }
             is RegistrationVerdictLookup.AlreadyChecked -> lookup.verdict
             is RegistrationVerdictLookup.Denied -> lookup.verdict
             is RegistrationVerdictLookup.NotFound -> lookup.verdict
-            is RegistrationVerdictLookup.LookupFailed -> RegistrationVerdict.NotFound(
-                rawCode = code,
-                hint = lookup.message,
-            )
+            is RegistrationVerdictLookup.LookupFailed -> RegistrationVerdict.LookupError(lookup.message)
         }
         val increment = if (verdict is RegistrationVerdict.Success || verdict is RegistrationVerdict.PrintError) 1 else 0
         _uiState.update {
@@ -198,6 +202,7 @@ class RegistrationHomeViewModel(
                 sessionCheckedCount = it.sessionCheckedCount + increment,
             )
         }
+        onScanPaused()
     }
 
     // ── Verdict actions ───────────────────────────────────────────────────────────────────────────
@@ -248,6 +253,18 @@ class RegistrationHomeViewModel(
      * shows the verdict, and switches back to the SCAN tab. */
     fun onManualCheckIn(attendee: Attendee) {
         val config = stationConfig ?: return
+        if (attendee.isBlocked) {
+            _uiState.update {
+                it.copy(
+                    currentVerdict = RegistrationVerdict.Denied(
+                        attendee = toVerdictAttendee(attendee),
+                        reason = attendee.blockReason ?: "Access denied",
+                    ),
+                    currentTab = RegistrationTab.SCAN,
+                )
+            }
+            return
+        }
         viewModelScope.launch {
             val verdict = checkInService.checkIn(
                 eventId = config.eventId,
