@@ -5,10 +5,12 @@ import com.idento.data.registration.PendingRegistrationCheckIn
 import com.idento.data.repository.SyncResult
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /** Fakes the zone check-in queue's sync-relevant surface — no real `ZoneRepository`/`ApiClient`
  * network stack or SQLDelight `OfflineDatabase` needed, matching this codebase's established
@@ -43,6 +45,23 @@ private class FakeRegistrationCheckInSyncQueue(
     override suspend fun flush(): FlushResult {
         flushCallCount++
         return flushResult
+    }
+}
+
+/** Registration queue fake whose [flush] always throws — used to prove that a failure in one
+ * queue's operation does not prevent the other queue's operation from running (the bug this
+ * test class's `performSyncStillSyncsZoneQueueWhenRegistrationQueueFlushThrows` guards against). */
+private class ThrowingRegistrationCheckInSyncQueue(
+    private val pending: List<PendingRegistrationCheckIn>,
+) : RegistrationCheckInSyncQueue {
+    var flushCallCount = 0
+        private set
+
+    override suspend fun getPending(): List<PendingRegistrationCheckIn> = pending
+
+    override suspend fun flush(): FlushResult {
+        flushCallCount++
+        throw IllegalStateException("boom: simulated flush failure")
     }
 }
 
@@ -128,6 +147,39 @@ class SyncServiceTest {
         assertEquals(1, offlineCheckIn.syncAllCallCount)
         // Final state settles back to Idle (matching this method's established "auto-clear after
         // 5s" behavior, unchanged by this task) once both queues have been drained.
+        assertIs<SyncState.Idle>(syncService.syncState.value)
+    }
+
+    @Test
+    fun performSyncStillSyncsZoneQueueWhenRegistrationQueueFlushThrows() = runTest {
+        val offlineCheckIn = FakeCheckInSyncQueue(
+            pending = listOf(pendingZoneCheckIn()),
+            syncResult = SyncResult(totalCount = 1, successCount = 1, failedCount = 0, errors = emptyList()),
+        )
+        val registrationQueue = ThrowingRegistrationCheckInSyncQueue(pending = listOf(pendingRegistrationCheckIn()))
+        val syncService = SyncService(
+            offlineCheckInRepository = offlineCheckIn,
+            networkMonitor = FakeNetworkMonitor(),
+            registrationOfflineQueue = registrationQueue,
+        )
+
+        // Collect every state the service passes through, since the 5s auto-clear-to-Idle at
+        // the end of performSync() would otherwise hide the intermediate outcome once `runTest`
+        // fast-forwards through the delay.
+        val observedStates = mutableListOf<SyncState>()
+        val collectJob = launch { syncService.syncState.collect { observedStates += it } }
+
+        syncService.performSync()
+        collectJob.cancel()
+
+        assertEquals(1, registrationQueue.flushCallCount)
+        // The key assertion: the registration queue's flush() throwing must NOT prevent the
+        // zone queue's syncAll() from running — the two queues are genuinely independent.
+        assertEquals(1, offlineCheckIn.syncAllCallCount)
+        // Mixed outcome (registration queue failed outright, zone queue fully succeeded) maps to
+        // the existing PartialSuccess state rather than Failed, since only one of the two queues
+        // actually failed.
+        assertTrue(observedStates.any { it is SyncState.PartialSuccess })
         assertIs<SyncState.Idle>(syncService.syncState.value)
     }
 

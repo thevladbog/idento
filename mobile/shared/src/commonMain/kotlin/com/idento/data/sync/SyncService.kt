@@ -59,11 +59,23 @@ class SyncService(
         syncJob = scope.launch {
             networkMonitor.isOnline.collect { isOnline ->
                 if (isOnline) {
-                    val pendingCount = offlineCheckInRepository.getPendingCheckIns().size
-                    val registrationPendingCount = registrationOfflineQueue.getPending().size
-                    if (pendingCount > 0 || registrationPendingCount > 0) {
-                        delay(2000) // Wait 2 seconds before syncing
-                        performSync()
+                    try {
+                        val pendingCount = offlineCheckInRepository.getPendingCheckIns().size
+                        val registrationPendingCount = registrationOfflineQueue.getPending().size
+                        if (pendingCount > 0 || registrationPendingCount > 0) {
+                            delay(2000) // Wait 2 seconds before syncing
+                            performSync()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // This collector is the only thing driving auto-sync for the app
+                        // session — there's no separate restart path if it dies, so a failed
+                        // pending-count read (or an unexpected failure from performSync()) must
+                        // not kill it. Matches the `apiRunCatching`-style CancellationException
+                        // rethrow used elsewhere in this codebase (see ApiResult.kt) so
+                        // `stopAutoSync()`'s cancellation of this job still works correctly.
+                        println("⚠️ Auto-sync pass failed: ${e.message}")
                     }
                 }
             }
@@ -81,11 +93,17 @@ class SyncService(
     /**
      * Manually trigger sync — drains both the zone check-in queue (`OfflineCheckInRepository`)
      * and the registration check-in queue (`RegistrationOfflineQueueRepository`, Task M1c-6).
-     * The two are independent (different tables, different endpoints), so a failure/absence in
-     * one does not block the other. [SyncState] continues to reflect only the zone check-in
-     * queue's outcome (its shape is tied to `OfflineCheckInRepository`'s `SyncResult`), while the
-     * registration queue's flush runs alongside it best-effort so queued registration check-ins
-     * actually get drained once the device is back online.
+     * The two are genuinely independent (different tables, different endpoints): each queue's
+     * flush/sync call is wrapped in its own try/catch below, so an exception thrown by one (e.g.
+     * `RegistrationOfflineQueueRepository.flush()`'s unguarded initial `queries.selectAll()`
+     * read) is caught and folded into this pass's result instead of propagating up and skipping
+     * the other queue's sync entirely.
+     *
+     * [SyncState] reflects the combined outcome across both queues for this pass:
+     * [SyncState.Success] when every pending item across both queues was handled,
+     * [SyncState.PartialSuccess] when some succeeded and some failed — this also covers the
+     * mixed case where one queue's operation threw outright while the other completed normally
+     * — and [SyncState.Failed] when nothing succeeded.
      */
     suspend fun performSync() {
         if (_syncState.value is SyncState.Syncing) {
@@ -103,20 +121,52 @@ class SyncService(
 
             _syncState.value = SyncState.Syncing(0, pendingCount + registrationPendingCount)
 
+            val errors = mutableListOf<String>()
+
+            var registrationSucceeded = 0
+            var registrationFailed = 0
             if (registrationPendingCount > 0) {
-                registrationOfflineQueue.flush()
+                try {
+                    val flushResult = registrationOfflineQueue.flush()
+                    registrationSucceeded = flushResult.succeeded
+                    registrationFailed = flushResult.failed
+                } catch (e: Exception) {
+                    // The whole flush attempt failed before it could process anything (e.g. its
+                    // initial read threw) — every pending registration check-in stays queued/
+                    // unconfirmed for the next pass. Caught locally (rather than by the outer
+                    // catch below) specifically so this does NOT skip the zone queue's sync.
+                    registrationFailed = registrationPendingCount
+                    errors += "Registration queue sync failed: ${e.message ?: "Unknown error"}"
+                }
             }
 
+            var zoneSucceeded = 0
+            var zoneFailed = 0
             if (pendingCount > 0) {
-                val result = offlineCheckInRepository.syncAll()
-
-                _syncState.value = when {
-                    result.isSuccess -> SyncState.Success(result)
-                    result.hasPartialSuccess -> SyncState.PartialSuccess(result)
-                    else -> SyncState.Failed(result.errors.firstOrNull() ?: "Sync failed")
+                try {
+                    val result = offlineCheckInRepository.syncAll()
+                    zoneSucceeded = result.successCount
+                    zoneFailed = result.failedCount
+                    errors += result.errors
+                } catch (e: Exception) {
+                    // Mirrors the registration queue's guard above — caught locally so a
+                    // failure here can't retroactively undo the registration flush above.
+                    zoneFailed = pendingCount
+                    errors += "Zone check-in queue sync failed: ${e.message ?: "Unknown error"}"
                 }
-            } else {
-                _syncState.value = SyncState.Idle
+            }
+
+            val combined = SyncResult(
+                totalCount = pendingCount + registrationPendingCount,
+                successCount = zoneSucceeded + registrationSucceeded,
+                failedCount = zoneFailed + registrationFailed,
+                errors = errors,
+            )
+
+            _syncState.value = when {
+                combined.isSuccess -> SyncState.Success(combined)
+                combined.hasPartialSuccess -> SyncState.PartialSuccess(combined)
+                else -> SyncState.Failed(combined.errors.firstOrNull() ?: "Sync failed")
             }
 
             // Auto-clear state after 5 seconds
@@ -125,6 +175,8 @@ class SyncService(
                 _syncState.value = SyncState.Idle
             }
         } catch (e: Exception) {
+            // Guards against failures outside the per-queue try/catches above (e.g. reading the
+            // initial pending counts).
             _syncState.value = SyncState.Failed(e.message ?: "Unknown error")
             delay(5000)
             _syncState.value = SyncState.Idle
