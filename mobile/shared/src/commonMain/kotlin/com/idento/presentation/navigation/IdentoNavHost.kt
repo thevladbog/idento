@@ -17,7 +17,6 @@ import com.idento.presentation.attendees.AttendeesListScreen
 import com.idento.presentation.checkin.CheckinScreen
 import com.idento.presentation.events.EventsScreen
 import com.idento.presentation.login.LoginScreen
-import com.idento.presentation.qrscanner.QRScannerScreen
 import com.idento.presentation.settings.SettingsScreen
 import com.idento.data.model.StationMode
 import com.idento.presentation.registration.RegistrationHomeScreen
@@ -142,24 +141,6 @@ fun IdentoNavHost(
                 onNavigateToBluetoothScanner = {
                     navController.navigate(Screen.BluetoothScannerSettings.route)
                 }
-            )
-        }
-        
-        // QR Scanner Screen (Kiosk mode)
-        composable(
-            route = Screen.QRScanner.route,
-            arguments = listOf(
-                navArgument("eventId") { type = NavType.StringType },
-                navArgument("eventName") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val eventId = backStackEntry.arguments?.getString("eventId") ?: ""
-            val eventName = backStackEntry.arguments?.getString("eventName") ?: ""
-            
-            QRScannerScreen(
-                eventId = eventId,
-                eventName = eventName,
-                onNavigateBack = { navController.popBackStack() }
             )
         }
         
