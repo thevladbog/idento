@@ -11,9 +11,14 @@ import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.AttendeeLookup
+import com.idento.data.registration.BatchCheckinSubmitter
+import com.idento.data.registration.PrintJobEnqueuer
 import com.idento.data.registration.PrintQueueRepository
+import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationOfflineQueue
 import com.idento.data.registration.RegistrationOfflineQueueRepository
+import com.idento.data.registration.RegistrationVerdictMapper
 import com.idento.data.registration.createPrintSender
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
@@ -105,6 +110,24 @@ val appModule = module {
     single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
     single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
     single<RegistrationCheckInSyncQueue> { get<RegistrationOfflineQueueRepository>() }
+
+    // ── Registration engine (wired in M1d; classes existed in M1c but had no consumers) ──
+    single {
+        val attendeeRepo = get<AttendeeRepository>()
+        RegistrationVerdictMapper(
+            attendeeLookup = AttendeeLookup(attendeeRepo::getAttendeeByCode),
+        )
+    }
+    single {
+        val attendeeRepo = get<AttendeeRepository>()
+        val printRepo = get<PrintQueueRepository>()
+        RegistrationCheckInService(
+            batchSubmitter = BatchCheckinSubmitter(attendeeRepo::submitBatchCheckins),
+            attendeeLookup = AttendeeLookup(attendeeRepo::getAttendeeByCode),
+            offlineQueue = get<RegistrationOfflineQueue>(),
+            printJobEnqueuer = PrintJobEnqueuer(printRepo::enqueue),
+        )
+    }
 
     // Print queue (SQLDelight-backed, persistent). Resolves the same `IdentoDatabase` singleton
     // registered above via Koin's `get()` rather than constructing its own — same reasoning as
