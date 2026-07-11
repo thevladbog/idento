@@ -3,12 +3,17 @@ package com.idento.presentation.setup
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.idento.data.model.StationConfig
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-data class SetupCompleteUiState(val stationConfig: StationConfig? = null, val exited: Boolean = false)
+data class SetupCompleteUiState(
+    val stationConfig: StationConfig? = null,
+    val exited: Boolean = false,
+    val error: String? = null,
+)
 
 /**
  * Narrow seam onto `StationConfigPreferences` (`data/preferences/StationConfigPreferences.kt`;
@@ -54,8 +59,12 @@ class SetupCompleteViewModel(
     private val _uiState = MutableStateFlow(SetupCompleteUiState())
     val uiState: StateFlow<SetupCompleteUiState> = _uiState.asStateFlow()
 
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        _uiState.value = _uiState.value.copy(error = throwable.message ?: "Unknown error")
+    }
+
     fun finish() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val config = draft.toStationConfig(deviceNumber = draft.deviceNumber, staffName = draft.staffName)
             stationConfigPreferences.save(config)
             draft.reset()
@@ -64,7 +73,7 @@ class SetupCompleteViewModel(
     }
 
     fun exitStation() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             stationConfigPreferences.clear()
             authPreferences.clearAuth()
             _uiState.value = _uiState.value.copy(exited = true)

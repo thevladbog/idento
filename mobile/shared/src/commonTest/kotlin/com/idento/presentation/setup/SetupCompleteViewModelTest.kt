@@ -12,6 +12,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -39,20 +41,22 @@ class SetupCompleteViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private class FakeStationConfigPreferences : StationConfigGateway {
+    private class FakeStationConfigPreferences(private val throwOnClear: Boolean = false) : StationConfigGateway {
         var saved: StationConfig? = null
         var cleared = false
         override suspend fun save(config: StationConfig) {
             saved = config
         }
         override suspend fun clear() {
+            if (throwOnClear) throw IllegalStateException("clear failed")
             cleared = true
         }
     }
 
-    private class FakeAuthPreferences : AuthLogoutGateway {
+    private class FakeAuthPreferences(private val throwOnClearAuth: Boolean = false) : AuthLogoutGateway {
         var authCleared = false
         override suspend fun clearAuth() {
+            if (throwOnClearAuth) throw IllegalStateException("clearAuth failed")
             authCleared = true
         }
     }
@@ -86,5 +90,59 @@ class SetupCompleteViewModelTest {
 
         assertTrue(fakePreferences.cleared)
         assertTrue(fakeAuth.authCleared)
+    }
+
+    @Test
+    fun finishSurfacesErrorInsteadOfCrashingWhenDraftIsMissingARequiredField() = runTest(testDispatcher) {
+        // workPointId intentionally left blank: toStationConfig() throws IllegalStateException
+        // ("Cannot build StationConfig: workPointId missing") — a required-field bug in an earlier
+        // wizard step, not something the wizard's own flow can normally produce, but still a real
+        // possible failure mode that must surface as uiState.error rather than crash the app.
+        val draft = SetupWizardDraft().apply {
+            eventId = "evt-1"; eventName = "Технопром-2026"; mode = StationMode.REGISTRATION
+            dayDate = "2026-07-10"; deviceNumber = 4; staffName = "staff@idento.app"
+        }
+        val fakePreferences = FakeStationConfigPreferences()
+        val viewModel = SetupCompleteViewModel(draft, fakePreferences, FakeAuthPreferences())
+
+        viewModel.finish()
+
+        assertEquals("Cannot build StationConfig: workPointId missing", viewModel.uiState.value.error)
+        assertEquals(null, viewModel.uiState.value.stationConfig)
+        assertEquals(null, fakePreferences.saved)
+    }
+
+    @Test
+    fun exitStationSurfacesErrorAndLeavesExitedFalseWhenClearThrows() = runTest(testDispatcher) {
+        val fakePreferences = FakeStationConfigPreferences(throwOnClear = true)
+        val fakeAuth = FakeAuthPreferences()
+        val draft = SetupWizardDraft().apply {
+            eventId = "evt-1"; mode = StationMode.KIOSK; workPointId = "z1"; workPointName = "Холл"
+        }
+        val viewModel = SetupCompleteViewModel(draft, fakePreferences, fakeAuth)
+
+        viewModel.exitStation()
+
+        // Not stranded silently: uiState.error is non-null so the screen CAN show something, even
+        // though exited correctly stays false (the persisted config genuinely wasn't cleared).
+        assertNotNull(viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.exited)
+        assertFalse(fakeAuth.authCleared)
+    }
+
+    @Test
+    fun exitStationSurfacesErrorAndLeavesExitedFalseWhenClearAuthThrows() = runTest(testDispatcher) {
+        val fakePreferences = FakeStationConfigPreferences()
+        val fakeAuth = FakeAuthPreferences(throwOnClearAuth = true)
+        val draft = SetupWizardDraft().apply {
+            eventId = "evt-1"; mode = StationMode.KIOSK; workPointId = "z1"; workPointName = "Холл"
+        }
+        val viewModel = SetupCompleteViewModel(draft, fakePreferences, fakeAuth)
+
+        viewModel.exitStation()
+
+        assertNotNull(viewModel.uiState.value.error)
+        assertFalse(viewModel.uiState.value.exited)
+        assertTrue(fakePreferences.cleared)
     }
 }

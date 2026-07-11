@@ -93,7 +93,17 @@ fun SetupCompleteScreen(
 
         if (config == null) {
             Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = IdentoColors.Indicator)
+                if (uiState.error != null) {
+                    Text(
+                        text = uiState.error ?: "",
+                        color = IdentoColors.AlertTextLight,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = IdentoSpacing.xl),
+                    )
+                } else {
+                    CircularProgressIndicator(color = IdentoColors.Indicator)
+                }
             }
         } else {
             StatusBar(
@@ -125,6 +135,16 @@ fun SetupCompleteScreen(
                 text = stringResource(StringKey.SETUP_STATION_HOME_DEVICE).replace("{n}", config.deviceNumber.toString()),
                 color = IdentoColors.TextSecondary,
                 fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = IdentoSpacing.xl, vertical = IdentoSpacing.md),
+            )
+        }
+
+        if (config != null && uiState.error != null) {
+            Text(
+                text = uiState.error ?: "",
+                color = IdentoColors.AlertTextLight,
+                fontSize = 14.sp,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = IdentoSpacing.xl, vertical = IdentoSpacing.md),
             )
