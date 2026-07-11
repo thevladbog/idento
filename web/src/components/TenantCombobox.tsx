@@ -24,7 +24,13 @@ export function TenantCombobox({ tenants, value, onChange }: Props) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" aria-expanded={open} className="w-[220px] justify-between">
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={selected ? selected.name : t('auditLog_allTenants')}
+          className="w-[220px] justify-between"
+        >
           {selected ? selected.name : t('auditLog_allTenants')}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
