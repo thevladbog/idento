@@ -132,6 +132,9 @@ class RegistrationHomeViewModel(
                 )
             }
             loadBadgeTemplate(config.eventId)
+            if (_uiState.value.currentTab == RegistrationTab.SCAN) {
+                onScanResumed()
+            }
         }
         viewModelScope.launch {
             pendingQueueCountSource.observe().collect { count ->
@@ -188,7 +191,7 @@ class RegistrationHomeViewModel(
                 hint = lookup.message,
             )
         }
-        val increment = if (verdict is RegistrationVerdict.Success) 1 else 0
+        val increment = if (verdict is RegistrationVerdict.Success || verdict is RegistrationVerdict.PrintError) 1 else 0
         _uiState.update {
             it.copy(
                 currentVerdict = verdict,
@@ -252,7 +255,7 @@ class RegistrationHomeViewModel(
                 attendee = attendee,
                 badgeTemplate = badgeTemplate,
             )
-            val increment = if (verdict is RegistrationVerdict.Success) 1 else 0
+            val increment = if (verdict is RegistrationVerdict.Success || verdict is RegistrationVerdict.PrintError) 1 else 0
             _uiState.update {
                 it.copy(
                     currentVerdict = verdict,
