@@ -1,8 +1,10 @@
 package com.idento.data.registration
 
 import com.idento.data.model.Attendee
+import com.idento.data.model.BadgeTemplate
 import com.idento.data.model.BatchCheckinItemDto
 import com.idento.data.model.BatchCheckinResultDto
+import com.idento.data.model.PrinterConfig
 import com.idento.data.model.PrintState
 import com.idento.data.model.RegistrationVerdict
 import com.idento.data.model.StationConfig
@@ -23,6 +25,16 @@ fun interface BatchCheckinSubmitter {
  * [RegistrationCheckInService.checkIn] hands the item off here instead of surfacing an error. */
 fun interface RegistrationOfflineQueue {
     suspend fun enqueue(eventId: String, item: BatchCheckinItemDto)
+}
+
+/** Seam matching `PrintQueueRepository.enqueue(zpl, printer)` exactly (Task M1c-8's persistent
+ * print queue) — see the class-level doc on [AttendeeLookup] for why a plain method reference,
+ * rather than an interface implemented by the repository, is this codebase's established seam
+ * pattern. The real implementation lets storage exceptions propagate (see that method's own doc);
+ * [RegistrationCheckInService.checkIn] catches them rather than losing an otherwise-successful
+ * check-in verdict. */
+fun interface PrintJobEnqueuer {
+    suspend fun enqueue(zpl: String, printer: PrinterConfig): Long
 }
 
 /**
@@ -48,9 +60,26 @@ class RegistrationCheckInService(
         ApiResult.Error(IllegalStateException("No AttendeeLookup configured"), "No AttendeeLookup configured")
     },
     private val offlineQueue: RegistrationOfflineQueue = RegistrationOfflineQueue { _, _ -> },
+    private val printJobEnqueuer: PrintJobEnqueuer = PrintJobEnqueuer { _, _ ->
+        throw IllegalStateException("No PrintJobEnqueuer configured")
+    },
 ) {
+    /**
+     * @param badgeTemplate The event's printable badge template, if one is known to the caller.
+     * Nullable and explicit rather than fetched internally: as of this task, there is no
+     * per-event/station `BadgeTemplate` source wired into the M1c registration engine (the only
+     * existing mechanism, `EventRepository.getBadgeTemplate`, is used solely by the separate,
+     * older single-attendee `CheckinViewModel` flow — not by this batch check-in service). Sourcing
+     * it end-to-end (fetch + cache per event/station) is left to whichever future task wires this
+     * service into the DI graph.
+     */
     @OptIn(ExperimentalUuidApi::class)
-    suspend fun checkIn(eventId: String, station: StationConfig, attendee: Attendee): RegistrationVerdict {
+    suspend fun checkIn(
+        eventId: String,
+        station: StationConfig,
+        attendee: Attendee,
+        badgeTemplate: BadgeTemplate? = null,
+    ): RegistrationVerdict {
         val clientUuid = Uuid.random().toString()
         val now = Clock.System.now()
         val item = BatchCheckinItemDto(
@@ -70,7 +99,7 @@ class RegistrationCheckInService(
                         attendee = toVerdictAttendee(attendee),
                         at = now,
                         firstTime = true,
-                        printState = PrintState.Queued,
+                        printState = maybeEnqueuePrint(station, attendee, badgeTemplate),
                     )
                     "already_exists" -> alreadyCheckedVerdict(eventId, station, attendee, now)
                     else -> {
@@ -88,6 +117,45 @@ class RegistrationCheckInService(
                 RegistrationVerdict.Success(toVerdictAttendee(attendee), now, firstTime = true, printState = PrintState.Queued)
             }
             is ApiResult.Loading -> RegistrationVerdict.Success(toVerdictAttendee(attendee), now, firstTime = true, printState = PrintState.Queued)
+        }
+    }
+
+    /**
+     * Enqueues a print job for a *newly-created* check-in (never for the `"already_exists"`
+     * conflict path — see [checkIn], a conflict means another device already checked this
+     * attendee in, so no fresh badge print is warranted from this device) when the station is
+     * actually set up to auto-print: `station.autoPrint` is on, a `station.printer` is paired, and
+     * a [badgeTemplate] is available. Generates ZPL via [BadgeTemplate.generateZPL] (already
+     * escapes ZPL special characters — see that function's doc) and hands it to
+     * [printJobEnqueuer], the real implementation being `PrintQueueRepository.enqueue`.
+     *
+     * Returns [PrintState.Done] when no print was attempted at all (autoPrint off, no printer
+     * paired, or no badge template available): there is no pending print job to track in that
+     * case, so "done" (nothing outstanding) is a more accurate resting state than `Queued`, which
+     * would incorrectly imply a job is in flight. [PrintState] has no distinct "not applicable"
+     * case, so this is a deliberate reuse of `Done`.
+     *
+     * If the enqueue call itself throws — `PrintQueueRepository.enqueue` deliberately lets storage
+     * exceptions propagate rather than swallowing them (see that method's doc) — the check-in
+     * itself already succeeded server-side; only the local print queueing failed, so that failure
+     * is reported via [PrintState.Failed] instead of throwing out of [checkIn] and losing the
+     * check-in verdict entirely.
+     */
+    private suspend fun maybeEnqueuePrint(
+        station: StationConfig,
+        attendee: Attendee,
+        badgeTemplate: BadgeTemplate?,
+    ): PrintState {
+        val printer = station.printer
+        if (!station.autoPrint || printer == null || badgeTemplate == null) {
+            return PrintState.Done
+        }
+        return try {
+            val zpl = badgeTemplate.generateZPL(attendee)
+            printJobEnqueuer.enqueue(zpl, printer)
+            PrintState.Queued
+        } catch (e: Exception) {
+            PrintState.Failed(e.message ?: "Failed to enqueue print job")
         }
     }
 

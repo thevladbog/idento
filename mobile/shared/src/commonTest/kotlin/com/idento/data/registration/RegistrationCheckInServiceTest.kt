@@ -19,6 +19,10 @@ class RegistrationCheckInServiceTest {
         id = "att-1", eventId = "evt-1", firstName = "Иван", lastName = "Петров", code = "ABC-123",
     )
 
+    private val printer = PrinterConfig(name = "Zebra ZD420", transport = "bluetooth", address = "00:11:22:33:44:55")
+
+    private val badgeTemplate = BadgeTemplate(zplTemplate = "^XA^FD{firstName} {lastName}^FS^XZ")
+
     @Test
     fun successfulSubmissionReturnsSuccessVerdict() = runTest {
         val service = RegistrationCheckInService(
@@ -97,5 +101,76 @@ class RegistrationCheckInServiceTest {
         assertIs<RegistrationVerdict.AlreadyChecked>(verdict)
         assertEquals(station.workPointName, verdict.firstPoint)
         assertEquals(station.deviceNumber, verdict.firstDevice)
+    }
+
+    @Test
+    fun newlyCreatedCheckInWithAutoPrintAndPrinterAndTemplateEnqueuesPrintJobWithEscapedZpl() = runTest {
+        val stationReadyToPrint = station.copy(autoPrint = true, printer = printer)
+        // Company deliberately contains ZPL-special characters (`^`, `~`, `\`) so this test also
+        // proves the ZPL handed to the enqueuer is the *escaped* output of `generateZPL`, not a
+        // naive/unescaped substitution.
+        val attendeeNeedingEscaping = attendee.copy(company = "R&D ^ Team ~ Ops \\ Co")
+        val enqueued = mutableListOf<Pair<String, PrinterConfig>>()
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "created"))) },
+            printJobEnqueuer = { zpl, printerConfig -> enqueued.add(zpl to printerConfig); 42L },
+        )
+        val template = BadgeTemplate(zplTemplate = "^XA^FD{firstName} {lastName} {company}^FS^XZ")
+
+        val verdict = service.checkIn("evt-1", stationReadyToPrint, attendeeNeedingEscaping, template)
+
+        assertIs<RegistrationVerdict.Success>(verdict)
+        assertEquals(PrintState.Queued, verdict.printState)
+        assertEquals(1, enqueued.size)
+        assertEquals(printer, enqueued.first().second)
+        assertEquals(template.generateZPL(attendeeNeedingEscaping), enqueued.first().first)
+        assertEquals(true, enqueued.first().first.contains("R&D \\^ Team \\~ Ops \\\\ Co"))
+    }
+
+    @Test
+    fun newlyCreatedCheckInWithAutoPrintOffDoesNotEnqueuePrintJob() = runTest {
+        val stationWithAutoPrintOff = station.copy(autoPrint = false, printer = printer)
+        var enqueueCalled = false
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "created"))) },
+            printJobEnqueuer = { _, _ -> enqueueCalled = true; 1L },
+        )
+
+        val verdict = service.checkIn("evt-1", stationWithAutoPrintOff, attendee, badgeTemplate)
+
+        assertIs<RegistrationVerdict.Success>(verdict)
+        assertEquals(false, enqueueCalled)
+        assertEquals(PrintState.Done, verdict.printState)
+    }
+
+    @Test
+    fun newlyCreatedCheckInWithNoPrinterConfiguredDoesNotEnqueuePrintJob() = runTest {
+        val stationWithNoPrinter = station.copy(autoPrint = true, printer = null)
+        var enqueueCalled = false
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "created"))) },
+            printJobEnqueuer = { _, _ -> enqueueCalled = true; 1L },
+        )
+
+        val verdict = service.checkIn("evt-1", stationWithNoPrinter, attendee, badgeTemplate)
+
+        assertIs<RegistrationVerdict.Success>(verdict)
+        assertEquals(false, enqueueCalled)
+        assertEquals(PrintState.Done, verdict.printState)
+    }
+
+    @Test
+    fun alreadyExistsConflictNeverEnqueuesPrintJobRegardlessOfStationConfig() = runTest {
+        val stationFullyConfiguredForAutoPrint = station.copy(autoPrint = true, printer = printer)
+        var enqueueCalled = false
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "already_exists"))) },
+            printJobEnqueuer = { _, _ -> enqueueCalled = true; 1L },
+        )
+
+        val verdict = service.checkIn("evt-1", stationFullyConfiguredForAutoPrint, attendee, badgeTemplate)
+
+        assertIs<RegistrationVerdict.AlreadyChecked>(verdict)
+        assertEquals(false, enqueueCalled)
     }
 }
