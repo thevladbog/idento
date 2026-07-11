@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"idento/backend/internal/bootstrap"
 	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
 	"idento/backend/internal/store"
@@ -416,6 +417,12 @@ func main() {
 
 	if err := pgStore.EnsureSeedData(context.Background(), cfg.DeploymentMode); err != nil {
 		log.Fatalf("Seed data failed: %v", err)
+	}
+
+	if cfg.DeploymentMode == config.ModeOnPrem {
+		if err := bootstrap.OnPremAdmin(context.Background(), pgStore, cfg); err != nil {
+			log.Fatalf("Bootstrap failed: %v", err)
+		}
 	}
 
 	// Initialize Handler
