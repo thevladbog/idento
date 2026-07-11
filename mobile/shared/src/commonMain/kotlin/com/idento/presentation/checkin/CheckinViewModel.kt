@@ -231,8 +231,13 @@ class CheckinViewModel(
                 when (val result = attendeeRepository.getAttendeeByCode(eventId, code)) {
                     is ApiResult.Success -> {
                         val attendee = result.data
-                        
-                        if (attendee.isBlocked) {
+
+                        if (attendee == null) {
+                            _uiState.value = _uiState.value.copy(
+                                isProcessing = false,
+                                errorMessage = "Attendee not found"
+                            )
+                        } else if (attendee.isBlocked) {
                             _uiState.value = _uiState.value.copy(
                                 isProcessing = false,
                                 errorMessage = "Attendee is blocked: ${attendee.blockReason}"
@@ -249,7 +254,7 @@ class CheckinViewModel(
                     is ApiResult.Error -> {
                         _uiState.value = _uiState.value.copy(
                             isProcessing = false,
-                            errorMessage = "Attendee not found"
+                            errorMessage = result.message ?: "Failed to look up attendee"
                         )
                     }
                     is ApiResult.Loading -> {}

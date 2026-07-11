@@ -10,7 +10,7 @@ import kotlinx.datetime.Instant
  * mock-engine seam (established M1b pattern) — this interface is adapted from the real
  * repository via a method reference in Koin. */
 fun interface AttendeeLookup {
-    suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee>
+    suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee?>
 }
 
 sealed interface RegistrationVerdictLookup {
@@ -31,7 +31,19 @@ class RegistrationVerdictMapper(private val attendeeLookup: AttendeeLookup) {
 
     suspend fun lookup(eventId: String, code: String): RegistrationVerdictLookup {
         return when (val result = attendeeLookup.getAttendeeByCode(eventId, code)) {
-            is ApiResult.Success -> classify(result.data)
+            is ApiResult.Success -> {
+                val attendee = result.data
+                if (attendee != null) {
+                    classify(attendee)
+                } else {
+                    RegistrationVerdictLookup.NotFound(
+                        RegistrationVerdict.NotFound(
+                            rawCode = code,
+                            hint = "No attendee matches this code for this event",
+                        )
+                    )
+                }
+            }
             is ApiResult.Error -> RegistrationVerdictLookup.LookupFailed(result.message ?: "Lookup failed")
             is ApiResult.Loading -> RegistrationVerdictLookup.LookupFailed("Still loading")
         }

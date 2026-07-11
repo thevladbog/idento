@@ -91,9 +91,10 @@ class AttendeeRepository(
     }
     
     /**
-     * Get attendee by QR code
+     * Get attendee by QR code. Result data is `null` when no attendee matches [code] for
+     * [eventId] — see [AttendeeApiService.getAttendeeByCode].
      */
-    suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee> {
+    suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee?> {
         return attendeeApiService.getAttendeeByCode(eventId, code).toApiResult()
     }
     

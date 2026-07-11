@@ -10,9 +10,9 @@ import kotlin.test.assertTrue
 class RegistrationVerdictMapperTest {
 
     private class FakeAttendeeLookup(
-        private val result: ApiResult<Attendee>,
+        private val result: ApiResult<Attendee?>,
     ) : AttendeeLookup {
-        override suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee> = result
+        override suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee?> = result
     }
 
     private fun attendee(
@@ -58,10 +58,18 @@ class RegistrationVerdictMapperTest {
     }
 
     @Test
-    fun notFoundCodeReturnsLookupFailed() = runTest {
-        val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Error(RuntimeException("not found"), "Not found")))
+    fun emptyResultReturnsNotFound() = runTest {
+        val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Success(null)))
+        val result = mapper.lookup("evt-1", "ZZZ-999")
+        assertTrue(result is RegistrationVerdictLookup.NotFound)
+        assertEquals("ZZZ-999", (result as RegistrationVerdictLookup.NotFound).verdict.rawCode)
+    }
+
+    @Test
+    fun transportErrorReturnsLookupFailed() = runTest {
+        val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Error(RuntimeException("timeout"), "Network timeout")))
         val result = mapper.lookup("evt-1", "ZZZ-999")
         assertTrue(result is RegistrationVerdictLookup.LookupFailed)
-        assertEquals("Not found", (result as RegistrationVerdictLookup.LookupFailed).message)
+        assertEquals("Network timeout", (result as RegistrationVerdictLookup.LookupFailed).message)
     }
 }
