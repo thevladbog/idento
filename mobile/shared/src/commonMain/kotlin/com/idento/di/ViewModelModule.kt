@@ -20,6 +20,8 @@ import com.idento.platform.scanner.ScanSource
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
+import com.idento.presentation.kiosk.KioskStationGateway
+import com.idento.presentation.kiosk.KioskViewModel
 import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.registration.AttendeeSearchSource
 import com.idento.presentation.registration.EventBadgeTemplateSource
@@ -209,6 +211,25 @@ val viewModelModule = module {
                         is com.idento.data.network.ApiResult.Loading -> com.idento.data.network.ApiResult.Loading
                     }
                 }
+            },
+        )
+    }
+    factory {
+        // KioskViewModel follows the same narrow-seam pattern as RegistrationHomeViewModel/
+        // ZoneControlViewModel, but reuses RegistrationVerdictMapper/RegistrationCheckInService
+        // directly rather than defining new seams for them — Kiosk is self-service Registration,
+        // not a separate check-in pipeline.
+        val stationConfigPrefs: StationConfigPreferences = get()
+        val eventRepository: EventRepository = get()
+        KioskViewModel(
+            stationGateway = KioskStationGateway {
+                stationConfigPrefs.stationConfig.filterNotNull().first()
+            },
+            verdictMapper = get<RegistrationVerdictMapper>(),
+            checkInService = get<RegistrationCheckInService>(),
+            scanSource = get<ScanSource>(),
+            badgeTemplateSource = EventBadgeTemplateSource { eventId ->
+                eventRepository.getBadgeTemplate(eventId)
             },
         )
     }
