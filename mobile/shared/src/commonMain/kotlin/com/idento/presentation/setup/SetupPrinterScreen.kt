@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,7 +48,7 @@ import org.koin.compose.koinInject
 private val printerQrJson = Json { ignoreUnknownKeys = true }
 
 /**
- * Sixth and last screen of the setup wizard, step 4/4 (Task 9's nav graph: `Screen.SetupPrinter`).
+ * Fifth and last screen of the setup wizard, step 4/4 (Task 9's nav graph: `Screen.SetupPrinter`).
  * Never reached for [com.idento.data.model.StationMode.ZONE_CONTROL] — no branch on that mode
  * exists here at all, since `SetupDayZoneScreen` (Task 6) already routes that mode straight to
  * "Готово" before this screen is ever shown.
@@ -71,6 +72,7 @@ fun SetupPrinterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    val hasPrinter = uiState.printer != null
 
     LaunchedEffect(Unit) { viewModel.loadPairedPrinters() }
 
@@ -140,7 +142,6 @@ fun SetupPrinterScreen(
 
             Spacer(modifier = Modifier.height(IdentoSpacing.md))
 
-            val hasPrinter = uiState.printer != null
             OutlinedButton(
                 onClick = viewModel::testPrint,
                 enabled = hasPrinter && !uiState.isLoading,
@@ -165,7 +166,9 @@ fun SetupPrinterScreen(
         ActionStack(
             primary = ActionButtonSpec(
                 label = stringResource(StringKey.SETUP_WIZARD_CONTINUE),
-                onClick = onNavigateToDone,
+                onClick = { if (hasPrinter) onNavigateToDone() },
+                containerColor = if (hasPrinter) IdentoColors.Brand else IdentoColors.Border,
+                contentColor = if (hasPrinter) Color.White else IdentoColors.TextDisabled,
             ),
         )
     }
@@ -207,10 +210,22 @@ private fun BluetoothTab(uiState: SetupPrinterUiState, viewModel: SetupPrinterVi
 
 @Composable
 private fun EthernetTab(viewModel: SetupPrinterViewModel, modifier: Modifier = Modifier) {
+    var name by remember { mutableStateOf("") }
     var ip by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("9100") }
 
     Column(modifier = modifier.padding(horizontal = IdentoSpacing.xl)) {
+        IdentoTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = stringResource(StringKey.SETUP_PRINTER_ETHERNET_NAME_LABEL),
+            placeholder = "Zebra ZD421",
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        Spacer(modifier = Modifier.height(IdentoSpacing.md))
+
         IdentoTextField(
             value = ip,
             onValueChange = { ip = it },
@@ -235,7 +250,11 @@ private fun EthernetTab(viewModel: SetupPrinterViewModel, modifier: Modifier = M
         val portNumber = port.toIntOrNull()
         val canConfirm = ip.isNotBlank() && portNumber != null
         OutlinedButton(
-            onClick = { if (portNumber != null) viewModel.onEthernetAddressConfirmed(name = ip, ip = ip, port = portNumber) },
+            onClick = {
+                if (portNumber != null) {
+                    viewModel.onEthernetAddressConfirmed(name = name.ifBlank { ip }, ip = ip, port = portNumber)
+                }
+            },
             enabled = canConfirm,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = RoundedCornerShape(IdentoRadius.buttonSecondary),
