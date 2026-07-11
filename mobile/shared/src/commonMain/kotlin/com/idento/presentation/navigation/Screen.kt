@@ -33,4 +33,12 @@ sealed class Screen(val route: String) {
         fun createRoute(eventId: String) = "display_template/$eventId"
     }
     data object BluetoothScannerSettings : Screen("bluetooth_scanner_settings")
+
+    // Setup wizard (M1b) — all wizard state lives in the shared SetupWizardDraft, not nav args.
+    data object SetupLogin : Screen("setup_login")
+    data object SetupEvent : Screen("setup_event")
+    data object SetupMode : Screen("setup_mode")
+    data object SetupDayZone : Screen("setup_day_zone")
+    data object SetupPrinter : Screen("setup_printer")
+    data object SetupComplete : Screen("setup_complete")
 }
