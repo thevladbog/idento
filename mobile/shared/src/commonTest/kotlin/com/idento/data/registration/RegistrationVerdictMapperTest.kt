@@ -58,6 +58,18 @@ class RegistrationVerdictMapperTest {
     }
 
     @Test
+    fun alreadyCheckedInAttendeeWithMalformedCheckedInAtFallsBackToDistantPastInsteadOfThrowing() = runTest {
+        val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Success(
+            attendee(isCheckedIn = true, checkedInAt = "not-a-valid-timestamp", checkedInPointName = "Главный вход", checkedInDeviceNumber = 3)
+        )))
+        val result = mapper.lookup("evt-1", "ABC-123")
+        assertTrue(result is RegistrationVerdictLookup.AlreadyChecked)
+        val verdict = (result as RegistrationVerdictLookup.AlreadyChecked).verdict
+        assertEquals(kotlinx.datetime.Instant.DISTANT_PAST, verdict.firstAt)
+        assertEquals("Главный вход", verdict.firstPoint)
+    }
+
+    @Test
     fun emptyResultReturnsNotFound() = runTest {
         val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Success(null)))
         val result = mapper.lookup("evt-1", "ZZZ-999")

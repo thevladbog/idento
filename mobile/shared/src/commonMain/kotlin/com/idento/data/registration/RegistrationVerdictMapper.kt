@@ -58,7 +58,7 @@ class RegistrationVerdictMapper(private val attendeeLookup: AttendeeLookup) {
             attendee.isCheckedIn -> RegistrationVerdictLookup.AlreadyChecked(
                 RegistrationVerdict.AlreadyChecked(
                     attendee = verdictAttendee,
-                    firstAt = attendee.checkedInAt?.let { Instant.parse(it) } ?: Instant.DISTANT_PAST,
+                    firstAt = parseCheckedInAt(attendee.checkedInAt, Instant.DISTANT_PAST),
                     firstPoint = attendee.checkedInPointName ?: "Unknown",
                     firstDevice = attendee.checkedInDeviceNumber ?: 0,
                 )
@@ -74,3 +74,12 @@ fun toVerdictAttendee(attendee: Attendee): VerdictAttendee = VerdictAttendee(
     company = attendee.company,
     category = attendee.position ?: "",
 )
+
+/**
+ * Parses a backend-supplied `checkedInAt` timestamp string, falling back to [fallback] instead of
+ * throwing if it's absent or malformed — this is untrusted server data crossing a JSON boundary,
+ * not a value this client itself produced, so a parse failure must degrade gracefully rather than
+ * crash the verdict/conflict-re-fetch path that calls this.
+ */
+internal fun parseCheckedInAt(raw: String?, fallback: Instant): Instant =
+    raw?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: fallback

@@ -3,7 +3,9 @@ package com.idento.data.registration
 import com.idento.data.model.*
 import com.idento.data.network.ApiResult
 import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertEquals
 
@@ -157,6 +159,37 @@ class RegistrationCheckInServiceTest {
         assertIs<RegistrationVerdict.Success>(verdict)
         assertEquals(false, enqueueCalled)
         assertEquals(PrintState.NotRequested, verdict.printState)
+    }
+
+    @Test
+    fun cancellationDuringPrintEnqueuePropagatesInsteadOfBeingSwallowedAsFailed() = runTest {
+        val stationReadyToPrint = station.copy(autoPrint = true, printer = printer)
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "created"))) },
+            printJobEnqueuer = { _, _ -> throw CancellationException("job cancelled") },
+        )
+
+        assertFailsWith<CancellationException> {
+            service.checkIn("evt-1", stationReadyToPrint, attendee, badgeTemplate)
+        }
+    }
+
+    @Test
+    fun conflictResponseFallsBackToSubmittedAtWhenRefetchedCheckedInAtIsMalformed() = runTest {
+        val malformedTimestampAttendee = attendee.copy(
+            checkinStatus = true,
+            checkedInAt = "not-a-valid-timestamp",
+            checkedInPointName = "Служебный вход",
+            checkedInDeviceNumber = 9,
+        )
+        val service = RegistrationCheckInService(
+            batchSubmitter = { _, items -> ApiResult.Success(listOf(BatchCheckinResultDto(clientUuid = items.first().clientUuid, status = "already_exists"))) },
+            attendeeLookup = { _, _ -> ApiResult.Success(malformedTimestampAttendee) },
+        )
+        val verdict = service.checkIn("evt-1", station, attendee)
+        assertIs<RegistrationVerdict.AlreadyChecked>(verdict)
+        assertEquals("Служебный вход", verdict.firstPoint)
+        assertEquals(9, verdict.firstDevice)
     }
 
     @Test

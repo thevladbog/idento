@@ -9,6 +9,7 @@ import com.idento.data.model.PrintState
 import com.idento.data.model.RegistrationVerdict
 import com.idento.data.model.StationConfig
 import com.idento.data.network.ApiResult
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 import kotlin.uuid.ExperimentalUuidApi
@@ -158,6 +159,8 @@ class RegistrationCheckInService(
             val zpl = badgeTemplate.generateZPL(attendee)
             printJobEnqueuer.enqueue(zpl, printer)
             PrintState.Queued
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             PrintState.Failed(e.message ?: "Failed to enqueue print job")
         }
@@ -190,7 +193,7 @@ class RegistrationCheckInService(
                 if (authoritative != null && authoritative.isCheckedIn) {
                     RegistrationVerdict.AlreadyChecked(
                         attendee = toVerdictAttendee(authoritative),
-                        firstAt = authoritative.checkedInAt?.let { Instant.parse(it) } ?: submittedAt,
+                        firstAt = parseCheckedInAt(authoritative.checkedInAt, submittedAt),
                         firstPoint = authoritative.checkedInPointName ?: station.workPointName,
                         firstDevice = authoritative.checkedInDeviceNumber ?: station.deviceNumber,
                     )
