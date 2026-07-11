@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isActiveNavPath } from '../SuperAdminLayout';
+import { isActiveNavPath } from '@/lib/navUtils';
 
 describe('isActiveNavPath', () => {
   it('matches the dashboard root only on an exact path', () => {
@@ -15,5 +15,9 @@ describe('isActiveNavPath', () => {
 
   it('does not cross-match distinct top-level sections that share a prefix', () => {
     expect(isActiveNavPath('/super-admin/users', '/super-admin/organizations')).toBe(false);
+  });
+
+  it('does not match a route that merely shares a prefix', () => {
+    expect(isActiveNavPath('/super-admin/organizations', '/super-admin/organizations-legacy')).toBe(false);
   });
 });

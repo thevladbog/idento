@@ -7,11 +7,7 @@ import { Button } from '@/components/ui/button';
 import { LanguageToggle } from '@/components/language-toggle';
 import { ModeToggle } from '@/components/mode-toggle';
 import { ImpersonationBanner } from '@/components/ImpersonationBanner';
-
-export function isActiveNavPath(itemPath: string, pathname: string): boolean {
-  if (itemPath === '/super-admin') return pathname === itemPath;
-  return pathname.startsWith(itemPath);
-}
+import { isActiveNavPath } from '@/lib/navUtils';
 
 export default function SuperAdminLayout() {
   const { t } = useTranslation();
