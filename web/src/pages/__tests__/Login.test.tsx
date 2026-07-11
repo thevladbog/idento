@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LoginPage from '../Login';
 import '../../i18n';
@@ -48,7 +48,17 @@ describe('LoginPage mode awareness', () => {
     vi.mocked(getInstanceInfo).mockResolvedValue({ mode: 'onprem', version: '1.0.0', license: null });
     renderPage();
 
-    await waitFor(() => expect(screen.queryByRole('link', { name: /register/i })).not.toBeInTheDocument());
+    // The hook's pre-resolution default is ALSO 'onprem', so a naive
+    // waitFor on this negative assertion would trivially pass before the
+    // mocked promise even resolves — proving nothing. Explicitly await the
+    // same mocked call (mockResolvedValue makes every call resolve to the
+    // same value) inside act() to flush the resulting state update first,
+    // so this assertion genuinely reflects post-resolution state.
+    await act(async () => {
+      await getInstanceInfo();
+    });
+
+    expect(screen.queryByRole('link', { name: /register/i })).not.toBeInTheDocument();
   });
 
   it('the QR Login link is unaffected by mode', async () => {
