@@ -11,25 +11,43 @@ export function useScrollSpy(sectionIds: string[]): string {
   const [activeId, setActiveId] = useState(sectionIds[0] ?? '');
 
   useEffect(() => {
-    const elements = sectionIds
-      .map((id) => document.getElementById(id))
-      .filter((el): el is HTMLElement => el !== null);
-    if (elements.length === 0) return;
+    let observer: IntersectionObserver | null = null;
+    let rafId: number | null = null;
 
-    const root = elements[0].closest('main');
+    function trySetup() {
+      const elements = sectionIds
+        .map((id) => document.getElementById(id))
+        .filter((el): el is HTMLElement => el !== null);
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting);
-        if (visible.length > 0) {
-          setActiveId(visible[0].target.id);
-        }
-      },
-      { root, rootMargin: '-10% 0px -70% 0px', threshold: 0 }
-    );
+      if (elements.length === 0) {
+        // Sections may not be in the DOM yet (e.g. still behind an async
+        // loading gate in the caller). Keep polling via rAF until they
+        // appear, rather than giving up after the first mount pass.
+        rafId = requestAnimationFrame(trySetup);
+        return;
+      }
 
-    elements.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+      const root = elements[0].closest('main');
+
+      observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries.filter((e) => e.isIntersecting);
+          if (visible.length > 0) {
+            setActiveId(visible[0].target.id);
+          }
+        },
+        { root, rootMargin: '-10% 0px -70% 0px', threshold: 0 }
+      );
+
+      elements.forEach((el) => observer!.observe(el));
+    }
+
+    trySetup();
+
+    return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      observer?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sectionIds is a stable literal array from the caller
   }, [sectionIds.join(',')]);
 
