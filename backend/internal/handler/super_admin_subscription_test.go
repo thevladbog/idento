@@ -54,7 +54,7 @@ func TestUpdateTenantSubscriptionRequiresPlanWhenMissing(t *testing.T) {
 	}
 	h := &Handler{Store: fs}
 
-	c, rec := newAuthedContext(e, http.MethodPatch, "/x", `{"status":"active"}`, uuid.New().String(), "admin")
+	c, rec := newAuthedContext(e, http.MethodPatch, "/x", `{"status":"active","reason":"testing"}`, uuid.New().String(), "admin")
 	c.SetParamNames("id")
 	c.SetParamValues(uuid.New().String())
 
