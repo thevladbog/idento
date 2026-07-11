@@ -58,10 +58,10 @@ class RegistrationVerdictMapperTest {
     }
 
     @Test
-    fun notFoundCodeReturnsNotFound() = runTest {
+    fun notFoundCodeReturnsLookupFailed() = runTest {
         val mapper = RegistrationVerdictMapper(FakeAttendeeLookup(ApiResult.Error(RuntimeException("not found"), "Not found")))
         val result = mapper.lookup("evt-1", "ZZZ-999")
-        assertTrue(result is RegistrationVerdictLookup.NotFound)
-        assertEquals("ZZZ-999", (result as RegistrationVerdictLookup.NotFound).verdict.rawCode)
+        assertTrue(result is RegistrationVerdictLookup.LookupFailed)
+        assertEquals("Not found", (result as RegistrationVerdictLookup.LookupFailed).message)
     }
 }

@@ -32,9 +32,7 @@ class RegistrationVerdictMapper(private val attendeeLookup: AttendeeLookup) {
     suspend fun lookup(eventId: String, code: String): RegistrationVerdictLookup {
         return when (val result = attendeeLookup.getAttendeeByCode(eventId, code)) {
             is ApiResult.Success -> classify(result.data)
-            is ApiResult.Error -> RegistrationVerdictLookup.NotFound(
-                RegistrationVerdict.NotFound(rawCode = code, hint = "Check the code and try again")
-            )
+            is ApiResult.Error -> RegistrationVerdictLookup.LookupFailed(result.message ?: "Lookup failed")
             is ApiResult.Loading -> RegistrationVerdictLookup.LookupFailed("Still loading")
         }
     }
