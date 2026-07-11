@@ -25,7 +25,7 @@ func TestImpersonateActiveTenant(t *testing.T) {
 		},
 	}
 	h := &Handler{Store: fs}
-	c, rec := newAuthedContext(e, http.MethodPost, "/x", "", uuid.New().String(), "admin")
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", `{"reason":"test impersonation"}`, uuid.New().String(), "admin")
 	c.SetParamNames("id")
 	c.SetParamValues(target.String())
 
@@ -62,7 +62,7 @@ func TestImpersonateNonActiveTenantIs409(t *testing.T) {
 	e := echo.New()
 	fs := &fakeStore{getTenantStatus: func(id uuid.UUID) (string, error) { return "suspended", nil }}
 	h := &Handler{Store: fs}
-	c, rec := newAuthedContext(e, http.MethodPost, "/x", "", uuid.New().String(), "admin")
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", `{"reason":"test impersonation"}`, uuid.New().String(), "admin")
 	c.SetParamNames("id")
 	c.SetParamValues(uuid.New().String())
 	if err := h.ImpersonateTenant(c); err != nil {

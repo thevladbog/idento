@@ -299,3 +299,32 @@ func TestUpdateTenantSubscription_LogsTenantTargetedWithReason(t *testing.T) {
 		t.Fatalf("expected old/new diff preserved alongside reason, got %#v", capturedChanges)
 	}
 }
+
+func TestImpersonateTenant_ReasonRequired(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+	e := echo.New()
+	tenantID := uuid.New()
+
+	fs := &fakeStore{
+		getTenantStatus: func(id uuid.UUID) (string, error) { return "active", nil },
+		logAdminAction: func(audID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/super-admin/tenants/"+tenantID.String()+"/impersonate", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(tenantID.String())
+	c.Set("user", &models.JWTCustomClaims{UserID: uuid.New().String(), TenantID: uuid.New().String(), Role: "admin"})
+
+	if err := h.ImpersonateTenant(c); err != nil {
+		t.Fatalf("ImpersonateTenant returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when reason is missing, got %d: %s", rec.Code, rec.Body.String())
+	}
+}

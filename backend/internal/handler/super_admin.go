@@ -462,6 +462,9 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 	}
 	//nolint:errcheck
 	_ = c.Bind(&body)
+	if strings.TrimSpace(body.Reason) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "reason is required"})
+	}
 	status, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
