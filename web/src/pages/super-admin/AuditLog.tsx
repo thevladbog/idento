@@ -71,7 +71,6 @@ export default function AuditLog() {
       .catch(() => {
         /* best-effort: plan-change diffs fall back to a shortened plan id if this fails */
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   const filtersKey = JSON.stringify({ actionFilter, actorFilter, tenantFilter, dateFrom, dateTo });
