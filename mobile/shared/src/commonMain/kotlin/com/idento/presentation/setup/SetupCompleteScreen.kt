@@ -77,7 +77,7 @@ fun SetupCompleteScreen(
         when (config.mode) {
             StationMode.REGISTRATION -> onNavigateToStation(Screen.RegistrationHome.route)
             StationMode.ZONE_CONTROL -> onNavigateToStation(Screen.ZoneControlHome.route)
-            StationMode.KIOSK -> Unit // M3 — stays on SetupComplete until the Kiosk screen exists.
+            StationMode.KIOSK -> onNavigateToStation(Screen.KioskHome.route)
         }
     }
 

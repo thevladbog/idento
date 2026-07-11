@@ -19,6 +19,7 @@ import com.idento.presentation.events.EventsScreen
 import com.idento.presentation.login.LoginScreen
 import com.idento.presentation.settings.SettingsScreen
 import com.idento.data.model.StationMode
+import com.idento.presentation.kiosk.KioskScreen
 import com.idento.presentation.registration.RegistrationHomeScreen
 import com.idento.presentation.setup.SetupCompleteScreen
 import com.idento.presentation.setup.SetupDayZoneScreen
@@ -37,8 +38,8 @@ import com.idento.presentation.zonecontrol.ZoneControlScreen
  *
  * When both [hasStationConfig] and [isLoggedIn] are true the [stationMode] is used to select
  * the correct home screen: REGISTRATION → [Screen.RegistrationHome]; ZONE_CONTROL →
- * [Screen.ZoneControlHome]; all other modes (and the default null) fall back to
- * [Screen.SetupComplete] until M3 implements the Kiosk screen.
+ * [Screen.ZoneControlHome]; KIOSK → [Screen.KioskHome]; the default null falls back to
+ * [Screen.SetupComplete] (no station has been configured with an unrecognized mode).
  */
 fun resolveStartDestination(
     hasStationConfig: Boolean,
@@ -48,6 +49,7 @@ fun resolveStartDestination(
     !hasStationConfig || !isLoggedIn -> Screen.SetupLogin.route
     stationMode == StationMode.REGISTRATION -> Screen.RegistrationHome.route
     stationMode == StationMode.ZONE_CONTROL -> Screen.ZoneControlHome.route
+    stationMode == StationMode.KIOSK -> Screen.KioskHome.route
     else -> Screen.SetupComplete.route
 }
 
@@ -275,6 +277,16 @@ fun IdentoNavHost(
 
         composable(Screen.ZoneControlHome.route) {
             ZoneControlScreen()
+        }
+
+        composable(Screen.KioskHome.route) {
+            KioskScreen(
+                onExit = {
+                    navController.navigate(Screen.SetupComplete.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
+            )
         }
     }
 }
