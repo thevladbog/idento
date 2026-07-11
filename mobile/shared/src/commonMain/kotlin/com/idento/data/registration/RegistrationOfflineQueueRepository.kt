@@ -92,7 +92,8 @@ class RegistrationOfflineQueueRepository(
     override suspend fun flush(): FlushResult = withContext(Dispatchers.Default) {
         var succeeded = 0
         var failed = 0
-        val pendingByEvent = queries.selectAll().executeAsList().groupBy { it.eventId }
+        val now = Clock.System.now().toEpochMilliseconds()
+        val pendingByEvent = queries.selectEligibleForRetry(now).executeAsList().groupBy { it.eventId }
 
         for ((eventId, rows) in pendingByEvent) {
             val items = rows.map { row ->

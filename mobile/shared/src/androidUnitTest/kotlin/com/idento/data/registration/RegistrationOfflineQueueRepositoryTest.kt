@@ -2,9 +2,11 @@ package com.idento.data.registration
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.idento.data.model.BatchCheckinItemDto
+import com.idento.data.model.BatchCheckinResultDto
 import com.idento.data.network.ApiResult
 import com.idento.db.IdentoDatabase
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Clock
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -49,6 +51,31 @@ class RegistrationOfflineQueueRepositoryTest {
         val pending = failingRepo.getPending()
         assertEquals(1, pending.size)
         assertEquals(1, pending.first().attemptCount)
+    }
+
+    @Test
+    fun flushSkipsItemStillWithinBackoffWindowButSubmitsAnEligibleOne() = runTest {
+        val submittedClientUuids = mutableListOf<String>()
+        val trackingRepo = RegistrationOfflineQueueRepository(
+            IdentoDatabase(driver).pendingRegistrationCheckInQueries,
+            { _, items ->
+                submittedClientUuids.addAll(items.map { it.clientUuid })
+                ApiResult.Success(items.map { BatchCheckinResultDto(clientUuid = it.clientUuid, status = "created") })
+            },
+        )
+        trackingRepo.enqueue("evt-1", BatchCheckinItemDto(clientUuid = "cooling-down", attendeeId = "att-1", at = "2026-07-11T10:00:00Z", deviceNumber = 3, kind = "checkin"))
+        val queries = IdentoDatabase(driver).pendingRegistrationCheckInQueries
+        val coolingDownId = trackingRepo.getPending().single().id
+        // Simulate 1 prior failed attempt just now: min(1*1, 300) = 1s backoff window, still active.
+        queries.updateAttempt(attemptCount = 1, lastAttemptAt = Clock.System.now().toEpochMilliseconds(), errorMessage = "offline", id = coolingDownId)
+        trackingRepo.enqueue("evt-1", BatchCheckinItemDto(clientUuid = "eligible", attendeeId = "att-2", at = "2026-07-11T10:00:00Z", deviceNumber = 3, kind = "checkin"))
+
+        trackingRepo.flush()
+
+        assertEquals(listOf("eligible"), submittedClientUuids)
+        val stillPending = trackingRepo.getPending()
+        assertEquals(1, stillPending.size)
+        assertEquals("cooling-down", stillPending.first().clientUuid)
     }
 }
 
