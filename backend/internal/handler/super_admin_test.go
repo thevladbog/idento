@@ -219,3 +219,83 @@ func TestGetAuditLog_InvalidTargetIDIgnoredNot400(t *testing.T) {
 		t.Fatalf("expected no target_id key when param is invalid, got %#v", capturedFilters)
 	}
 }
+
+func TestUpdateTenantSubscription_ReasonRequired(t *testing.T) {
+	e := echo.New()
+	tenantID := uuid.New()
+	subID := uuid.New()
+
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) {
+			return &models.Subscription{ID: subID, TenantID: tenantID, Status: "active"}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	body, _ := json.Marshal(map[string]string{"status": "active"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/super-admin/tenants/"+tenantID.String()+"/subscription", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(tenantID.String())
+
+	if err := h.UpdateTenantSubscription(c); err != nil {
+		t.Fatalf("UpdateTenantSubscription returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when reason is missing, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestUpdateTenantSubscription_LogsTenantTargetedWithReason(t *testing.T) {
+	e := echo.New()
+	tenantID := uuid.New()
+	adminID := uuid.New()
+	subID := uuid.New()
+	var capturedTargetType string
+	var capturedTargetID uuid.UUID
+	var capturedChanges map[string]interface{}
+
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) {
+			return &models.Subscription{ID: subID, TenantID: tenantID, Status: "trial"}, nil
+		},
+		updateSubscription: func(sub *models.Subscription) error { return nil },
+		logAdminAction: func(_ uuid.UUID, _ string, targetType string, targetID uuid.UUID, changes interface{}, _, _ string) error {
+			capturedTargetType = targetType
+			capturedTargetID = targetID
+			capturedChanges = changes.(map[string]interface{})
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	body, _ := json.Marshal(map[string]string{"status": "active", "reason": "invoice #1042 paid"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/super-admin/tenants/"+tenantID.String()+"/subscription", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(tenantID.String())
+	c.Set("user", &models.JWTCustomClaims{UserID: adminID.String(), TenantID: uuid.New().String(), Role: "admin"})
+
+	if err := h.UpdateTenantSubscription(c); err != nil {
+		t.Fatalf("UpdateTenantSubscription returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedTargetType != "tenant" {
+		t.Fatalf("expected target_type=tenant, got %q", capturedTargetType)
+	}
+	if capturedTargetID != tenantID {
+		t.Fatalf("expected target_id=%v (tenant), got %v", tenantID, capturedTargetID)
+	}
+	if capturedChanges["reason"] != "invoice #1042 paid" {
+		t.Fatalf("expected reason in audit changes, got %#v", capturedChanges)
+	}
+	if capturedChanges["old"] == nil || capturedChanges["new"] == nil {
+		t.Fatalf("expected old/new diff preserved alongside reason, got %#v", capturedChanges)
+	}
+}

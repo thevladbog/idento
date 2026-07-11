@@ -100,12 +100,16 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		CustomLimits   *map[string]interface{} `json:"custom_limits"`
 		CustomFeatures *map[string]interface{} `json:"custom_features"`
 		AdminNotes     *string                 `json:"admin_notes"`
+		Reason         string                  `json:"reason"`
 	}
 
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid request",
 		})
+	}
+	if strings.TrimSpace(req.Reason) == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "reason is required"})
 	}
 
 	// Get existing subscription; create one if the tenant has none (upsert).
@@ -175,9 +179,10 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "subscription", sub.ID, map[string]interface{}{
-		"old": oldSub,
-		"new": sub,
+	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "tenant", tenantID, map[string]interface{}{
+		"old":    oldSub,
+		"new":    sub,
+		"reason": req.Reason,
 	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}

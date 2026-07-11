@@ -28,7 +28,7 @@ func TestUpdateTenantSubscriptionCreatesWhenMissing(t *testing.T) {
 	}
 	h := &Handler{Store: fs}
 
-	body := `{"plan_id":"` + planID.String() + `","status":"active"}`
+	body := `{"plan_id":"` + planID.String() + `","status":"active","reason":"initial plan assignment"}`
 	c, rec := newAuthedContext(e, http.MethodPatch, "/api/super-admin/tenants/"+tenantID.String()+"/subscription", body, uuid.New().String(), "admin")
 	c.SetParamNames("id")
 	c.SetParamValues(tenantID.String())
