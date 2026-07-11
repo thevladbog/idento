@@ -252,6 +252,13 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 
 	plan.ID = planID
 
+	oldPlan, err := h.Store.GetSubscriptionPlanByID(c.Request().Context(), planID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to load plan",
+		})
+	}
+
 	if err := h.Store.UpdateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update plan",
@@ -265,7 +272,8 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	}
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
-		"plan": plan,
+		"old": oldPlan,
+		"new": plan,
 	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}

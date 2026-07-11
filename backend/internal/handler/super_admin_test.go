@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -472,5 +473,57 @@ func TestGetAuditLog_MalformedDatesIgnoredNot400(t *testing.T) {
 	}
 	if _, ok := capturedFilters["date_to"]; ok {
 		t.Fatalf("expected no date_to key when param is malformed, got %#v", capturedFilters)
+	}
+}
+
+func TestUpdateSubscriptionPlanSuper_LogsOldAndNew(t *testing.T) {
+	e := echo.New()
+	planID := uuid.New()
+	adminID := uuid.New()
+	oldPlan := &models.SubscriptionPlan{ID: planID, Name: "Starter", PriceMonthly: 29}
+	var capturedChanges map[string]interface{}
+
+	fs := &fakeStore{
+		getSubscriptionPlanByID: func(id uuid.UUID) (*models.SubscriptionPlan, error) {
+			if id == planID {
+				return oldPlan, nil
+			}
+			return nil, fmt.Errorf("not found")
+		},
+		updateSubscriptionPlan: func(plan *models.SubscriptionPlan) error { return nil },
+		logAdminAction: func(_ uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, _, _ string) error {
+			if action == "update_plan" {
+				capturedChanges = changes.(map[string]interface{})
+			}
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	body, _ := json.Marshal(map[string]interface{}{"name": "Professional", "price_monthly": 99})
+	req := httptest.NewRequest(http.MethodPut, "/api/super-admin/plans/"+planID.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(planID.String())
+	c.Set("user", &models.JWTCustomClaims{UserID: adminID.String(), TenantID: uuid.New().String(), Role: "admin"})
+
+	if err := h.UpdateSubscriptionPlanSuper(c); err != nil {
+		t.Fatalf("UpdateSubscriptionPlanSuper returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedChanges == nil {
+		t.Fatalf("expected update_plan changes to be captured, got nil")
+	}
+	old, ok := capturedChanges["old"].(*models.SubscriptionPlan)
+	if !ok || old.Name != "Starter" {
+		t.Fatalf("expected old plan with Name=Starter, got %#v", capturedChanges["old"])
+	}
+	newP, ok := capturedChanges["new"].(models.SubscriptionPlan)
+	if !ok || newP.Name != "Professional" {
+		t.Fatalf("expected new plan with Name=Professional, got %#v", capturedChanges["new"])
 	}
 }

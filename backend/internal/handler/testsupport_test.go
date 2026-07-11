@@ -49,6 +49,8 @@ type fakeStore struct {
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
 	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
+	getSubscriptionPlanByID   func(id uuid.UUID) (*models.SubscriptionPlan, error)
+	updateSubscriptionPlan    func(plan *models.SubscriptionPlan) error
 	logAdminAction            func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error
 	getAuditLog               func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error)
 
@@ -178,6 +180,12 @@ func (f *fakeStore) UpsertSubscription(_ context.Context, sub *models.Subscripti
 }
 func (f *fakeStore) UpdateSubscription(_ context.Context, sub *models.Subscription) error {
 	return f.updateSubscription(sub)
+}
+func (f *fakeStore) GetSubscriptionPlanByID(_ context.Context, id uuid.UUID) (*models.SubscriptionPlan, error) {
+	return f.getSubscriptionPlanByID(id)
+}
+func (f *fakeStore) UpdateSubscriptionPlan(_ context.Context, plan *models.SubscriptionPlan) error {
+	return f.updateSubscriptionPlan(plan)
 }
 func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 	return f.logAdminAction(adminID, action, targetType, targetID, changes, ip, userAgent)
