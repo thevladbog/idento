@@ -13,8 +13,10 @@ import kotlin.test.assertTrue
 /**
  * Real SQLDelight round-trip test (JVM in-memory SQLite via the sqlite-driver test
  * dependency — this is JVM-only test infra, separate from the app's real Android/iOS
- * drivers wired in SqlDriverFactory). Proves the insert/select/delete queries actually
- * persist every field, not just that the code compiles.
+ * drivers wired in SqlDriverFactory). Exercises the real [SqlDelightOfflineDatabase]
+ * (constructed directly from an [IdentoDatabase], matching its production DI wiring in
+ * AppModule) rather than a re-implementation, proving the insert/select/delete queries
+ * actually persist every field, not just that the code compiles.
  */
 class SqlDelightOfflineDatabaseTest {
 
@@ -26,35 +28,7 @@ class SqlDelightOfflineDatabaseTest {
         driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         IdentoDatabase.Schema.create(driver)
         val database = IdentoDatabase(driver)
-        db = object : OfflineDatabase {
-            private val queries = database.pendingCheckInQueries
-            override suspend fun savePendingCheckIn(checkIn: PendingZoneCheckIn): Long {
-                return queries.transactionWithResult {
-                    queries.insertOrIgnore(
-                        attendeeCode = checkIn.attendeeCode,
-                        zoneId = checkIn.zoneId,
-                        eventDay = checkIn.eventDay,
-                        checkedInAt = checkIn.checkedInAt,
-                        attemptCount = checkIn.attemptCount.toLong(),
-                        lastAttemptAt = checkIn.lastAttemptAt,
-                        errorMessage = checkIn.errorMessage,
-                    )
-                    queries.selectByKey(checkIn.attendeeCode, checkIn.zoneId, checkIn.eventDay).executeAsOne().id
-                }
-            }
-            override suspend fun getPendingCheckIns(): List<PendingZoneCheckIn> =
-                queries.selectAll().executeAsList().map {
-                    PendingZoneCheckIn(
-                        id = it.id, attendeeCode = it.attendeeCode, zoneId = it.zoneId,
-                        eventDay = it.eventDay, checkedInAt = it.checkedInAt,
-                        attemptCount = it.attemptCount.toInt(), lastAttemptAt = it.lastAttemptAt,
-                        errorMessage = it.errorMessage,
-                    )
-                }
-            override suspend fun deletePendingCheckIn(id: Long) { queries.deleteById(id) }
-            override suspend fun clearPendingCheckIns() { queries.deleteAll() }
-            override suspend fun getPendingCheckInsCount(): Int = queries.countAll().executeAsOne().toInt()
-        }
+        db = SqlDelightOfflineDatabase(database)
     }
 
     @AfterTest

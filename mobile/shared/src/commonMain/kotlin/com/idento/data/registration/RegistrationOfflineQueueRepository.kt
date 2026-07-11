@@ -51,14 +51,25 @@ class RegistrationOfflineQueueRepository(
 
     override suspend fun enqueue(eventId: String, item: BatchCheckinItemDto) {
         withContext(Dispatchers.Default) {
-            queries.insert(
-                clientUuid = item.clientUuid,
-                eventId = eventId,
-                attendeeId = item.attendeeId,
-                at = item.at,
-                deviceNumber = item.deviceNumber.toLong(),
-                pointName = item.pointName,
-            )
+            try {
+                queries.insert(
+                    clientUuid = item.clientUuid,
+                    eventId = eventId,
+                    attendeeId = item.attendeeId,
+                    at = item.at,
+                    deviceNumber = item.deviceNumber.toLong(),
+                    pointName = item.pointName,
+                )
+            } catch (e: Exception) {
+                // Best-effort, matching this codebase's established non-fatal storage-failure
+                // pattern (see AuthRepository/AuthPreferences: catch, log, swallow).
+                // RegistrationCheckInService.checkIn already unconditionally returns a "Queued"
+                // success verdict to the operator after calling enqueue (this interface method
+                // returns Unit, so there is no way to signal failure back up regardless) —
+                // letting a transient lock-contention exception propagate here would crash the
+                // check-in flow, which is strictly worse than losing this one retry-queue write.
+                println("⚠️ Failed to persist registration check-in ${item.clientUuid} to offline queue: ${e.message}")
+            }
         }
     }
 
@@ -100,8 +111,7 @@ class RegistrationOfflineQueueRepository(
                     for (row in rows) {
                         val itemResult = resultsByClientUuid[row.clientUuid]
                         if (itemResult != null && (itemResult.status == "created" || itemResult.status == "already_exists")) {
-                            queries.deleteById(row.id)
-                            succeeded++
+                            if (deleteConfirmed(row.id)) succeeded++ else failed++
                         } else {
                             recordFailedAttempt(row.id, row.attemptCount, itemResult?.error ?: "No result returned for clientUuid")
                             failed++
@@ -129,13 +139,39 @@ class RegistrationOfflineQueueRepository(
         FlushResult(succeeded, failed)
     }
 
+    /**
+     * Deletes a server-confirmed (`"created"`/`"already_exists"`) row from the queue. If the
+     * delete itself throws (e.g. transient lock contention), the row simply stays queued —
+     * [flush] will retry the submission (idempotent per `client_uuid`, so safe to resend) on its
+     * next pass rather than crashing the whole flush.
+     */
+    private fun deleteConfirmed(id: Long): Boolean =
+        try {
+            queries.deleteById(id)
+            true
+        } catch (e: Exception) {
+            println("⚠️ Failed to remove confirmed registration check-in $id from offline queue: ${e.message}")
+            false
+        }
+
+    /**
+     * Records an attempt/error on a row that couldn't be confirmed this pass, so it stays queued
+     * for the next [flush]. If this bookkeeping write itself throws, the row is left untouched
+     * (stale attempt count/error message) but still stays queued and gets retried regardless —
+     * matching this codebase's established non-fatal storage-failure pattern (see
+     * AuthRepository/AuthPreferences: catch, log, swallow).
+     */
     private fun recordFailedAttempt(id: Long, currentAttemptCount: Long, error: String) {
-        queries.updateAttempt(
-            attemptCount = currentAttemptCount + 1,
-            lastAttemptAt = Clock.System.now().toEpochMilliseconds(),
-            errorMessage = error,
-            id = id,
-        )
+        try {
+            queries.updateAttempt(
+                attemptCount = currentAttemptCount + 1,
+                lastAttemptAt = Clock.System.now().toEpochMilliseconds(),
+                errorMessage = error,
+                id = id,
+            )
+        } catch (e: Exception) {
+            println("⚠️ Failed to record retry attempt for registration check-in $id: ${e.message}")
+        }
     }
 
     private fun toDomain(row: com.idento.db.PendingRegistrationCheckIn): PendingRegistrationCheckIn =

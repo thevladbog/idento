@@ -8,10 +8,15 @@ import kotlinx.coroutines.withContext
  * Real, persistent OfflineDatabase backed by SQLDelight (replaces the previous non-persistent
  * in-memory placeholder). Single common implementation — SqlDriverFactory is the only
  * per-platform piece.
+ *
+ * Takes an already-constructed [IdentoDatabase] rather than building its own from a
+ * [SqlDriverFactory]: the same physical "idento.db" file also backs
+ * [com.idento.data.registration.RegistrationOfflineQueueRepository]'s queue, and both must share
+ * one [IdentoDatabase]/[app.cash.sqldelight.db.SqlDriver] connection rather than each opening a
+ * separate connection to the same file (see AppModule's DI wiring).
  */
-class SqlDelightOfflineDatabase(driverFactory: SqlDriverFactory) : OfflineDatabase {
+class SqlDelightOfflineDatabase(database: IdentoDatabase) : OfflineDatabase {
 
-    private val database = IdentoDatabase(driverFactory.createDriver())
     private val queries = database.pendingCheckInQueries
 
     override suspend fun savePendingCheckIn(checkIn: PendingZoneCheckIn): Long = withContext(Dispatchers.Default) {

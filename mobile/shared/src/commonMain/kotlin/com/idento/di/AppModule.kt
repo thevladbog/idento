@@ -79,19 +79,22 @@ val appModule = module {
     single { StationRepository(get()) }
     single { OfflineCheckInRepository(get(), get()) }
     
-    // Offline storage (SQLDelight-backed, persistent)
+    // Offline storage (SQLDelight-backed, persistent). A single `IdentoDatabase` instance —
+    // and therefore a single `SqlDriver`/connection to the "idento.db" file — is registered
+    // here and shared by every consumer below (both `SqlDelightOfflineDatabase`'s zone
+    // check-in queue and `RegistrationOfflineQueueRepository`'s registration check-in queue),
+    // rather than each opening its own separate connection to the same physical file. Neither
+    // `SqlDriverFactory.android.kt` nor `.ios.kt` configures WAL mode, so multiple concurrent
+    // connections to the same file would otherwise rely on SQLite's default rollback-journal
+    // locking; sharing one connection avoids that risk entirely once `SyncService` drives
+    // concurrent flush operations from a background dispatcher alongside foreground writes.
     single { createSqlDriverFactory() }
+    single { IdentoDatabase(get<SqlDriverFactory>().createDriver()) }
     single { SqlDelightOfflineDatabase(get()) as OfflineDatabase }
 
-    // Registration check-in offline queue (SQLDelight-backed, persistent).
-    // `SqlDelightOfflineDatabase` above already constructs its own private `IdentoDatabase`
-    // internally (see its constructor) rather than taking one in, and that constructor is
-    // already-shipped/already-tested — so rather than change its signature to share a single
-    // `IdentoDatabase` instance, this registers a second `IdentoDatabase`, backed by the same
-    // "idento.db" file via the same `SqlDriverFactory`. SQLite supports multiple connections to
-    // one file, so this is correct, just one extra (cheap) connection rather than a fully shared
-    // instance.
-    single { IdentoDatabase(get<SqlDriverFactory>().createDriver()) }
+    // Registration check-in offline queue (SQLDelight-backed, persistent). Resolves the same
+    // `IdentoDatabase` singleton registered above via Koin's `get()` rather than constructing
+    // its own.
     single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
     single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
 
