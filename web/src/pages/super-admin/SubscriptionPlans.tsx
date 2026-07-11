@@ -41,6 +41,40 @@ interface SubscriptionPlan {
   sort_order: number;
 }
 
+type LimitFieldProps = {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+};
+
+function LimitField({ label, value, onChange }: LimitFieldProps) {
+  const { t } = useTranslation();
+  const isUnlimited = value === -1;
+
+  return (
+    <div>
+      <Label className="text-xs">{label}</Label>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          value={isUnlimited ? '' : value}
+          disabled={isUnlimited}
+          placeholder={isUnlimited ? t('planLimitUnlimited') : undefined}
+          onChange={(e) => onChange(parseInt(e.target.value) || 0)}
+        />
+        <div className="flex items-center gap-1.5">
+          <Switch
+            checked={isUnlimited}
+            onCheckedChange={(checked) => onChange(checked ? -1 : 0)}
+            aria-label={`${label} — ${t('planLimitUnlimited')}`}
+          />
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{t('planLimitUnlimited')}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SubscriptionPlans() {
   const { t } = useTranslation();
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -295,39 +329,21 @@ export default function SubscriptionPlans() {
             <div className="space-y-2">
               <Label>{t('limits')}</Label>
               <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <Label className="text-xs">{t('eventsPerMonth')}</Label>
-                  <Input
-                    type="number"
-                    value={formData.limits?.events_per_month || 0}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      limits: { ...formData.limits, events_per_month: parseInt(e.target.value) }
-                    })}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t('attendeesPerEvent')}</Label>
-                  <Input
-                    type="number"
-                    value={formData.limits?.attendees_per_event || 0}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      limits: { ...formData.limits, attendees_per_event: parseInt(e.target.value) }
-                    })}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t('users')}</Label>
-                  <Input
-                    type="number"
-                    value={formData.limits?.users || 0}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      limits: { ...formData.limits, users: parseInt(e.target.value) }
-                    })}
-                  />
-                </div>
+                <LimitField
+                  label={t('eventsPerMonth')}
+                  value={formData.limits?.events_per_month ?? 0}
+                  onChange={(v) => setFormData({ ...formData, limits: { ...formData.limits, events_per_month: v } })}
+                />
+                <LimitField
+                  label={t('attendeesPerEvent')}
+                  value={formData.limits?.attendees_per_event ?? 0}
+                  onChange={(v) => setFormData({ ...formData, limits: { ...formData.limits, attendees_per_event: v } })}
+                />
+                <LimitField
+                  label={t('users')}
+                  value={formData.limits?.users ?? 0}
+                  onChange={(v) => setFormData({ ...formData, limits: { ...formData.limits, users: v } })}
+                />
               </div>
             </div>
 

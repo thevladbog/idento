@@ -824,6 +824,7 @@ i18n
           auditLog_noTenantsFound: "No tenants found",
           auditLog_dateFromLabel: "From",
           auditLog_dateToLabel: "To",
+          planLimitUnlimited: "Unlimited",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1752,6 +1753,7 @@ i18n
           auditLog_noTenantsFound: "Организации не найдены",
           auditLog_dateFromLabel: "С",
           auditLog_dateToLabel: "По",
+          planLimitUnlimited: "Без ограничений",
 
           // Analytics
           totalTenants: "Всего организаций",
