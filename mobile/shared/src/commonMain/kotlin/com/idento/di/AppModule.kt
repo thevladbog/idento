@@ -11,6 +11,8 @@ import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.RegistrationOfflineQueue
+import com.idento.data.registration.RegistrationOfflineQueueRepository
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
@@ -24,6 +26,7 @@ import com.idento.data.storage.SqlDelightOfflineDatabase
 import com.idento.data.storage.OfflineDatabase
 import com.idento.data.sync.SyncService
 import com.idento.data.sync.NetworkMonitorImpl
+import com.idento.db.IdentoDatabase
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -79,7 +82,19 @@ val appModule = module {
     // Offline storage (SQLDelight-backed, persistent)
     single { createSqlDriverFactory() }
     single { SqlDelightOfflineDatabase(get()) as OfflineDatabase }
-    
+
+    // Registration check-in offline queue (SQLDelight-backed, persistent).
+    // `SqlDelightOfflineDatabase` above already constructs its own private `IdentoDatabase`
+    // internally (see its constructor) rather than taking one in, and that constructor is
+    // already-shipped/already-tested — so rather than change its signature to share a single
+    // `IdentoDatabase` instance, this registers a second `IdentoDatabase`, backed by the same
+    // "idento.db" file via the same `SqlDriverFactory`. SQLite supports multiple connections to
+    // one file, so this is correct, just one extra (cheap) connection rather than a fully shared
+    // instance.
+    single { IdentoDatabase(get<SqlDriverFactory>().createDriver()) }
+    single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
+    single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
+
     // Network monitoring
     single { NetworkMonitorImpl() }
     
