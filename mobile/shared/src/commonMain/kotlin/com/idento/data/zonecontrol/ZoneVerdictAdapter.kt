@@ -38,7 +38,10 @@ private fun ZoneScanResponseDto.toZoneVerdict(): ZoneVerdict {
     return when (verdict) {
         "allowed" -> ZoneVerdict.Allowed(
             attendee = verdictAttendee,
-            registeredAt = parseCheckedInAt(checkedInAt, Instant.DISTANT_PAST),
+            // "Registered at" means the attendee's original event registration time
+            // (registration.at), not this zone-entry timestamp (checkedInAt) — see final-review
+            // Finding 3.
+            registeredAt = parseCheckedInAt(registration?.at, Instant.DISTANT_PAST),
             registeredPoint = registration?.point ?: "",
             firstEntry = firstEntry,
         )

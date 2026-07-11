@@ -293,4 +293,5 @@ private fun fakeScanSource(codes: Flow<String>) = object : ScanSource {
     override fun startScanning(): Flow<String> = codes
     override fun stopScanning() {}
     override fun preferCamera() {}
+    override fun setExcludedBluetoothAddress(address: String?) {}
 }

@@ -58,6 +58,10 @@ class AndroidScanSource(
     private var isReceiverRegistered = false
     private var preferCameraOverride = false
 
+    /** Set via [setExcludedBluetoothAddress] — the station's bonded BT printer address, if any,
+     * so [connectBondedBluetoothScanner] doesn't grab it (see Finding 1 kdoc on the interface). */
+    private var excludedBluetoothAddress: String? = null
+
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -84,6 +88,10 @@ class AndroidScanSource(
         unregisterHardwareReceiver()
         disconnectBluetooth()
         _connectionState.value = ScannerConnectionState.Camera
+    }
+
+    override fun setExcludedBluetoothAddress(address: String?) {
+        excludedBluetoothAddress = address
     }
 
     // ── Generic broadcast hardware scanner (manufacturer-agnostic) ──────────────────────────────
@@ -147,7 +155,9 @@ class AndroidScanSource(
         if (bluetoothSocket?.isConnected == true) return
         val adapter = bluetoothAdapter ?: return
         if (!adapter.isEnabled || !hasBluetoothConnectPermission()) return
-        val device = adapter.bondedDevices?.firstOrNull() ?: return
+        // Skip the station's configured BT badge printer (same SPP UUID) — see Finding 1 kdoc on
+        // ScanSource.setExcludedBluetoothAddress for why this matters.
+        val device = adapter.bondedDevices?.firstOrNull { it.address != excludedBluetoothAddress } ?: return
         serviceScope.launch {
             try {
                 val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)

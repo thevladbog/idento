@@ -18,4 +18,5 @@ class IosScanSource(private val cameraService: CameraService) : ScanSource {
     override fun startScanning(): Flow<String> = cameraService.startScanning()
     override fun stopScanning() = cameraService.stopScanning()
     override fun preferCamera() { /* no-op: iOS is already camera-only */ }
+    override fun setExcludedBluetoothAddress(address: String?) { /* no-op: iOS has no BT scanning */ }
 }

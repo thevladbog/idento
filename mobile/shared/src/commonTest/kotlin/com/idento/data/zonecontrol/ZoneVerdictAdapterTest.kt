@@ -7,6 +7,7 @@ import com.idento.data.model.ZoneScanResponseDto
 import com.idento.data.model.ZoneVerdict
 import com.idento.data.network.ApiResult
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -39,6 +40,10 @@ class ZoneVerdictAdapterTest {
         assertIs<ZoneVerdict.Allowed>(result)
         assertEquals("Главный вход", result.registeredPoint)
         assertEquals(true, result.firstEntry)
+        // registeredAt must come from registration.at (original event registration time), NOT
+        // checkedInAt (this zone-entry timestamp) — these are deliberately different values above
+        // to catch a regression back to reading the wrong DTO field (final-review Finding 3).
+        assertEquals(Instant.parse("2026-07-11T10:00:00Z"), result.registeredAt)
     }
 
     @Test

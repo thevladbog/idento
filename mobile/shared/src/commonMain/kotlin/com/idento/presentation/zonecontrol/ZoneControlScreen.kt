@@ -79,11 +79,6 @@ fun ZoneControlScreen(
                     label = stringResource(StringKey.ZONE_STATUSBAR_DENIED_LABEL),
                     valueColor = if (uiState.deniedCount > 0) IdentoColors.Denied else IdentoColors.TextPrimary,
                 ),
-                StatusCell(
-                    value = uiState.pendingQueueCount.toString(),
-                    label = stringResource(StringKey.ZONE_STATUSBAR_QUEUE_LABEL),
-                    valueColor = if (uiState.pendingQueueCount > 0) IdentoColors.Queue else IdentoColors.TextPrimary,
-                ),
             ),
         )
 
@@ -99,16 +94,6 @@ fun ZoneControlScreen(
                 color = IdentoColors.TextSecondary,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-            )
-        }
-
-        if (uiState.offlineBannerVisible) {
-            com.idento.presentation.components.redesign.OfflineBanner(
-                queuedCount = uiState.pendingQueueCount,
-                lastSyncLabel = "—",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = IdentoSpacing.md),
             )
         }
 

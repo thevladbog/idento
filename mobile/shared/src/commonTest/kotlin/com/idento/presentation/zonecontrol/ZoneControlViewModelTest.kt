@@ -10,7 +10,6 @@ import com.idento.data.zonecontrol.ZoneScanSource
 import com.idento.data.zonecontrol.ZoneVerdictAdapter
 import com.idento.platform.scanner.ScanSource
 import com.idento.platform.scanner.ScannerConnectionState
-import com.idento.presentation.registration.PendingQueueCountSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -62,6 +61,7 @@ class ZoneControlViewModelTest {
         override fun startScanning(): Flow<String> = codes
         override fun stopScanning() {}
         override fun preferCamera() {}
+        override fun setExcludedBluetoothAddress(address: String?) {}
     }
 
     private fun buildViewModel(
@@ -70,13 +70,11 @@ class ZoneControlViewModelTest {
             ZoneScanSource { _, _ -> ApiResult.Error(Exception("not configured")) },
         ),
         scanSource: ScanSource = fakeScanSource(flowOf()),
-        pendingQueueCountSource: PendingQueueCountSource = PendingQueueCountSource { flowOf(0) },
         overrideSource: CheckinOverrideSource = CheckinOverrideSource { _, _, _ -> ApiResult.Success(Unit) },
     ) = ZoneControlViewModel(
         stationGateway = stationGateway,
         verdictAdapter = verdictAdapter,
         scanSource = scanSource,
-        pendingQueueCountSource = pendingQueueCountSource,
         overrideSource = overrideSource,
     )
 
@@ -84,16 +82,6 @@ class ZoneControlViewModelTest {
     fun initialStateHasZoneName() = runTest(testDispatcher) {
         val vm = buildViewModel()
         assertEquals("Главный вход", vm.uiState.value.zoneName)
-    }
-
-    @Test
-    fun pendingQueueCountUpdatesOfflineBannerVisibility() = runTest(testDispatcher) {
-        val countFlow = MutableStateFlow(0)
-        val vm = buildViewModel(pendingQueueCountSource = PendingQueueCountSource { countFlow })
-        assertEquals(false, vm.uiState.value.offlineBannerVisible)
-        countFlow.value = 2
-        assertEquals(true, vm.uiState.value.offlineBannerVisible)
-        assertEquals(2, vm.uiState.value.pendingQueueCount)
     }
 
     @Test

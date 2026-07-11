@@ -8,7 +8,6 @@ import com.idento.data.network.ApiResult
 import com.idento.data.zonecontrol.ZoneVerdictAdapter
 import com.idento.platform.scanner.ScanSource
 import com.idento.platform.scanner.ScannerConnectionState
-import com.idento.presentation.registration.PendingQueueCountSource
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,27 +36,25 @@ data class ZoneControlUiState(
     val zoneName: String = "",
     val allowedCount: Int = 0,
     val deniedCount: Int = 0,
-    val pendingQueueCount: Int = 0,
     val currentVerdict: ZoneVerdict? = null,
     val isScanActive: Boolean = false,
     val scannerState: ScannerConnectionState = ScannerConnectionState.Camera,
-    val offlineBannerVisible: Boolean = false,
 )
 
 /**
  * Core business logic for the Zone Control home screen. Owns the scan pipeline
  * (`scanSource -> ZoneVerdictAdapter`) and all StatusBar state (zone name, allowed/denied session
- * counters, pending offline-queue count). Unlike RegistrationHomeViewModel there is no client-side
- * verdict classification and no DebouncedScanPipeline — the single POST /api/zones/:zone_id/scan
- * call performs both the read and (on an allowed outcome) the write atomically server-side, so the
- * whole lookup is wrapped in withContext(NonCancellable) rather than only the write half, unlike
- * Registration's separate lookup/checkIn split.
+ * counters). Unlike RegistrationHomeViewModel there is no client-side verdict classification and
+ * no DebouncedScanPipeline — the single POST /api/zones/:zone_id/scan call performs both the read
+ * and (on an allowed outcome) the write atomically server-side, so the whole lookup is wrapped in
+ * withContext(NonCancellable) rather than only the write half, unlike Registration's separate
+ * lookup/checkIn split. Unlike Registration, zone scans have no offline queue — there is no
+ * PendingQueueCountSource here, and no offline banner (see final-review Finding 2).
  */
 class ZoneControlViewModel(
     private val stationGateway: ZoneStationGateway,
     private val verdictAdapter: ZoneVerdictAdapter,
     private val scanSource: ScanSource,
-    private val pendingQueueCountSource: PendingQueueCountSource,
     private val overrideSource: CheckinOverrideSource,
 ) : ViewModel() {
 
@@ -71,13 +68,13 @@ class ZoneControlViewModel(
         viewModelScope.launch {
             val config = stationGateway.getConfig()
             stationConfig = config
+            // Exclude the station's bonded BT printer (same SPP UUID as a BT scanner) from
+            // ScanSource's auto-connect candidates — see Finding 1 kdoc on
+            // ScanSource.setExcludedBluetoothAddress. StationConfig.printer is always null for
+            // ZONE_CONTROL, so this is a no-op today, but wired for consistency/future-proofing.
+            scanSource.setExcludedBluetoothAddress(config.printer?.address)
             _uiState.update { it.copy(zoneName = config.workPointName) }
             onScanResumed()
-        }
-        viewModelScope.launch {
-            pendingQueueCountSource.observe().collect { count ->
-                _uiState.update { it.copy(pendingQueueCount = count, offlineBannerVisible = count > 0) }
-            }
         }
         viewModelScope.launch {
             scanSource.connectionState.collect { state ->

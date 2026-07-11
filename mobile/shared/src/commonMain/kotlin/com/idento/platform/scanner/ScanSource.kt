@@ -25,4 +25,13 @@ interface ScanSource {
      * the next [stopScanning] → [startScanning] cycle (e.g. leaving and re-entering the scan
      * tab), so leaving the screen and coming back re-detects the hardware scanner normally. */
     fun preferCamera()
+
+    /** Excludes a bonded Bluetooth MAC [address] from BT-scanner auto-connect candidates — the
+     * station's configured BT badge printer (see `StationConfig.printer?.address`) uses the same
+     * SPP UUID as a BT scanner, so without this a station with a bonded printer and no bonded
+     * scanner would have auto-connect grab the printer instead. Callers (RegistrationHomeViewModel,
+     * ZoneControlViewModel) call this once after loading `StationConfig`, before the first
+     * [startScanning]. Pass `null` to clear the exclusion. No-op on platforms without BT scanning
+     * (iOS). */
+    fun setExcludedBluetoothAddress(address: String?)
 }

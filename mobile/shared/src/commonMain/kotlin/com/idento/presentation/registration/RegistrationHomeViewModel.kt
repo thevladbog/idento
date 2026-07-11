@@ -122,6 +122,11 @@ class RegistrationHomeViewModel(
         viewModelScope.launch {
             val config = stationGateway.getConfig()
             stationConfig = config
+            // Exclude the station's bonded BT printer (same SPP UUID as a BT scanner) from
+            // ScanSource's auto-connect candidates — see Finding 1 kdoc on
+            // ScanSource.setExcludedBluetoothAddress. Must happen before the first
+            // onScanResumed() call below.
+            scanSource.setExcludedBluetoothAddress(config.printer?.address)
             _uiState.update {
                 it.copy(
                     zoneName = config.workPointName,

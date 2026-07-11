@@ -182,12 +182,12 @@ val viewModelModule = module {
         // ZoneControlViewModel follows the same narrow-seam pattern as RegistrationHomeViewModel:
         // ZoneStationGateway is the same StationConfigPreferences-backed lambda shape as
         // RegistrationStationGateway; ZoneScanSource/CheckinOverrideSource are method references
-        // into ZoneRepository/AttendeeRepository; ScanSource and PendingQueueCountSource are the
-        // shared singles already registered above/in AppModule.
+        // into ZoneRepository/AttendeeRepository; ScanSource is the shared single already
+        // registered in AppModule. Unlike RegistrationHomeViewModel, there is no
+        // PendingQueueCountSource here — zone scans have no offline queue (final-review Finding 2).
         val stationConfigPrefs: StationConfigPreferences = get()
         val zoneRepository: ZoneRepository = get()
         val attendeeRepository: AttendeeRepository = get()
-        val offlineQueueRepo: RegistrationOfflineQueueRepository = get()
         ZoneControlViewModel(
             stationGateway = ZoneStationGateway {
                 stationConfigPrefs.stationConfig.filterNotNull().first()
@@ -196,9 +196,6 @@ val viewModelModule = module {
                 ZoneScanSource(zoneRepository::scanZone),
             ),
             scanSource = get<ScanSource>(),
-            pendingQueueCountSource = PendingQueueCountSource {
-                offlineQueueRepo.getPendingCountFlow()
-            },
             overrideSource = CheckinOverrideSource { eventId, zoneId, attendeeId ->
                 attendeeRepository.submitOverride(
                     eventId,
