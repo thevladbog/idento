@@ -98,9 +98,27 @@ class SetupWizardDraftTest {
     fun resetClearsEveryField() {
         val draft = SetupWizardDraft()
         draft.eventId = "evt-1"
+        draft.eventName = "Технопром-2026"
         draft.mode = StationMode.KIOSK
+        draft.dayDate = "2026-07-10"
+        draft.workPointId = "zone-1"
+        draft.workPointName = "Главный вход"
+        draft.printer = PrinterConfig(name = "Zebra ZD421", transport = "bluetooth", address = "00:11:22:33:44:55")
+        draft.autoPrint = true
+        draft.deviceNumber = 3
+        draft.staffName = "staff@idento.app"
+
         draft.reset()
+
         assertEquals("", draft.eventId)
+        assertEquals("", draft.eventName)
         assertEquals(null, draft.mode)
+        assertEquals(null, draft.dayDate)
+        assertEquals("", draft.workPointId)
+        assertEquals("", draft.workPointName)
+        assertEquals(null, draft.printer)
+        assertEquals(false, draft.autoPrint)
+        assertEquals(0, draft.deviceNumber)
+        assertEquals("", draft.staffName)
     }
 }

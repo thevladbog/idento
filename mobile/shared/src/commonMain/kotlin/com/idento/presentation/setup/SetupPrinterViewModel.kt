@@ -77,9 +77,13 @@ class SetupPrinterViewModel(
 
     fun loadPairedPrinters() {
         viewModelScope.launch(exceptionHandler) {
-            bluetoothPrinterService.getPairedPrinters().onSuccess { devices ->
-                _uiState.value = _uiState.value.copy(pairedPrinters = devices)
-            }
+            bluetoothPrinterService.getPairedPrinters()
+                .onSuccess { devices ->
+                    _uiState.value = _uiState.value.copy(pairedPrinters = devices)
+                }
+                .onFailure { error ->
+                    _uiState.value = _uiState.value.copy(error = error.message ?: "Could not load paired printers")
+                }
         }
     }
 

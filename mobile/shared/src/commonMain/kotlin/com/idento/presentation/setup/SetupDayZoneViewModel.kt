@@ -111,7 +111,7 @@ class SetupDayZoneViewModel(
                     _uiState.value = _uiState.value.copy(isLoading = false, days = days, workPoints = workPoints)
                 }
                 is ApiResult.Error -> _uiState.value = _uiState.value.copy(isLoading = false, error = zonesResult.message ?: "Could not load work points")
-                ApiResult.Loading -> {}
+                ApiResult.Loading -> _uiState.value = _uiState.value.copy(isLoading = false)
             }
         }
     }

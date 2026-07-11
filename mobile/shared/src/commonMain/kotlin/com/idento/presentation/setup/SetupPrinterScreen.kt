@@ -73,6 +73,9 @@ fun SetupPrinterScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
+    var ethernetName by remember { mutableStateOf("") }
+    var ethernetIp by remember { mutableStateOf("") }
+    var ethernetPort by remember { mutableStateOf("9100") }
     val hasPrinter = uiState.printer != null
 
     LaunchedEffect(Unit) { viewModel.loadPairedPrinters() }
@@ -121,7 +124,16 @@ fun SetupPrinterScreen(
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when (selectedTab) {
                 0 -> BluetoothTab(uiState = uiState, viewModel = viewModel, modifier = Modifier.fillMaxSize())
-                1 -> EthernetTab(viewModel = viewModel, modifier = Modifier.fillMaxSize())
+                1 -> EthernetTab(
+                    viewModel = viewModel,
+                    name = ethernetName,
+                    onNameChange = { ethernetName = it },
+                    ip = ethernetIp,
+                    onIpChange = { ethernetIp = it },
+                    port = ethernetPort,
+                    onPortChange = { ethernetPort = it },
+                    modifier = Modifier.fillMaxSize(),
+                )
                 else -> QrTab(cameraService = cameraService, viewModel = viewModel, modifier = Modifier.fillMaxSize())
             }
         }
@@ -222,15 +234,20 @@ private fun BluetoothTab(uiState: SetupPrinterUiState, viewModel: SetupPrinterVi
 }
 
 @Composable
-private fun EthernetTab(viewModel: SetupPrinterViewModel, modifier: Modifier = Modifier) {
-    var name by remember { mutableStateOf("") }
-    var ip by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("9100") }
-
+private fun EthernetTab(
+    viewModel: SetupPrinterViewModel,
+    name: String,
+    onNameChange: (String) -> Unit,
+    ip: String,
+    onIpChange: (String) -> Unit,
+    port: String,
+    onPortChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier = modifier.padding(horizontal = IdentoSpacing.xl)) {
         IdentoTextField(
             value = name,
-            onValueChange = { name = it },
+            onValueChange = onNameChange,
             label = stringResource(StringKey.SETUP_PRINTER_ETHERNET_NAME_LABEL),
             placeholder = "Zebra ZD421",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
@@ -241,7 +258,7 @@ private fun EthernetTab(viewModel: SetupPrinterViewModel, modifier: Modifier = M
 
         IdentoTextField(
             value = ip,
-            onValueChange = { ip = it },
+            onValueChange = onIpChange,
             label = stringResource(StringKey.SETUP_PRINTER_ETHERNET_IP_LABEL),
             placeholder = "192.168.1.50",
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
@@ -252,7 +269,7 @@ private fun EthernetTab(viewModel: SetupPrinterViewModel, modifier: Modifier = M
 
         IdentoTextField(
             value = port,
-            onValueChange = { newValue -> port = newValue.filter(Char::isDigit) },
+            onValueChange = { newValue -> onPortChange(newValue.filter(Char::isDigit)) },
             label = stringResource(StringKey.SETUP_PRINTER_ETHERNET_PORT_LABEL),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth(),
