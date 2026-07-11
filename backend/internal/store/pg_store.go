@@ -363,6 +363,14 @@ func (s *PGStore) GetUserByEmail(ctx context.Context, email string) (*models.Use
 	return &u, nil
 }
 
+// HasAnyUsers reports whether the users table has any row at all, across
+// every tenant — used to detect a genuinely fresh on-prem install.
+func (s *PGStore) HasAnyUsers(ctx context.Context) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users)`).Scan(&exists)
+	return exists, err
+}
+
 func (s *PGStore) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	var u models.User
 	query := `SELECT id, tenant_id, email, password_hash, role, is_super_admin, qr_token, qr_token_created_at, created_at, updated_at 

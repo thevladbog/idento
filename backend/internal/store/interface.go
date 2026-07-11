@@ -32,6 +32,10 @@ type Store interface {
 
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	// HasAnyUsers reports whether the users table has any row at all,
+	// across every tenant. Used by on-prem's first-run bootstrap to decide
+	// whether the database is a genuinely fresh install.
+	HasAnyUsers(ctx context.Context) (bool, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.User, error)
 	GetUserByQRToken(ctx context.Context, token string) (*models.User, error)

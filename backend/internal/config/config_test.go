@@ -56,3 +56,25 @@ func TestJWTSecretFallsBackToEnv(t *testing.T) {
 		t.Errorf("JWTSecret() = %q, want env-secret", got)
 	}
 }
+
+func TestLoadReadsAdminOrgNameWithoutDefaulting(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("IDENTO_ORG_NAME", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.AdminOrgName != "" {
+		t.Errorf("AdminOrgName = %q, want empty (Load must not apply the bootstrap default)", cfg.AdminOrgName)
+	}
+
+	t.Setenv("IDENTO_ORG_NAME", "Acme Events")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.AdminOrgName != "Acme Events" {
+		t.Errorf("AdminOrgName = %q, want %q", cfg.AdminOrgName, "Acme Events")
+	}
+}
