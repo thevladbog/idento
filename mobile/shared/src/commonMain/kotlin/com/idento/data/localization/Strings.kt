@@ -152,12 +152,79 @@ enum class StringKey {
     // Offline banner (parameterized templates — use "{count}"/"{time}" as literal placeholder tokens)
     OFFLINE_QUEUED_TEMPLATE,
     OFFLINE_LAST_SYNC_TEMPLATE,
+
+    // Setup wizard — Login
+    SETUP_LOGIN_TITLE,
+    SETUP_LOGIN_SCAN_QR,
+    SETUP_LOGIN_SCAN_HINT,
+    SETUP_LOGIN_MANAGER_TOGGLE,
+    SETUP_LOGIN_BACK_TO_QR,
+    SETUP_LOGIN_PROVISIONING,
+    SETUP_LOGIN_ERROR_INVALID_TOKEN,
+    SETUP_LOGIN_ERROR_GENERIC,
+
+    // Setup wizard — Event (step 1/4)
+    SETUP_STEP_EVENT_LABEL,
+    SETUP_STEP_EVENT_TITLE,
+    SETUP_STEP_EVENT_EMPTY,
+
+    // Setup wizard — Mode (step 2/4)
+    SETUP_STEP_MODE_LABEL,
+    SETUP_STEP_MODE_TITLE,
+    SETUP_MODE_REGISTRATION_NAME,
+    SETUP_MODE_REGISTRATION_DESC,
+    SETUP_MODE_ZONE_CONTROL_NAME,
+    SETUP_MODE_ZONE_CONTROL_DESC,
+    SETUP_MODE_KIOSK_NAME,
+    SETUP_MODE_KIOSK_DESC,
+
+    // Setup wizard — Day & zone (step 3/4)
+    SETUP_STEP_DAYZONE_LABEL,
+    SETUP_STEP_DAYZONE_TITLE,
+    SETUP_STEP_WORKPOINT_ONLY_TITLE,
+    SETUP_WORKPOINT_EMPTY,
+
+    // Setup wizard — Printer (step 4/4)
+    SETUP_STEP_PRINTER_LABEL,
+    SETUP_STEP_PRINTER_TITLE,
+    SETUP_PRINTER_TAB_BLUETOOTH,
+    SETUP_PRINTER_TAB_ETHERNET,
+    SETUP_PRINTER_TAB_QR,
+    SETUP_PRINTER_ETHERNET_NAME_LABEL,
+    SETUP_PRINTER_ETHERNET_IP_LABEL,
+    SETUP_PRINTER_ETHERNET_PORT_LABEL,
+    SETUP_PRINTER_QR_HINT,
+    SETUP_PRINTER_NONE_PAIRED,
+    SETUP_PRINTER_TEST_PRINT,
+    SETUP_PRINTER_TEST_PRINT_SENT,
+    SETUP_PRINTER_TEST_PRINT_FAILED,
+    SETUP_PRINTER_AUTOPRINT_TOGGLE,
+
+    // Setup wizard — Done / station home
+    SETUP_DONE_TITLE,
+    SETUP_STATION_HOME_DEVICE,
+    SETUP_EXIT_STATION,
+    SETUP_EXIT_STATION_CONFIRM_TITLE,
+    SETUP_EXIT_STATION_CONFIRM_BODY,
+    SETUP_DONE_LABEL_EVENT,
+    SETUP_DONE_LABEL_MODE,
+    SETUP_DONE_LABEL_DAY,
+    SETUP_DONE_LABEL_WORKPOINT,
+    SETUP_DONE_LABEL_PRINTER,
+    SETUP_DONE_LABEL_AUTOPRINT,
+    SETUP_DONE_LABEL_DEVICE,
+    SETUP_DONE_AUTOPRINT_ON,
+    SETUP_DONE_AUTOPRINT_OFF,
+
+    // Setup wizard — shared wizard chrome
+    SETUP_WIZARD_BACK,
+    SETUP_WIZARD_CONTINUE,
 }
 
 /**
  * English translations
  */
-private val englishStrings = mapOf(
+internal val englishStrings = mapOf(
     // Common
     StringKey.WELCOME to "Welcome to Idento",
     StringKey.LOGOUT to "Logout",
@@ -276,12 +343,79 @@ private val englishStrings = mapOf(
     // Offline banner
     StringKey.OFFLINE_QUEUED_TEMPLATE to "Offline · {count} check-ins queued",
     StringKey.OFFLINE_LAST_SYNC_TEMPLATE to "Syncs automatically · last sync {time}",
+
+    // Setup wizard — Login
+    StringKey.SETUP_LOGIN_TITLE to "Set up this station",
+    StringKey.SETUP_LOGIN_SCAN_QR to "Scan staff QR",
+    StringKey.SETUP_LOGIN_SCAN_HINT to "Point the camera at the setup QR code",
+    StringKey.SETUP_LOGIN_MANAGER_TOGGLE to "Sign in as manager instead",
+    StringKey.SETUP_LOGIN_BACK_TO_QR to "Scan QR instead",
+    StringKey.SETUP_LOGIN_PROVISIONING to "Setting up station…",
+    StringKey.SETUP_LOGIN_ERROR_INVALID_TOKEN to "This QR code is invalid or expired",
+    StringKey.SETUP_LOGIN_ERROR_GENERIC to "Could not set up this station",
+
+    // Setup wizard — Event (step 1/4)
+    StringKey.SETUP_STEP_EVENT_LABEL to "1/4 Event",
+    StringKey.SETUP_STEP_EVENT_TITLE to "Choose an event",
+    StringKey.SETUP_STEP_EVENT_EMPTY to "No events available",
+
+    // Setup wizard — Mode (step 2/4)
+    StringKey.SETUP_STEP_MODE_LABEL to "2/4 Mode",
+    StringKey.SETUP_STEP_MODE_TITLE to "Choose a station mode",
+    StringKey.SETUP_MODE_REGISTRATION_NAME to "Registration",
+    StringKey.SETUP_MODE_REGISTRATION_DESC to "Scan attendees in at the entrance and print badges",
+    StringKey.SETUP_MODE_ZONE_CONTROL_NAME to "Zone control",
+    StringKey.SETUP_MODE_ZONE_CONTROL_DESC to "Check access into a specific zone, no printing",
+    StringKey.SETUP_MODE_KIOSK_NAME to "Kiosk",
+    StringKey.SETUP_MODE_KIOSK_DESC to "Self-service check-in for attendees",
+
+    // Setup wizard — Day & zone (step 3/4)
+    StringKey.SETUP_STEP_DAYZONE_LABEL to "3/4 Day & zone",
+    StringKey.SETUP_STEP_DAYZONE_TITLE to "Choose a day and work point",
+    StringKey.SETUP_STEP_WORKPOINT_ONLY_TITLE to "Choose a registration point",
+    StringKey.SETUP_WORKPOINT_EMPTY to "No work points available for your account",
+
+    // Setup wizard — Printer (step 4/4)
+    StringKey.SETUP_STEP_PRINTER_LABEL to "4/4 Printer",
+    StringKey.SETUP_STEP_PRINTER_TITLE to "Set up a printer",
+    StringKey.SETUP_PRINTER_TAB_BLUETOOTH to "Bluetooth",
+    StringKey.SETUP_PRINTER_TAB_ETHERNET to "Ethernet",
+    StringKey.SETUP_PRINTER_TAB_QR to "QR code",
+    StringKey.SETUP_PRINTER_ETHERNET_NAME_LABEL to "Printer name",
+    StringKey.SETUP_PRINTER_ETHERNET_IP_LABEL to "Printer IP address",
+    StringKey.SETUP_PRINTER_ETHERNET_PORT_LABEL to "Port",
+    StringKey.SETUP_PRINTER_QR_HINT to "Scan the QR code printed on the printer",
+    StringKey.SETUP_PRINTER_NONE_PAIRED to "No paired Bluetooth printers",
+    StringKey.SETUP_PRINTER_TEST_PRINT to "Test print",
+    StringKey.SETUP_PRINTER_TEST_PRINT_SENT to "Test page sent",
+    StringKey.SETUP_PRINTER_TEST_PRINT_FAILED to "Test print failed",
+    StringKey.SETUP_PRINTER_AUTOPRINT_TOGGLE to "Auto-print on check-in",
+
+    // Setup wizard — Done / station home
+    StringKey.SETUP_DONE_TITLE to "Done — to scanner",
+    StringKey.SETUP_STATION_HOME_DEVICE to "Device #{n}",
+    StringKey.SETUP_EXIT_STATION to "Exit station",
+    StringKey.SETUP_EXIT_STATION_CONFIRM_TITLE to "Exit this station?",
+    StringKey.SETUP_DONE_LABEL_EVENT to "Event",
+    StringKey.SETUP_DONE_LABEL_MODE to "Mode",
+    StringKey.SETUP_DONE_LABEL_DAY to "Day",
+    StringKey.SETUP_DONE_LABEL_WORKPOINT to "Work point",
+    StringKey.SETUP_DONE_LABEL_PRINTER to "Printer",
+    StringKey.SETUP_DONE_LABEL_AUTOPRINT to "Auto-print",
+    StringKey.SETUP_DONE_LABEL_DEVICE to "Device",
+    StringKey.SETUP_DONE_AUTOPRINT_ON to "On",
+    StringKey.SETUP_DONE_AUTOPRINT_OFF to "Off",
+    StringKey.SETUP_EXIT_STATION_CONFIRM_BODY to "You'll need to set it up again to use it",
+
+    // Setup wizard — shared wizard chrome
+    StringKey.SETUP_WIZARD_BACK to "Back",
+    StringKey.SETUP_WIZARD_CONTINUE to "Continue",
 )
 
 /**
  * Russian translations
  */
-private val russianStrings = mapOf(
+internal val russianStrings = mapOf(
     // Common
     StringKey.WELCOME to "Добро пожаловать в Иденто",
     StringKey.LOGOUT to "Выйти",
@@ -400,6 +534,73 @@ private val russianStrings = mapOf(
     // Offline banner
     StringKey.OFFLINE_QUEUED_TEMPLATE to "Офлайн · {count} чек-инов в очереди",
     StringKey.OFFLINE_LAST_SYNC_TEMPLATE to "Синхронизируются автоматически · посл. синх. {time}",
+
+    // Setup wizard — Login
+    StringKey.SETUP_LOGIN_TITLE to "Настройка станции",
+    StringKey.SETUP_LOGIN_SCAN_QR to "Сканировать QR-код персонала",
+    StringKey.SETUP_LOGIN_SCAN_HINT to "Наведите камеру на QR-код настройки станции",
+    StringKey.SETUP_LOGIN_MANAGER_TOGGLE to "Войти как менеджер",
+    StringKey.SETUP_LOGIN_BACK_TO_QR to "Сканировать QR-код",
+    StringKey.SETUP_LOGIN_PROVISIONING to "Настраиваем станцию…",
+    StringKey.SETUP_LOGIN_ERROR_INVALID_TOKEN to "QR-код недействителен или устарел",
+    StringKey.SETUP_LOGIN_ERROR_GENERIC to "Не удалось настроить станцию",
+
+    // Setup wizard — Event (step 1/4)
+    StringKey.SETUP_STEP_EVENT_LABEL to "1/4 Мероприятие",
+    StringKey.SETUP_STEP_EVENT_TITLE to "Выберите мероприятие",
+    StringKey.SETUP_STEP_EVENT_EMPTY to "Нет доступных мероприятий",
+
+    // Setup wizard — Mode (step 2/4)
+    StringKey.SETUP_STEP_MODE_LABEL to "2/4 Режим",
+    StringKey.SETUP_STEP_MODE_TITLE to "Выберите режим станции",
+    StringKey.SETUP_MODE_REGISTRATION_NAME to "Регистрация",
+    StringKey.SETUP_MODE_REGISTRATION_DESC to "Отмечайте участников на входе и печатайте бейджи",
+    StringKey.SETUP_MODE_ZONE_CONTROL_NAME to "Контроль зоны",
+    StringKey.SETUP_MODE_ZONE_CONTROL_DESC to "Проверяйте допуск в зону, без печати",
+    StringKey.SETUP_MODE_KIOSK_NAME to "Киоск",
+    StringKey.SETUP_MODE_KIOSK_DESC to "Самостоятельная регистрация участников",
+
+    // Setup wizard — Day & zone (step 3/4)
+    StringKey.SETUP_STEP_DAYZONE_LABEL to "3/4 День и зона",
+    StringKey.SETUP_STEP_DAYZONE_TITLE to "Выберите день и точку",
+    StringKey.SETUP_STEP_WORKPOINT_ONLY_TITLE to "Выберите точку регистрации",
+    StringKey.SETUP_WORKPOINT_EMPTY to "Нет доступных точек для вашей учётной записи",
+
+    // Setup wizard — Printer (step 4/4)
+    StringKey.SETUP_STEP_PRINTER_LABEL to "4/4 Принтер",
+    StringKey.SETUP_STEP_PRINTER_TITLE to "Настройте принтер",
+    StringKey.SETUP_PRINTER_TAB_BLUETOOTH to "Bluetooth",
+    StringKey.SETUP_PRINTER_TAB_ETHERNET to "Ethernet",
+    StringKey.SETUP_PRINTER_TAB_QR to "QR-код",
+    StringKey.SETUP_PRINTER_ETHERNET_NAME_LABEL to "Название принтера",
+    StringKey.SETUP_PRINTER_ETHERNET_IP_LABEL to "IP-адрес принтера",
+    StringKey.SETUP_PRINTER_ETHERNET_PORT_LABEL to "Порт",
+    StringKey.SETUP_PRINTER_QR_HINT to "Отсканируйте QR-код на корпусе принтера",
+    StringKey.SETUP_PRINTER_NONE_PAIRED to "Нет сопряжённых Bluetooth-принтеров",
+    StringKey.SETUP_PRINTER_TEST_PRINT to "Тестовая печать",
+    StringKey.SETUP_PRINTER_TEST_PRINT_SENT to "Тестовая страница отправлена",
+    StringKey.SETUP_PRINTER_TEST_PRINT_FAILED to "Не удалось напечатать тестовую страницу",
+    StringKey.SETUP_PRINTER_AUTOPRINT_TOGGLE to "Автопечать при чек-ине",
+
+    // Setup wizard — Done / station home
+    StringKey.SETUP_DONE_TITLE to "Готово — к сканеру",
+    StringKey.SETUP_STATION_HOME_DEVICE to "Устройство №{n}",
+    StringKey.SETUP_EXIT_STATION to "Выйти со станции",
+    StringKey.SETUP_EXIT_STATION_CONFIRM_TITLE to "Выйти со станции?",
+    StringKey.SETUP_EXIT_STATION_CONFIRM_BODY to "Понадобится настроить её заново",
+    StringKey.SETUP_DONE_LABEL_EVENT to "Мероприятие",
+    StringKey.SETUP_DONE_LABEL_MODE to "Режим",
+    StringKey.SETUP_DONE_LABEL_DAY to "День",
+    StringKey.SETUP_DONE_LABEL_WORKPOINT to "Точка",
+    StringKey.SETUP_DONE_LABEL_PRINTER to "Принтер",
+    StringKey.SETUP_DONE_LABEL_AUTOPRINT to "Автопечать",
+    StringKey.SETUP_DONE_LABEL_DEVICE to "Устройство",
+    StringKey.SETUP_DONE_AUTOPRINT_ON to "Вкл",
+    StringKey.SETUP_DONE_AUTOPRINT_OFF to "Выкл",
+
+    // Setup wizard — shared wizard chrome
+    StringKey.SETUP_WIZARD_BACK to "Назад",
+    StringKey.SETUP_WIZARD_CONTINUE to "Продолжить",
 )
 
 /**

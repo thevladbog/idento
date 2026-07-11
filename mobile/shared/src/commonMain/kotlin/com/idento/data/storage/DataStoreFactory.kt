@@ -20,4 +20,5 @@ object DataStoreNames {
     const val SCANNER = "scanner_settings"
     const val CHECKIN = "checkin_preferences"
     const val DISPLAY_TEMPLATES = "display_templates"
+    const val STATION_CONFIG = "station_config"
 }
