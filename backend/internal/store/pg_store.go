@@ -614,8 +614,16 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 	}
 
 	if search != "" {
-		query += fmt.Sprintf(" AND (a.first_name ILIKE $%d OR a.last_name ILIKE $%d OR a.email ILIKE $%d OR a.code ILIKE $%d)", argCount, argCount, argCount, argCount)
-		args = append(args, "%"+search+"%")
+		// Escape ILIKE's own wildcard characters (% and _) and the escape character
+		// itself (\) in the user-supplied search text before wrapping it in % for
+		// substring matching -- otherwise "jane_doe" would also match "janeXdoe"
+		// since _ means "any one character" to ILIKE (email addresses commonly
+		// contain literal underscores).
+		escapedSearch := strings.ReplaceAll(search, `\`, `\\`)
+		escapedSearch = strings.ReplaceAll(escapedSearch, "%", `\%`)
+		escapedSearch = strings.ReplaceAll(escapedSearch, "_", `\_`)
+		query += fmt.Sprintf(" AND (a.first_name ILIKE $%d OR a.last_name ILIKE $%d OR a.email ILIKE $%d OR a.code ILIKE $%d) ESCAPE '\\'", argCount, argCount, argCount, argCount)
+		args = append(args, "%"+escapedSearch+"%")
 	}
 
 	query += " ORDER BY a.last_name, a.first_name"

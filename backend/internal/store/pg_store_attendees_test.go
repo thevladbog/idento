@@ -108,6 +108,40 @@ func TestGetAttendeesByEventID_SearchFilterReturnsPartialCaseInsensitiveMatches(
 	}
 }
 
+// (b2) A `search` value containing ILIKE's own wildcard characters (% and _)
+// is escaped before being sent, so e.g. "jane_doe" only matches a literal
+// underscore rather than ILIKE's "any one character" wildcard.
+func TestGetAttendeesByEventID_SearchFilterEscapesIlikeWildcards(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	matchID := uuid.New()
+	now := time.Now()
+
+	rows := pgxmock.NewRows(attendeesByEventColumns)
+	addAttendeeRow(rows, matchID, eventID, "Jane", "Doe", "jane_doe@example.com", "CODE-JANE", now)
+
+	mock.ExpectQuery(`ILIKE \$2.*ESCAPE '\\'`).
+		WithArgs(eventID, `%jane\_doe%`).
+		WillReturnRows(rows)
+
+	s := &PGStore{db: mock}
+	attendees, err := s.GetAttendeesByEventID(context.Background(), eventID, "", "jane_doe")
+	if err != nil {
+		t.Fatalf("GetAttendeesByEventID: %v", err)
+	}
+	if len(attendees) != 1 || attendees[0].ID != matchID {
+		t.Fatalf("got %+v, want exactly matchID %s", attendees, matchID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 // (c) No filters (both "") returns everyone, unchanged from today's
 // (pre-fix) behavior — args must be exactly [eventID], no extra placeholders.
 func TestGetAttendeesByEventID_NoFiltersReturnsEveryone(t *testing.T) {
