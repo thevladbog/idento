@@ -792,6 +792,10 @@ i18n
           lifecycle_archive_description: "“{{tenant}}” becomes read-blocked and is scheduled for retention cleanup. This cannot be reactivated from the UI.",
           lifecycle_archive_confirm: "Archive",
           lifecycle_archive_done: "Organization archived",
+          td_suspend_title: "Suspend organization?",
+          td_suspend_consequence: "This affects {{users}} users and {{events}} events for “{{tenant}}”. All API access will be blocked within ~2 minutes.",
+          td_suspend_acknowledge: "I understand this blocks access for this organization's users immediately.",
+          td_reasonOptionalLabel: "Reason (optional, visible in the audit log)",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1688,6 +1692,10 @@ i18n
           lifecycle_archive_description: "«{{tenant}}» будет заблокирована для чтения и поставлена в очередь на удаление по истечении срока хранения. Это действие нельзя отменить из интерфейса.",
           lifecycle_archive_confirm: "Архивировать",
           lifecycle_archive_done: "Организация архивирована",
+          td_suspend_title: "Приостановить организацию?",
+          td_suspend_consequence: "Это затронет {{users}} пользователей и {{events}} мероприятий «{{tenant}}». Доступ к API будет заблокирован в течение ~2 минут.",
+          td_suspend_acknowledge: "Я понимаю, что это немедленно заблокирует доступ для пользователей этой организации.",
+          td_reasonOptionalLabel: "Причина (необязательно, отображается в журнале аудита)",
 
           // Analytics
           totalTenants: "Всего организаций",
