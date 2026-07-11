@@ -22,8 +22,9 @@ type Config struct {
 	CORSAllowedOrigins []string
 	Port               string
 	DeploymentMode     string
-	AdminEmail         string // on-prem bootstrap (used in Phase 2)
-	AdminPassword      string // on-prem bootstrap (used in Phase 2)
+	AdminEmail         string // on-prem bootstrap
+	AdminPassword      string // on-prem bootstrap
+	AdminOrgName       string // on-prem bootstrap; empty means "apply the default at bootstrap time"
 }
 
 var current *Config
@@ -38,6 +39,7 @@ func Load() (*Config, error) {
 		DeploymentMode: os.Getenv("DEPLOYMENT_MODE"),
 		AdminEmail:     os.Getenv("IDENTO_ADMIN_EMAIL"),
 		AdminPassword:  os.Getenv("IDENTO_ADMIN_PASSWORD"),
+		AdminOrgName:   os.Getenv("IDENTO_ORG_NAME"),
 	}
 
 	if cfg.DatabaseURL == "" {
