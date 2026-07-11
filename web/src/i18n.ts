@@ -816,6 +816,14 @@ i18n
           td_usersEmpty: "No users in this organization yet.",
           td_nav_activity: "Activity",
           td_activityEmpty: "No activity recorded for this organization yet.",
+          auditLog_actorLabel: "Actor",
+          auditLog_allAdmins: "All admins",
+          auditLog_tenantLabel: "Tenant",
+          auditLog_allTenants: "All tenants",
+          auditLog_tenantSearchPlaceholder: "Search tenants by name…",
+          auditLog_noTenantsFound: "No tenants found",
+          auditLog_dateFromLabel: "From",
+          auditLog_dateToLabel: "To",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1736,6 +1744,14 @@ i18n
           td_usersEmpty: "В этой организации пока нет пользователей.",
           td_nav_activity: "Активность",
           td_activityEmpty: "Для этой организации пока не зафиксировано активности.",
+          auditLog_actorLabel: "Автор",
+          auditLog_allAdmins: "Все администраторы",
+          auditLog_tenantLabel: "Организация",
+          auditLog_allTenants: "Все организации",
+          auditLog_tenantSearchPlaceholder: "Поиск организаций по названию…",
+          auditLog_noTenantsFound: "Организации не найдены",
+          auditLog_dateFromLabel: "С",
+          auditLog_dateToLabel: "По",
 
           // Analytics
           totalTenants: "Всего организаций",
