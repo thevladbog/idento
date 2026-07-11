@@ -125,10 +125,10 @@ class AttendeeApiService(private val apiClient: ApiClient) {
      * Returns `null` (inside [Result.success]) when the backend genuinely finds no attendee
      * matching [code] for [eventId] — the endpoint filters server-side and correctly responds
      * 200 OK with an empty list for an unregistered/invalid code. A real network/HTTP failure
-     * still throws and is captured by [runCatching] as [Result.failure], so callers can tell
+     * still throws and is captured by [apiRunCatching] as [Result.failure], so callers can tell
      * "no match" apart from "we couldn't complete the lookup".
      */
-    suspend fun getAttendeeByCode(eventId: String, code: String): Result<Attendee?> = runCatching {
+    suspend fun getAttendeeByCode(eventId: String, code: String): Result<Attendee?> = apiRunCatching {
         apiClient.httpClient.get("/api/events/$eventId/attendees") {
             parameter("code", code)
         }.body<List<Attendee>>().firstOrNull()
