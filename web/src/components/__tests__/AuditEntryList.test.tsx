@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AuditEntryList } from '../AuditEntryList';
 import type { AuditLogEntry } from '@/lib/auditFormat';
@@ -34,14 +34,13 @@ describe('AuditEntryList', () => {
     // under '2026-07-11'. A viewer west of UTC (e.g. US Pacific, UTC-7 in July) must still see
     // a "July 11" heading — not "July 10" — even though new Date('2026-07-11') UTC-parses to a
     // local instant that falls on July 10 in that timezone.
-    const originalTz = process.env.TZ;
-    process.env.TZ = 'America/Los_Angeles';
+    vi.stubEnv('TZ', 'America/Los_Angeles');
     try {
       render(<AuditEntryList entries={entries} emptyLabel="No activity" />);
       expect(screen.getByText('July 11, 2026')).toBeInTheDocument();
       expect(screen.queryByText('July 10, 2026')).not.toBeInTheDocument();
     } finally {
-      process.env.TZ = originalTz;
+      vi.unstubAllEnvs();
     }
   });
 });
