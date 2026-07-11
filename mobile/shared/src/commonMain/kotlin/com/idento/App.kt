@@ -63,15 +63,15 @@ fun App() {
     // composed once this is non-null, so there is a brief blank frame instead of a wrong route.
     var startDestination by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
-        val hasStationConfig = try {
+        val stationConfig = try {
             stationConfigPreferences.stationConfig
                 .catch { e ->
                     println("⚠️ Failed to load station config on startup: ${e.message}")
                 }
-                .first() != null
+                .first()
         } catch (e: Exception) {
             println("⚠️ Station config check failed: ${e.message}")
-            false
+            null
         }
         val isLoggedIn = try {
             authPreferences.isLoggedIn()
@@ -79,7 +79,11 @@ fun App() {
             println("⚠️ Login check failed: ${e.message}")
             false
         }
-        startDestination = resolveStartDestination(hasStationConfig = hasStationConfig, isLoggedIn = isLoggedIn)
+        startDestination = resolveStartDestination(
+            hasStationConfig = stationConfig != null,
+            isLoggedIn = isLoggedIn,
+            stationMode = stationConfig?.mode,
+        )
     }
 
     // Use global ThemeState for instant theme switching

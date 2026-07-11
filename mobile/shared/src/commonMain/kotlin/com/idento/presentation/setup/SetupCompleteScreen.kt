@@ -60,6 +60,7 @@ private fun modeNameKey(mode: StationMode): StringKey = when (mode) {
 fun SetupCompleteScreen(
     viewModel: SetupCompleteViewModel = koinInject(),
     onExitStation: () -> Unit = {},
+    onNavigateToStation: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showExitConfirm by remember { mutableStateOf(false) }
