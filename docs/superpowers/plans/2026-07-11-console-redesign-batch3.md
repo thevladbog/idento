@@ -817,13 +817,18 @@ describe('AuditLog', () => {
     await waitFor(() => expect(screen.getByText(/Status: active → suspended/)).toBeInTheDocument());
   });
 
-  it('re-fetches with the action filter when changed', async () => {
+  it('re-fetches scoped to a tenant when one is picked from the combobox', async () => {
     render(<AuditLog />);
     await waitFor(() => expect(screen.getByText(/Status: active → suspended/)).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: '' }) || screen.getAllByRole('combobox')[0]);
-    // Selects render via a portal; assert via the underlying data call instead of DOM interaction fragility.
-    const lastCallBeforeChange = vi.mocked(api.get).mock.calls.filter(([u]) => (u as string).includes('/audit-log')).length;
-    expect(lastCallBeforeChange).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /all tenants/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('combobox', { name: /all tenants/i }));
+    fireEvent.click(await screen.findByText('Acme Corp'));
+    await waitFor(() => {
+      const calls = vi.mocked(api.get).mock.calls.filter(([u]) => (u as string).includes('/audit-log'));
+      const lastCall = calls[calls.length - 1];
+      const params = (lastCall[1] as { params?: Record<string, unknown> })?.params ?? {};
+      expect(params.target_id).toBe('t1');
+    });
   });
 
   it('includes the date range in the audit-log request when both dates are set', async () => {
