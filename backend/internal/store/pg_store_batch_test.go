@@ -45,7 +45,9 @@ func TestApplyBatchCheckin_CheckinPersistsDeviceAndPointName(t *testing.T) {
 		WithArgs(clientUUID).
 		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
 
-	// GetAttendeeByID (inside ApplyBatchCheckin): attendee not yet checked in.
+	// GetAttendeeByID (inside ApplyBatchCheckin): existence check only, not
+	// used to decide the write — the row's checkin_status here is irrelevant
+	// to the outcome, which is decided solely by the guarded UPDATE below.
 	mock.ExpectQuery(`FROM attendees WHERE id`).
 		WithArgs(attendeeID).
 		WillReturnRows(pgxmock.NewRows(attendeeSelectColumns).AddRow(
@@ -54,16 +56,11 @@ func TestApplyBatchCheckin_CheckinPersistsDeviceAndPointName(t *testing.T) {
 			0, nil, false, nil, now, now,
 		))
 
-	// The write must now carry the device number + point name alongside the
-	// pre-existing checkin_status/checked_in_at/checked_in_by columns.
-	mock.ExpectExec(`UPDATE attendees SET`).
-		WithArgs(
-			pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), // first_name..position
-			true, &at, &staffUserID, &deviceNumber, &pointName, // checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name
-			pgxmock.AnyArg(), pgxmock.AnyArg(), // printed_count, blocked
-			pgxmock.AnyArg(), pgxmock.AnyArg(), pgxmock.AnyArg(), // block_reason, custom_fields, deleted_at
-			attendeeID,
-		).
+	// The single atomic guarded UPDATE: it must carry the device number +
+	// point name alongside checked_in_at/checked_in_by, and affects exactly
+	// one row because checkin_status is still false for this attendee.
+	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
+		WithArgs(at, &staffUserID, &deviceNumber, &pointName, attendeeID).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
@@ -203,10 +200,16 @@ func TestApplyBatchCheckin_ZoneEntryDoesNotTouchCheckinDeviceOrPoint(t *testing.
 // is NOT a client_uuid replay) for an attendee whose checkin_status is
 // already true must:
 //  1. return BatchCheckinAlreadyCheckedIn, not BatchCheckinCreated, and
-//  2. never call UpdateAttendee — the original check-in's
+//  2. have its guarded `UPDATE ... WHERE checkin_status = false` affect zero
+//     rows — the original check-in's
 //     checked_in_at/checked_in_by/checked_in_device_number/checked_in_point_name
-//     must survive untouched, since a mock expecting no UPDATE will fail the
-//     test if the implementation regresses to writing anyway.
+//     must survive untouched. The implementation always issues this UPDATE
+//     (the decision is made by its row count, not by a prior Go-level read),
+//     so the mock scripts it explicitly with a 0-row result rather than
+//     omitting it — an implementation that regressed to writing
+//     unconditionally (ignoring the WHERE guard / affected-row count) would
+//     still match this exec expectation but the "0 rows affected" branch
+//     leads to a wrong outcome assertion below.
 func TestApplyBatchCheckin_AlreadyCheckedInByAnotherDeviceDoesNotRewrite(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
@@ -234,8 +237,10 @@ func TestApplyBatchCheckin_AlreadyCheckedInByAnotherDeviceDoesNotRewrite(t *test
 		WithArgs(newClientUUID).
 		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
 
-	// GetAttendeeByID: attendee was already checked in (by a different
-	// device/staff user) prior to this request.
+	// GetAttendeeByID: existence check only. The attendee was already checked
+	// in (by a different device/staff user) prior to this request, but that
+	// fact is surfaced by the guarded UPDATE's row count below, not by this
+	// read.
 	mock.ExpectQuery(`FROM attendees WHERE id`).
 		WithArgs(attendeeID).
 		WillReturnRows(pgxmock.NewRows(attendeeSelectColumns).AddRow(
@@ -244,10 +249,13 @@ func TestApplyBatchCheckin_AlreadyCheckedInByAnotherDeviceDoesNotRewrite(t *test
 			0, nil, false, nil, now, now,
 		))
 
-	// Deliberately no `UPDATE attendees SET` expectation is scripted: if the
-	// implementation regressed to writing on an already-checked-in attendee,
-	// this exec would have no matching expectation and pgxmock would return
-	// an error, which the assertions below would surface.
+	// The guarded UPDATE is still issued with the new device's values (that's
+	// the whole point of making Postgres the arbiter), but affects zero rows
+	// because checkin_status is already true — WHERE checkin_status = false
+	// no longer matches this row.
+	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
+		WithArgs(newAt, &staffUserID, &newDevice, &newPoint, attendeeID).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
 		WithArgs(newClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), newDevice, newAt).
@@ -339,6 +347,131 @@ func TestApplyBatchCheckin_DuplicateClientUUIDReturnsDistinctOutcome(t *testing.
 	}
 	if outcome != BatchCheckinDuplicateClientUUID {
 		t.Fatalf("expected BatchCheckinDuplicateClientUUID, got %v", outcome)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestApplyBatchCheckin_ConcurrentCheckinsRaceSecondCallGetsAlreadyCheckedIn
+// is the direct regression test for the TOCTOU race this fix closes: two
+// "checkin" items for the SAME attendee, submitted with different
+// client_uuids — exactly what two devices scanning the same badge at nearly
+// the same moment would produce. Before this fix, ApplyBatchCheckin read
+// attendee.CheckinStatus once via GetAttendeeByID and decided whether to
+// write from that in-memory value; both near-simultaneous calls could
+// observe checkin_status=false and both would then unconditionally call
+// UpdateAttendee, with the second silently overwriting the first's
+// checked_in_at/checked_in_by/checked_in_device_number/checked_in_point_name
+// AND both incorrectly reporting BatchCheckinCreated.
+//
+// The fix makes the decision atomic at the database level: the guarded
+// `UPDATE ... WHERE checkin_status = false` is the sole arbiter. This test
+// scripts the first call's guarded UPDATE affecting 1 row (it wins the race)
+// and the second call's guarded UPDATE — despite carrying a different
+// client_uuid and a GetAttendeeByID read that (as in the real race) still
+// observes checkin_status=false — affecting 0 rows, simulating that the
+// first call's write already committed in Postgres by the time the second
+// call's UPDATE was evaluated. Only one `UPDATE attendees SET checkin_status
+// = true ...` exec is scripted per call; if the implementation regressed to
+// retrying or rewriting after a 0-row result, pgxmock would fail on an
+// unexpected exec.
+func TestApplyBatchCheckin_ConcurrentCheckinsRaceSecondCallGetsAlreadyCheckedIn(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, staffUserID, attendeeID := uuid.New(), uuid.New(), uuid.New()
+	firstClientUUID, secondClientUUID := uuid.New(), uuid.New()
+	now := time.Now()
+
+	firstAt := time.Date(2026, 7, 11, 9, 30, 0, 0, time.UTC)
+	firstDevice := 1
+	firstPoint := "Стойка А"
+
+	// A second device's near-simultaneous scan of the same badge, a moment
+	// later.
+	secondAt := time.Date(2026, 7, 11, 9, 30, 1, 0, time.UTC)
+	secondDevice := 2
+	secondPoint := "Стойка Б"
+
+	// --- First device's request: genuinely wins the race. ---
+	mock.ExpectQuery(`FROM batch_checkin_log WHERE client_uuid`).
+		WithArgs(firstClientUUID).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`FROM attendees WHERE id`).
+		WithArgs(attendeeID).
+		WillReturnRows(pgxmock.NewRows(attendeeSelectColumns).AddRow(
+			attendeeID, eventID, "Jane", "Doe", "jane@example.com", "Acme", "Eng", "CODE1",
+			false, nil, nil, nil, nil,
+			0, nil, false, nil, now, now,
+		))
+	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
+		WithArgs(firstAt, &staffUserID, &firstDevice, &firstPoint, attendeeID).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
+		WithArgs(firstClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), firstDevice, firstAt).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	s := &PGStore{db: mock}
+	firstItem := &models.BatchCheckinItem{
+		ClientUUID:   firstClientUUID,
+		AttendeeID:   attendeeID,
+		At:           firstAt,
+		DeviceNumber: firstDevice,
+		Kind:         "checkin",
+		PointName:    &firstPoint,
+	}
+	firstOutcome, err := s.ApplyBatchCheckin(context.Background(), eventID, staffUserID, firstItem)
+	if err != nil {
+		t.Fatalf("first ApplyBatchCheckin: %v", err)
+	}
+	if firstOutcome != BatchCheckinCreated {
+		t.Fatalf("expected first call to report BatchCheckinCreated, got %v", firstOutcome)
+	}
+
+	// --- Second device's near-simultaneous request for the SAME attendee.
+	// Its GetAttendeeByID read still observes checkin_status=false — modeling
+	// the actual race window where both reads happen before either write
+	// lands. What must differ from the pre-fix behavior is that its guarded
+	// UPDATE affects 0 rows (the first call's write already committed by the
+	// time this UPDATE's WHERE clause is evaluated), so it must NOT report
+	// BatchCheckinCreated and must NOT be followed by any other write
+	// attempting to reconcile/overwrite the row.
+	mock.ExpectQuery(`FROM batch_checkin_log WHERE client_uuid`).
+		WithArgs(secondClientUUID).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery(`FROM attendees WHERE id`).
+		WithArgs(attendeeID).
+		WillReturnRows(pgxmock.NewRows(attendeeSelectColumns).AddRow(
+			attendeeID, eventID, "Jane", "Doe", "jane@example.com", "Acme", "Eng", "CODE1",
+			false, nil, nil, nil, nil,
+			0, nil, false, nil, now, now,
+		))
+	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
+		WithArgs(secondAt, &staffUserID, &secondDevice, &secondPoint, attendeeID).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
+		WithArgs(secondClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), secondDevice, secondAt).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	secondItem := &models.BatchCheckinItem{
+		ClientUUID:   secondClientUUID,
+		AttendeeID:   attendeeID,
+		At:           secondAt,
+		DeviceNumber: secondDevice,
+		Kind:         "checkin",
+		PointName:    &secondPoint,
+	}
+	secondOutcome, err := s.ApplyBatchCheckin(context.Background(), eventID, staffUserID, secondItem)
+	if err != nil {
+		t.Fatalf("second ApplyBatchCheckin: %v", err)
+	}
+	if secondOutcome != BatchCheckinAlreadyCheckedIn {
+		t.Fatalf("expected second (racing) call to report BatchCheckinAlreadyCheckedIn, not BatchCheckinCreated — got %v", secondOutcome)
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {
