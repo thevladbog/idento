@@ -112,8 +112,23 @@ class SetupPrinterViewModel(
             val result = if (printer.transport == "bluetooth") {
                 bluetoothPrinterService.printTest(printer.address)
             } else {
-                val (ip, portText) = printer.address.split(":", limit = 2)
-                ethernetPrinterService.printTest(ip, portText.toInt())
+                // printer.address isn't necessarily "ip:port" here: a scanned QR payload
+                // (onPrinterQrScanned) is accepted into draft.printer with zero validation, unlike
+                // the Ethernet tab's own manual entry (onEthernetAddressConfirmed), which always
+                // builds a valid "ip:port" string. Parse defensively instead of destructuring, so a
+                // malformed scanned address surfaces as a clear failure rather than an unchecked
+                // IndexOutOfBoundsException/NumberFormatException.
+                val parts = printer.address.split(":", limit = 2)
+                if (parts.size != 2) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, testPrintResult = false, error = "Invalid printer address")
+                    return@launch
+                }
+                val port = parts[1].toIntOrNull()
+                if (port == null) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, testPrintResult = false, error = "Invalid printer port")
+                    return@launch
+                }
+                ethernetPrinterService.printTest(parts[0], port)
             }
             _uiState.value = _uiState.value.copy(isLoading = false, testPrintResult = result.isSuccess)
         }

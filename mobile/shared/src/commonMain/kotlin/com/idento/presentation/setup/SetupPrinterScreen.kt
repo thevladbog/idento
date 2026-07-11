@@ -1,5 +1,6 @@
 package com.idento.presentation.setup
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -160,6 +161,18 @@ fun SetupPrinterScreen(
                         null -> stringResource(StringKey.SETUP_PRINTER_TEST_PRINT)
                     },
                 )
+            }
+
+            AnimatedVisibility(visible = uiState.error != null) {
+                Column {
+                    Spacer(modifier = Modifier.height(IdentoSpacing.md))
+                    Text(
+                        text = uiState.error ?: "",
+                        color = IdentoColors.AlertTextLight,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
 

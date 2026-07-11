@@ -171,4 +171,38 @@ class SetupPrinterViewModelTest {
         assertEquals(false, viewModel.uiState.value.testPrintResult)
         assertTrue(viewModel.uiState.value.error == null) // printTest failure is a Result, not a thrown exception
     }
+
+    // onPrinterQrScanned accepts ANY decoded PrinterConfig with zero validation (unlike
+    // onEthernetAddressConfirmed, which always builds a valid "ip:port" address) — a scanned QR
+    // payload can carry a non-bluetooth address with no colon, or a non-numeric port. testPrint()
+    // must surface that as a clear failure instead of throwing out of the destructuring split.
+    @Test
+    fun testPrintSurfacesMissingPortAsFailureWithoutThrowing() = runTest(testDispatcher) {
+        val draft = SetupWizardDraft()
+        val ethernet = FakeEthernetPrinterService()
+        val viewModel = SetupPrinterViewModel(FakeBluetoothPrinterService(), ethernet, draft)
+        viewModel.onPrinterQrScanned(PrinterConfig(name = "Label", transport = "ethernet", address = "192.168.1.50"))
+
+        viewModel.testPrint()
+
+        assertEquals(false, viewModel.uiState.value.testPrintResult)
+        assertEquals("Invalid printer address", viewModel.uiState.value.error)
+        assertNull(ethernet.printTestCalledWith)
+        assertFalse(viewModel.uiState.value.isLoading)
+    }
+
+    @Test
+    fun testPrintSurfacesNonNumericPortAsFailureWithoutThrowing() = runTest(testDispatcher) {
+        val draft = SetupWizardDraft()
+        val ethernet = FakeEthernetPrinterService()
+        val viewModel = SetupPrinterViewModel(FakeBluetoothPrinterService(), ethernet, draft)
+        viewModel.onPrinterQrScanned(PrinterConfig(name = "Label", transport = "ethernet", address = "192.168.1.50:abc"))
+
+        viewModel.testPrint()
+
+        assertEquals(false, viewModel.uiState.value.testPrintResult)
+        assertEquals("Invalid printer port", viewModel.uiState.value.error)
+        assertNull(ethernet.printTestCalledWith)
+        assertFalse(viewModel.uiState.value.isLoading)
+    }
 }
