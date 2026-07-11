@@ -32,7 +32,7 @@ func OnPremAdmin(ctx context.Context, s store.Store, cfg *config.Config) error {
 	if email == "" || cfg.AdminPassword == "" {
 		return fmt.Errorf("first run with an empty database requires IDENTO_ADMIN_EMAIL and IDENTO_ADMIN_PASSWORD to be set — see INSTALL.md")
 	}
-	orgName := cfg.AdminOrgName
+	orgName := strings.TrimSpace(cfg.AdminOrgName)
 	if orgName == "" {
 		orgName = defaultOrgName
 	}
