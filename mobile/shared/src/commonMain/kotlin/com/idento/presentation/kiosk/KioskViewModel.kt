@@ -67,6 +67,11 @@ class KioskViewModel(
     private var scanJob: Job? = null
     private var resetJob: Job? = null
 
+    /** Per-code debounce pipeline — one instance per ViewModel, resets its last-seen map
+     * only across process death — matching [com.idento.presentation.registration.RegistrationHomeViewModel]'s
+     * established pattern. */
+    private val pipeline = DebouncedScanPipeline()
+
     init {
         viewModelScope.launch {
             val config = stationGateway.getConfig()
@@ -85,12 +90,6 @@ class KioskViewModel(
     fun onScanResumed() {
         val config = stationConfig ?: return
         scanJob?.cancel()
-        // A fresh DebouncedScanPipeline per scan session (rather than one shared instance for the
-        // ViewModel's lifetime): the debounce is meant to suppress a badge held in front of the
-        // camera across multiple frames within one continuous scan session, not to remember a code
-        // across a Greeting/NeedsStaff reset — the next person up could scan the very same code
-        // (e.g. a walk-away-and-retry) once scanning resumes.
-        val pipeline = DebouncedScanPipeline()
         scanJob = viewModelScope.launch {
             pipeline.process(scanSource.startScanning()).collect { code ->
                 processScannedCode(config, code)

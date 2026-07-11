@@ -182,8 +182,11 @@ class KioskViewModelTest {
         assertIs<KioskScreenState.Greeting>(vm.uiState.value.screenState)
         advanceTimeBy(5_001)
         assertIs<KioskScreenState.Waiting>(vm.uiState.value.screenState)
-        // Scanning resumed — a fresh scan is picked up.
-        codeFlow.emit("QR-005")
+        // Scanning resumed — a fresh scan is picked up. Use a different code than the first scan:
+        // the debounce pipeline is a class-level field (matches RegistrationHomeViewModel), so
+        // re-emitting the same code here would be suppressed as a duplicate within the debounce
+        // window (advanceTimeBy doesn't move the real wall-clock DebouncedScanPipeline uses).
+        codeFlow.emit("QR-006")
         assertIs<KioskScreenState.Greeting>(vm.uiState.value.screenState)
     }
 
