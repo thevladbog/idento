@@ -6,15 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ArrowLeft, Users, Calendar, UserCheck } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import { TenantIdentityHeader } from '@/components/TenantIdentityHeader';
 import { AuditEntryList } from '@/components/AuditEntryList';
+import { ConfirmActionDialog } from '@/components/ConfirmActionDialog';
+import { SuspendTenantDialog } from '@/components/SuspendTenantDialog';
+import { ArchiveSheet } from '@/components/ArchiveSheet';
 import { useScrollSpy } from '@/hooks/useScrollSpy';
 import { meterTone, meterToneClass } from '@/lib/meters';
 import { resolvedLimit } from '@/lib/tenantQueues';
 import type { AuditLogEntry } from '@/lib/auditFormat';
+
+type TenantUser = { id: string; email: string; role: string; created_at: string };
 
 interface TenantDetail {
   tenant?: { id?: string; name?: string; status?: string; website?: string; contact_email?: string; created_at?: string };
@@ -35,6 +41,8 @@ type Plan = { id: string; name: string; price_monthly?: number };
 const SECTIONS: Array<{ id: string; labelKey: string }> = [
   { id: 'summary', labelKey: 'td_nav_summary' },
   { id: 'subscription', labelKey: 'td_nav_subscription' },
+  { id: 'lifecycle', labelKey: 'td_nav_lifecycle' },
+  { id: 'users', labelKey: 'td_nav_users' },
 ];
 
 export default function OrganizationDetail() {
@@ -45,6 +53,7 @@ export default function OrganizationDetail() {
   const [tenant, setTenant] = useState<TenantDetail | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
+  const [users, setUsers] = useState<TenantUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
@@ -53,6 +62,11 @@ export default function OrganizationDetail() {
   const [adminNotes, setAdminNotes] = useState('');
   const [subscriptionStatus, setSubscriptionStatus] = useState('active');
   const [subscriptionReason, setSubscriptionReason] = useState('');
+
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [reactivateOpen, setReactivateOpen] = useState(false);
+  const [lifecycleBusy, setLifecycleBusy] = useState(false);
 
   const activeSection = useScrollSpy(SECTIONS.map((s) => s.id));
 
@@ -63,15 +77,17 @@ export default function OrganizationDetail() {
 
   const loadData = async () => {
     try {
-      const [tenantResponse, plansResponse, auditResponse] = await Promise.all([
+      const [tenantResponse, plansResponse, auditResponse, usersResponse] = await Promise.all([
         api.get(`/api/super-admin/tenants/${id}/stats`),
         api.get('/api/super-admin/plans'),
         api.get(`/api/super-admin/audit-log?target_id=${id}&limit=100`),
+        api.get(`/api/super-admin/users?tenant_id=${id}`),
       ]);
 
       setTenant(tenantResponse.data);
       setPlans(plansResponse.data);
       setAuditEntries(auditResponse.data.logs || []);
+      setUsers(usersResponse.data.users || []);
 
       if (tenantResponse.data.subscription) {
         const sub = tenantResponse.data.subscription;
@@ -116,6 +132,51 @@ export default function OrganizationDetail() {
       toast.error(t('error'), { description: t('failedToUpdateSubscription') });
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const runSuspend = async (reason: string) => {
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/api/super-admin/tenants/${id}/suspend`, { reason });
+      toast.success(t('lifecycle_suspend_done'));
+      setSuspendOpen(false);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('lifecycleFailed'));
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const runArchive = async (reason: string) => {
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/api/super-admin/tenants/${id}/archive`, { reason });
+      toast.success(t('lifecycle_archive_done'));
+      setArchiveOpen(false);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('lifecycleFailed'));
+    } finally {
+      setLifecycleBusy(false);
+    }
+  };
+
+  const runReactivate = async () => {
+    setLifecycleBusy(true);
+    try {
+      await api.post(`/api/super-admin/tenants/${id}/reactivate`);
+      toast.success(t('lifecycle_reactivate_done'));
+      setReactivateOpen(false);
+      await loadData();
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('lifecycleFailed'));
+    } finally {
+      setLifecycleBusy(false);
     }
   };
 
@@ -171,6 +232,34 @@ export default function OrganizationDetail() {
           name={tenant.tenant?.name ?? ''}
           status={tenant.tenant?.status}
           planName={tenant.subscription?.plan?.name}
+        />
+
+        <ConfirmActionDialog
+          open={reactivateOpen}
+          onOpenChange={setReactivateOpen}
+          title={t('lifecycle_reactivate_title')}
+          description={t('lifecycle_reactivate_description', { tenant: tenant.tenant?.name })}
+          confirmLabel={t('lifecycle_reactivate_confirm')}
+          onConfirm={runReactivate}
+          busy={lifecycleBusy}
+        />
+        <SuspendTenantDialog
+          open={suspendOpen}
+          onOpenChange={setSuspendOpen}
+          tenantName={tenant.tenant?.name ?? ''}
+          usersCount={tenant.users_count ?? 0}
+          eventsCount={tenant.events_count ?? 0}
+          onConfirm={runSuspend}
+          busy={lifecycleBusy}
+        />
+        <ArchiveSheet
+          open={archiveOpen}
+          onOpenChange={setArchiveOpen}
+          tenantName={tenant.tenant?.name ?? ''}
+          usersCount={tenant.users_count ?? 0}
+          eventsCount={tenant.events_count ?? 0}
+          onConfirm={runArchive}
+          busy={lifecycleBusy}
         />
 
         <div className="space-y-10">
@@ -315,6 +404,75 @@ export default function OrganizationDetail() {
               </CardHeader>
               <CardContent>
                 <AuditEntryList entries={subscriptionAudit} planNames={planNames} emptyLabel={t('td_subscriptionHistoryEmpty')} />
+              </CardContent>
+            </Card>
+          </section>
+
+          <section id="lifecycle">
+            <h2 className="mb-4 text-lg font-semibold">{t('td_nav_lifecycle')}</h2>
+            <Card>
+              <CardContent className="space-y-4 pt-6">
+                <div className="flex items-center gap-2 text-sm">
+                  {(['active', 'suspended', 'archived'] as const).map((s, i, arr) => (
+                    <div key={s} className="flex items-center gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1 ${
+                          (tenant.tenant?.status ?? 'active') === s
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        {t(`tenantStatus_${s}`)}
+                      </span>
+                      {i < arr.length - 1 && <span className="text-muted-foreground">→</span>}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  {tenant.tenant?.status === 'active' && (
+                    <Button variant="destructive" onClick={() => setSuspendOpen(true)}>
+                      {t('suspendTenant')}
+                    </Button>
+                  )}
+                  {tenant.tenant?.status === 'suspended' && (
+                    <>
+                      <Button onClick={() => setReactivateOpen(true)}>{t('reactivateTenant')}</Button>
+                      <Button variant="destructive" onClick={() => setArchiveOpen(true)}>
+                        {t('archiveTenant')}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section id="users">
+            <h2 className="mb-4 text-lg font-semibold">{t('td_nav_users')}</h2>
+            <Card>
+              <CardContent className="pt-6">
+                {users.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('td_usersEmpty')}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('email')}</TableHead>
+                        <TableHead>{t('role')}</TableHead>
+                        <TableHead>{t('created')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {users.map((u) => (
+                        <TableRow key={u.id}>
+                          <TableCell>{u.email}</TableCell>
+                          <TableCell className="capitalize">{u.role}</TableCell>
+                          <TableCell>{new Date(u.created_at).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </section>

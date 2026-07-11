@@ -811,6 +811,9 @@ i18n
           td_subscriptionReasonPlaceholder: "e.g. invoice #1042 paid, upgraded per customer request",
           td_subscriptionHistory: "Change history",
           td_subscriptionHistoryEmpty: "No subscription changes yet.",
+          td_nav_lifecycle: "Lifecycle",
+          td_nav_users: "Users",
+          td_usersEmpty: "No users in this organization yet.",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1726,6 +1729,9 @@ i18n
           td_subscriptionReasonPlaceholder: "например, счёт №1042 оплачен, тариф повышен по запросу клиента",
           td_subscriptionHistory: "История изменений",
           td_subscriptionHistoryEmpty: "Изменений подписки пока нет.",
+          td_nav_lifecycle: "Жизненный цикл",
+          td_nav_users: "Пользователи",
+          td_usersEmpty: "В этой организации пока нет пользователей.",
 
           // Analytics
           totalTenants: "Всего организаций",

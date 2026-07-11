@@ -18,6 +18,7 @@ const mockStats = {
 };
 const mockPlans = [{ id: 'plan-pro', name: 'Professional', price_monthly: 99 }];
 const mockAudit = { logs: [] };
+const mockUsers = { users: [{ id: 'u1', email: 'staff@acme.test', role: 'admin', created_at: '2026-02-01T00:00:00Z' }], total: 1 };
 
 function renderPage() {
   return render(
@@ -29,12 +30,13 @@ function renderPage() {
   );
 }
 
-describe('OrganizationDetail — Summary + Subscription sections', () => {
+describe('OrganizationDetail', () => {
   beforeEach(() => {
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url.includes('/stats')) return Promise.resolve({ data: mockStats });
       if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
       if (url.includes('/audit-log')) return Promise.resolve({ data: mockAudit });
+      if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
       return Promise.reject(new Error('unexpected url ' + url));
     });
   });
@@ -52,5 +54,17 @@ describe('OrganizationDetail — Summary + Subscription sections', () => {
     expect(saveButton).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/reason \(required/i), { target: { value: 'invoice #1042' } });
     expect(saveButton).not.toBeDisabled();
+  });
+
+  it('suspend action is only offered for an active tenant, and opens the checkbox-gated dialog', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^suspend$/i }));
+    expect(screen.getByRole('checkbox')).toBeInTheDocument();
+  });
+
+  it('renders the Users section from the tenant-scoped users endpoint', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('staff@acme.test')).toBeInTheDocument());
   });
 });
