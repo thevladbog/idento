@@ -106,6 +106,9 @@ func TestSetTenantStatus_NoBodyStillWorks(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
+	if capturedChanges == nil {
+		t.Fatalf("expected logAdminAction to be invoked with captured changes, got nil")
+	}
 	if _, hasReason := capturedChanges["reason"]; hasReason {
 		t.Fatalf("expected no reason key when body omits it, got %#v", capturedChanges)
 	}
