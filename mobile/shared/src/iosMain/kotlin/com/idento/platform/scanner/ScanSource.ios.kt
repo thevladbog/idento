@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * iOS [ScanSource]: camera-only. BT-SPP hardware scanning is explicitly out of v1 scope for iOS
- * (design spec: "BT-SPP печать/сканер на iOS — только Android").
+ * (design spec: BT-SPP printing/scanning is Android-only).
  */
 class IosScanSource(private val cameraService: CameraService) : ScanSource {
 

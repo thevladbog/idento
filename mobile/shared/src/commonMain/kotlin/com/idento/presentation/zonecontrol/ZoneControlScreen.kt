@@ -168,6 +168,12 @@ private fun AllowedVerdictContent(verdict: ZoneVerdict.Allowed, onDismiss: () ->
         rows = listOf(
             DetailRow(stringResource(StringKey.ZONE_ALLOWED_REGISTERED_AT), verdict.registeredAt.toString()),
             DetailRow(stringResource(StringKey.ZONE_ALLOWED_POINT), verdict.registeredPoint),
+            DetailRow(
+                stringResource(StringKey.ZONE_ALLOWED_ENTRY_LABEL),
+                stringResource(
+                    if (verdict.firstEntry) StringKey.ZONE_ALLOWED_ENTRY_FIRST else StringKey.ZONE_ALLOWED_ENTRY_REPEAT,
+                ),
+            ),
         ),
     )
     Spacer(Modifier.height(IdentoSpacing.lg))

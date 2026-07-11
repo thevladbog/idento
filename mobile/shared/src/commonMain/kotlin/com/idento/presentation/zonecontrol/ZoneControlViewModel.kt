@@ -64,6 +64,10 @@ class ZoneControlViewModel(
     private var stationConfig: StationConfig? = null
     private var scanJob: Job? = null
 
+    /** Guards against duplicate audit records / double-counted allowedCount from repeated taps on
+     * "Всё равно пропустить" before the first submission resolves — see [onOverride]. */
+    private var overrideInFlight = false
+
     init {
         viewModelScope.launch {
             val config = stationGateway.getConfig()
@@ -131,11 +135,14 @@ class ZoneControlViewModel(
      * scan returns (see this plan's Global Constraints). On success, the operator's tap on this
      * button IS the pass-through decision — clear the verdict and count it as allowed locally. */
     fun onOverride(attendeeId: String) {
+        if (overrideInFlight) return
         val config = stationConfig ?: return
+        overrideInFlight = true
         viewModelScope.launch {
             val result = withContext(NonCancellable) {
                 overrideSource.submitOverride(config.eventId, config.workPointId, attendeeId)
             }
+            overrideInFlight = false
             if (result is ApiResult.Success) {
                 _uiState.update {
                     it.copy(currentVerdict = null, allowedCount = it.allowedCount + 1)

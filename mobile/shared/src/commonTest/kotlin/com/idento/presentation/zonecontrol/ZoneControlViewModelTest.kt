@@ -10,6 +10,7 @@ import com.idento.data.zonecontrol.ZoneScanSource
 import com.idento.data.zonecontrol.ZoneVerdictAdapter
 import com.idento.platform.scanner.ScanSource
 import com.idento.platform.scanner.ScannerConnectionState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -183,6 +184,33 @@ class ZoneControlViewModelTest {
         vm.onOverride("att-1")
         assertIs<ZoneVerdict.NotRegistered>(vm.uiState.value.currentVerdict)
         assertEquals(0, vm.uiState.value.allowedCount)
+    }
+
+    @Test
+    fun onOverrideIgnoresConcurrentTapsWhileInFlight() = runTest(testDispatcher) {
+        val codeFlow = MutableSharedFlow<String>()
+        val verdictAdapter = ZoneVerdictAdapter(ZoneScanSource { _, _ ->
+            ApiResult.Success(ZoneScanResponseDto(verdict = "not_registered", reason = "hint", attendee = fakeAttendeeDto()))
+        })
+        var submitCallCount = 0
+        val pendingResult = CompletableDeferred<ApiResult<Unit>>()
+        val vm = buildViewModel(
+            scanSource = fakeScanSource(codeFlow),
+            verdictAdapter = verdictAdapter,
+            overrideSource = CheckinOverrideSource { _, _, _ ->
+                submitCallCount++
+                pendingResult.await()
+            },
+        )
+        vm.onScanResumed()
+        codeFlow.emit("QR-007")
+        assertIs<ZoneVerdict.NotRegistered>(vm.uiState.value.currentVerdict)
+        vm.onOverride("att-1") // first tap: starts, suspends on pendingResult.await()
+        vm.onOverride("att-1") // second tap while in flight: must be a no-op
+        assertEquals(1, submitCallCount)
+        pendingResult.complete(ApiResult.Success(Unit))
+        assertNull(vm.uiState.value.currentVerdict)
+        assertEquals(1, vm.uiState.value.allowedCount)
     }
 }
 

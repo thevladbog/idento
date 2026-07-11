@@ -68,6 +68,11 @@ class AndroidScanSource(
     private var bluetoothSocket: BluetoothSocket? = null
     private var listenJob: Job? = null
 
+    /** Tracks the in-flight `socket.connect()` coroutine so [disconnectBluetooth] can cancel it —
+     * without this, a stop/preferCamera during a slow BT handshake had nothing to cancel, and the
+     * connect could complete and start listening after the operator already left the screen. */
+    private var connectJob: Job? = null
+
     override fun startScanning(): Flow<String> {
         if (!preferCameraOverride) {
             registerHardwareReceiver()
@@ -158,15 +163,24 @@ class AndroidScanSource(
         // Skip the station's configured BT badge printer (same SPP UUID) — see Finding 1 kdoc on
         // ScanSource.setExcludedBluetoothAddress for why this matters.
         val device = adapter.bondedDevices?.firstOrNull { it.address != excludedBluetoothAddress } ?: return
-        serviceScope.launch {
+        connectJob = serviceScope.launch {
             try {
                 val socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
                 socket.connect()
+                // isActive is false if disconnectBluetooth()/preferCamera() cancelled this job
+                // while connect() was blocking — don't resurrect a connection the operator already
+                // asked to stop.
+                if (!isActive) {
+                    socket.close()
+                    return@launch
+                }
                 bluetoothSocket = socket
                 _connectionState.value = ScannerConnectionState.HardwareConnected(device.name ?: "Scanner")
                 listenToBluetoothInput(socket.inputStream)
             } catch (e: IOException) {
-                _connectionState.value = ScannerConnectionState.HardwareDisconnected
+                if (isActive) {
+                    _connectionState.value = ScannerConnectionState.HardwareDisconnected
+                }
             }
         }
     }
@@ -219,7 +233,10 @@ class AndroidScanSource(
         // Cancel BEFORE closing the socket so isActive is already false by the time the close()
         // below causes listenToBluetoothInput's blocked read() to throw — see the comment in that
         // catch block for why this ordering (not a manual "intentional disconnect" flag) is what
-        // makes the isActive check correct.
+        // makes the isActive check correct. connectJob is cancelled the same way, for the same
+        // reason, so a still-in-flight socket.connect() sees isActive == false once it returns.
+        connectJob?.cancel()
+        connectJob = null
         listenJob?.cancel()
         listenJob = null
         try {
