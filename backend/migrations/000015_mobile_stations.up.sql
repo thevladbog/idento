@@ -1,4 +1,4 @@
--- backend/migrations/000014_mobile_stations.up.sql
+-- backend/migrations/000015_mobile_stations.up.sql
 -- Phase B (mobile redesign): time-windowed zone access rules, station
 -- provisioning/registry, check-in override audit log, idempotent batch
 -- check-in log, and a zone-scan log feeding live KPI stats.

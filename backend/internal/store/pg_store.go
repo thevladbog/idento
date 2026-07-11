@@ -77,6 +77,13 @@ func (s *PGStore) RunMigrations() error {
 	}
 	sort.Strings(migrationFiles)
 
+	// schema_migrations is keyed on the numeric version prefix alone, so two
+	// files sharing a prefix would make the second one silently no-op (it
+	// looks "already applied"). Fail fast instead of skipping it forever.
+	if a, b, version, ok := duplicateMigrationVersion(migrationFiles); ok {
+		return fmt.Errorf("migration version collision: %q and %q both resolve to version %q", a, b, version)
+	}
+
 	appliedCount := 0
 	for _, filename := range migrationFiles {
 		// Extract version from filename (e.g., "000001_init_schema.up.sql" -> "000001")
@@ -123,6 +130,21 @@ func (s *PGStore) RunMigrations() error {
 		log.Printf("Migrations: applied %d migration(s)", appliedCount)
 	}
 	return nil
+}
+
+// duplicateMigrationVersion reports the first pair of sorted migration
+// filenames whose version prefix (the text before the first "_") collides,
+// e.g. "000014_a.up.sql" and "000014_b.up.sql" both resolving to "000014".
+func duplicateMigrationVersion(sortedFilenames []string) (first, second, version string, ok bool) {
+	var prevVersion, prevFilename string
+	for _, filename := range sortedFilenames {
+		v := strings.Split(filename, "_")[0]
+		if v == prevVersion {
+			return prevFilename, filename, v, true
+		}
+		prevVersion, prevFilename = v, filename
+	}
+	return "", "", "", false
 }
 
 // Implement Store interface methods
