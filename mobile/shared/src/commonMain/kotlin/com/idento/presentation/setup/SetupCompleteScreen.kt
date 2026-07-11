@@ -31,6 +31,7 @@ import com.idento.presentation.components.redesign.DetailRow
 import com.idento.presentation.components.redesign.DetailTable
 import com.idento.presentation.components.redesign.StatusBar
 import com.idento.presentation.components.redesign.StatusCell
+import com.idento.presentation.navigation.Screen
 import com.idento.presentation.theme.IdentoColors
 import com.idento.presentation.theme.IdentoRadius
 import com.idento.presentation.theme.IdentoSpacing
@@ -60,7 +61,7 @@ private fun modeNameKey(mode: StationMode): StringKey = when (mode) {
 fun SetupCompleteScreen(
     viewModel: SetupCompleteViewModel = koinInject(),
     onExitStation: () -> Unit = {},
-    onNavigateToStation: () -> Unit = {},
+    onNavigateToStation: (route: String) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showExitConfirm by remember { mutableStateOf(false) }
@@ -73,8 +74,10 @@ fun SetupCompleteScreen(
 
     LaunchedEffect(uiState.stationConfig) {
         val config = uiState.stationConfig ?: return@LaunchedEffect
-        if (config.mode == StationMode.REGISTRATION) {
-            onNavigateToStation()
+        when (config.mode) {
+            StationMode.REGISTRATION -> onNavigateToStation(Screen.RegistrationHome.route)
+            StationMode.ZONE_CONTROL -> onNavigateToStation(Screen.ZoneControlHome.route)
+            StationMode.KIOSK -> Unit // M3 — stays on SetupComplete until the Kiosk screen exists.
         }
     }
 

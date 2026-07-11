@@ -33,12 +33,17 @@ class SetupStartDestinationTest {
     }
 
     @Test
-    fun startsAtSetupCompleteForNonRegistrationModes() {
-        // ZONE_CONTROL and KIOSK still go to SetupComplete until M2/M3 implement their screens.
+    fun startsAtZoneControlHomeWhenZoneControlModeConfigured() {
+        // M2: ZONE_CONTROL-mode station cold-starts directly at ZoneControlScreen.
         assertEquals(
-            Screen.SetupComplete.route,
+            Screen.ZoneControlHome.route,
             resolveStartDestination(hasStationConfig = true, isLoggedIn = true, stationMode = StationMode.ZONE_CONTROL),
         )
+    }
+
+    @Test
+    fun startsAtSetupCompleteForKioskMode() {
+        // KIOSK still goes to SetupComplete until M3 implements the Kiosk screen.
         assertEquals(
             Screen.SetupComplete.route,
             resolveStartDestination(hasStationConfig = true, isLoggedIn = true, stationMode = StationMode.KIOSK),

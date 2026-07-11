@@ -29,6 +29,7 @@ import com.idento.presentation.setup.SetupModeScreen
 import com.idento.presentation.setup.SetupPrinterScreen
 import com.idento.presentation.template.DisplayTemplateScreen
 import com.idento.presentation.template.TemplateEditorScreen
+import com.idento.presentation.zonecontrol.ZoneControlScreen
 
 /**
  * Per spec §8: an expired/revoked token always routes back to Login, even if a StationConfig
@@ -36,8 +37,9 @@ import com.idento.presentation.template.TemplateEditorScreen
  * SyncService's job, unrelated to this decision).
  *
  * When both [hasStationConfig] and [isLoggedIn] are true the [stationMode] is used to select
- * the correct home screen: REGISTRATION → [Screen.RegistrationHome]; all other modes (and the
- * default null) fall back to [Screen.SetupComplete] until M2/M3 implement their screens.
+ * the correct home screen: REGISTRATION → [Screen.RegistrationHome]; ZONE_CONTROL →
+ * [Screen.ZoneControlHome]; all other modes (and the default null) fall back to
+ * [Screen.SetupComplete] until M3 implements the Kiosk screen.
  */
 fun resolveStartDestination(
     hasStationConfig: Boolean,
@@ -46,6 +48,7 @@ fun resolveStartDestination(
 ): String = when {
     !hasStationConfig || !isLoggedIn -> Screen.SetupLogin.route
     stationMode == StationMode.REGISTRATION -> Screen.RegistrationHome.route
+    stationMode == StationMode.ZONE_CONTROL -> Screen.ZoneControlHome.route
     else -> Screen.SetupComplete.route
 }
 
@@ -277,8 +280,8 @@ fun IdentoNavHost(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                onNavigateToStation = {
-                    navController.navigate(Screen.RegistrationHome.route) {
+                onNavigateToStation = { route ->
+                    navController.navigate(route) {
                         popUpTo(0) { inclusive = true }
                     }
                 },
@@ -287,6 +290,10 @@ fun IdentoNavHost(
 
         composable(Screen.RegistrationHome.route) {
             RegistrationHomeScreen()
+        }
+
+        composable(Screen.ZoneControlHome.route) {
+            ZoneControlScreen()
         }
     }
 }
