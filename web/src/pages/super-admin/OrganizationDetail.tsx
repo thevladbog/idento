@@ -106,6 +106,11 @@ export default function OrganizationDetail() {
       toast.error(t('error'), { description: t('failedToLoadData') });
     } finally {
       setLoading(false);
+      requestAnimationFrame(() => {
+        if (window.location.hash) {
+          document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+        }
+      });
     }
   };
 

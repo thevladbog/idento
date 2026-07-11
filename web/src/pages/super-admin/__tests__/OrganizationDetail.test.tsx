@@ -101,4 +101,18 @@ describe('OrganizationDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /impersonate/i }));
     expect(screen.getByRole('button', { name: /start session/i })).toBeDisabled();
   });
+
+  it('scrolls to the URL hash section once data has finished loading (e.g. returning from impersonation exit)', async () => {
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    window.location.hash = '#activity';
+
+    try {
+      renderPage();
+      await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+      await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled());
+    } finally {
+      window.location.hash = '';
+    }
+  });
 });
