@@ -7,19 +7,25 @@ export type ImpersonationSession = {
   tenantId: string;
   tenantName: string;
   expiresAt: string; // ISO from the mint response
+  mintedAt: string; // ISO, stamped locally at the moment startImpersonation runs
 };
 
 const OPERATOR_TOKEN_KEY = 'operator_token';
 const SESSION_KEY = 'impersonation';
 
-export function startImpersonation(token: string, session: ImpersonationSession): void {
+export function startImpersonation(token: string, session: Omit<ImpersonationSession, 'mintedAt'>): void {
   const operatorToken = localStorage.getItem('token');
   if (operatorToken) {
     localStorage.setItem(OPERATOR_TOKEN_KEY, operatorToken);
   }
   localStorage.setItem('token', token);
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, mintedAt: new Date().toISOString() }));
   window.location.href = '/dashboard';
+}
+
+/** The operator's own token, parked while an impersonation token is active — used to make authenticated requests as the operator without ending the session (e.g. the exit-summary fetch). */
+export function getParkedOperatorToken(): string | null {
+  return localStorage.getItem(OPERATOR_TOKEN_KEY);
 }
 
 function clearSession(restoreToken: boolean): void {
@@ -32,9 +38,9 @@ function clearSession(restoreToken: boolean): void {
   localStorage.removeItem(SESSION_KEY);
 }
 
-export function endImpersonation(): void {
+export function endImpersonation(destination = '/super-admin/organizations'): void {
   clearSession(true);
-  window.location.href = '/super-admin/organizations';
+  window.location.href = destination;
 }
 
 /**

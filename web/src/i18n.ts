@@ -800,6 +800,12 @@ i18n
           td_archive_consequence: "This affects {{users}} users and {{events}} events for “{{tenant}}”. The organization becomes read-blocked and enters the retention-cleanup countdown.",
           td_archive_acknowledgeRetention: "I understand this starts an irreversible retention-cleanup countdown.",
           td_archive_acknowledgeIrreversible: "I understand this cannot be undone from the UI.",
+          td_reasonRequiredLabel: "Reason (required, visible in the audit log)",
+          td_impersonateReasonPlaceholder: "e.g. support ticket #42, customer can't create events",
+          td_exitSummaryTitle: "Exited “{{tenant}}”",
+          td_exitSummaryBody: "You were in this organization for {{minutes}} min and made {{count}} changes.",
+          td_exitSummaryUnavailable: "Session ended. Activity summary is unavailable right now.",
+          td_exitSummaryViewActivity: "View activity log",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1704,6 +1710,12 @@ i18n
           td_archive_consequence: "Это затронет {{users}} пользователей и {{events}} мероприятий «{{tenant}}». Организация будет заблокирована для чтения и запустится необратимый отсчёт хранения данных.",
           td_archive_acknowledgeRetention: "Я понимаю, что это запускает необратимый отсчёт хранения данных.",
           td_archive_acknowledgeIrreversible: "Я понимаю, что это действие нельзя отменить через интерфейс.",
+          td_reasonRequiredLabel: "Причина (обязательно, отображается в журнале аудита)",
+          td_impersonateReasonPlaceholder: "например, тикет поддержки №42, клиент не может создать мероприятие",
+          td_exitSummaryTitle: "Сессия в «{{tenant}}» завершена",
+          td_exitSummaryBody: "Вы находились в этой организации {{minutes}} мин и внесли {{count}} изменений.",
+          td_exitSummaryUnavailable: "Сессия завершена. Сводка активности сейчас недоступна.",
+          td_exitSummaryViewActivity: "Открыть журнал активности",
 
           // Analytics
           totalTenants: "Всего организаций",
