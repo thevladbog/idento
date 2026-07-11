@@ -58,7 +58,16 @@ kotlin {
             // Kotlinx
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.1")
+            // Compose Multiplatform Material3 1.9.0 transitively requests kotlinx-datetime 0.7.1
+            // on iOS targets (confirmed via `./gradlew :shared:dependencyInsight --configuration
+            // iosArm64CompileKlibraries --dependency kotlinx-datetime`), which wins Gradle's
+            // highest-version conflict resolution over a plain 0.6.1 pin. In 0.7.1,
+            // kotlinx.datetime.Instant/Clock are deprecated typealiases to kotlin.time.Instant/
+            // Clock. Depending on the officially-published "0.6.x-compat" artifact (see
+            // https://github.com/Kotlin/kotlinx-datetime/blob/master/README.md, "Deprecation of
+            // Instant") keeps real, non-typealias Instant/Clock classes on every target — Android
+            // and iOS alike — eliminating the platform skew instead of suppressing it.
+            implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
             implementation("org.jetbrains.kotlinx:atomicfu:0.27.0")
             
             // Ktor (Network)
@@ -127,6 +136,16 @@ kotlin {
             // native/klib variant, so it cannot live in commonTest (shared with iOS targets).
             implementation("app.cash.sqldelight:sqlite-driver:2.1.0")
         }
+    }
+}
+
+// Belt-and-suspenders alongside the explicit commonMain pin above: forces every generated
+// configuration (Android, iOS klib compile/link, tests) to resolve kotlinx-datetime to the same
+// real-class "0.6.x-compat" artifact, regardless of what any future transitive dependency
+// (e.g. a Compose Multiplatform Material3 bump) requests instead.
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlinx:kotlinx-datetime:0.7.1-0.6.x-compat")
     }
 }
 
