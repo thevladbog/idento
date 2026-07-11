@@ -116,6 +116,9 @@ kotlin {
 
             // Process-level lifecycle owner for the long-lived CameraService Koin singleton
             implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+
+            // ComponentActivity access for Kiosk lockdown (Lock Task Mode, keep-screen-on)
+            implementation("androidx.activity:activity-compose:1.9.3")
         }
 
         iosMain.dependencies {
