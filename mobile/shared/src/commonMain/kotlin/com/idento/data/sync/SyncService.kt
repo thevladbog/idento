@@ -2,6 +2,7 @@ package com.idento.data.sync
 
 import com.idento.data.registration.FlushResult
 import com.idento.data.registration.PendingRegistrationCheckIn
+import com.idento.data.registration.PrintRetryResult
 import com.idento.data.repository.SyncResult
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.*
@@ -35,6 +36,18 @@ interface RegistrationCheckInSyncQueue {
 }
 
 /**
+ * Seam over [com.idento.data.registration.PrintQueueRepository]'s retry surface (Task M1c-8's
+ * persistent print queue) — lets `SyncServiceTest` fake retrying print jobs without constructing
+ * a real SQLDelight `PrintJobQueries`/`PrintSender`. Unlike [CheckInSyncQueue]/
+ * [RegistrationCheckInSyncQueue], there is no separate "get pending count" method: the print
+ * queue's own backoff filtering (see `PrintJob.sq`'s `selectOldestPending`) already determines
+ * eligibility, so [drainPrintQueue] just calls [retryNext] until nothing more is eligible.
+ */
+interface PrintRetryQueue {
+    suspend fun retryNext(): PrintRetryResult
+}
+
+/**
  * Sync Service for offline check-ins
  * Automatically syncs pending check-ins when online
  */
@@ -42,6 +55,7 @@ class SyncService(
     private val offlineCheckInRepository: CheckInSyncQueue,
     private val networkMonitor: NetworkMonitor,
     private val registrationOfflineQueue: RegistrationCheckInSyncQueue,
+    private val printRetryQueue: PrintRetryQueue,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -60,12 +74,15 @@ class SyncService(
             networkMonitor.isOnline.collect { isOnline ->
                 if (isOnline) {
                     try {
-                        val pendingCount = offlineCheckInRepository.getPendingCheckIns().size
-                        val registrationPendingCount = registrationOfflineQueue.getPending().size
-                        if (pendingCount > 0 || registrationPendingCount > 0) {
-                            delay(2000) // Wait 2 seconds before syncing
-                            performSync()
-                        }
+                        delay(2000) // Wait 2 seconds before syncing
+                        // Always calls performSync() (rather than gating on the two check-in
+                        // queues' pending counts, as this used to): performSync() itself now also
+                        // drains the print queue unconditionally (see drainPrintQueue()), which
+                        // has its own independent backoff-based eligibility and would otherwise
+                        // never run periodically if this collector only invoked performSync()
+                        // when a check-in was pending. performSync() still no-ops cheaply for the
+                        // two check-in queues when neither has anything pending.
+                        performSync()
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -108,6 +125,16 @@ class SyncService(
     suspend fun performSync() {
         if (_syncState.value is SyncState.Syncing) {
             return // Already syncing
+        }
+
+        try {
+            drainPrintQueue()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Independent of the two check-in queues below (own table, own retry cadence) --
+            // a failure here must not skip their sync.
+            println("⚠️ Print queue retry pass failed: ${e.message}")
         }
 
         try {
@@ -189,6 +216,24 @@ class SyncService(
      */
     suspend fun getPendingCount(): Int {
         return offlineCheckInRepository.getPendingCheckIns().size + registrationOfflineQueue.getPending().size
+    }
+
+    /**
+     * Attempts every print job currently past its exponential backoff window (see
+     * `PrintQueueRepository.retryNext`'s KDoc), one at a time, until none remain eligible this
+     * pass — either the queue is empty ([PrintRetryResult.NoJobsPending]) or every remaining job
+     * is still cooling down ([PrintRetryResult.WithinBackoffWindow]). Naturally bounded: each
+     * attempt either removes a job ([PrintRetryResult.Succeeded]) or pushes its `lastAttemptAt`
+     * forward past "now" ([PrintRetryResult.Failed]), so no job can be retried twice within the
+     * same drain pass.
+     */
+    private suspend fun drainPrintQueue() {
+        while (true) {
+            when (printRetryQueue.retryNext()) {
+                is PrintRetryResult.Succeeded, is PrintRetryResult.Failed -> continue
+                PrintRetryResult.NoJobsPending, PrintRetryResult.WithinBackoffWindow -> return
+            }
+        }
     }
 
     /**

@@ -30,6 +30,7 @@ import com.idento.data.sync.SyncService
 import com.idento.data.sync.CheckInSyncQueue
 import com.idento.data.sync.NetworkMonitor
 import com.idento.data.sync.NetworkMonitorImpl
+import com.idento.data.sync.PrintRetryQueue
 import com.idento.data.sync.RegistrationCheckInSyncQueue
 import com.idento.db.IdentoDatabase
 import com.idento.platform.camera.CameraService
@@ -109,12 +110,13 @@ val appModule = module {
     // registered above via Koin's `get()` rather than constructing its own — same reasoning as
     // `RegistrationOfflineQueueRepository` above.
     single { PrintQueueRepository(get<IdentoDatabase>().printJobQueries, createPrintSender(get(), get())) }
+    single<PrintRetryQueue> { get<PrintQueueRepository>() }
 
     // Network monitoring
     single<NetworkMonitor> { NetworkMonitorImpl() }
 
     // Sync service
-    single { SyncService(get(), get(), get()) }
+    single { SyncService(get(), get(), get(), get()) }
     
     // Platform Services (expect/actual)
     single { createBluetoothPrinterService() }

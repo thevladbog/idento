@@ -2,6 +2,7 @@ package com.idento.data.sync
 
 import com.idento.data.registration.FlushResult
 import com.idento.data.registration.PendingRegistrationCheckIn
+import com.idento.data.registration.PrintRetryResult
 import com.idento.data.repository.SyncResult
 import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.flow.flowOf
@@ -65,6 +66,21 @@ private class ThrowingRegistrationCheckInSyncQueue(
     }
 }
 
+/** Fakes Task M1c-8's print queue retry surface — no real SQLDelight `PrintJobQueries`/
+ * `PrintSender` needed. Defaults to an always-empty queue so existing tests that don't care about
+ * print-job retries aren't affected by [SyncService.performSync]'s unconditional drain pass. */
+private class FakePrintRetryQueue(
+    private val results: MutableList<PrintRetryResult> = mutableListOf(),
+) : PrintRetryQueue {
+    var retryNextCallCount = 0
+        private set
+
+    override suspend fun retryNext(): PrintRetryResult {
+        retryNextCallCount++
+        return if (results.isEmpty()) PrintRetryResult.NoJobsPending else results.removeAt(0)
+    }
+}
+
 private class FakeNetworkMonitor(private val online: Boolean = true) : NetworkMonitor {
     override val isOnline = flowOf(online)
     override suspend fun checkConnectivity(): Boolean = online
@@ -101,6 +117,7 @@ class SyncServiceTest {
             offlineCheckInRepository = offlineCheckIn,
             networkMonitor = FakeNetworkMonitor(),
             registrationOfflineQueue = registrationQueue,
+            printRetryQueue = FakePrintRetryQueue(),
         )
 
         syncService.performSync()
@@ -119,6 +136,7 @@ class SyncServiceTest {
             offlineCheckInRepository = offlineCheckIn,
             networkMonitor = FakeNetworkMonitor(),
             registrationOfflineQueue = registrationQueue,
+            printRetryQueue = FakePrintRetryQueue(),
         )
 
         syncService.performSync()
@@ -139,6 +157,7 @@ class SyncServiceTest {
             offlineCheckInRepository = offlineCheckIn,
             networkMonitor = FakeNetworkMonitor(),
             registrationOfflineQueue = registrationQueue,
+            printRetryQueue = FakePrintRetryQueue(),
         )
 
         syncService.performSync()
@@ -161,6 +180,7 @@ class SyncServiceTest {
             offlineCheckInRepository = offlineCheckIn,
             networkMonitor = FakeNetworkMonitor(),
             registrationOfflineQueue = registrationQueue,
+            printRetryQueue = FakePrintRetryQueue(),
         )
 
         // Collect every state the service passes through, since the 5s auto-clear-to-Idle at
@@ -184,6 +204,49 @@ class SyncServiceTest {
     }
 
     @Test
+    fun performSyncDrainsEveryEligiblePrintJobEvenWithNoCheckInsPending() = runTest {
+        // Real bug this guards against: SyncService.startAutoSync() ran, but nothing ever called
+        // PrintQueueRepository.retryNext() -- queued print jobs stayed pending forever. Proves
+        // performSync() drains the print queue unconditionally, even when neither check-in queue
+        // has anything pending (the case that used to skip performSync() entirely).
+        val printRetryQueue = FakePrintRetryQueue(
+            mutableListOf(
+                PrintRetryResult.Succeeded(1L),
+                PrintRetryResult.Succeeded(2L),
+                PrintRetryResult.NoJobsPending,
+            ),
+        )
+        val syncService = SyncService(
+            offlineCheckInRepository = FakeCheckInSyncQueue(pending = emptyList()),
+            networkMonitor = FakeNetworkMonitor(),
+            registrationOfflineQueue = FakeRegistrationCheckInSyncQueue(pending = emptyList()),
+            printRetryQueue = printRetryQueue,
+        )
+
+        syncService.performSync()
+
+        // Called until NoJobsPending: 2 successful retries + the terminating NoJobsPending call.
+        assertEquals(3, printRetryQueue.retryNextCallCount)
+        assertIs<SyncState.Idle>(syncService.syncState.value)
+    }
+
+    @Test
+    fun performSyncStopsDrainingPrintQueueOnWithinBackoffWindow() = runTest {
+        val printRetryQueue = FakePrintRetryQueue(mutableListOf(PrintRetryResult.WithinBackoffWindow))
+        val syncService = SyncService(
+            offlineCheckInRepository = FakeCheckInSyncQueue(pending = emptyList()),
+            networkMonitor = FakeNetworkMonitor(),
+            registrationOfflineQueue = FakeRegistrationCheckInSyncQueue(pending = emptyList()),
+            printRetryQueue = printRetryQueue,
+        )
+
+        syncService.performSync()
+
+        // Must stop after the single WithinBackoffWindow result, not loop forever.
+        assertEquals(1, printRetryQueue.retryNextCallCount)
+    }
+
+    @Test
     fun getPendingCountSumsBothQueues() = runTest {
         val syncService = SyncService(
             offlineCheckInRepository = FakeCheckInSyncQueue(pending = listOf(pendingZoneCheckIn())),
@@ -191,6 +254,7 @@ class SyncServiceTest {
             registrationOfflineQueue = FakeRegistrationCheckInSyncQueue(
                 pending = listOf(pendingRegistrationCheckIn(1), pendingRegistrationCheckIn(2)),
             ),
+            printRetryQueue = FakePrintRetryQueue(),
         )
 
         assertEquals(3, syncService.getPendingCount())

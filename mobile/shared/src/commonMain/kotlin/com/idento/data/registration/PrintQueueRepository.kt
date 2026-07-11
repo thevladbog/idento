@@ -1,6 +1,7 @@
 package com.idento.data.registration
 
 import com.idento.data.model.PrinterConfig
+import com.idento.data.sync.PrintRetryQueue
 import com.idento.db.PrintJobQueries
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -111,7 +112,7 @@ fun createPrintSender(
 class PrintQueueRepository(
     private val queries: PrintJobQueries,
     private val printSender: PrintSender,
-) {
+) : PrintRetryQueue {
 
     suspend fun enqueue(zpl: String, printer: PrinterConfig): Long = withContext(Dispatchers.Default) {
         queries.transactionWithResult {
@@ -159,7 +160,7 @@ class PrintQueueRepository(
      * still cooling down ([PrintRetryResult.WithinBackoffWindow]), which costs one extra
      * (unfiltered) query only on that path.
      */
-    suspend fun retryNext(): PrintRetryResult = withContext(Dispatchers.Default) {
+    override suspend fun retryNext(): PrintRetryResult = withContext(Dispatchers.Default) {
         val now = Clock.System.now().toEpochMilliseconds()
         val job = queries.selectOldestPending(now).executeAsOneOrNull()?.let(::toDomain)
             ?: return@withContext if (queries.selectPending().executeAsList().isEmpty()) {
