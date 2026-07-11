@@ -281,8 +281,8 @@ fun IdentoNavHost(
 
         composable(Screen.KioskHome.route) {
             KioskScreen(
-                onExit = {
-                    navController.navigate(Screen.SetupComplete.route) {
+                onExitStation = {
+                    navController.navigate(Screen.SetupLogin.route) {
                         popUpTo(0) { inclusive = true }
                     }
                 },

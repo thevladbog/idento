@@ -28,6 +28,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KioskViewModelTest {
@@ -84,12 +85,14 @@ class KioskViewModelTest {
         ),
         scanSource: ScanSource = fakeScanSource(flowOf()),
         badgeTemplateSource: EventBadgeTemplateSource = EventBadgeTemplateSource { ApiResult.Success(null) },
+        exitGateway: KioskExitGateway = KioskExitGateway {},
     ) = KioskViewModel(
         stationGateway = stationGateway,
         verdictMapper = verdictMapper,
         checkInService = checkInService,
         scanSource = scanSource,
         badgeTemplateSource = badgeTemplateSource,
+        exitGateway = exitGateway,
     )
 
     private fun successCheckInService() = RegistrationCheckInService(
@@ -201,5 +204,14 @@ class KioskViewModelTest {
         assertIs<KioskScreenState.NeedsStaff>(vm.uiState.value.screenState)
         advanceTimeBy(10_001)
         assertIs<KioskScreenState.Waiting>(vm.uiState.value.screenState)
+    }
+
+    @Test
+    fun exitStationCallsExitGatewayAndSetsExitedFlag() = runTest(testDispatcher) {
+        var exitCalled = false
+        val vm = buildViewModel(exitGateway = KioskExitGateway { exitCalled = true })
+        vm.exitStation()
+        assertTrue(exitCalled)
+        assertTrue(vm.uiState.value.exited)
     }
 }

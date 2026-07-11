@@ -20,6 +20,7 @@ import com.idento.platform.scanner.ScanSource
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
+import com.idento.presentation.kiosk.KioskExitGateway
 import com.idento.presentation.kiosk.KioskStationGateway
 import com.idento.presentation.kiosk.KioskViewModel
 import com.idento.presentation.login.LoginViewModel
@@ -222,6 +223,7 @@ val viewModelModule = module {
         // not a separate check-in pipeline.
         val stationConfigPrefs: StationConfigPreferences = get()
         val eventRepository: EventRepository = get()
+        val authPreferences: AuthPreferences = get()
         KioskViewModel(
             stationGateway = KioskStationGateway {
                 stationConfigPrefs.stationConfig.filterNotNull().first()
@@ -231,6 +233,10 @@ val viewModelModule = module {
             scanSource = get<ScanSource>(),
             badgeTemplateSource = EventBadgeTemplateSource { eventId ->
                 eventRepository.getBadgeTemplate(eventId)
+            },
+            exitGateway = KioskExitGateway {
+                stationConfigPrefs.clear()
+                authPreferences.clearAuth()
             },
         )
     }

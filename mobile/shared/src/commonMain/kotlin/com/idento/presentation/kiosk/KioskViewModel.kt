@@ -32,6 +32,7 @@ sealed interface KioskScreenState {
 data class KioskUiState(
     val screenState: KioskScreenState = KioskScreenState.Waiting,
     val scannerState: ScannerConnectionState = ScannerConnectionState.Camera,
+    val exited: Boolean = false,
 )
 
 /** Loaded from persistence; wired in Koin via
@@ -39,6 +40,13 @@ data class KioskUiState(
  * `RegistrationStationGateway`/`ZoneStationGateway`. */
 fun interface KioskStationGateway {
     suspend fun getConfig(): StationConfig
+}
+
+/** Clears the persisted StationConfig and the staff's auth session — the effect of Kiosk's
+ * "Выйти со станции" confirm. Wired in Koin to StationConfigPreferences.clear() +
+ * AuthPreferences.clearAuth(), the same two calls SetupCompleteViewModel.exitStation() makes. */
+fun interface KioskExitGateway {
+    suspend fun exitStation()
 }
 
 /**
@@ -57,6 +65,7 @@ class KioskViewModel(
     private val checkInService: RegistrationCheckInService,
     private val scanSource: ScanSource,
     private val badgeTemplateSource: EventBadgeTemplateSource,
+    private val exitGateway: KioskExitGateway,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(KioskUiState())
@@ -100,6 +109,13 @@ class KioskViewModel(
     fun onScanPaused() {
         scanJob?.cancel()
         scanSource.stopScanning()
+    }
+
+    fun exitStation() {
+        viewModelScope.launch {
+            exitGateway.exitStation()
+            _uiState.update { it.copy(exited = true) }
+        }
     }
 
     private suspend fun processScannedCode(config: StationConfig, code: String) {
