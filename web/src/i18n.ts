@@ -806,6 +806,11 @@ i18n
           td_exitSummaryBody: "You were in this organization for {{minutes}} min and made {{count}} changes.",
           td_exitSummaryUnavailable: "Session ended. Activity summary is unavailable right now.",
           td_exitSummaryViewActivity: "View activity log",
+          td_nav_summary: "Summary",
+          td_nav_subscription: "Subscription & Limits",
+          td_subscriptionReasonPlaceholder: "e.g. invoice #1042 paid, upgraded per customer request",
+          td_subscriptionHistory: "Change history",
+          td_subscriptionHistoryEmpty: "No subscription changes yet.",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1716,6 +1721,11 @@ i18n
           td_exitSummaryBody: "Вы находились в этой организации {{minutes}} мин и внесли {{count}} изменений.",
           td_exitSummaryUnavailable: "Сессия завершена. Сводка активности сейчас недоступна.",
           td_exitSummaryViewActivity: "Открыть журнал активности",
+          td_nav_summary: "Сводка",
+          td_nav_subscription: "Подписка и лимиты",
+          td_subscriptionReasonPlaceholder: "например, счёт №1042 оплачен, тариф повышен по запросу клиента",
+          td_subscriptionHistory: "История изменений",
+          td_subscriptionHistoryEmpty: "Изменений подписки пока нет.",
 
           // Analytics
           totalTenants: "Всего организаций",
