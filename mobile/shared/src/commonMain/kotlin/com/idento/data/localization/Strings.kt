@@ -267,6 +267,11 @@ enum class StringKey {
     // Shared scanner-status indicator (M2) — used by both Registration and Zone Control screens
     SCANNER_CONNECTED_SUFFIX,
     SCANNER_SWITCH_TO_CAMERA,
+
+    // Kiosk mode screens (M3)
+    KIOSK_WAITING_HINT,
+    KIOSK_GREETING_PRINT_CAPTION,
+    KIOSK_NEEDS_STAFF_MESSAGE,
 }
 
 /**
@@ -503,6 +508,9 @@ internal val englishStrings = mapOf(
     StringKey.ZONE_ACTION_NEXT to "Next",
     StringKey.SCANNER_CONNECTED_SUFFIX to "connected",
     StringKey.SCANNER_SWITCH_TO_CAMERA to "Switch to phone camera",
+    StringKey.KIOSK_WAITING_HINT to "No code? Call a staff member",
+    StringKey.KIOSK_GREETING_PRINT_CAPTION to "Badge printing — collect it on the right",
+    StringKey.KIOSK_NEEDS_STAFF_MESSAGE to "See a staff member",
 )
 
 /**
@@ -739,6 +747,9 @@ internal val russianStrings = mapOf(
     StringKey.ZONE_ACTION_NEXT to "Следующий",
     StringKey.SCANNER_CONNECTED_SUFFIX to "подключён",
     StringKey.SCANNER_SWITCH_TO_CAMERA to "Включить камеру телефона",
+    StringKey.KIOSK_WAITING_HINT to "Кода нет? Позовите сотрудника",
+    StringKey.KIOSK_GREETING_PRINT_CAPTION to "Бейдж печатается — заберите справа",
+    StringKey.KIOSK_NEEDS_STAFF_MESSAGE to "Обратитесь к сотруднику",
 )
 
 /**
