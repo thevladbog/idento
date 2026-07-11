@@ -6,6 +6,8 @@ import com.idento.data.storage.SqlDriverFactory
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
+import com.idento.platform.scanner.IosScanSource
+import com.idento.platform.scanner.ScanSource
 
 actual fun createDataStoreFactory(): DataStoreFactory {
     return DataStoreFactory()
@@ -29,6 +31,10 @@ actual fun createEthernetPrinterService(): EthernetPrinterService {
 
 actual fun createCameraService(): CameraService {
     return CameraService()
+}
+
+actual fun createScanSource(cameraService: CameraService): ScanSource {
+    return IosScanSource(cameraService)
 }
 
 /**

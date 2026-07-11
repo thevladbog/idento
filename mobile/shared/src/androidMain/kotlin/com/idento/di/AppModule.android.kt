@@ -7,6 +7,8 @@ import com.idento.data.storage.SqlDriverFactory
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
+import com.idento.platform.scanner.AndroidScanSource
+import com.idento.platform.scanner.ScanSource
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.component.KoinComponent
 
@@ -32,6 +34,10 @@ actual fun createEthernetPrinterService(): EthernetPrinterService {
 
 actual fun createCameraService(): CameraService {
     return CameraService(object : KoinComponent {}.getKoin().get())
+}
+
+actual fun createScanSource(cameraService: CameraService): ScanSource {
+    return AndroidScanSource(cameraService, object : KoinComponent {}.getKoin().get())
 }
 
 /**

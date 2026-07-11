@@ -12,6 +12,8 @@ import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationVerdictLookup
 import com.idento.data.registration.RegistrationVerdictMapper
 import com.idento.data.registration.toVerdictAttendee
+import com.idento.platform.scanner.ScanSource
+import com.idento.platform.scanner.ScannerConnectionState
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -39,6 +41,7 @@ data class RegistrationHomeUiState(
     val sessionCheckedCount: Int = 0,
     val currentVerdict: RegistrationVerdict? = null,
     val isScanActive: Boolean = false,
+    val scannerState: ScannerConnectionState = ScannerConnectionState.Camera,
     val searchQuery: String = "",
     val searchResults: List<Attendee> = emptyList(),
     val isSearchLoading: Boolean = false,
@@ -72,32 +75,24 @@ fun interface AttendeeSearchSource {
     suspend fun searchAttendees(eventId: String, query: String): ApiResult<List<Attendee>>
 }
 
-/** Abstracts [com.idento.platform.camera.CameraService] (an `expect class` that cannot be
- * subclassed from commonTest) behind a regular interface, keeping the ViewModel testable. */
-interface CameraScanGateway {
-    fun startScanning(): Flow<String>
-    fun stopScanning()
-}
-
 // ── ViewModel ────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * Core business logic for the registration check-in home screen. Owns the scan pipeline
- * (`cameraGateway → DebouncedScanPipeline → RegistrationVerdictMapper → RegistrationCheckInService`),
+ * (`scanSource → DebouncedScanPipeline → RegistrationVerdictMapper → RegistrationCheckInService`),
  * the attendee search flow, badge-template loading, and all StatusBar state (zone name, printer
  * label, pending offline-queue count).
  *
- * [cameraGateway] is nullable so the ViewModel stays unit-testable from commonTest without a real
- * platform camera. Production Koin wiring always provides the real [CameraScanGateway] backed by
- * [com.idento.platform.camera.CameraService]. Tests that exercise the scan path pass a fake
- * gateway with a [MutableSharedFlow] as the scan source.
+ * [scanSource] is the shared [ScanSource] seam (also used by `ZoneControlViewModel`), merging the
+ * platform camera with any connected hardware/BT scanner. Tests that exercise the scan path pass a
+ * fake [ScanSource] with a [MutableSharedFlow] as the scan source.
  */
 @OptIn(FlowPreview::class)
 class RegistrationHomeViewModel(
     private val stationGateway: RegistrationStationGateway,
     private val verdictMapper: RegistrationVerdictMapper,
     private val checkInService: RegistrationCheckInService,
-    private val cameraGateway: CameraScanGateway?,
+    private val scanSource: ScanSource,
     private val badgeTemplateSource: EventBadgeTemplateSource,
     private val attendeeSearchSource: AttendeeSearchSource,
     private val pendingQueueCountSource: PendingQueueCountSource,
@@ -127,6 +122,11 @@ class RegistrationHomeViewModel(
         viewModelScope.launch {
             val config = stationGateway.getConfig()
             stationConfig = config
+            // Exclude the station's bonded BT printer (same SPP UUID as a BT scanner) from
+            // ScanSource's auto-connect candidates — see Finding 1 kdoc on
+            // ScanSource.setExcludedBluetoothAddress. Must happen before the first
+            // onScanResumed() call below.
+            scanSource.setExcludedBluetoothAddress(config.printer?.address)
             _uiState.update {
                 it.copy(
                     zoneName = config.workPointName,
@@ -155,19 +155,23 @@ class RegistrationHomeViewModel(
                     executeSearch(query)
                 }
         }
+        viewModelScope.launch {
+            scanSource.connectionState.collect { state ->
+                _uiState.update { it.copy(scannerState = state) }
+            }
+        }
     }
 
     // ── Scan ─────────────────────────────────────────────────────────────────────────────────────
 
     /** Called by the screen when the camera composable reports it is ready/visible. No-op if
-     * there is no camera gateway (shouldn't happen in production) or no config yet. */
+     * there is no config yet. */
     fun onScanResumed() {
         val config = stationConfig ?: return
-        val camera = cameraGateway ?: return
         scanJob?.cancel()
         scanJob = viewModelScope.launch {
             _uiState.update { it.copy(isScanActive = true) }
-            pipeline.process(camera.startScanning()).collect { code ->
+            pipeline.process(scanSource.startScanning()).collect { code ->
                 processScannedCode(config, code)
             }
         }
@@ -176,8 +180,14 @@ class RegistrationHomeViewModel(
     /** Called by the screen when the camera composable is paused/hidden (e.g. verdict overlay). */
     fun onScanPaused() {
         scanJob?.cancel()
-        cameraGateway?.stopScanning()
+        scanSource.stopScanning()
         _uiState.update { it.copy(isScanActive = false) }
+    }
+
+    /** Forces the camera path for the current scan session, overriding a connected hardware
+     * scanner — wired to the "Switch to phone camera" fallback button on screen 3b. */
+    fun onSwitchToCamera() {
+        scanSource.preferCamera()
     }
 
     private suspend fun processScannedCode(config: StationConfig, code: String) {
@@ -295,6 +305,6 @@ class RegistrationHomeViewModel(
     override fun onCleared() {
         super.onCleared()
         scanJob?.cancel()
-        cameraGateway?.stopScanning()
+        scanSource.stopScanning()
     }
 }

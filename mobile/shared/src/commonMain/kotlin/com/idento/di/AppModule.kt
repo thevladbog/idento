@@ -41,6 +41,7 @@ import com.idento.db.IdentoDatabase
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
+import com.idento.platform.scanner.ScanSource
 import com.idento.presentation.setup.SetupWizardDraft
 import org.koin.core.module.Module
 import org.koin.core.module.dsl.singleOf
@@ -145,6 +146,7 @@ val appModule = module {
     single { createBluetoothPrinterService() }
     single { createEthernetPrinterService() }
     single { createCameraService() }
+    single<ScanSource> { createScanSource(get()) }
 }
 
 /**
@@ -156,3 +158,4 @@ expect fun createSqlDriverFactory(): SqlDriverFactory
 expect fun createBluetoothPrinterService(): BluetoothPrinterService
 expect fun createEthernetPrinterService(): EthernetPrinterService
 expect fun createCameraService(): CameraService
+expect fun createScanSource(cameraService: CameraService): ScanSource

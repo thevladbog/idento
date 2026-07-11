@@ -30,6 +30,7 @@ import com.idento.data.localization.stringResource
 import com.idento.data.model.Attendee
 import com.idento.data.model.PrintState
 import com.idento.data.model.RegistrationVerdict
+import com.idento.platform.scanner.ScannerConnectionState
 import com.idento.presentation.components.AppIcons
 import com.idento.presentation.components.redesign.ActionButtonSpec
 import com.idento.presentation.components.redesign.ActionStack
@@ -39,6 +40,7 @@ import com.idento.presentation.components.redesign.ListRow
 import com.idento.presentation.components.redesign.ModeSegmentedControl
 import com.idento.presentation.components.redesign.OfflineBanner
 import com.idento.presentation.components.redesign.ScanReticle
+import com.idento.presentation.components.redesign.ScannerStatusIndicator
 import com.idento.presentation.components.redesign.StatusBar
 import com.idento.presentation.components.redesign.StatusCell
 import com.idento.presentation.components.redesign.VerdictBand
@@ -121,6 +123,7 @@ fun RegistrationHomeScreen(
             RegistrationTab.SCAN -> ScanTab(
                 uiState = uiState,
                 onVerdictDismissed = viewModel::onVerdictDismissed,
+                onSwitchToCamera = viewModel::onSwitchToCamera,
             )
             RegistrationTab.SEARCH -> SearchTab(
                 uiState = uiState,
@@ -137,10 +140,17 @@ fun RegistrationHomeScreen(
 private fun ScanTab(
     uiState: RegistrationHomeUiState,
     onVerdictDismissed: () -> Unit,
+    onSwitchToCamera: () -> Unit,
 ) {
     val verdict = uiState.currentVerdict
-    if (verdict == null) {
-        Box(
+    val scannerState = uiState.scannerState
+    when {
+        verdict != null -> VerdictCard(verdict = verdict, onDismiss = onVerdictDismissed)
+        scannerState is ScannerConnectionState.HardwareConnected -> ScannerStatusIndicator(
+            label = scannerState.label,
+            onSwitchToCamera = onSwitchToCamera,
+        )
+        else -> Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black),
@@ -148,8 +158,6 @@ private fun ScanTab(
         ) {
             ScanReticle()
         }
-    } else {
-        VerdictCard(verdict = verdict, onDismiss = onVerdictDismissed)
     }
 }
 

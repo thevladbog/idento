@@ -11,6 +11,8 @@ import com.idento.data.registration.AttendeeLookup
 import com.idento.data.registration.BatchCheckinSubmitter
 import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationVerdictMapper
+import com.idento.platform.scanner.ScanSource
+import com.idento.platform.scanner.ScannerConnectionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -35,7 +37,7 @@ import kotlin.test.assertTrue
  * narrow seam fakes:
  *  - [RegistrationStationGateway] / [PendingQueueCountSource] — defined in this file, trivial lambdas
  *  - [EventBadgeTemplateSource] / [AttendeeSearchSource] — trivial lambdas (no HTTP needed)
- *  - [CameraScanGateway] — a fake backed by a [MutableSharedFlow] or [flowOf]; avoids constructing
+ *  - [ScanSource] — a fake backed by a [MutableSharedFlow] or [flowOf]; avoids constructing
  *    `CameraService` (an `expect class` with no commonTest `actual`)
  *  - [RegistrationVerdictMapper] / [RegistrationCheckInService] — constructed from their own seam
  *    lambdas (same approach as [com.idento.di.RegistrationServiceConstructionTest])
@@ -109,7 +111,7 @@ class RegistrationHomeViewModelTest {
         checkInService: RegistrationCheckInService = RegistrationCheckInService(
             batchSubmitter = BatchCheckinSubmitter { _, _ -> ApiResult.Error(Exception("fake")) },
         ),
-        cameraGateway: CameraScanGateway? = null,
+        scanSource: ScanSource = fakeScanSource(flowOf()),
         badgeTemplateSource: EventBadgeTemplateSource = EventBadgeTemplateSource { ApiResult.Success(null) },
         attendeeSearchSource: AttendeeSearchSource = AttendeeSearchSource { _, _ -> ApiResult.Success(emptyList()) },
         pendingQueueCountSource: PendingQueueCountSource = PendingQueueCountSource { flowOf(0) },
@@ -117,7 +119,7 @@ class RegistrationHomeViewModelTest {
         stationGateway = stationGateway,
         verdictMapper = verdictMapper,
         checkInService = checkInService,
-        cameraGateway = cameraGateway,
+        scanSource = scanSource,
         badgeTemplateSource = badgeTemplateSource,
         attendeeSearchSource = attendeeSearchSource,
         pendingQueueCountSource = pendingQueueCountSource,
@@ -164,7 +166,7 @@ class RegistrationHomeViewModelTest {
     fun scanResultUpdatesVerdictWhenLookupFails() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
         val vm = buildViewModel(
-            cameraGateway = fakeCameraGateway(codeFlow),
+            scanSource = fakeScanSource(codeFlow),
             // AttendeeLookup returns Error → LookupFailed → LookupError verdict (not NotFound)
             verdictMapper = RegistrationVerdictMapper(
                 AttendeeLookup { _, _ -> ApiResult.Error(Exception("timeout"), "Network timeout") },
@@ -184,7 +186,7 @@ class RegistrationHomeViewModelTest {
     fun scanResultIncrementsSessionCountOnSuccess() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
         val vm = buildViewModel(
-            cameraGateway = fakeCameraGateway(codeFlow),
+            scanSource = fakeScanSource(codeFlow),
             verdictMapper = RegistrationVerdictMapper(
                 AttendeeLookup { _, _ -> ApiResult.Success(fakeAttendee) },
             ),
@@ -212,7 +214,7 @@ class RegistrationHomeViewModelTest {
     fun onVerdictDismissedClearsVerdictAndResumesScanning() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
         val vm = buildViewModel(
-            cameraGateway = fakeCameraGateway(codeFlow),
+            scanSource = fakeScanSource(codeFlow),
             verdictMapper = RegistrationVerdictMapper(
                 AttendeeLookup { _, _ -> ApiResult.Error(Exception("not found")) },
             ),
@@ -229,7 +231,7 @@ class RegistrationHomeViewModelTest {
     @Test
     fun tabSwitchToSearchStopsScanning() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
-        val vm = buildViewModel(cameraGateway = fakeCameraGateway(codeFlow))
+        val vm = buildViewModel(scanSource = fakeScanSource(codeFlow))
         vm.onScanResumed()
         assertTrue(vm.uiState.value.isScanActive)
         vm.onTabSelected(RegistrationTab.SEARCH)
@@ -240,7 +242,7 @@ class RegistrationHomeViewModelTest {
     @Test
     fun tabSwitchBackToScanResumesScanning() = runTest(testDispatcher) {
         val codeFlow = MutableSharedFlow<String>()
-        val vm = buildViewModel(cameraGateway = fakeCameraGateway(codeFlow))
+        val vm = buildViewModel(scanSource = fakeScanSource(codeFlow))
         vm.onTabSelected(RegistrationTab.SEARCH)
         assertEquals(false, vm.uiState.value.isScanActive)
         vm.onTabSelected(RegistrationTab.SCAN)
@@ -286,7 +288,10 @@ class RegistrationHomeViewModelTest {
 
 // ── Test helpers ─────────────────────────────────────────────────────────────────────────────────
 
-private fun fakeCameraGateway(codes: Flow<String>) = object : CameraScanGateway {
+private fun fakeScanSource(codes: Flow<String>) = object : ScanSource {
+    override val connectionState = MutableStateFlow<ScannerConnectionState>(ScannerConnectionState.Camera)
     override fun startScanning(): Flow<String> = codes
     override fun stopScanning() {}
+    override fun preferCamera() {}
+    override fun setExcludedBluetoothAddress(address: String?) {}
 }

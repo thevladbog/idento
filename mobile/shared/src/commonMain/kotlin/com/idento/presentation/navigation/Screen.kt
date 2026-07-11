@@ -44,4 +44,7 @@ sealed class Screen(val route: String) {
 
     // Registration mode (M1d) — screen shown on cold start when stationMode == REGISTRATION.
     data object RegistrationHome : Screen("registration_home")
+
+    // Zone Control mode (M2) — screen shown on cold start when stationMode == ZONE_CONTROL.
+    data object ZoneControlHome : Screen("zone_control_home")
 }
