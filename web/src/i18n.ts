@@ -796,6 +796,10 @@ i18n
           td_suspend_consequence: "This affects {{users}} users and {{events}} events for “{{tenant}}”. All API access will be blocked within ~2 minutes.",
           td_suspend_acknowledge: "I understand this blocks access for this organization's users immediately.",
           td_reasonOptionalLabel: "Reason (optional, visible in the audit log)",
+          td_archive_title: "Archive organization?",
+          td_archive_consequence: "This affects {{users}} users and {{events}} events for “{{tenant}}”. The organization becomes read-blocked and enters the retention-cleanup countdown.",
+          td_archive_acknowledgeRetention: "I understand this starts an irreversible retention-cleanup countdown.",
+          td_archive_acknowledgeIrreversible: "I understand this cannot be undone from the UI.",
 
           // Analytics
           totalTenants: "Total Tenants",
@@ -1696,6 +1700,10 @@ i18n
           td_suspend_consequence: "Это затронет {{users}} пользователей и {{events}} мероприятий «{{tenant}}». Доступ к API будет заблокирован в течение ~2 минут.",
           td_suspend_acknowledge: "Я понимаю, что это немедленно заблокирует доступ для пользователей этой организации.",
           td_reasonOptionalLabel: "Причина (необязательно, отображается в журнале аудита)",
+          td_archive_title: "Архивировать организацию?",
+          td_archive_consequence: "Это затронет {{users}} пользователей и {{events}} мероприятий «{{tenant}}». Организация будет заблокирована для чтения и запустится необратимый отсчёт хранения данных.",
+          td_archive_acknowledgeRetention: "Я понимаю, что это запускает необратимый отсчёт хранения данных.",
+          td_archive_acknowledgeIrreversible: "Я понимаю, что это действие нельзя отменить через интерфейс.",
 
           // Analytics
           totalTenants: "Всего организаций",
