@@ -85,4 +85,29 @@ describe('formatAuditDiff', () => {
     );
     expect(line).toBe('Subscription updated — reason: note only');
   });
+
+  it('renders plan creation', () => {
+    const line = formatAuditDiff(entry({ action: 'create_plan', changes: { plan: { name: 'Professional' } } }));
+    expect(line).toBe('Plan created: Professional');
+  });
+
+  it('renders plan updates as a field-level diff', () => {
+    const line = formatAuditDiff(
+      entry({
+        action: 'update_plan',
+        changes: {
+          old: { name: 'Starter', price_monthly: 29, is_active: true },
+          new: { name: 'Professional', price_monthly: 99, is_active: true },
+        },
+      })
+    );
+    expect(line).toBe('Name: Starter → Professional; Price/mo: 29 → 99');
+  });
+
+  it('falls back to a generic label when nothing tracked in a plan update changed', () => {
+    const line = formatAuditDiff(
+      entry({ action: 'update_plan', changes: { old: { name: 'Starter' }, new: { name: 'Starter' } } })
+    );
+    expect(line).toBe('Plan updated');
+  });
 });

@@ -80,6 +80,38 @@ export function formatAuditDiff(entry: AuditLogEntry, planNames?: Record<string,
       if (parts.length === 0) parts.push('Subscription updated');
       return parts.join('; ') + reasonSuffix;
     }
+    case 'create_plan': {
+      const plan = (c.plan ?? {}) as Record<string, unknown>;
+      return `Plan created: ${typeof plan.name === 'string' ? plan.name : '?'}${reasonSuffix}`;
+    }
+    case 'update_plan': {
+      const oldPlan = (c.old ?? {}) as Record<string, unknown>;
+      const newPlan = (c.new ?? {}) as Record<string, unknown>;
+      const parts: string[] = [];
+      if (oldPlan.name !== newPlan.name) {
+        parts.push(`Name: ${oldPlan.name ?? '?'} → ${newPlan.name ?? '?'}`);
+      }
+      if (oldPlan.price_monthly !== newPlan.price_monthly) {
+        parts.push(`Price/mo: ${oldPlan.price_monthly ?? '?'} → ${newPlan.price_monthly ?? '?'}`);
+      }
+      if (oldPlan.price_yearly !== newPlan.price_yearly) {
+        parts.push(`Price/yr: ${oldPlan.price_yearly ?? '?'} → ${newPlan.price_yearly ?? '?'}`);
+      }
+      if (oldPlan.is_active !== newPlan.is_active) {
+        parts.push(`Active: ${oldPlan.is_active ? 'yes' : 'no'} → ${newPlan.is_active ? 'yes' : 'no'}`);
+      }
+      if (oldPlan.is_public !== newPlan.is_public) {
+        parts.push(`Public: ${oldPlan.is_public ? 'yes' : 'no'} → ${newPlan.is_public ? 'yes' : 'no'}`);
+      }
+      if (JSON.stringify(oldPlan.limits ?? {}) !== JSON.stringify(newPlan.limits ?? {})) {
+        parts.push('Limits updated');
+      }
+      if (JSON.stringify(oldPlan.features ?? {}) !== JSON.stringify(newPlan.features ?? {})) {
+        parts.push('Features updated');
+      }
+      if (parts.length === 0) parts.push('Plan updated');
+      return parts.join('; ') + reasonSuffix;
+    }
     case 'create_tenant':
       return 'Tenant created';
     default:
