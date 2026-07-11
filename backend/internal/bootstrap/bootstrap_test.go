@@ -71,6 +71,25 @@ func TestOnPremAdminDefaultsOrgNameWhenUnset(t *testing.T) {
 	}
 }
 
+func TestOnPremAdminNormalizesEmailCaseAndWhitespace(t *testing.T) {
+	var gotEmail string
+	s := &fakeStore{
+		hasAnyUsers: func(context.Context) (bool, error) { return false, nil },
+		provisionTenantAdmin: func(tenantName, email, password string) (*models.Tenant, *models.User, error) {
+			gotEmail = email
+			return &models.Tenant{Name: tenantName}, &models.User{Email: email}, nil
+		},
+	}
+	cfg := &config.Config{AdminEmail: "  Admin@Example.com  ", AdminPassword: "s3cret!"}
+
+	if err := OnPremAdmin(context.Background(), s, cfg); err != nil {
+		t.Fatalf("OnPremAdmin: %v", err)
+	}
+	if gotEmail != "admin@example.com" {
+		t.Errorf("email = %q, want normalized %q", gotEmail, "admin@example.com")
+	}
+}
+
 func TestOnPremAdminErrorsWhenAdminEmailMissing(t *testing.T) {
 	s := &fakeStore{
 		hasAnyUsers: func(context.Context) (bool, error) { return false, nil },

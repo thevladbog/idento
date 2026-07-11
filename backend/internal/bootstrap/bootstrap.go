@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"idento/backend/internal/config"
 	"idento/backend/internal/store"
@@ -27,16 +28,17 @@ func OnPremAdmin(ctx context.Context, s store.Store, cfg *config.Config) error {
 	if hasUsers {
 		return nil
 	}
-	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {
+	email := strings.TrimSpace(strings.ToLower(cfg.AdminEmail))
+	if email == "" || cfg.AdminPassword == "" {
 		return fmt.Errorf("first run with an empty database requires IDENTO_ADMIN_EMAIL and IDENTO_ADMIN_PASSWORD to be set — see INSTALL.md")
 	}
 	orgName := cfg.AdminOrgName
 	if orgName == "" {
 		orgName = defaultOrgName
 	}
-	if _, _, err := s.ProvisionTenantWithAdmin(ctx, orgName, cfg.AdminEmail, cfg.AdminPassword); err != nil {
+	if _, _, err := s.ProvisionTenantWithAdmin(ctx, orgName, email, cfg.AdminPassword); err != nil {
 		return fmt.Errorf("bootstrap admin: %w", err)
 	}
-	log.Printf("bootstrap: created organization %q with admin %s", orgName, cfg.AdminEmail)
+	log.Printf("bootstrap: created organization %q with admin %s", orgName, email)
 	return nil
 }
