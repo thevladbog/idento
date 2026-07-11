@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { render, screen } from "@testing-library/react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "../sheet"
+import "../../../i18n"
 
 describe("Sheet", () => {
   it("renders its content with title and description when open", () => {
@@ -16,6 +17,7 @@ describe("Sheet", () => {
     )
     expect(screen.getByText("Archive Acme Conf Group")).toBeInTheDocument()
     expect(screen.getByText("Starts a 30-day retention clock.")).toBeInTheDocument()
+    expect(screen.getByText("Close")).toBeInTheDocument()
   })
 
   it("applies right-side positioning classes by default", () => {
