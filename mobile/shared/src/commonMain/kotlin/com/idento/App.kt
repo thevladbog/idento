@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.sync.SyncService
 import com.idento.presentation.navigation.IdentoNavHost
 import com.idento.presentation.navigation.resolveStartDestination
 import com.idento.presentation.theme.IdentoTheme
@@ -24,6 +25,21 @@ fun App() {
     val appPreferences: AppPreferences = koinInject()
     val stationConfigPreferences: StationConfigPreferences = koinInject()
     val authPreferences: AuthPreferences = koinInject()
+    val syncService: SyncService = koinInject()
+
+    // Start the offline-queue auto-sync loop once at app launch. Unconditional on login/
+    // StationConfig state — per spec §8 ("очереди... доливаются после входа"), queued zone/
+    // registration check-ins should start flushing the moment a session becomes valid, not only
+    // once Registration mode's screens exist. `startAutoSync()` itself is a no-op until
+    // `NetworkMonitor.isOnline` reports connectivity and a queue actually has pending items, so
+    // calling it eagerly here (before login/setup) is safe.
+    LaunchedEffect(Unit) {
+        try {
+            syncService.startAutoSync()
+        } catch (e: Exception) {
+            println("⚠️ Failed to start sync service: ${e.message}")
+        }
+    }
 
     // Load theme from DataStore on startup
     LaunchedEffect(Unit) {

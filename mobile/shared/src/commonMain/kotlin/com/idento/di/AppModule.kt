@@ -25,7 +25,10 @@ import com.idento.data.storage.SqlDriverFactory
 import com.idento.data.storage.SqlDelightOfflineDatabase
 import com.idento.data.storage.OfflineDatabase
 import com.idento.data.sync.SyncService
+import com.idento.data.sync.CheckInSyncQueue
+import com.idento.data.sync.NetworkMonitor
 import com.idento.data.sync.NetworkMonitorImpl
+import com.idento.data.sync.RegistrationCheckInSyncQueue
 import com.idento.db.IdentoDatabase
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
@@ -78,7 +81,8 @@ val appModule = module {
     single { ZoneRepository(get()) }
     single { StationRepository(get()) }
     single { OfflineCheckInRepository(get(), get()) }
-    
+    single<CheckInSyncQueue> { get<OfflineCheckInRepository>() }
+
     // Offline storage (SQLDelight-backed, persistent). A single `IdentoDatabase` instance —
     // and therefore a single `SqlDriver`/connection to the "idento.db" file — is registered
     // here and shared by every consumer below (both `SqlDelightOfflineDatabase`'s zone
@@ -97,12 +101,13 @@ val appModule = module {
     // its own.
     single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
     single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
+    single<RegistrationCheckInSyncQueue> { get<RegistrationOfflineQueueRepository>() }
 
     // Network monitoring
-    single { NetworkMonitorImpl() }
-    
+    single<NetworkMonitor> { NetworkMonitorImpl() }
+
     // Sync service
-    single { SyncService(get(), get()) }
+    single { SyncService(get(), get(), get()) }
     
     // Platform Services (expect/actual)
     single { createBluetoothPrinterService() }

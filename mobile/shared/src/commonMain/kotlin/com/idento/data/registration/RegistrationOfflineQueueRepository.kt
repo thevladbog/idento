@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToOne
 import com.idento.data.model.BatchCheckinItemDto
 import com.idento.data.network.ApiResult
+import com.idento.data.sync.RegistrationCheckInSyncQueue
 import com.idento.db.PendingRegistrationCheckInQueries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -47,7 +48,7 @@ data class FlushResult(val succeeded: Int, val failed: Int)
 class RegistrationOfflineQueueRepository(
     private val queries: PendingRegistrationCheckInQueries,
     private val submitter: BatchCheckinSubmitter,
-) : RegistrationOfflineQueue {
+) : RegistrationOfflineQueue, RegistrationCheckInSyncQueue {
 
     override suspend fun enqueue(eventId: String, item: BatchCheckinItemDto) {
         withContext(Dispatchers.Default) {
@@ -73,7 +74,7 @@ class RegistrationOfflineQueueRepository(
         }
     }
 
-    suspend fun getPending(): List<PendingRegistrationCheckIn> = withContext(Dispatchers.Default) {
+    override suspend fun getPending(): List<PendingRegistrationCheckIn> = withContext(Dispatchers.Default) {
         queries.selectAll().executeAsList().map(::toDomain)
     }
 
@@ -88,7 +89,7 @@ class RegistrationOfflineQueueRepository(
      * attempt/error on every item that couldn't be confirmed, so it stays queued for the next
      * flush rather than being silently dropped.
      */
-    suspend fun flush(): FlushResult = withContext(Dispatchers.Default) {
+    override suspend fun flush(): FlushResult = withContext(Dispatchers.Default) {
         var succeeded = 0
         var failed = 0
         val pendingByEvent = queries.selectAll().executeAsList().groupBy { it.eventId }
