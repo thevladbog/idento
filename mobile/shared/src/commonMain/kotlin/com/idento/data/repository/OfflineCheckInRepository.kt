@@ -4,6 +4,7 @@ import com.idento.data.model.ZoneCheckInRequest
 import com.idento.data.network.ApiResult
 import com.idento.data.storage.OfflineDatabase
 import com.idento.data.storage.PendingZoneCheckIn
+import com.idento.data.sync.CheckInSyncQueue
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlin.time.Clock
@@ -16,7 +17,7 @@ import kotlin.time.ExperimentalTime
 class OfflineCheckInRepository(
     private val offlineDatabase: OfflineDatabase,
     private val zoneRepository: ZoneRepository
-) {
+) : CheckInSyncQueue {
     
     /**
      * Perform zone check-in with offline support
@@ -63,7 +64,7 @@ class OfflineCheckInRepository(
     /**
      * Get all pending check-ins
      */
-    suspend fun getPendingCheckIns(): List<PendingZoneCheckIn> {
+    override suspend fun getPendingCheckIns(): List<PendingZoneCheckIn> {
         return offlineDatabase.getPendingCheckIns()
     }
     
@@ -102,7 +103,7 @@ class OfflineCheckInRepository(
     /**
      * Sync all pending check-ins
      */
-    suspend fun syncAll(): SyncResult {
+    override suspend fun syncAll(): SyncResult {
         val pending = offlineDatabase.getPendingCheckIns()
         var successCount = 0
         var failedCount = 0

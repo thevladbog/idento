@@ -11,6 +11,10 @@ import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.PrintQueueRepository
+import com.idento.data.registration.RegistrationOfflineQueue
+import com.idento.data.registration.RegistrationOfflineQueueRepository
+import com.idento.data.registration.createPrintSender
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
@@ -23,7 +27,12 @@ import com.idento.data.storage.SqlDriverFactory
 import com.idento.data.storage.SqlDelightOfflineDatabase
 import com.idento.data.storage.OfflineDatabase
 import com.idento.data.sync.SyncService
+import com.idento.data.sync.CheckInSyncQueue
+import com.idento.data.sync.NetworkMonitor
 import com.idento.data.sync.NetworkMonitorImpl
+import com.idento.data.sync.PrintRetryQueue
+import com.idento.data.sync.RegistrationCheckInSyncQueue
+import com.idento.db.IdentoDatabase
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -75,16 +84,39 @@ val appModule = module {
     single { ZoneRepository(get()) }
     single { StationRepository(get()) }
     single { OfflineCheckInRepository(get(), get()) }
-    
-    // Offline storage (SQLDelight-backed, persistent)
+    single<CheckInSyncQueue> { get<OfflineCheckInRepository>() }
+
+    // Offline storage (SQLDelight-backed, persistent). A single `IdentoDatabase` instance —
+    // and therefore a single `SqlDriver`/connection to the "idento.db" file — is registered
+    // here and shared by every consumer below (both `SqlDelightOfflineDatabase`'s zone
+    // check-in queue and `RegistrationOfflineQueueRepository`'s registration check-in queue),
+    // rather than each opening its own separate connection to the same physical file. Neither
+    // `SqlDriverFactory.android.kt` nor `.ios.kt` configures WAL mode, so multiple concurrent
+    // connections to the same file would otherwise rely on SQLite's default rollback-journal
+    // locking; sharing one connection avoids that risk entirely once `SyncService` drives
+    // concurrent flush operations from a background dispatcher alongside foreground writes.
     single { createSqlDriverFactory() }
+    single { IdentoDatabase(get<SqlDriverFactory>().createDriver()) }
     single { SqlDelightOfflineDatabase(get()) as OfflineDatabase }
-    
+
+    // Registration check-in offline queue (SQLDelight-backed, persistent). Resolves the same
+    // `IdentoDatabase` singleton registered above via Koin's `get()` rather than constructing
+    // its own.
+    single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
+    single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
+    single<RegistrationCheckInSyncQueue> { get<RegistrationOfflineQueueRepository>() }
+
+    // Print queue (SQLDelight-backed, persistent). Resolves the same `IdentoDatabase` singleton
+    // registered above via Koin's `get()` rather than constructing its own — same reasoning as
+    // `RegistrationOfflineQueueRepository` above.
+    single { PrintQueueRepository(get<IdentoDatabase>().printJobQueries, createPrintSender(get(), get())) }
+    single<PrintRetryQueue> { get<PrintQueueRepository>() }
+
     // Network monitoring
-    single { NetworkMonitorImpl() }
-    
+    single<NetworkMonitor> { NetworkMonitorImpl() }
+
     // Sync service
-    single { SyncService(get(), get()) }
+    single { SyncService(get(), get(), get(), get()) }
     
     // Platform Services (expect/actual)
     single { createBluetoothPrinterService() }

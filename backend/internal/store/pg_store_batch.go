@@ -10,49 +10,108 @@ import (
 	"github.com/google/uuid"
 )
 
+// BatchCheckinOutcome distinguishes the possible results of applying one
+// offline-queued batch item, so callers (and ultimately the mobile client,
+// via the handler's response) can tell a genuine first-time write apart from
+// the two kinds of no-op: the attendee's check-in already existed (possibly
+// applied by a different device/client_uuid), or this exact client_uuid was
+// already processed before (idempotent replay of the same request).
+type BatchCheckinOutcome int
+
+const (
+	// BatchCheckinCreated means this call performed the underlying write
+	// (attendee check-in, or zone entry) for the first time.
+	BatchCheckinCreated BatchCheckinOutcome = iota
+	// BatchCheckinAlreadyCheckedIn means a kind=checkin item's guarded
+	// `UPDATE ... WHERE checkin_status = false` affected zero rows — the
+	// attendee was already checked in (by this or another client_uuid/device)
+	// by the time the atomic write was evaluated — no write was made here,
+	// regardless of which client_uuid is submitting.
+	BatchCheckinAlreadyCheckedIn
+	// BatchCheckinDuplicateClientUUID means this exact item.ClientUUID was
+	// already present in batch_checkin_log — a true idempotent replay of a
+	// previously-processed request. No work was attempted at all.
+	BatchCheckinDuplicateClientUUID
+)
+
 // ApplyBatchCheckin applies one offline-queued item idempotently: if
-// item.ClientUUID was already logged, it returns (false, nil) without
-// re-applying the write. Otherwise it performs the underlying check-in
-// (attendee check-in, or zone entry) and records the dedup log row.
+// item.ClientUUID was already logged, it returns (BatchCheckinDuplicateClientUUID, nil)
+// without re-applying the write. Otherwise it performs the underlying check-in
+// (attendee check-in, or zone entry) and records the dedup log row, returning
+// BatchCheckinCreated for a genuine first-time write or
+// BatchCheckinAlreadyCheckedIn if a kind=checkin item's attendee was already
+// checked in (by this or another client_uuid/device).
 // This is intentionally NOT wrapped in one cross-call transaction — each
-// underlying write already has its own uniqueness guarantee (attendee
-// check-in is a no-op if already true; zone_checkins has a UNIQUE
-// (attendee_id, zone_id, event_day) constraint), and batch_checkin_log's
+// underlying write already has its own uniqueness guarantee: the kind=checkin
+// write is a single `UPDATE ... WHERE checkin_status = false` guarded update
+// (see below — this is what makes the read-then-write for that path atomic,
+// rather than a Go-level check-then-act race), zone_checkins has a UNIQUE
+// (attendee_id, zone_id, event_day) constraint, and batch_checkin_log's
 // PRIMARY KEY on client_uuid means even a true concurrent-retry race can
 // only produce one log row, which is what the mobile client's dedup
 // depends on.
-func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error) {
+func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (BatchCheckinOutcome, error) {
 	var exists bool
 	if err := s.db.QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM batch_checkin_log WHERE client_uuid = $1)`,
 		item.ClientUUID,
 	).Scan(&exists); err != nil {
-		return false, err
+		return BatchCheckinCreated, err
 	}
 	if exists {
-		return false, nil
+		return BatchCheckinDuplicateClientUUID, nil
 	}
+
+	outcome := BatchCheckinCreated
 
 	switch item.Kind {
 	case "checkin":
+		// Existence check only — attendee's other fields are not needed below
+		// (the batch_checkin_log insert uses item.* fields, not attendee.*),
+		// so this is NOT used to decide whether to write. Deciding the write
+		// from a value read here would reintroduce the TOCTOU race the
+		// guarded UPDATE below closes: two near-simultaneous requests for the
+		// same attendee (e.g. two devices scanning the same badge) could both
+		// observe checkin_status=false here before either write lands.
 		attendee, err := s.GetAttendeeByID(ctx, item.AttendeeID)
 		if err != nil {
-			return false, err
+			return BatchCheckinCreated, err
 		}
 		if attendee == nil {
-			return false, fmt.Errorf("attendee not found")
+			return BatchCheckinCreated, fmt.Errorf("attendee not found")
 		}
-		if !attendee.CheckinStatus {
-			attendee.CheckinStatus = true
-			attendee.CheckedInAt = &item.At
-			attendee.CheckedInBy = &staffUserID
-			if err := s.UpdateAttendee(ctx, attendee); err != nil {
-				return false, err
-			}
+
+		// The state transition itself must be atomic at the database level.
+		// This single guarded UPDATE makes Postgres the sole arbiter of which
+		// concurrent request (if any) actually performs the check-in: only
+		// the request whose UPDATE flips checkin_status from false to true
+		// affects a row. Any other concurrent request's guarded UPDATE
+		// affects zero rows — it never overwrites the row that already won,
+		// and is reported as BatchCheckinAlreadyCheckedIn rather than
+		// (incorrectly) BatchCheckinCreated.
+		deviceNumber := item.DeviceNumber
+		tag, err := s.db.Exec(ctx,
+			`UPDATE attendees
+			 SET checkin_status = true, checked_in_at = $1, checked_in_by = $2,
+			     checked_in_device_number = $3, checked_in_point_name = $4, updated_at = NOW()
+			 WHERE id = $5 AND checkin_status = false AND deleted_at IS NULL`,
+			item.At, &staffUserID, &deviceNumber, item.PointName, item.AttendeeID,
+		)
+		if err != nil {
+			return BatchCheckinCreated, err
+		}
+		if tag.RowsAffected() == 1 {
+			outcome = BatchCheckinCreated
+		} else {
+			// Someone else's check-in already landed for this attendee (or the
+			// row was concurrently soft-deleted after the existence check
+			// above) — no write was made here, and this request's data must
+			// not silently overwrite whatever check-in already exists.
+			outcome = BatchCheckinAlreadyCheckedIn
 		}
 	case "zone_entry":
 		if item.ZoneID == nil {
-			return false, fmt.Errorf("zone_id is required for kind=zone_entry")
+			return BatchCheckinCreated, fmt.Errorf("zone_id is required for kind=zone_entry")
 		}
 		// NOTE: CheckAttendeeZoneCheckin truncates its `date` argument to
 		// midnight internally before querying, but CreateZoneCheckin stores
@@ -67,7 +126,7 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 		eventDay := item.At.Truncate(24 * time.Hour)
 		existing, err := s.CheckAttendeeZoneCheckin(ctx, item.AttendeeID, *item.ZoneID, eventDay)
 		if err != nil {
-			return false, err
+			return BatchCheckinCreated, err
 		}
 		if existing == nil {
 			if err := s.CreateZoneCheckin(ctx, &models.ZoneCheckin{
@@ -77,11 +136,18 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 				EventDay:    eventDay,
 				Metadata:    map[string]interface{}{"device_number": item.DeviceNumber, "source": "batch"},
 			}); err != nil {
-				return false, err
+				return BatchCheckinCreated, err
 			}
 		}
+		// NOTE: unlike kind=checkin, a pre-existing zone entry does not get its
+		// own outcome value here — there is no mobile-facing "already in zone"
+		// verdict analogous to AlreadyChecked today, so this intentionally
+		// still reports BatchCheckinCreated. If a future zone-control feature
+		// needs to distinguish this case, add a dedicated outcome value rather
+		// than overloading BatchCheckinAlreadyCheckedIn (whose name is
+		// specific to the registration check-in domain).
 	default:
-		return false, fmt.Errorf("unknown kind: %s", item.Kind)
+		return BatchCheckinCreated, fmt.Errorf("unknown kind: %s", item.Kind)
 	}
 
 	_, err := s.db.Exec(ctx,
@@ -91,7 +157,7 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 		item.ClientUUID, eventID, item.AttendeeID, item.Kind, item.ZoneID, item.DeviceNumber, item.At,
 	)
 	if err != nil {
-		return false, err
+		return BatchCheckinCreated, err
 	}
-	return true, nil
+	return outcome, nil
 }

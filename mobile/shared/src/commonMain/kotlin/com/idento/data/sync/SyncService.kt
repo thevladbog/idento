@@ -1,28 +1,70 @@
 package com.idento.data.sync
 
-import com.idento.data.repository.OfflineCheckInRepository
+import com.idento.data.registration.FlushResult
+import com.idento.data.registration.PendingRegistrationCheckIn
+import com.idento.data.registration.PrintRetryResult
 import com.idento.data.repository.SyncResult
+import com.idento.data.storage.PendingZoneCheckIn
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * Seam over [com.idento.data.repository.OfflineCheckInRepository]'s sync-relevant surface —
+ * matching this codebase's established "consumer defines the minimal interface it needs"
+ * pattern (see `BatchCheckinSubmitter`/`RegistrationOfflineQueue` in `RegistrationCheckInService.kt`),
+ * so `SyncServiceTest` can fake the zone check-in queue without constructing a real
+ * `ZoneRepository`/`ApiClient` network stack. `OfflineCheckInRepository` already exposes both
+ * methods with this exact signature and implements this interface with no other changes.
+ */
+interface CheckInSyncQueue {
+    suspend fun getPendingCheckIns(): List<PendingZoneCheckIn>
+    suspend fun syncAll(): SyncResult
+}
+
+/**
+ * Seam over [com.idento.data.registration.RegistrationOfflineQueueRepository]'s sync-relevant
+ * surface (Task M1c-6) — distinct from `RegistrationOfflineQueue` (which only covers `enqueue`,
+ * called from `RegistrationCheckInService`) because `SyncService` instead needs to check the
+ * pending count and trigger a flush. Lets `SyncServiceTest` fake this without constructing a
+ * real SQLDelight `PendingRegistrationCheckInQueries`.
+ */
+interface RegistrationCheckInSyncQueue {
+    suspend fun getPending(): List<PendingRegistrationCheckIn>
+    suspend fun flush(): FlushResult
+}
+
+/**
+ * Seam over [com.idento.data.registration.PrintQueueRepository]'s retry surface (Task M1c-8's
+ * persistent print queue) — lets `SyncServiceTest` fake retrying print jobs without constructing
+ * a real SQLDelight `PrintJobQueries`/`PrintSender`. Unlike [CheckInSyncQueue]/
+ * [RegistrationCheckInSyncQueue], there is no separate "get pending count" method: the print
+ * queue's own backoff filtering (see `PrintJob.sq`'s `selectOldestPending`) already determines
+ * eligibility, so [drainPrintQueue] just calls [retryNext] until nothing more is eligible.
+ */
+interface PrintRetryQueue {
+    suspend fun retryNext(): PrintRetryResult
+}
+
+/**
  * Sync Service for offline check-ins
  * Automatically syncs pending check-ins when online
  */
 class SyncService(
-    private val offlineCheckInRepository: OfflineCheckInRepository,
-    private val networkMonitor: NetworkMonitor
+    private val offlineCheckInRepository: CheckInSyncQueue,
+    private val networkMonitor: NetworkMonitor,
+    private val registrationOfflineQueue: RegistrationCheckInSyncQueue,
+    private val printRetryQueue: PrintRetryQueue,
 ) {
-    
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    
+
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
-    
+
     private var syncJob: Job? = null
-    
+
     /**
      * Start monitoring and auto-sync
      */
@@ -31,16 +73,32 @@ class SyncService(
         syncJob = scope.launch {
             networkMonitor.isOnline.collect { isOnline ->
                 if (isOnline) {
-                    val pendingCount = offlineCheckInRepository.getPendingCheckIns().size
-                    if (pendingCount > 0) {
+                    try {
                         delay(2000) // Wait 2 seconds before syncing
+                        // Always calls performSync() (rather than gating on the two check-in
+                        // queues' pending counts, as this used to): performSync() itself now also
+                        // drains the print queue unconditionally (see drainPrintQueue()), which
+                        // has its own independent backoff-based eligibility and would otherwise
+                        // never run periodically if this collector only invoked performSync()
+                        // when a check-in was pending. performSync() still no-ops cheaply for the
+                        // two check-in queues when neither has anything pending.
                         performSync()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // This collector is the only thing driving auto-sync for the app
+                        // session — there's no separate restart path if it dies, so a failed
+                        // pending-count read (or an unexpected failure from performSync()) must
+                        // not kill it. Matches the `apiRunCatching`-style CancellationException
+                        // rethrow used elsewhere in this codebase (see ApiResult.kt) so
+                        // `stopAutoSync()`'s cancellation of this job still works correctly.
+                        println("⚠️ Auto-sync pass failed: ${e.message}")
                     }
                 }
             }
         }
     }
-    
+
     /**
      * Stop auto-sync
      */
@@ -48,52 +106,136 @@ class SyncService(
         syncJob?.cancel()
         syncJob = null
     }
-    
+
     /**
-     * Manually trigger sync
+     * Manually trigger sync — drains both the zone check-in queue (`OfflineCheckInRepository`)
+     * and the registration check-in queue (`RegistrationOfflineQueueRepository`, Task M1c-6).
+     * The two are genuinely independent (different tables, different endpoints): each queue's
+     * flush/sync call is wrapped in its own try/catch below, so an exception thrown by one (e.g.
+     * `RegistrationOfflineQueueRepository.flush()`'s unguarded initial `queries.selectAll()`
+     * read) is caught and folded into this pass's result instead of propagating up and skipping
+     * the other queue's sync entirely.
+     *
+     * [SyncState] reflects the combined outcome across both queues for this pass:
+     * [SyncState.Success] when every pending item across both queues was handled,
+     * [SyncState.PartialSuccess] when some succeeded and some failed — this also covers the
+     * mixed case where one queue's operation threw outright while the other completed normally
+     * — and [SyncState.Failed] when nothing succeeded.
      */
     suspend fun performSync() {
         if (_syncState.value is SyncState.Syncing) {
             return // Already syncing
         }
-        
+
+        try {
+            drainPrintQueue()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Independent of the two check-in queues below (own table, own retry cadence) --
+            // a failure here must not skip their sync.
+            println("⚠️ Print queue retry pass failed: ${e.message}")
+        }
+
         try {
             val pendingCount = offlineCheckInRepository.getPendingCheckIns().size
-            
-            if (pendingCount == 0) {
+            val registrationPendingCount = registrationOfflineQueue.getPending().size
+
+            if (pendingCount == 0 && registrationPendingCount == 0) {
                 _syncState.value = SyncState.Idle
                 return
             }
-            
-            _syncState.value = SyncState.Syncing(0, pendingCount)
-            
-            val result = offlineCheckInRepository.syncAll()
-            
-            _syncState.value = when {
-                result.isSuccess -> SyncState.Success(result)
-                result.hasPartialSuccess -> SyncState.PartialSuccess(result)
-                else -> SyncState.Failed(result.errors.firstOrNull() ?: "Sync failed")
+
+            _syncState.value = SyncState.Syncing(0, pendingCount + registrationPendingCount)
+
+            val errors = mutableListOf<String>()
+
+            var registrationSucceeded = 0
+            var registrationFailed = 0
+            if (registrationPendingCount > 0) {
+                try {
+                    val flushResult = registrationOfflineQueue.flush()
+                    registrationSucceeded = flushResult.succeeded
+                    registrationFailed = flushResult.failed
+                } catch (e: Exception) {
+                    // The whole flush attempt failed before it could process anything (e.g. its
+                    // initial read threw) — every pending registration check-in stays queued/
+                    // unconfirmed for the next pass. Caught locally (rather than by the outer
+                    // catch below) specifically so this does NOT skip the zone queue's sync.
+                    registrationFailed = registrationPendingCount
+                    errors += "Registration queue sync failed: ${e.message ?: "Unknown error"}"
+                }
             }
-            
+
+            var zoneSucceeded = 0
+            var zoneFailed = 0
+            if (pendingCount > 0) {
+                try {
+                    val result = offlineCheckInRepository.syncAll()
+                    zoneSucceeded = result.successCount
+                    zoneFailed = result.failedCount
+                    errors += result.errors
+                } catch (e: Exception) {
+                    // Mirrors the registration queue's guard above — caught locally so a
+                    // failure here can't retroactively undo the registration flush above.
+                    zoneFailed = pendingCount
+                    errors += "Zone check-in queue sync failed: ${e.message ?: "Unknown error"}"
+                }
+            }
+
+            val combined = SyncResult(
+                totalCount = pendingCount + registrationPendingCount,
+                successCount = zoneSucceeded + registrationSucceeded,
+                failedCount = zoneFailed + registrationFailed,
+                errors = errors,
+            )
+
+            _syncState.value = when {
+                combined.isSuccess -> SyncState.Success(combined)
+                combined.hasPartialSuccess -> SyncState.PartialSuccess(combined)
+                else -> SyncState.Failed(combined.errors.firstOrNull() ?: "Sync failed")
+            }
+
             // Auto-clear state after 5 seconds
             delay(5000)
             if (_syncState.value !is SyncState.Syncing) {
                 _syncState.value = SyncState.Idle
             }
         } catch (e: Exception) {
+            // Guards against failures outside the per-queue try/catches above (e.g. reading the
+            // initial pending counts).
             _syncState.value = SyncState.Failed(e.message ?: "Unknown error")
             delay(5000)
             _syncState.value = SyncState.Idle
         }
     }
-    
+
     /**
-     * Get pending check-ins count
+     * Get pending check-ins count across both offline queues (zone check-ins + registration
+     * check-ins) — read by the M1d offline banner.
      */
     suspend fun getPendingCount(): Int {
-        return offlineCheckInRepository.getPendingCheckIns().size
+        return offlineCheckInRepository.getPendingCheckIns().size + registrationOfflineQueue.getPending().size
     }
-    
+
+    /**
+     * Attempts every print job currently past its exponential backoff window (see
+     * `PrintQueueRepository.retryNext`'s KDoc), one at a time, until none remain eligible this
+     * pass — either the queue is empty ([PrintRetryResult.NoJobsPending]) or every remaining job
+     * is still cooling down ([PrintRetryResult.WithinBackoffWindow]). Naturally bounded: each
+     * attempt either removes a job ([PrintRetryResult.Succeeded]) or pushes its `lastAttemptAt`
+     * forward past "now" ([PrintRetryResult.Failed]), so no job can be retried twice within the
+     * same drain pass.
+     */
+    private suspend fun drainPrintQueue() {
+        while (true) {
+            when (printRetryQueue.retryNext()) {
+                is PrintRetryResult.Succeeded, is PrintRetryResult.Failed -> continue
+                PrintRetryResult.NoJobsPending, PrintRetryResult.WithinBackoffWindow -> return
+            }
+        }
+    }
+
     /**
      * Clear sync state
      */

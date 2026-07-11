@@ -1,0 +1,38 @@
+CREATE TABLE PendingRegistrationCheckIn (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    clientUuid TEXT NOT NULL UNIQUE,
+    eventId TEXT NOT NULL,
+    attendeeId TEXT NOT NULL,
+    at TEXT NOT NULL,
+    deviceNumber INTEGER NOT NULL,
+    pointName TEXT,
+    attemptCount INTEGER NOT NULL DEFAULT 0,
+    lastAttemptAt INTEGER,
+    errorMessage TEXT
+);
+
+insert:
+INSERT INTO PendingRegistrationCheckIn(clientUuid, eventId, attendeeId, at, deviceNumber, pointName, attemptCount, lastAttemptAt, errorMessage)
+VALUES (?, ?, ?, ?, ?, ?, 0, NULL, NULL);
+
+selectAll:
+SELECT * FROM PendingRegistrationCheckIn ORDER BY id ASC;
+
+-- Rows past their exponential backoff window (see PrintJob.sq's selectOldestPending, whose
+-- backoff formula this matches exactly: min(attemptCount^2, 300) seconds since lastAttemptAt). A
+-- row that has never been attempted (lastAttemptAt IS NULL) is always eligible. Unlike
+-- selectOldestPending, flush() processes every eligible row per pass (not one at a time), so this
+-- returns the full set rather than LIMIT 1.
+selectEligibleForRetry:
+SELECT * FROM PendingRegistrationCheckIn
+WHERE lastAttemptAt IS NULL OR :now >= lastAttemptAt + (MIN(attemptCount * attemptCount, 300) * 1000)
+ORDER BY id ASC;
+
+updateAttempt:
+UPDATE PendingRegistrationCheckIn SET attemptCount = ?, lastAttemptAt = ?, errorMessage = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM PendingRegistrationCheckIn WHERE id = ?;
+
+countAll:
+SELECT COUNT(*) FROM PendingRegistrationCheckIn;

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"idento/backend/internal/models"
+	"idento/backend/internal/store"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -61,15 +62,24 @@ func (h *Handler) BatchCheckin(c echo.Context) error {
 			continue
 		}
 
-		applied, err := h.Store.ApplyBatchCheckin(c.Request().Context(), eventID, staffUserID, &item)
+		outcome, err := h.Store.ApplyBatchCheckin(c.Request().Context(), eventID, staffUserID, &item)
 		if err != nil {
 			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "error", Error: err.Error()})
 			continue
 		}
-		if applied {
+		switch outcome {
+		case store.BatchCheckinCreated:
 			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "created"})
-		} else {
+		case store.BatchCheckinAlreadyCheckedIn, store.BatchCheckinDuplicateClientUUID:
+			// Both mean "no new check-in was created by this specific
+			// request" from the submitting client's point of view — whether
+			// the attendee was already checked in by someone else, or this
+			// exact client_uuid was already processed before, the mobile
+			// client's actionable takeaway is the same: re-fetch and show
+			// the current already-checked-in state.
 			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "already_exists"})
+		default:
+			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "error", Error: "unknown outcome"})
 		}
 	}
 	return c.JSON(http.StatusOK, results)

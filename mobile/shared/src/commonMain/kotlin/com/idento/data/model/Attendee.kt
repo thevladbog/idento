@@ -21,6 +21,8 @@ data class Attendee(
     @SerialName("checked_in_at") val checkedInAt: String? = null,
     @SerialName("checked_in_by") val checkedInBy: String? = null,
     @SerialName("checked_in_by_email") val checkedInByEmail: String? = null,
+    @SerialName("checked_in_device_number") val checkedInDeviceNumber: Int? = null,
+    @SerialName("checked_in_point_name") val checkedInPointName: String? = null,
     @SerialName("custom_fields") val customFields: Map<String, JsonElement> = emptyMap(),
     @SerialName("blocked") val isBlocked: Boolean = false,
     @SerialName("block_reason") val blockReason: String? = null,

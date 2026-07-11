@@ -1,0 +1,85 @@
+package com.idento.data.registration
+
+import com.idento.data.model.Attendee
+import com.idento.data.model.RegistrationVerdict
+import com.idento.data.model.VerdictAttendee
+import com.idento.data.network.ApiResult
+import kotlinx.datetime.Instant
+
+/** Seam: AttendeeRepository is a plain non-open class wrapping a live Ktor HttpClient with no
+ * mock-engine seam (established M1b pattern) — this interface is adapted from the real
+ * repository via a method reference in Koin. */
+fun interface AttendeeLookup {
+    suspend fun getAttendeeByCode(eventId: String, code: String): ApiResult<Attendee?>
+}
+
+sealed interface RegistrationVerdictLookup {
+    data class Found(val attendee: Attendee) : RegistrationVerdictLookup
+    data class AlreadyChecked(val verdict: RegistrationVerdict.AlreadyChecked) : RegistrationVerdictLookup
+    data class Denied(val verdict: RegistrationVerdict.Denied) : RegistrationVerdictLookup
+    data class NotFound(val verdict: RegistrationVerdict.NotFound) : RegistrationVerdictLookup
+    data class LookupFailed(val message: String) : RegistrationVerdictLookup
+}
+
+/**
+ * First real producer of [RegistrationVerdict] (aside from its shipped model file). Read-only:
+ * classifies an attendee's current state from a code lookup into a [RegistrationVerdictLookup].
+ * Does not perform any check-in write — [RegistrationVerdictLookup.Found] is eligible to proceed,
+ * but only Task M1c-5's submission step produces an actual [RegistrationVerdict.Success].
+ */
+class RegistrationVerdictMapper(private val attendeeLookup: AttendeeLookup) {
+
+    suspend fun lookup(eventId: String, code: String): RegistrationVerdictLookup {
+        return when (val result = attendeeLookup.getAttendeeByCode(eventId, code)) {
+            is ApiResult.Success -> {
+                val attendee = result.data
+                if (attendee != null) {
+                    classify(attendee)
+                } else {
+                    RegistrationVerdictLookup.NotFound(
+                        RegistrationVerdict.NotFound(
+                            rawCode = code,
+                            hint = "No attendee matches this code for this event",
+                        )
+                    )
+                }
+            }
+            is ApiResult.Error -> RegistrationVerdictLookup.LookupFailed(result.message ?: "Lookup failed")
+            is ApiResult.Loading -> RegistrationVerdictLookup.LookupFailed("Still loading")
+        }
+    }
+
+    private fun classify(attendee: Attendee): RegistrationVerdictLookup {
+        val verdictAttendee = toVerdictAttendee(attendee)
+        return when {
+            attendee.isBlocked -> RegistrationVerdictLookup.Denied(
+                RegistrationVerdict.Denied(attendee = verdictAttendee, reason = attendee.blockReason ?: "Access denied")
+            )
+            attendee.isCheckedIn -> RegistrationVerdictLookup.AlreadyChecked(
+                RegistrationVerdict.AlreadyChecked(
+                    attendee = verdictAttendee,
+                    firstAt = parseCheckedInAt(attendee.checkedInAt, Instant.DISTANT_PAST),
+                    firstPoint = attendee.checkedInPointName ?: "Unknown",
+                    firstDevice = attendee.checkedInDeviceNumber ?: 0,
+                )
+            )
+            else -> RegistrationVerdictLookup.Found(attendee)
+        }
+    }
+}
+
+fun toVerdictAttendee(attendee: Attendee): VerdictAttendee = VerdictAttendee(
+    id = attendee.id,
+    fullName = attendee.fullName,
+    company = attendee.company,
+    category = attendee.position ?: "",
+)
+
+/**
+ * Parses a backend-supplied `checkedInAt` timestamp string, falling back to [fallback] instead of
+ * throwing if it's absent or malformed — this is untrusted server data crossing a JSON boundary,
+ * not a value this client itself produced, so a parse failure must degrade gracefully rather than
+ * crash the verdict/conflict-re-fetch path that calls this.
+ */
+internal fun parseCheckedInAt(raw: String?, fallback: Instant): Instant =
+    raw?.let { runCatching { Instant.parse(it) }.getOrNull() } ?: fallback

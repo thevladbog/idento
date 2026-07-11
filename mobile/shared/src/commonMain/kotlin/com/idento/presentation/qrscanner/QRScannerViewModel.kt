@@ -56,8 +56,10 @@ class QRScannerViewModel(
                 when (val result = attendeeRepository.getAttendeeByCode(eventId, code)) {
                     is ApiResult.Success -> {
                         val attendee = result.data
-                        
-                        if (attendee.isBlocked) {
+
+                        if (attendee == null) {
+                            showError("Not Found", "QR code not recognized")
+                        } else if (attendee.isBlocked) {
                             showError("Access Denied", attendee.blockReason)
                         } else if (attendee.isCheckedIn) {
                             showError("Already Checked In", attendee.fullName)
@@ -66,7 +68,7 @@ class QRScannerViewModel(
                         }
                     }
                     is ApiResult.Error -> {
-                        showError("Not Found", "QR code not recognized")
+                        showError("Error", result.message ?: "Failed to look up attendee")
                     }
                     is ApiResult.Loading -> {}
                 }

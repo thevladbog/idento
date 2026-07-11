@@ -58,7 +58,11 @@ type Store interface {
 	UpdateEvent(ctx context.Context, event *models.Event) error
 
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
-	GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.Attendee, error)
+	// GetAttendeesByEventID lists attendees for an event; code/search are
+	// optional filters ("" skips the filter) — code does an exact match,
+	// search does a case-insensitive substring match across
+	// first/last name, email, and code.
+	GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, code string, search string) ([]*models.Attendee, error)
 	GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error)
 	GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error)
 	// GetAttendeeByIDForTenant scopes the attendee through its event's tenant.
@@ -158,7 +162,7 @@ type Store interface {
 	CreateStation(ctx context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
 	// Mobile offline-sync batch check-in (idempotent by client_uuid)
-	ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (bool, error)
+	ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (BatchCheckinOutcome, error)
 
 	// Check-in Overrides (audit log)
 	CreateCheckinOverride(ctx context.Context, o *models.CheckinOverride) error
