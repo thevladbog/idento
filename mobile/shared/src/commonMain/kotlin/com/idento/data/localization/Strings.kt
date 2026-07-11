@@ -206,6 +206,15 @@ enum class StringKey {
     SETUP_EXIT_STATION,
     SETUP_EXIT_STATION_CONFIRM_TITLE,
     SETUP_EXIT_STATION_CONFIRM_BODY,
+    SETUP_DONE_LABEL_EVENT,
+    SETUP_DONE_LABEL_MODE,
+    SETUP_DONE_LABEL_DAY,
+    SETUP_DONE_LABEL_WORKPOINT,
+    SETUP_DONE_LABEL_PRINTER,
+    SETUP_DONE_LABEL_AUTOPRINT,
+    SETUP_DONE_LABEL_DEVICE,
+    SETUP_DONE_AUTOPRINT_ON,
+    SETUP_DONE_AUTOPRINT_OFF,
 
     // Setup wizard — shared wizard chrome
     SETUP_WIZARD_BACK,
@@ -387,6 +396,15 @@ internal val englishStrings = mapOf(
     StringKey.SETUP_STATION_HOME_DEVICE to "Device #{n}",
     StringKey.SETUP_EXIT_STATION to "Exit station",
     StringKey.SETUP_EXIT_STATION_CONFIRM_TITLE to "Exit this station?",
+    StringKey.SETUP_DONE_LABEL_EVENT to "Event",
+    StringKey.SETUP_DONE_LABEL_MODE to "Mode",
+    StringKey.SETUP_DONE_LABEL_DAY to "Day",
+    StringKey.SETUP_DONE_LABEL_WORKPOINT to "Work point",
+    StringKey.SETUP_DONE_LABEL_PRINTER to "Printer",
+    StringKey.SETUP_DONE_LABEL_AUTOPRINT to "Auto-print",
+    StringKey.SETUP_DONE_LABEL_DEVICE to "Device",
+    StringKey.SETUP_DONE_AUTOPRINT_ON to "On",
+    StringKey.SETUP_DONE_AUTOPRINT_OFF to "Off",
     StringKey.SETUP_EXIT_STATION_CONFIRM_BODY to "You'll need to set it up again to use it",
 
     // Setup wizard — shared wizard chrome
@@ -570,6 +588,15 @@ internal val russianStrings = mapOf(
     StringKey.SETUP_EXIT_STATION to "Выйти со станции",
     StringKey.SETUP_EXIT_STATION_CONFIRM_TITLE to "Выйти со станции?",
     StringKey.SETUP_EXIT_STATION_CONFIRM_BODY to "Понадобится настроить её заново",
+    StringKey.SETUP_DONE_LABEL_EVENT to "Мероприятие",
+    StringKey.SETUP_DONE_LABEL_MODE to "Режим",
+    StringKey.SETUP_DONE_LABEL_DAY to "День",
+    StringKey.SETUP_DONE_LABEL_WORKPOINT to "Точка",
+    StringKey.SETUP_DONE_LABEL_PRINTER to "Принтер",
+    StringKey.SETUP_DONE_LABEL_AUTOPRINT to "Автопечать",
+    StringKey.SETUP_DONE_LABEL_DEVICE to "Устройство",
+    StringKey.SETUP_DONE_AUTOPRINT_ON to "Вкл",
+    StringKey.SETUP_DONE_AUTOPRINT_OFF to "Выкл",
 
     // Setup wizard — shared wizard chrome
     StringKey.SETUP_WIZARD_BACK to "Назад",

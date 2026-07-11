@@ -1,6 +1,8 @@
 package com.idento.di
 
+import com.idento.data.model.StationConfig
 import com.idento.data.preferences.AuthPreferences
+import com.idento.data.preferences.StationConfigPreferences
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
@@ -14,6 +16,7 @@ import com.idento.presentation.events.EventsViewModel
 import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.settings.SettingsViewModel
+import com.idento.presentation.setup.AuthLogoutGateway
 import com.idento.presentation.setup.AuthTokenSaver
 import com.idento.presentation.setup.BluetoothPrinterGateway
 import com.idento.presentation.setup.CurrentUserIdProvider
@@ -23,11 +26,13 @@ import com.idento.presentation.setup.EventLister
 import com.idento.presentation.setup.EventLoader
 import com.idento.presentation.setup.ManagerAuthenticator
 import com.idento.presentation.setup.ProvisioningTokenMinter
+import com.idento.presentation.setup.SetupCompleteViewModel
 import com.idento.presentation.setup.SetupDayZoneViewModel
 import com.idento.presentation.setup.SetupEventViewModel
 import com.idento.presentation.setup.SetupLoginViewModel
 import com.idento.presentation.setup.SetupModeViewModel
 import com.idento.presentation.setup.SetupPrinterViewModel
+import com.idento.presentation.setup.StationConfigGateway
 import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.template.DisplayTemplateViewModel
@@ -112,6 +117,20 @@ val viewModelModule = module {
             },
             ethernetPrinterService = EthernetPrinterGateway(ethernetPrinterService::printTest),
             draft = get(),
+        )
+    }
+    factory {
+        // Same rationale as the seams above — SetupCompleteViewModel takes narrow seams (see
+        // SetupCompleteViewModel.kt) instead of StationConfigPreferences/AuthPreferences directly.
+        val stationConfigPreferences: StationConfigPreferences = get()
+        val authPreferences: AuthPreferences = get()
+        SetupCompleteViewModel(
+            draft = get(),
+            stationConfigPreferences = object : StationConfigGateway {
+                override suspend fun save(config: StationConfig) = stationConfigPreferences.save(config)
+                override suspend fun clear() = stationConfigPreferences.clear()
+            },
+            authPreferences = AuthLogoutGateway(authPreferences::clearAuth),
         )
     }
 }
