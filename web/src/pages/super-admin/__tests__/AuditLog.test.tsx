@@ -110,4 +110,53 @@ describe('AuditLog', () => {
       expect(params.offset).toBe(50);
     });
   });
+
+  it('fires exactly one audit-log request (with offset reset to 0) when a filter changes while on page 2+', async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes('/audit-log')) return Promise.resolve({ data: { ...mockLogs, total: 120 } });
+      if (url.includes('/users')) return Promise.resolve({ data: mockAdmins });
+      if (url.includes('/tenants')) return Promise.resolve({ data: mockTenants });
+      if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
+      return Promise.reject(new Error('unexpected url ' + url));
+    });
+    render(<AuditLog />);
+    await waitFor(() => expect(screen.getByText(/Status: active → suspended/)).toBeInTheDocument());
+
+    // Move to page 2 (offset -> 50).
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await waitFor(() => {
+      const calls = vi.mocked(api.get).mock.calls.filter(([u]) => (u as string).includes('/audit-log'));
+      const lastCall = calls[calls.length - 1];
+      const params = (lastCall[1] as { params?: Record<string, unknown> })?.params ?? {};
+      expect(params.offset).toBe(50);
+    });
+
+    const auditLogCallCountBeforeFilterChange = vi
+      .mocked(api.get)
+      .mock.calls.filter(([u]) => (u as string).includes('/audit-log')).length;
+
+    // Now change a filter while still on page 2 — this is the race: the
+    // offset-reset effect and the load effect used to both fire off of the
+    // stale `offset` closure, producing a wasted fetch at offset:50 before
+    // the correct offset:0 fetch landed.
+    fireEvent.click(screen.getByRole('combobox', { name: /all tenants/i }));
+    fireEvent.click(await screen.findByText('Acme Corp'));
+
+    await waitFor(() => {
+      const calls = vi.mocked(api.get).mock.calls.filter(([u]) => (u as string).includes('/audit-log'));
+      const lastCall = calls[calls.length - 1];
+      const params = (lastCall[1] as { params?: Record<string, unknown> })?.params ?? {};
+      expect(params.target_id).toBe('t1');
+    });
+
+    const auditLogCallsAfterFilterChange = vi
+      .mocked(api.get)
+      .mock.calls.filter(([u]) => (u as string).includes('/audit-log'));
+    expect(auditLogCallsAfterFilterChange.length - auditLogCallCountBeforeFilterChange).toBe(1);
+
+    const lastCall = auditLogCallsAfterFilterChange[auditLogCallsAfterFilterChange.length - 1];
+    const params = (lastCall[1] as { params?: Record<string, unknown> })?.params ?? {};
+    expect(params.offset).toBe(0);
+    expect(params.target_id).toBe('t1');
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -74,19 +74,34 @@ export default function AuditLog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
-  useEffect(() => {
-    setOffset(0);
-  }, [actionFilter, actorFilter, tenantFilter, dateFrom, dateTo]);
+  const filtersKey = JSON.stringify({ actionFilter, actorFilter, tenantFilter, dateFrom, dateTo });
+  const prevFiltersKeyRef = useRef(filtersKey);
+  // Tracks the (filtersKey, offset) pair the last fetch was issued for, so
+  // that the setOffset(0) call below — which re-triggers this same effect
+  // via the `offset` dependency once React commits it — doesn't cause a
+  // second, redundant fetch for the exact same params.
+  const lastFetchedRef = useRef<{ filtersKey: string; offset: number } | null>(null);
 
   useEffect(() => {
-    loadLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when any filter or the offset changes
-  }, [actionFilter, actorFilter, tenantFilter, dateFrom, dateTo, offset]);
+    const filtersChanged = prevFiltersKeyRef.current !== filtersKey;
+    prevFiltersKeyRef.current = filtersKey;
+    const effectiveOffset = filtersChanged ? 0 : offset;
+    if (filtersChanged && offset !== 0) {
+      setOffset(0); // keep pagination button state in sync; the fetch below doesn't wait for this
+    }
+    const already = lastFetchedRef.current;
+    if (already && already.filtersKey === filtersKey && already.offset === effectiveOffset) {
+      return;
+    }
+    lastFetchedRef.current = { filtersKey, offset: effectiveOffset };
+    loadLogs(effectiveOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filtersKey captures all filter deps; offset is read explicitly above
+  }, [filtersKey, offset]);
 
-  const loadLogs = async () => {
+  const loadLogs = async (offsetToUse: number) => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { limit: PAGE_SIZE, offset };
+      const params: Record<string, string | number> = { limit: PAGE_SIZE, offset: offsetToUse };
       if (actionFilter !== 'all') params.action = actionFilter;
       if (actorFilter !== 'all') params.admin_user_id = actorFilter;
       if (tenantFilter) params.target_id = tenantFilter;
