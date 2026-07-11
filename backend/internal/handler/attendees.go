@@ -86,6 +86,11 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 	return c.JSON(http.StatusCreated, attendee)
 }
 
+// GetAttendees lists attendees for an event, optionally filtered by an exact
+// `code` match (used by mobile QR/barcode scan lookup) and/or a `search`
+// substring match across name/email/code (used by mobile attendee search).
+// Both are optional query params; when neither is present, behavior is
+// unchanged — the full event attendee list is returned.
 func (h *Handler) GetAttendees(c echo.Context) error {
 	eventID, err := uuid.Parse(c.Param("event_id"))
 	if err != nil {
@@ -96,7 +101,10 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID)
+	code := c.QueryParam("code")
+	search := c.QueryParam("search")
+
+	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, code, search)
 	if err != nil {
 		c.Logger().Error("Failed to fetch attendees: ", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch attendees"})

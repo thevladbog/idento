@@ -24,7 +24,7 @@ func (h *Handler) GenerateAttendeeCodes(c echo.Context) error {
 	}
 
 	// Get all attendees for this event
-	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID)
+	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, "", "")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get attendees"})
 	}
@@ -77,7 +77,7 @@ func (h *Handler) ExportAttendeesCSV(c echo.Context) error {
 	}
 
 	// Get all attendees
-	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID)
+	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, "", "")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to get attendees"})
 	}

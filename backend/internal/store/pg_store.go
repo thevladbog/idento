@@ -566,7 +566,12 @@ func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee)
 	).Scan(&attendee.ID, &attendee.CreatedAt, &attendee.UpdatedAt)
 }
 
-func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) ([]*models.Attendee, error) {
+// GetAttendeesByEventID returns attendees for an event, optionally narrowed by
+// an exact `code` match and/or a case-insensitive `search` substring match
+// across first name/last name/email/code. Pass "" for either to skip that
+// filter — matches the empty-string-means-unset convention used by
+// GetAllUsers' search/tenantIDFilter params (pg_store_super_admin.go).
+func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, code string, search string) ([]*models.Attendee, error) {
 	query := `
 		SELECT
 			a.id, a.event_id, a.first_name, a.last_name, a.email, a.company, a.position, a.code,
@@ -576,9 +581,24 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID) 
 		FROM attendees a
 		LEFT JOIN users u ON a.checked_in_by = u.id
 		WHERE a.event_id = $1 AND a.deleted_at IS NULL
-		ORDER BY a.last_name, a.first_name
 	`
-	rows, err := s.db.Query(ctx, query, eventID)
+	args := []interface{}{eventID}
+	argCount := 2
+
+	if code != "" {
+		query += fmt.Sprintf(" AND a.code = $%d", argCount)
+		args = append(args, code)
+		argCount++
+	}
+
+	if search != "" {
+		query += fmt.Sprintf(" AND (a.first_name ILIKE $%d OR a.last_name ILIKE $%d OR a.email ILIKE $%d OR a.code ILIKE $%d)", argCount, argCount, argCount, argCount)
+		args = append(args, "%"+search+"%")
+	}
+
+	query += " ORDER BY a.last_name, a.first_name"
+
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

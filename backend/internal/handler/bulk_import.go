@@ -78,7 +78,7 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 	}
 
 	// Get existing attendees to check for duplicates
-	existingAttendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID)
+	existingAttendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, "", "")
 	if err != nil {
 		c.Logger().Errorf("Failed to get existing attendees: %v", err)
 		// Continue anyway, we'll rely on DB constraints
