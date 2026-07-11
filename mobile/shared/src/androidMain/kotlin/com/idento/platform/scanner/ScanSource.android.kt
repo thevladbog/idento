@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.io.InputStream
@@ -139,6 +140,11 @@ class AndroidScanSource(
 
     @SuppressLint("MissingPermission")
     private fun connectBondedBluetoothScanner() {
+        // Re-entrancy guard (mirrors isReceiverRegistered above): without this, calling
+        // startScanning() twice without an intervening stopScanning() would launch a second
+        // connect coroutine, overwrite bluetoothSocket/listenJob, and orphan the first socket
+        // plus its listenToBluetoothInput coroutine (permanently blocked on inputStream.read()).
+        if (bluetoothSocket?.isConnected == true) return
         val adapter = bluetoothAdapter ?: return
         if (!adapter.isEnabled || !hasBluetoothConnectPermission()) return
         val device = adapter.bondedDevices?.firstOrNull() ?: return
@@ -160,7 +166,7 @@ class AndroidScanSource(
             val buffer = ByteArray(1024)
             val builder = StringBuilder()
             try {
-                while (bluetoothSocket?.isConnected == true) {
+                while (isActive && bluetoothSocket?.isConnected == true) {
                     val bytes = inputStream.read(buffer)
                     if (bytes > 0) {
                         builder.append(String(buffer, 0, bytes))
@@ -180,12 +186,30 @@ class AndroidScanSource(
                     }
                 }
             } catch (e: IOException) {
-                _connectionState.value = ScannerConnectionState.HardwareDisconnected
+                // inputStream.read() is a plain blocking Java call, not a suspend function, so
+                // kotlinx.coroutines' cooperative cancellation cannot interrupt it or turn this
+                // IOException into a CancellationException — closing the socket during an
+                // intentional disconnect (disconnectBluetooth()/preferCamera()) always makes this
+                // catch block run. What distinguishes "intentional disconnect" from "real hardware
+                // error" is isActive: disconnectBluetooth() calls listenJob?.cancel() BEFORE
+                // closing the socket, and Job cancellation flips isActive to false synchronously
+                // at cancel()-time — independent of suspension points — so by the time the closed
+                // socket causes read() to throw here, isActive already reflects the cancellation.
+                // Only report a hardware disconnect when this coroutine was NOT the target of an
+                // intentional cancel, so we don't clobber the Camera state that
+                // disconnectBluetooth() sets right after closing the socket.
+                if (isActive) {
+                    _connectionState.value = ScannerConnectionState.HardwareDisconnected
+                }
             }
         }
     }
 
     private fun disconnectBluetooth() {
+        // Cancel BEFORE closing the socket so isActive is already false by the time the close()
+        // below causes listenToBluetoothInput's blocked read() to throw — see the comment in that
+        // catch block for why this ordering (not a manual "intentional disconnect" flag) is what
+        // makes the isActive check correct.
         listenJob?.cancel()
         listenJob = null
         try {
