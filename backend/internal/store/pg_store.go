@@ -1626,6 +1626,14 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		args = append(args, adminUserID)
 		conditions = append(conditions, fmt.Sprintf("admin_user_id = $%d", len(args)))
 	}
+	if dateFrom, ok := filters["date_from"].(time.Time); ok {
+		args = append(args, dateFrom)
+		conditions = append(conditions, fmt.Sprintf("created_at >= $%d", len(args)))
+	}
+	if dateTo, ok := filters["date_to"].(time.Time); ok {
+		args = append(args, dateTo.Add(24*time.Hour))
+		conditions = append(conditions, fmt.Sprintf("created_at < $%d", len(args)))
+	}
 
 	where := ""
 	if len(conditions) > 0 {

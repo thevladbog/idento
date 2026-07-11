@@ -356,6 +356,16 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 			filters["admin_user_id"] = adminUserID
 		}
 	}
+	if dateFromStr := c.QueryParam("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			filters["date_from"] = dateFrom
+		}
+	}
+	if dateToStr := c.QueryParam("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			filters["date_to"] = dateTo
+		}
+	}
 
 	logs, total, err := h.Store.GetAuditLog(c.Request().Context(), filters, limit, offset)
 	if err != nil {

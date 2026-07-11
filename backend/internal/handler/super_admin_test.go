@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"idento/backend/internal/models"
 
@@ -409,5 +410,67 @@ func TestGetAuditLog_InvalidAdminUserIDIgnoredNot400(t *testing.T) {
 	}
 	if _, ok := capturedFilters["admin_user_id"]; ok {
 		t.Fatalf("expected no admin_user_id key when param is invalid, got %#v", capturedFilters)
+	}
+}
+
+func TestGetAuditLog_DateRangeFilterPassedToStore(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?date_from=2026-07-01&date_to=2026-07-11", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	dateFrom, ok := capturedFilters["date_from"].(time.Time)
+	if !ok || !dateFrom.Equal(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected date_from 2026-07-01 UTC, got %#v", capturedFilters["date_from"])
+	}
+	dateTo, ok := capturedFilters["date_to"].(time.Time)
+	if !ok || !dateTo.Equal(time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected date_to 2026-07-11 UTC, got %#v", capturedFilters["date_to"])
+	}
+}
+
+func TestGetAuditLog_MalformedDatesIgnoredNot400(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?date_from=not-a-date&date_to=07/11/2026", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (malformed dates must be ignored, not rejected), got %d", rec.Code)
+	}
+	if _, ok := capturedFilters["date_from"]; ok {
+		t.Fatalf("expected no date_from key when param is malformed, got %#v", capturedFilters)
+	}
+	if _, ok := capturedFilters["date_to"]; ok {
+		t.Fatalf("expected no date_to key when param is malformed, got %#v", capturedFilters)
 	}
 }
