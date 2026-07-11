@@ -11,8 +11,10 @@ import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.PrintQueueRepository
 import com.idento.data.registration.RegistrationOfflineQueue
 import com.idento.data.registration.RegistrationOfflineQueueRepository
+import com.idento.data.registration.createPrintSender
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
@@ -102,6 +104,11 @@ val appModule = module {
     single { RegistrationOfflineQueueRepository(get<IdentoDatabase>().pendingRegistrationCheckInQueries, get<AttendeeRepository>()::submitBatchCheckins) }
     single<RegistrationOfflineQueue> { get<RegistrationOfflineQueueRepository>() }
     single<RegistrationCheckInSyncQueue> { get<RegistrationOfflineQueueRepository>() }
+
+    // Print queue (SQLDelight-backed, persistent). Resolves the same `IdentoDatabase` singleton
+    // registered above via Koin's `get()` rather than constructing its own — same reasoning as
+    // `RegistrationOfflineQueueRepository` above.
+    single { PrintQueueRepository(get<IdentoDatabase>().printJobQueries, createPrintSender(get(), get())) }
 
     // Network monitoring
     single<NetworkMonitor> { NetworkMonitorImpl() }
