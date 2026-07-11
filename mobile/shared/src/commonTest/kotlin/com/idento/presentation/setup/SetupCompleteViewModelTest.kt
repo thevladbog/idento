@@ -44,6 +44,7 @@ class SetupCompleteViewModelTest {
     private class FakeStationConfigPreferences(private val throwOnClear: Boolean = false) : StationConfigGateway {
         var saved: StationConfig? = null
         var cleared = false
+        var existing: StationConfig? = null
         override suspend fun save(config: StationConfig) {
             saved = config
         }
@@ -51,6 +52,7 @@ class SetupCompleteViewModelTest {
             if (throwOnClear) throw IllegalStateException("clear failed")
             cleared = true
         }
+        override suspend fun get(): StationConfig? = existing
     }
 
     private class FakeAuthPreferences(private val throwOnClearAuth: Boolean = false) : AuthLogoutGateway {
@@ -74,6 +76,29 @@ class SetupCompleteViewModelTest {
 
         assertEquals("evt-1", fakePreferences.saved?.eventId)
         assertTrue(viewModel.uiState.value.stationConfig != null)
+    }
+
+    @Test
+    fun finishLoadsAlreadyPersistedConfigWithoutTouchingDraftOnReentry() = runTest(testDispatcher) {
+        // Simulates re-entry to this screen after the wizard has already completed once — e.g.
+        // Kiosk's lockdown-exit route navigating back to Screen.SetupComplete, which mounts a
+        // fresh SetupCompleteViewModel while SetupWizardDraft (a Koin singleton) is still sitting
+        // in its post-finish() reset() state (mode = null). If finish() didn't check for an
+        // already-persisted config FIRST, draft.toStationConfig() would throw and uiState.error
+        // would be non-null instead of stationConfig being populated.
+        val persistedConfig = StationConfig(
+            eventId = "evt-1", eventName = "Технопром-2026", mode = StationMode.KIOSK,
+            dayDate = null, workPointId = "z1", workPointName = "Холл", printer = null,
+            autoPrint = false, deviceNumber = 4, staffName = "kiosk@idento.app",
+        )
+        val fakePreferences = FakeStationConfigPreferences().apply { existing = persistedConfig }
+        val draft = SetupWizardDraft() // reset/blank state: mode == null
+        val viewModel = SetupCompleteViewModel(draft, fakePreferences, FakeAuthPreferences())
+
+        viewModel.finish()
+
+        assertEquals(persistedConfig, viewModel.uiState.value.stationConfig)
+        assertEquals(null, viewModel.uiState.value.error)
     }
 
     @Test

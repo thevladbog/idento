@@ -146,6 +146,7 @@ val viewModelModule = module {
             stationConfigPreferences = object : StationConfigGateway {
                 override suspend fun save(config: StationConfig) = stationConfigPreferences.save(config)
                 override suspend fun clear() = stationConfigPreferences.clear()
+                override suspend fun get(): StationConfig? = stationConfigPreferences.stationConfig.first()
             },
             authPreferences = AuthLogoutGateway(authPreferences::clearAuth),
         )
