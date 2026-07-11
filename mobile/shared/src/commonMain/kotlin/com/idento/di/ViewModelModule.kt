@@ -3,6 +3,10 @@ package com.idento.di
 import com.idento.data.model.StationConfig
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.RegistrationCheckInService
+import com.idento.data.registration.RegistrationOfflineQueueRepository
+import com.idento.data.registration.RegistrationVerdictMapper
+import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
@@ -15,6 +19,12 @@ import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
 import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
+import com.idento.presentation.registration.AttendeeSearchSource
+import com.idento.presentation.registration.CameraScanGateway
+import com.idento.presentation.registration.EventBadgeTemplateSource
+import com.idento.presentation.registration.PendingQueueCountSource
+import com.idento.presentation.registration.RegistrationHomeViewModel
+import com.idento.presentation.registration.RegistrationStationGateway
 import com.idento.presentation.settings.SettingsViewModel
 import com.idento.presentation.setup.AuthLogoutGateway
 import com.idento.presentation.setup.AuthTokenSaver
@@ -37,6 +47,8 @@ import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.template.DisplayTemplateViewModel
 import com.idento.presentation.template.TemplateEditorViewModel
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import org.koin.dsl.module
 
 /**
@@ -131,6 +143,39 @@ val viewModelModule = module {
                 override suspend fun clear() = stationConfigPreferences.clear()
             },
             authPreferences = AuthLogoutGateway(authPreferences::clearAuth),
+        )
+    }
+    factory {
+        // RegistrationHomeViewModel follows the same narrow-seam pattern as the Setup ViewModels:
+        // CameraScanGateway adapts CameraService (an expect class) behind a regular interface so
+        // the ViewModel stays testable from commonTest; EventBadgeTemplateSource and
+        // AttendeeSearchSource are method references into their respective repositories; and
+        // RegistrationStationGateway / PendingQueueCountSource are the two seams defined alongside
+        // the ViewModel itself.
+        val stationConfigPrefs: StationConfigPreferences = get()
+        val eventRepository: EventRepository = get()
+        val attendeeRepository: AttendeeRepository = get()
+        val cameraService: CameraService = get()
+        val offlineQueueRepo: RegistrationOfflineQueueRepository = get()
+        RegistrationHomeViewModel(
+            stationGateway = RegistrationStationGateway {
+                stationConfigPrefs.stationConfig.filterNotNull().first()
+            },
+            verdictMapper = get<RegistrationVerdictMapper>(),
+            checkInService = get<RegistrationCheckInService>(),
+            cameraGateway = object : CameraScanGateway {
+                override fun startScanning() = cameraService.startScanning()
+                override fun stopScanning() = cameraService.stopScanning()
+            },
+            badgeTemplateSource = EventBadgeTemplateSource { eventId ->
+                eventRepository.getBadgeTemplate(eventId)
+            },
+            attendeeSearchSource = AttendeeSearchSource { eventId, query ->
+                attendeeRepository.searchAttendees(eventId, query)
+            },
+            pendingQueueCountSource = PendingQueueCountSource {
+                offlineQueueRepo.getPendingCountFlow()
+            },
         )
     }
 }
