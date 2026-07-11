@@ -14,13 +14,13 @@ import com.idento.data.repository.ZoneRepository
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
+import com.idento.platform.scanner.ScanSource
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
 import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.registration.AttendeeSearchSource
-import com.idento.presentation.registration.CameraScanGateway
 import com.idento.presentation.registration.EventBadgeTemplateSource
 import com.idento.presentation.registration.PendingQueueCountSource
 import com.idento.presentation.registration.RegistrationHomeViewModel
@@ -147,15 +147,13 @@ val viewModelModule = module {
     }
     factory {
         // RegistrationHomeViewModel follows the same narrow-seam pattern as the Setup ViewModels:
-        // CameraScanGateway adapts CameraService (an expect class) behind a regular interface so
-        // the ViewModel stays testable from commonTest; EventBadgeTemplateSource and
-        // AttendeeSearchSource are method references into their respective repositories; and
-        // RegistrationStationGateway / PendingQueueCountSource are the two seams defined alongside
-        // the ViewModel itself.
+        // ScanSource (shared with ZoneControlViewModel) merges the platform camera with any
+        // connected hardware/BT scanner; EventBadgeTemplateSource and AttendeeSearchSource are
+        // method references into their respective repositories; and RegistrationStationGateway /
+        // PendingQueueCountSource are the two seams defined alongside the ViewModel itself.
         val stationConfigPrefs: StationConfigPreferences = get()
         val eventRepository: EventRepository = get()
         val attendeeRepository: AttendeeRepository = get()
-        val cameraService: CameraService = get()
         val offlineQueueRepo: RegistrationOfflineQueueRepository = get()
         RegistrationHomeViewModel(
             stationGateway = RegistrationStationGateway {
@@ -163,10 +161,7 @@ val viewModelModule = module {
             },
             verdictMapper = get<RegistrationVerdictMapper>(),
             checkInService = get<RegistrationCheckInService>(),
-            cameraGateway = object : CameraScanGateway {
-                override fun startScanning() = cameraService.startScanning()
-                override fun stopScanning() = cameraService.stopScanning()
-            },
+            scanSource = get<ScanSource>(),
             badgeTemplateSource = EventBadgeTemplateSource { eventId ->
                 eventRepository.getBadgeTemplate(eventId)
             },
