@@ -42,7 +42,8 @@ export function TenantCombobox({ tenants, value, onChange }: Props) {
             <CommandEmpty>{t('auditLog_noTenantsFound')}</CommandEmpty>
             <CommandGroup>
               <CommandItem
-                value={t('auditLog_allTenants')}
+                value="__all__"
+                keywords={[t('auditLog_allTenants')]}
                 onSelect={() => {
                   onChange('');
                   setOpen(false);
@@ -54,7 +55,8 @@ export function TenantCombobox({ tenants, value, onChange }: Props) {
               {tenants.map((tn) => (
                 <CommandItem
                   key={tn.id}
-                  value={tn.name}
+                  value={tn.id}
+                  keywords={[tn.name]}
                   onSelect={() => {
                     onChange(tn.id);
                     setOpen(false);

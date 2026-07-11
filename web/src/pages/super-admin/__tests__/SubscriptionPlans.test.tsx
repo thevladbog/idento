@@ -46,6 +46,7 @@ describe('SubscriptionPlans Unlimited toggle', () => {
     const unlimitedToggle = screen.getByLabelText(/events.*month.*unlimited/i);
     fireEvent.click(unlimitedToggle);
     expect(eventsInput).toBeDisabled();
+    expect(eventsInput).toHaveValue(null);
   });
 
   it('a limit already at -1 initializes with Unlimited on and the input disabled', async () => {
@@ -57,5 +58,6 @@ describe('SubscriptionPlans Unlimited toggle', () => {
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
     const unlimitedToggle = screen.getByLabelText(/events.*month.*unlimited/i);
     expect(unlimitedToggle).toHaveAttribute('data-state', 'checked');
+    expect(screen.getByPlaceholderText(/unlimited/i)).toBeDisabled();
   });
 });

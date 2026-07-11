@@ -57,10 +57,11 @@ function LimitField({ label, value, onChange }: LimitFieldProps) {
       <div className="flex items-center gap-2">
         <Input
           type="number"
+          min={0}
           value={isUnlimited ? '' : value}
           disabled={isUnlimited}
           placeholder={isUnlimited ? t('planLimitUnlimited') : undefined}
-          onChange={(e) => onChange(parseInt(e.target.value) || 0)}
+          onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)}
         />
         <div className="flex items-center gap-1.5">
           <Switch

@@ -56,7 +56,7 @@ export default function AuditLog() {
       .then((res) =>
         setTenants(
           (res.data || [])
-            .map((t: { tenant?: { id?: string; name?: string } }) => ({ id: t.tenant?.id, name: t.tenant?.name }))
+            .map((row: { tenant?: { id?: string; name?: string } }) => ({ id: row.tenant?.id, name: row.tenant?.name }))
             .filter((tn: TenantOption) => tn.id && tn.name)
         )
       )
@@ -80,6 +80,10 @@ export default function AuditLog() {
   // via the `offset` dependency once React commits it — doesn't cause a
   // second, redundant fetch for the exact same params.
   const lastFetchedRef = useRef<{ filtersKey: string; offset: number } | null>(null);
+  // Guards against an older in-flight request resolving after a newer one
+  // (e.g. the user changes tenant then date before the first request lands)
+  // and overwriting the newer, correct result with stale data.
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     const filtersChanged = prevFiltersKeyRef.current !== filtersKey;
@@ -98,6 +102,7 @@ export default function AuditLog() {
   }, [filtersKey, offset]);
 
   const loadLogs = async (offsetToUse: number) => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const params: Record<string, string | number> = { limit: PAGE_SIZE, offset: offsetToUse };
@@ -107,13 +112,15 @@ export default function AuditLog() {
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
       const response = await api.get('/api/super-admin/audit-log', { params });
+      if (requestId !== requestIdRef.current) return; // a newer request has since landed
       setLogs(response.data.logs || []);
       setTotal(response.data.total || 0);
     } catch (error) {
+      if (requestId !== requestIdRef.current) return;
       console.error('Failed to load audit log:', error);
       toast.error(t('failedToLoadData'));
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   };
 
