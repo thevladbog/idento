@@ -52,6 +52,20 @@ describe('overLimitTenants', () => {
     ];
     expect(overLimitTenants(tenants)).toEqual([]);
   });
+  it('flags a tenant over its events_per_month limit', () => {
+    const tenants: TenantStat[] = [
+      { tenant: { id: '1' }, events_count: 15, subscription: { plan: { limits: { events_per_month: 10 } } } },
+      { tenant: { id: '2' }, events_count: 5, subscription: { plan: { limits: { events_per_month: 10 } } } },
+    ];
+    expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
+  });
+  it('flags a tenant over its users limit', () => {
+    const tenants: TenantStat[] = [
+      { tenant: { id: '1' }, users_count: 12, subscription: { plan: { limits: { users: 10 } } } },
+      { tenant: { id: '2' }, users_count: 3, subscription: { plan: { limits: { users: 10 } } } },
+    ];
+    expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
+  });
 });
 
 describe('onCustomLimitTenants', () => {

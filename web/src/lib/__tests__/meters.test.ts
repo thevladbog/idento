@@ -35,6 +35,12 @@ describe('meterPercent', () => {
   it('returns 0 for unlimited (-1) limits', () => {
     expect(meterPercent(5000, -1)).toBe(0);
   });
+  it('returns 100 for a zero limit with nonzero usage, matching the over tone', () => {
+    expect(meterPercent(5, 0)).toBe(100);
+  });
+  it('returns 0 for a zero limit with zero usage', () => {
+    expect(meterPercent(0, 0)).toBe(0);
+  });
 });
 
 describe('meterToneClass', () => {

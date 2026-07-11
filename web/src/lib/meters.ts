@@ -13,7 +13,8 @@ export function meterTone(count: number, limit: number): MeterTone {
 }
 
 export function meterPercent(count: number, limit: number): number {
-  if (limit === UNLIMITED || limit <= 0) return 0;
+  if (limit === UNLIMITED) return 0;
+  if (limit === 0) return count > 0 ? 100 : 0;
   return Math.max(0, Math.min(100, Math.round((count / limit) * 100)));
 }
 
