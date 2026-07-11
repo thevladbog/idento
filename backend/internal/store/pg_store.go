@@ -1622,6 +1622,10 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		args = append(args, targetID)
 		conditions = append(conditions, fmt.Sprintf("target_id = $%d", len(args)))
 	}
+	if adminUserID, ok := filters["admin_user_id"].(uuid.UUID); ok {
+		args = append(args, adminUserID)
+		conditions = append(conditions, fmt.Sprintf("admin_user_id = $%d", len(args)))
+	}
 
 	where := ""
 	if len(conditions) > 0 {

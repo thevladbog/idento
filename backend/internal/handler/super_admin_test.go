@@ -356,3 +356,58 @@ func TestImpersonateTenant_MalformedBodyReturnsInvalidRequest(t *testing.T) {
 		t.Fatalf("expected 'Invalid request' error for malformed body, got: %s", rec.Body.String())
 	}
 }
+
+func TestGetAuditLog_AdminUserIDFilterPassedToStore(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	adminID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?admin_user_id="+adminID.String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedFilters["admin_user_id"] != adminID {
+		t.Fatalf("expected admin_user_id filter %v, got %#v", adminID, capturedFilters["admin_user_id"])
+	}
+}
+
+func TestGetAuditLog_InvalidAdminUserIDIgnoredNot400(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?admin_user_id=not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (invalid admin_user_id must be ignored, not rejected), got %d", rec.Code)
+	}
+	if _, ok := capturedFilters["admin_user_id"]; ok {
+		t.Fatalf("expected no admin_user_id key when param is invalid, got %#v", capturedFilters)
+	}
+}
