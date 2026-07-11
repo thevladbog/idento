@@ -1634,7 +1634,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 	          LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
 	rows, err := s.db.Query(ctx, query, append(args, limit, offset)...)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("query audit log: %w", err)
 	}
 	defer rows.Close()
 
@@ -1648,7 +1648,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 			&changesJSON, &auditLog.IPAddress, &auditLog.UserAgent, &auditLog.CreatedAt,
 		)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("scan audit log: %w", err)
 		}
 
 		if len(changesJSON) > 0 {
@@ -1658,6 +1658,9 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		}
 
 		logs = append(logs, &auditLog)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate audit log: %w", err)
 	}
 
 	countQuery := "SELECT COUNT(*) FROM admin_audit_log " + where

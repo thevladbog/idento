@@ -460,8 +460,9 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	//nolint:errcheck
-	_ = c.Bind(&body)
+	if err := c.Bind(&body); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
 	if strings.TrimSpace(body.Reason) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "reason is required"})
 	}

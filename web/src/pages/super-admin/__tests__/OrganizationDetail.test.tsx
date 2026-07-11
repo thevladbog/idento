@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import OrganizationDetail from '../OrganizationDetail';
 import api from '@/lib/api';
 import '../../../i18n';
@@ -25,6 +25,30 @@ function renderPage() {
     <MemoryRouter initialEntries={['/super-admin/organizations/t1']}>
       <Routes>
         <Route path="/super-admin/organizations/:id" element={<OrganizationDetail />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+let capturedNavigate: ReturnType<typeof useNavigate> | null = null;
+function NavCapture() {
+  capturedNavigate = useNavigate();
+  return null;
+}
+
+function renderPageWithNavCapture() {
+  return render(
+    <MemoryRouter initialEntries={['/super-admin/organizations/t1']}>
+      <Routes>
+        <Route
+          path="/super-admin/organizations/:id"
+          element={
+            <>
+              <NavCapture />
+              <OrganizationDetail />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>
   );
@@ -114,5 +138,34 @@ describe('OrganizationDetail', () => {
     } finally {
       window.location.hash = '';
     }
+  });
+
+  it('does not let a slow-resolving response for a previous tenant overwrite a newer tenant navigated to in the meantime', async () => {
+    let resolveT1Stats: (value: { data: typeof mockStats }) => void;
+    const t1StatsPromise = new Promise<{ data: typeof mockStats }>((resolve) => {
+      resolveT1Stats = resolve;
+    });
+    const t2Stats = { ...mockStats, tenant: { ...mockStats.tenant, id: 't2', name: 'Second Tenant' } };
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes('/tenants/t1/stats')) return t1StatsPromise;
+      if (url.includes('/tenants/t2/stats')) return Promise.resolve({ data: t2Stats });
+      if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
+      if (url.includes('/audit-log')) return Promise.resolve({ data: mockAudit });
+      if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
+      return Promise.reject(new Error('unexpected url ' + url));
+    });
+
+    renderPageWithNavCapture();
+
+    // Navigate to tenant 2 before tenant 1's stats request resolves.
+    capturedNavigate!('/super-admin/organizations/t2');
+    await waitFor(() => expect(screen.getByText('Second Tenant')).toBeInTheDocument());
+
+    // Now let the stale tenant-1 response resolve — it must not clobber tenant 2's state.
+    resolveT1Stats!({ data: mockStats });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByText('Second Tenant')).toBeInTheDocument();
+    expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
   });
 });

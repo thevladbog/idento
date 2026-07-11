@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"idento/backend/internal/models"
@@ -326,5 +327,32 @@ func TestImpersonateTenant_ReasonRequired(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 when reason is missing, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestImpersonateTenant_MalformedBodyReturnsInvalidRequest(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+	e := echo.New()
+	tenantID := uuid.New()
+
+	fs := &fakeStore{}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/super-admin/tenants/"+tenantID.String()+"/impersonate", bytes.NewReader([]byte(`{not valid json`)))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(tenantID.String())
+	c.Set("user", &models.JWTCustomClaims{UserID: uuid.New().String(), TenantID: uuid.New().String(), Role: "admin"})
+
+	if err := h.ImpersonateTenant(c); err != nil {
+		t.Fatalf("ImpersonateTenant returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed JSON body, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Invalid request") {
+		t.Fatalf("expected 'Invalid request' error for malformed body, got: %s", rec.Body.String())
 	}
 }

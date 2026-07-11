@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { groupAuditLogByDay, formatAuditDiff, type AuditLogEntry } from '../auditFormat';
 
 function entry(overrides: Partial<AuditLogEntry>): AuditLogEntry {
@@ -18,15 +18,33 @@ function entry(overrides: Partial<AuditLogEntry>): AuditLogEntry {
 
 describe('groupAuditLogByDay', () => {
   it('groups entries by their created_at date, preserving order within a day', () => {
-    const entries = [
-      entry({ id: '1', created_at: '2026-07-11T10:00:00Z' }),
-      entry({ id: '2', created_at: '2026-07-11T09:00:00Z' }),
-      entry({ id: '3', created_at: '2026-07-10T10:00:00Z' }),
-    ];
-    const groups = groupAuditLogByDay(entries);
-    expect(groups).toHaveLength(2);
-    expect(groups[0]).toEqual({ day: '2026-07-11', entries: [entries[0], entries[1]] });
-    expect(groups[1]).toEqual({ day: '2026-07-10', entries: [entries[2]] });
+    vi.stubEnv('TZ', 'UTC');
+    try {
+      const entries = [
+        entry({ id: '1', created_at: '2026-07-11T10:00:00Z' }),
+        entry({ id: '2', created_at: '2026-07-11T09:00:00Z' }),
+        entry({ id: '3', created_at: '2026-07-10T10:00:00Z' }),
+      ];
+      const groups = groupAuditLogByDay(entries);
+      expect(groups).toHaveLength(2);
+      expect(groups[0]).toEqual({ day: '2026-07-11', entries: [entries[0], entries[1]] });
+      expect(groups[1]).toEqual({ day: '2026-07-10', entries: [entries[2]] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('groups by the VIEWER local calendar day, not UTC, for an entry near UTC midnight', () => {
+    vi.stubEnv('TZ', 'America/Los_Angeles');
+    try {
+      // 2026-07-11T02:00:00Z is 2026-07-10T19:00:00 in America/Los_Angeles (UTC-7 in July) —
+      // must group under the LOCAL day '2026-07-10', matching the local time a viewer sees.
+      const entries = [entry({ id: '1', created_at: '2026-07-11T02:00:00Z' })];
+      const groups = groupAuditLogByDay(entries);
+      expect(groups).toEqual([{ day: '2026-07-10', entries }]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 

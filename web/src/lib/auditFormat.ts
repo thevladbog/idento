@@ -12,12 +12,21 @@ export type AuditLogEntry = {
 
 export type AuditDayGroup = { day: string; entries: AuditLogEntry[] };
 
-/** Groups by the entry's created_at calendar date (UTC, YYYY-MM-DD), preserving API order (newest-first) within each day. */
+/**
+ * Groups by the entry's created_at calendar date in the VIEWER's local
+ * timezone (not UTC) — the day heading (AuditEntryList, rendered from this
+ * key as local date components) and each entry's own timestamp (rendered
+ * via toLocaleTimeString) are both local, so grouping must match or an
+ * entry near UTC midnight can land under a heading one day off from the
+ * time actually shown beneath it. Preserves API order (newest-first) within
+ * each day.
+ */
 export function groupAuditLogByDay(entries: AuditLogEntry[]): AuditDayGroup[] {
   const order: string[] = [];
   const groups = new Map<string, AuditLogEntry[]>();
   for (const entry of entries) {
-    const day = entry.created_at.slice(0, 10);
+    const d = new Date(entry.created_at);
+    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const bucket = groups.get(day);
     if (bucket) {
       bucket.push(entry);

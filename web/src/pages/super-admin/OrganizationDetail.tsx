@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -75,12 +75,20 @@ export default function OrganizationDetail() {
 
   const activeSection = useScrollSpy(SECTIONS.map((s) => s.id));
 
+  // Tracks the most recently requested tenant id, so a slow response for a
+  // tenant the user has since navigated away from can't clobber the newer
+  // tenant's state (the component stays mounted across id changes since the
+  // route pattern is unchanged, so this isn't a remount — it's a real race).
+  const latestIdRef = useRef(id);
+
   useEffect(() => {
+    latestIdRef.current = id;
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load when id changes
   }, [id]);
 
   const loadData = async () => {
+    const requestId = id;
     try {
       const [tenantResponse, plansResponse, auditResponse, usersResponse] = await Promise.all([
         api.get(`/api/super-admin/tenants/${id}/stats`),
@@ -88,6 +96,8 @@ export default function OrganizationDetail() {
         api.get(`/api/super-admin/audit-log?target_id=${id}&limit=100`),
         api.get(`/api/super-admin/users?tenant_id=${id}`),
       ]);
+
+      if (latestIdRef.current !== requestId) return; // superseded by a newer navigation
 
       setTenant(tenantResponse.data);
       setPlans(plansResponse.data);
@@ -102,15 +112,18 @@ export default function OrganizationDetail() {
         setSubscriptionStatus(sub.status);
       }
     } catch (error) {
+      if (latestIdRef.current !== requestId) return; // superseded; don't surface a stale error either
       console.error('Failed to load data:', error);
       toast.error(t('error'), { description: t('failedToLoadData') });
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => {
-        if (window.location.hash) {
-          document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
-        }
-      });
+      if (latestIdRef.current === requestId) {
+        setLoading(false);
+        requestAnimationFrame(() => {
+          if (window.location.hash) {
+            document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+          }
+        });
+      }
     }
   };
 

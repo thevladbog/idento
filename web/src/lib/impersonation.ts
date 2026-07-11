@@ -28,6 +28,24 @@ export function getParkedOperatorToken(): string | null {
   return localStorage.getItem(OPERATOR_TOKEN_KEY);
 }
 
+/**
+ * The operator's own user id, read from the `user` object login/register
+ * already persist to localStorage — startImpersonation never touches that
+ * key, so it still holds the operator's identity (not the impersonated
+ * tenant's) for the duration of the session. Used to scope the exit-summary
+ * action count to this operator's own requests.
+ */
+export function getOperatorUserId(): string | null {
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return null;
+    const user = JSON.parse(raw) as { id?: string };
+    return user.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function clearSession(restoreToken: boolean): void {
   const operatorToken = localStorage.getItem(OPERATOR_TOKEN_KEY);
   if (restoreToken) {

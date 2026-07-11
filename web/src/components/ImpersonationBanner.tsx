@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
-import { getImpersonation, endImpersonation, getParkedOperatorToken, type ImpersonationSession } from '@/lib/impersonation';
+import { getImpersonation, endImpersonation, getParkedOperatorToken, getOperatorUserId, type ImpersonationSession } from '@/lib/impersonation';
 import { fetchImpersonationSummary, type ImpersonationSummary } from '@/lib/impersonationSummary';
 
 /**
@@ -43,10 +43,12 @@ export function ImpersonationBanner() {
 
   const startExit = async () => {
     setExiting(true);
+    setSummary(null); // clear any stale summary from a previous exit attempt before fetching fresh
     const operatorToken = getParkedOperatorToken();
-    if (!operatorToken) return; // no summary possible; dialog still shows the unavailable copy
+    const operatorUserId = getOperatorUserId();
+    if (!operatorToken || !operatorUserId) return; // no summary possible; dialog still shows the unavailable copy
     try {
-      const result = await fetchImpersonationSummary(session.tenantId, session.mintedAt, operatorToken);
+      const result = await fetchImpersonationSummary(session.tenantId, session.mintedAt, operatorToken, operatorUserId);
       setSummary(result);
     } catch {
       setSummary(null); // fail open: never block exit on a failed summary fetch
