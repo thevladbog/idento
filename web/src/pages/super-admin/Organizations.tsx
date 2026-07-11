@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -10,14 +10,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { StatusBadge } from '@/components/StatusBadge';
+import { trialsEndingWithinDays, overLimitTenants, onCustomLimitTenants, resolvedLimit, type TenantStat } from '@/lib/tenantQueues';
+import { meterTone, meterToneClass } from '@/lib/meters';
 
 export default function Organizations() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [tenants, setTenants] = useState([]);
-  const [filteredTenants, setFilteredTenants] = useState([]);
+  const [tenants, setTenants] = useState<TenantStat[]>([]);
+  const [filteredTenants, setFilteredTenants] = useState<TenantStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
+  const [savedQueue, setSavedQueue] = useState<'all' | 'trials' | 'over_limit' | 'suspended' | 'custom_limits'>('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 14;
   const [planFilter, setPlanFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -29,9 +35,10 @@ export default function Organizations() {
   }, []);
 
   useEffect(() => {
+    setPage(1);
     filterTenants();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter when search/plan/status/tenants change
-  }, [searchQuery, planFilter, statusFilter, tenants]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter when search/plan/status/savedQueue/tenants change
+  }, [searchQuery, planFilter, statusFilter, savedQueue, tenants]);
 
   const loadTenants = async () => {
     try {
@@ -71,9 +78,24 @@ export default function Organizations() {
     }
   };
 
+  function applySavedQueue(list: TenantStat[]): TenantStat[] {
+    switch (savedQueue) {
+      case 'trials':
+        return trialsEndingWithinDays(list, 7);
+      case 'over_limit':
+        return overLimitTenants(list);
+      case 'suspended':
+        return list.filter((t) => t.tenant?.status === 'suspended');
+      case 'custom_limits':
+        return onCustomLimitTenants(list);
+      default:
+        return list;
+    }
+  }
+
   const filterTenants = () => {
     type TenantRow = { tenant?: { name?: string; contact_email?: string; status?: string }; subscription?: { plan?: { slug?: string }; status?: string } };
-    let filtered = [...tenants];
+    let filtered = [...applySavedQueue(tenants)];
 
     // Search filter
     if (searchQuery) {
@@ -131,6 +153,9 @@ export default function Organizations() {
     );
   }
 
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pagedTenants = filteredTenants.slice(pageStart, pageStart + PAGE_SIZE);
+
   return (
     <div className="p-8">
       <div className="mb-8 flex justify-between items-start">
@@ -141,6 +166,30 @@ export default function Organizations() {
         <Button onClick={() => setDialogOpen(true)}>
           + {t('createTenant')}
         </Button>
+      </div>
+
+      {/* Saved queues */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {([
+          ['all', t('savedQueueAll'), tenants.length],
+          ['trials', t('savedQueueTrialsExpiring'), trialsEndingWithinDays(tenants, 7).length],
+          ['over_limit', t('savedQueueOverLimit'), overLimitTenants(tenants).length],
+          ['suspended', t('savedQueueSuspended'), tenants.filter((t) => t.tenant?.status === 'suspended').length],
+          ['custom_limits', t('savedQueueCustomLimits'), onCustomLimitTenants(tenants).length],
+        ] as const).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setSavedQueue(key)}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+              savedQueue === key
+                ? 'border-primary bg-accent text-accent-foreground'
+                : 'border-border text-muted-foreground hover:bg-accent/50'
+            }`}
+          >
+            {label} · {count}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -189,28 +238,45 @@ export default function Organizations() {
               <TableHead>{t('status')}</TableHead>
               <TableHead>{t('tenantStatusColumn')}</TableHead>
               <TableHead>{t('created')}</TableHead>
+              <TableHead>{t('lastActivityColumn')}</TableHead>
               <TableHead>{t('actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredTenants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                   {t('noOrganizationsFound')}
                 </TableCell>
               </TableRow>
             ) : (
-              filteredTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string }; status?: string }; users_count?: number; events_count?: number; attendees_count?: number }) => (
+              pagedTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string; slug?: string; limits?: Record<string, number> }; status?: string; custom_limits?: Record<string, number> | null }; users_count?: number; events_count?: number; attendees_count?: number; last_activity?: string | null }) => (
                 <TableRow key={tenant.tenant?.id ?? ''}>
                   <TableCell className="font-medium">{tenant.tenant?.name}</TableCell>
                   <TableCell>
                     <Badge variant={getPlanBadgeVariant(tenant.subscription?.plan?.tier ?? '')}>
                       {tenant.subscription?.plan?.name || 'N/A'}
                     </Badge>
+                    {onCustomLimitTenants([tenant]).length > 0 && (
+                      <span className="ml-2 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {t('customPlanBadge')}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell>{tenant.users_count}</TableCell>
                   <TableCell>{tenant.events_count}</TableCell>
-                  <TableCell>{tenant.attendees_count}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const limit = resolvedLimit(tenant.subscription, 'attendees_per_event');
+                      const tone = meterTone(tenant.attendees_count ?? 0, limit);
+                      return (
+                        <span className={meterToneClass(tone)}>
+                          {tenant.attendees_count ?? 0}
+                          {limit !== -1 ? ` / ${limit}` : ''}
+                        </span>
+                      );
+                    })()}
+                  </TableCell>
                   <TableCell>
                     <Badge variant={getStatusBadgeVariant(tenant.subscription?.status ?? '')}>
                       {tenant.subscription?.status || 'N/A'}
@@ -218,9 +284,15 @@ export default function Organizations() {
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={tenant.tenant?.status} />
+                    {overLimitTenants([tenant]).length > 0 && (
+                      <div className="mt-1 text-[10px] font-semibold text-destructive">{t('overLimitBadge')}</div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {tenant.tenant?.created_at ? new Date(tenant.tenant.created_at).toLocaleDateString() : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {tenant.last_activity ? new Date(tenant.last_activity).toLocaleDateString() : '—'}
                   </TableCell>
                   <TableCell>
                     <Button
@@ -238,8 +310,27 @@ export default function Organizations() {
         </Table>
       </div>
 
-      <div className="mt-4 text-sm text-muted-foreground">
-        {t('showing')} {filteredTenants.length} {t('of')} {tenants.length} {t('organizations')}
+      <div className="mt-4 flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          {t('paginationOf', {
+            from: filteredTenants.length === 0 ? 0 : pageStart + 1,
+            to: Math.min(pageStart + PAGE_SIZE, filteredTenants.length),
+            total: filteredTenants.length,
+          })}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+            {t('previousPage')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pageStart + PAGE_SIZE >= filteredTenants.length}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            {t('nextPage')}
+          </Button>
+        </div>
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
