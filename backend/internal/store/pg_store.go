@@ -77,6 +77,13 @@ func (s *PGStore) RunMigrations() error {
 	}
 	sort.Strings(migrationFiles)
 
+	// schema_migrations is keyed on the numeric version prefix alone, so two
+	// files sharing a prefix would make the second one silently no-op (it
+	// looks "already applied"). Fail fast instead of skipping it forever.
+	if a, b, version, ok := duplicateMigrationVersion(migrationFiles); ok {
+		return fmt.Errorf("migration version collision: %q and %q both resolve to version %q", a, b, version)
+	}
+
 	appliedCount := 0
 	for _, filename := range migrationFiles {
 		// Extract version from filename (e.g., "000001_init_schema.up.sql" -> "000001")
@@ -123,6 +130,21 @@ func (s *PGStore) RunMigrations() error {
 		log.Printf("Migrations: applied %d migration(s)", appliedCount)
 	}
 	return nil
+}
+
+// duplicateMigrationVersion reports the first pair of sorted migration
+// filenames whose version prefix (the text before the first "_") collides,
+// e.g. "000014_a.up.sql" and "000014_b.up.sql" both resolving to "000014".
+func duplicateMigrationVersion(sortedFilenames []string) (first, second, version string, ok bool) {
+	var prevVersion, prevFilename string
+	for _, filename := range sortedFilenames {
+		v := strings.Split(filename, "_")[0]
+		if v == prevVersion {
+			return prevFilename, filename, v, true
+		}
+		prevVersion, prevFilename = v, filename
+	}
+	return "", "", "", false
 }
 
 // Implement Store interface methods
@@ -1609,19 +1631,30 @@ func (s *PGStore) LogAdminAction(ctx context.Context, adminID uuid.UUID, action 
 }
 
 func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{}, limit int, offset int) ([]*models.AdminAuditLog, int, error) {
-	where := ""
-	args := []interface{}{}
+	var conditions []string
+	var args []interface{}
+
 	if action, ok := filters["action"].(string); ok && action != "" {
-		where = "WHERE action = $1"
 		args = append(args, action)
+		conditions = append(conditions, fmt.Sprintf("action = $%d", len(args)))
 	}
+	if targetID, ok := filters["target_id"].(uuid.UUID); ok {
+		args = append(args, targetID)
+		conditions = append(conditions, fmt.Sprintf("target_id = $%d", len(args)))
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
 	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address::text, user_agent, created_at
 	          FROM admin_audit_log %s
 	          ORDER BY created_at DESC
 	          LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
 	rows, err := s.db.Query(ctx, query, append(args, limit, offset)...)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("query audit log: %w", err)
 	}
 	defer rows.Close()
 
@@ -1635,7 +1668,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 			&changesJSON, &auditLog.IPAddress, &auditLog.UserAgent, &auditLog.CreatedAt,
 		)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("scan audit log: %w", err)
 		}
 
 		if len(changesJSON) > 0 {
@@ -1646,8 +1679,10 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 
 		logs = append(logs, &auditLog)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate audit log: %w", err)
+	}
 
-	// Get total count
 	countQuery := "SELECT COUNT(*) FROM admin_audit_log " + where
 	var total int
 	if err := s.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
