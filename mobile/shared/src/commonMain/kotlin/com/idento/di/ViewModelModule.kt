@@ -11,6 +11,8 @@ import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
 import com.idento.data.repository.StationRepository
 import com.idento.data.repository.ZoneRepository
+import com.idento.data.zonecontrol.ZoneScanSource
+import com.idento.data.zonecontrol.ZoneVerdictAdapter
 import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
@@ -47,6 +49,9 @@ import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.template.DisplayTemplateViewModel
 import com.idento.presentation.template.TemplateEditorViewModel
+import com.idento.presentation.zonecontrol.CheckinOverrideSource
+import com.idento.presentation.zonecontrol.ZoneControlViewModel
+import com.idento.presentation.zonecontrol.ZoneStationGateway
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import org.koin.dsl.module
@@ -170,6 +175,45 @@ val viewModelModule = module {
             },
             pendingQueueCountSource = PendingQueueCountSource {
                 offlineQueueRepo.getPendingCountFlow()
+            },
+        )
+    }
+    factory {
+        // ZoneControlViewModel follows the same narrow-seam pattern as RegistrationHomeViewModel:
+        // ZoneStationGateway is the same StationConfigPreferences-backed lambda shape as
+        // RegistrationStationGateway; ZoneScanSource/CheckinOverrideSource are method references
+        // into ZoneRepository/AttendeeRepository; ScanSource and PendingQueueCountSource are the
+        // shared singles already registered above/in AppModule.
+        val stationConfigPrefs: StationConfigPreferences = get()
+        val zoneRepository: ZoneRepository = get()
+        val attendeeRepository: AttendeeRepository = get()
+        val offlineQueueRepo: RegistrationOfflineQueueRepository = get()
+        ZoneControlViewModel(
+            stationGateway = ZoneStationGateway {
+                stationConfigPrefs.stationConfig.filterNotNull().first()
+            },
+            verdictAdapter = ZoneVerdictAdapter(
+                ZoneScanSource(zoneRepository::scanZone),
+            ),
+            scanSource = get<ScanSource>(),
+            pendingQueueCountSource = PendingQueueCountSource {
+                offlineQueueRepo.getPendingCountFlow()
+            },
+            overrideSource = CheckinOverrideSource { eventId, zoneId, attendeeId ->
+                attendeeRepository.submitOverride(
+                    eventId,
+                    com.idento.data.model.CreateCheckinOverrideRequestDto(
+                        attendeeId = attendeeId,
+                        context = "not_registered",
+                        zoneId = zoneId,
+                    ),
+                ).let { result ->
+                    when (result) {
+                        is com.idento.data.network.ApiResult.Success -> com.idento.data.network.ApiResult.Success(Unit)
+                        is com.idento.data.network.ApiResult.Error -> result
+                        is com.idento.data.network.ApiResult.Loading -> com.idento.data.network.ApiResult.Loading
+                    }
+                }
             },
         )
     }
