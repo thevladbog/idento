@@ -3,10 +3,12 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"idento/backend/internal/models"
 
@@ -354,5 +356,174 @@ func TestImpersonateTenant_MalformedBodyReturnsInvalidRequest(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Invalid request") {
 		t.Fatalf("expected 'Invalid request' error for malformed body, got: %s", rec.Body.String())
+	}
+}
+
+func TestGetAuditLog_AdminUserIDFilterPassedToStore(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	adminID := uuid.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?admin_user_id="+adminID.String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedFilters["admin_user_id"] != adminID {
+		t.Fatalf("expected admin_user_id filter %v, got %#v", adminID, capturedFilters["admin_user_id"])
+	}
+}
+
+func TestGetAuditLog_InvalidAdminUserIDIgnoredNot400(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?admin_user_id=not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (invalid admin_user_id must be ignored, not rejected), got %d", rec.Code)
+	}
+	if _, ok := capturedFilters["admin_user_id"]; ok {
+		t.Fatalf("expected no admin_user_id key when param is invalid, got %#v", capturedFilters)
+	}
+}
+
+func TestGetAuditLog_DateRangeFilterPassedToStore(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?date_from=2026-07-01&date_to=2026-07-11", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	dateFrom, ok := capturedFilters["date_from"].(time.Time)
+	if !ok || !dateFrom.Equal(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected date_from 2026-07-01 UTC, got %#v", capturedFilters["date_from"])
+	}
+	dateTo, ok := capturedFilters["date_to"].(time.Time)
+	if !ok || !dateTo.Equal(time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected date_to 2026-07-11 UTC, got %#v", capturedFilters["date_to"])
+	}
+}
+
+func TestGetAuditLog_MalformedDatesIgnoredNot400(t *testing.T) {
+	e := echo.New()
+	var capturedFilters map[string]interface{}
+
+	fs := &fakeStore{
+		getAuditLog: func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error) {
+			capturedFilters = filters
+			return nil, 0, nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/super-admin/audit-log?date_from=not-a-date&date_to=07/11/2026", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.GetAuditLog(c); err != nil {
+		t.Fatalf("GetAuditLog returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (malformed dates must be ignored, not rejected), got %d", rec.Code)
+	}
+	if _, ok := capturedFilters["date_from"]; ok {
+		t.Fatalf("expected no date_from key when param is malformed, got %#v", capturedFilters)
+	}
+	if _, ok := capturedFilters["date_to"]; ok {
+		t.Fatalf("expected no date_to key when param is malformed, got %#v", capturedFilters)
+	}
+}
+
+func TestUpdateSubscriptionPlanSuper_LogsOldAndNew(t *testing.T) {
+	e := echo.New()
+	planID := uuid.New()
+	adminID := uuid.New()
+	oldPlan := &models.SubscriptionPlan{ID: planID, Name: "Starter", PriceMonthly: 29}
+	var capturedChanges map[string]interface{}
+
+	fs := &fakeStore{
+		getSubscriptionPlanByID: func(id uuid.UUID) (*models.SubscriptionPlan, error) {
+			if id == planID {
+				return oldPlan, nil
+			}
+			return nil, fmt.Errorf("not found")
+		},
+		updateSubscriptionPlan: func(plan *models.SubscriptionPlan) error { return nil },
+		logAdminAction: func(_ uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, _, _ string) error {
+			if action == "update_plan" {
+				capturedChanges = changes.(map[string]interface{})
+			}
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	body, _ := json.Marshal(map[string]interface{}{"name": "Professional", "price_monthly": 99})
+	req := httptest.NewRequest(http.MethodPut, "/api/super-admin/plans/"+planID.String(), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(planID.String())
+	c.Set("user", &models.JWTCustomClaims{UserID: adminID.String(), TenantID: uuid.New().String(), Role: "admin"})
+
+	if err := h.UpdateSubscriptionPlanSuper(c); err != nil {
+		t.Fatalf("UpdateSubscriptionPlanSuper returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedChanges == nil {
+		t.Fatalf("expected update_plan changes to be captured, got nil")
+	}
+	old, ok := capturedChanges["old"].(*models.SubscriptionPlan)
+	if !ok || old.Name != "Starter" {
+		t.Fatalf("expected old plan with Name=Starter, got %#v", capturedChanges["old"])
+	}
+	newP, ok := capturedChanges["new"].(models.SubscriptionPlan)
+	if !ok || newP.Name != "Professional" {
+		t.Fatalf("expected new plan with Name=Professional, got %#v", capturedChanges["new"])
 	}
 }

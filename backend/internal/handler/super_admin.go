@@ -252,6 +252,13 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 
 	plan.ID = planID
 
+	oldPlan, err := h.Store.GetSubscriptionPlanByID(c.Request().Context(), planID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to load plan",
+		})
+	}
+
 	if err := h.Store.UpdateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update plan",
@@ -265,7 +272,8 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 	}
 	adminID := uuid.MustParse(claims.UserID)
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
-		"plan": plan,
+		"old": oldPlan,
+		"new": plan,
 	}, c.RealIP(), c.Request().UserAgent()); err != nil {
 		log.Printf("Failed to log admin action: %v", err)
 	}
@@ -349,6 +357,21 @@ func (h *Handler) GetAuditLog(c echo.Context) error {
 	if targetIDStr := c.QueryParam("target_id"); targetIDStr != "" {
 		if targetID, err := uuid.Parse(targetIDStr); err == nil {
 			filters["target_id"] = targetID
+		}
+	}
+	if adminUserIDStr := c.QueryParam("admin_user_id"); adminUserIDStr != "" {
+		if adminUserID, err := uuid.Parse(adminUserIDStr); err == nil {
+			filters["admin_user_id"] = adminUserID
+		}
+	}
+	if dateFromStr := c.QueryParam("date_from"); dateFromStr != "" {
+		if dateFrom, err := time.Parse("2006-01-02", dateFromStr); err == nil {
+			filters["date_from"] = dateFrom
+		}
+	}
+	if dateToStr := c.QueryParam("date_to"); dateToStr != "" {
+		if dateTo, err := time.Parse("2006-01-02", dateToStr); err == nil {
+			filters["date_to"] = dateTo
 		}
 	}
 
