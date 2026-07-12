@@ -16,3 +16,13 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 if (typeof Element.prototype.scrollIntoView === 'undefined') {
   Element.prototype.scrollIntoView = () => {};
 }
+
+// jsdom doesn't implement IntersectionObserver, but useScrollSpy relies on
+// it internally. Stub it so components using that hook can render in tests.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = class IntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
