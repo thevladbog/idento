@@ -8,7 +8,10 @@ import tsPlugin from '@typescript-eslint/eslint-plugin/use-at-your-own-risk/raw-
 const tsRecommended = tsPlugin.flatConfigs['flat/recommended']
 
 export default [
-  globalIgnores(['dist']),
+  // public/ is served as-is by Vite (and, at container start, has its
+  // committed env.js overwritten by nginx's envsubst templating) — it's
+  // static assets, not application source to lint, same reasoning as dist.
+  globalIgnores(['dist', 'public']),
   js.configs.recommended,
   ...tsRecommended,
   reactHooks.configs['recommended-latest'],
