@@ -14,254 +14,178 @@ import (
 // JSON `null` instead of `[]` — crashing any frontend code that does
 // `.forEach`/`.map` on the field. Each store method below must return a
 // non-nil (possibly empty) slice even when the query matches no rows.
+func TestPGStore_EmptyResultsReturnEmptySliceNotNil(t *testing.T) {
+	type testCase struct {
+		name  string
+		setup func(mock pgxmock.PgxPoolIface, id uuid.UUID, at time.Time)
+		run   func(s *PGStore, id uuid.UUID, at time.Time) (length int, isNil bool, err error)
+	}
 
-func TestGetUsersByTenantID_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
+	cases := []testCase{
+		{
+			name: "GetUsersByTenantID",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM users WHERE tenant_id`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				users, err := s.GetUsersByTenantID(context.Background(), id)
+				return len(users), users == nil, err
+			},
+		},
+		{
+			name: "GetEventStaff",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM users u`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				staff, err := s.GetEventStaff(context.Background(), id)
+				return len(staff), staff == nil, err
+			},
+		},
+		{
+			name: "GetEventsByTenantID",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM events WHERE tenant_id`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "name", "start_date", "end_date", "location", "field_schema", "custom_fields", "created_at", "updated_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				events, err := s.GetEventsByTenantID(context.Background(), id)
+				return len(events), events == nil, err
+			},
+		},
+		{
+			name: "GetAPIKeysByEventID",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM api_keys`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "event_id", "name", "key_hash", "key_hash_bcrypt", "key_preview", "expires_at", "last_used_at", "revoked_at", "created_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				keys, err := s.GetAPIKeysByEventID(context.Background(), id)
+				return len(keys), keys == nil, err
+			},
+		},
+		{
+			name: "GetUserTenants",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM tenants t`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "name", "status", "settings", "logo_url", "website", "contact_email", "created_at", "updated_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				tenants, err := s.GetUserTenants(context.Background(), id)
+				return len(tenants), tenants == nil, err
+			},
+		},
+		{
+			name: "GetAttendeesByEventID",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM attendees a`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows(attendeesByEventColumns))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				attendees, err := s.GetAttendeesByEventID(context.Background(), id, "", "")
+				return len(attendees), attendees == nil, err
+			},
+		},
+		{
+			name: "GetZoneAccessRules",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM zone_access_rules`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "zone_id", "category", "allowed", "time_from", "time_to", "created_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				rules, err := s.GetZoneAccessRules(context.Background(), id)
+				return len(rules), rules == nil, err
+			},
+		},
+		{
+			name: "GetAttendeeZoneAccessList",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM attendee_zone_access`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "attendee_id", "zone_id", "allowed", "notes", "created_at", "updated_at"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				accesses, err := s.GetAttendeeZoneAccessList(context.Background(), id)
+				return len(accesses), accesses == nil, err
+			},
+		},
+		{
+			name: "GetStaffZoneAssignments",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM staff_zone_assignments\s+WHERE user_id`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "user_id", "zone_id", "assigned_at", "assigned_by"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				assignments, err := s.GetStaffZoneAssignments(context.Background(), id)
+				return len(assignments), assignments == nil, err
+			},
+		},
+		{
+			name: "GetZoneStaffAssignments",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
+				mock.ExpectQuery(`FROM staff_zone_assignments\s+WHERE zone_id`).
+					WithArgs(id).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "user_id", "zone_id", "assigned_at", "assigned_by"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
+				assignments, err := s.GetZoneStaffAssignments(context.Background(), id)
+				return len(assignments), assignments == nil, err
+			},
+		},
+		{
+			name: "GetZoneCheckins",
+			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, at time.Time) {
+				mock.ExpectQuery(`FROM zone_checkins`).
+					WithArgs(id, at.Truncate(24*time.Hour)).
+					WillReturnRows(pgxmock.NewRows([]string{"id", "attendee_id", "zone_id", "checked_in_at", "checked_in_by", "event_day", "metadata"}))
+			},
+			run: func(s *PGStore, id uuid.UUID, at time.Time) (int, bool, error) {
+				checkins, err := s.GetZoneCheckins(context.Background(), id, at)
+				return len(checkins), checkins == nil, err
+			},
+		},
 	}
-	defer mock.Close()
 
-	tenantID := uuid.New()
-	mock.ExpectQuery(`FROM users WHERE tenant_id`).
-		WithArgs(tenantID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	s := &PGStore{db: mock}
-	users, err := s.GetUsersByTenantID(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("GetUsersByTenantID: %v", err)
-	}
-	if users == nil {
-		t.Fatal("GetUsersByTenantID returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(users) != 0 {
-		t.Fatalf("len(users) = %d, want 0", len(users))
-	}
-}
+			mock, err := pgxmock.NewPool()
+			if err != nil {
+				t.Fatalf("pgxmock.NewPool: %v", err)
+			}
+			defer mock.Close()
+			defer func() {
+				if err := mock.ExpectationsWereMet(); err != nil {
+					t.Errorf("unmet expectations: %v", err)
+				}
+			}()
 
-func TestGetEventStaff_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
+			id := uuid.New()
+			at := time.Now()
+			tc.setup(mock, id, at)
 
-	eventID := uuid.New()
-	mock.ExpectQuery(`FROM users u`).
-		WithArgs(eventID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
-
-	s := &PGStore{db: mock}
-	staff, err := s.GetEventStaff(context.Background(), eventID)
-	if err != nil {
-		t.Fatalf("GetEventStaff: %v", err)
-	}
-	if staff == nil {
-		t.Fatal("GetEventStaff returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(staff) != 0 {
-		t.Fatalf("len(staff) = %d, want 0", len(staff))
-	}
-}
-
-func TestGetEventsByTenantID_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	tenantID := uuid.New()
-	mock.ExpectQuery(`FROM events WHERE tenant_id`).
-		WithArgs(tenantID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "name", "start_date", "end_date", "location", "field_schema", "custom_fields", "created_at", "updated_at"}))
-
-	s := &PGStore{db: mock}
-	events, err := s.GetEventsByTenantID(context.Background(), tenantID)
-	if err != nil {
-		t.Fatalf("GetEventsByTenantID: %v", err)
-	}
-	if events == nil {
-		t.Fatal("GetEventsByTenantID returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(events) != 0 {
-		t.Fatalf("len(events) = %d, want 0", len(events))
-	}
-}
-
-func TestGetAPIKeysByEventID_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	eventID := uuid.New()
-	mock.ExpectQuery(`FROM api_keys`).
-		WithArgs(eventID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "event_id", "name", "key_hash", "key_hash_bcrypt", "key_preview", "expires_at", "last_used_at", "revoked_at", "created_at"}))
-
-	s := &PGStore{db: mock}
-	keys, err := s.GetAPIKeysByEventID(context.Background(), eventID)
-	if err != nil {
-		t.Fatalf("GetAPIKeysByEventID: %v", err)
-	}
-	if keys == nil {
-		t.Fatal("GetAPIKeysByEventID returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(keys) != 0 {
-		t.Fatalf("len(keys) = %d, want 0", len(keys))
-	}
-}
-
-func TestGetUserTenants_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	userID := uuid.New()
-	mock.ExpectQuery(`FROM tenants t`).
-		WithArgs(userID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "name", "status", "settings", "logo_url", "website", "contact_email", "created_at", "updated_at"}))
-
-	s := &PGStore{db: mock}
-	tenants, err := s.GetUserTenants(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("GetUserTenants: %v", err)
-	}
-	if tenants == nil {
-		t.Fatal("GetUserTenants returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(tenants) != 0 {
-		t.Fatalf("len(tenants) = %d, want 0", len(tenants))
-	}
-}
-
-func TestGetZoneAccessRules_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	zoneID := uuid.New()
-	mock.ExpectQuery(`FROM zone_access_rules`).
-		WithArgs(zoneID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "zone_id", "category", "allowed", "time_from", "time_to", "created_at"}))
-
-	s := &PGStore{db: mock}
-	rules, err := s.GetZoneAccessRules(context.Background(), zoneID)
-	if err != nil {
-		t.Fatalf("GetZoneAccessRules: %v", err)
-	}
-	if rules == nil {
-		t.Fatal("GetZoneAccessRules returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(rules) != 0 {
-		t.Fatalf("len(rules) = %d, want 0", len(rules))
-	}
-}
-
-func TestGetAttendeeZoneAccessList_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	attendeeID := uuid.New()
-	mock.ExpectQuery(`FROM attendee_zone_access`).
-		WithArgs(attendeeID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "attendee_id", "zone_id", "allowed", "notes", "created_at", "updated_at"}))
-
-	s := &PGStore{db: mock}
-	accesses, err := s.GetAttendeeZoneAccessList(context.Background(), attendeeID)
-	if err != nil {
-		t.Fatalf("GetAttendeeZoneAccessList: %v", err)
-	}
-	if accesses == nil {
-		t.Fatal("GetAttendeeZoneAccessList returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(accesses) != 0 {
-		t.Fatalf("len(accesses) = %d, want 0", len(accesses))
-	}
-}
-
-func TestGetStaffZoneAssignments_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	userID := uuid.New()
-	mock.ExpectQuery(`FROM staff_zone_assignments\s+WHERE user_id`).
-		WithArgs(userID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "user_id", "zone_id", "assigned_at", "assigned_by"}))
-
-	s := &PGStore{db: mock}
-	assignments, err := s.GetStaffZoneAssignments(context.Background(), userID)
-	if err != nil {
-		t.Fatalf("GetStaffZoneAssignments: %v", err)
-	}
-	if assignments == nil {
-		t.Fatal("GetStaffZoneAssignments returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(assignments) != 0 {
-		t.Fatalf("len(assignments) = %d, want 0", len(assignments))
-	}
-}
-
-func TestGetZoneStaffAssignments_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	zoneID := uuid.New()
-	mock.ExpectQuery(`FROM staff_zone_assignments\s+WHERE zone_id`).
-		WithArgs(zoneID).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "user_id", "zone_id", "assigned_at", "assigned_by"}))
-
-	s := &PGStore{db: mock}
-	assignments, err := s.GetZoneStaffAssignments(context.Background(), zoneID)
-	if err != nil {
-		t.Fatalf("GetZoneStaffAssignments: %v", err)
-	}
-	if assignments == nil {
-		t.Fatal("GetZoneStaffAssignments returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(assignments) != 0 {
-		t.Fatalf("len(assignments) = %d, want 0", len(assignments))
-	}
-}
-
-func TestGetZoneCheckins_NoRowsReturnsEmptyNotNilSlice(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	zoneID := uuid.New()
-	at := time.Now()
-	mock.ExpectQuery(`FROM zone_checkins`).
-		WithArgs(zoneID, at.Truncate(24*time.Hour)).
-		WillReturnRows(pgxmock.NewRows([]string{"id", "attendee_id", "zone_id", "checked_in_at", "checked_in_by", "event_day", "metadata"}))
-
-	s := &PGStore{db: mock}
-	checkins, err := s.GetZoneCheckins(context.Background(), zoneID, at)
-	if err != nil {
-		t.Fatalf("GetZoneCheckins: %v", err)
-	}
-	if checkins == nil {
-		t.Fatal("GetZoneCheckins returned nil slice for zero rows, want non-nil empty slice")
-	}
-	if len(checkins) != 0 {
-		t.Fatalf("len(checkins) = %d, want 0", len(checkins))
+			s := &PGStore{db: mock}
+			length, isNil, err := tc.run(s, id, at)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+			if isNil {
+				t.Fatalf("%s returned nil slice for zero rows, want non-nil empty slice", tc.name)
+			}
+			if length != 0 {
+				t.Fatalf("%s: len = %d, want 0", tc.name, length)
+			}
+		})
 	}
 }

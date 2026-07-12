@@ -501,11 +501,10 @@ func TestGetUserZoneAssignments_UserNotFound(t *testing.T) {
 	}
 }
 
-// GetAttendeeZoneHistory builds its `history` response by appending to a
-// nil-declared local slice; when an attendee has zero zone check-ins the
-// loop never runs and encoding/json renders the field as `null` instead of
-// `[]`, crashing frontend code that does .forEach/.map on it (same class of
-// bug as the store-layer nil-slice cases).
+// Regression test: an attendee with zero zone check-ins must get back a
+// `history` field encoded as `[]`, not `null` — a `null` crashes frontend
+// code that does .forEach/.map on it (same class of bug as the store-layer
+// nil-slice cases).
 func TestGetAttendeeZoneHistory_ReturnsEmptyArrayNotNullWhenNoCheckins(t *testing.T) {
 	tenant := uuid.New()
 	attendeeID := uuid.New()

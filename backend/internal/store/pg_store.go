@@ -642,7 +642,7 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 	}
 	defer rows.Close()
 
-	var attendees []*models.Attendee
+	attendees := []*models.Attendee{}
 	for rows.Next() {
 		var a models.Attendee
 		var customFieldsJSON []byte

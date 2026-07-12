@@ -109,9 +109,6 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 		c.Logger().Error("Failed to fetch attendees: ", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch attendees"})
 	}
-	if attendees == nil {
-		attendees = []*models.Attendee{}
-	}
 
 	return c.JSON(http.StatusOK, attendees)
 }
