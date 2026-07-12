@@ -32,44 +32,63 @@ Triggered on:
 1. **changes** - Detects which parts of the codebase changed
    - Outputs: `backend`, `web`, `mobile` flags
 
-2. **lint-go** (conditional: backend changes)
-   - Runs golangci-lint on backend and agent
-   - Uses official action for better performance
-   - Provides inline annotations
+2. **validate** (calls the reusable workflow below)
+   - Passes `run-backend`/`run-web` booleans computed from the `changes` job
+   - Contains the lint/test/build sub-jobs described in the next section
 
-3. **test-go** (depends on: lint-go)
-   - Runs Go tests with race detection
-   - Generates coverage reports
-   - Uploads coverage artifacts
-
-4. **build-go** (depends on: test-go)
-   - Builds backend and agent binaries
-   - Verifies compilation success
-
-5. **typecheck-web** (conditional: web changes)
-   - TypeScript type checking
-   - Runs before other web checks
-
-6. **lint-web** (conditional: web changes)
-   - ESLint with annotations
-   - Runs in parallel with typecheck-web
-
-7. **build-web** (depends on: typecheck-web, lint-web)
-   - Builds production web bundle
-   - Uploads dist artifacts
-
-8. **lint-android** (conditional: mobile changes)
+3. **lint-android** (conditional: mobile changes)
    - Android lint checks
    - Non-blocking (won't fail entire pipeline)
 
-9. **dependency-review** (PR only)
+4. **dependency-review** (PR only)
    - Reviews new dependencies for vulnerabilities
    - Comments on PR if issues found
    - Fails on moderate+ severity issues
 
-10. **ci-success** (depends on all critical jobs)
-    - Final status check
-    - Required status check for PR merging
+5. **ci-success** (depends on all critical jobs)
+   - Final status check
+   - Required status check for PR merging
+
+### Reusable Validate Workflow (`.github/workflows/validate.yml`)
+
+The backend and web lint/test/build checks live in a separate reusable workflow, invoked via `workflow_call` rather than running directly inside `ci.yml`. It takes two boolean inputs, `run-backend` and `run-web`, that gate whether the backend or web jobs execute.
+
+Callers:
+- **`ci.yml`** - the `validate` job calls it with `run-backend`/`run-web` set from the `changes` job's path filters, so only affected areas run.
+- **`release.yml`** - the `validate` job calls it with both inputs hardcoded to `true`, gating the GHCR image pushes (`backend-image`, `web-image`) behind a full validation pass.
+
+Because these jobs run inside a called workflow, GitHub's UI prefixes each check with the caller job name, e.g. `validate / Lint Go (Backend & Agent)`, `validate / Test Go (Coverage & Race Detection)`. Keep this in mind when looking for a specific check in the PR checks list or branch protection settings.
+
+Jobs inside `validate.yml`:
+
+1. **lint-go** (conditional: `run-backend`)
+   - Runs golangci-lint on backend and agent
+   - Uses official action for better performance
+   - Provides inline annotations
+
+2. **gosec** (conditional: `run-backend`)
+   - Runs the Gosec security scanner on backend and agent
+
+3. **test-go** (depends on: lint-go; conditional: `run-backend`)
+   - Runs Go tests with race detection
+   - Generates coverage reports
+   - Uploads coverage artifacts
+
+4. **build-go** (depends on: test-go; conditional: `run-backend`)
+   - Builds backend and agent binaries
+   - Verifies compilation success
+
+5. **typecheck-web** (conditional: `run-web`)
+   - TypeScript type checking
+   - Runs before other web checks
+
+6. **lint-web** (conditional: `run-web`)
+   - ESLint with annotations
+   - Runs in parallel with typecheck-web
+
+7. **build-web** (depends on: typecheck-web, lint-web; conditional: `run-web`)
+   - Builds production web bundle
+   - Uploads dist artifacts
 
 ## Local Development
 
@@ -104,10 +123,11 @@ cd web && npm run build
 
 ## Performance
 
-Typical execution times:
+Typical execution times (job names below appear in the GitHub UI as `validate / <name>`):
 
 - **Backend only changes**: ~3-4 minutes
   - lint-go: ~1-2 min
+  - gosec: ~1 min (runs in parallel with lint-go)
   - test-go: ~1 min
   - build-go: ~30s
 
@@ -137,10 +157,17 @@ cd backend && go test -coverprofile=coverage.out ./... && go tool cover -html=co
 
 ## Troubleshooting
 
+The backend/web jobs below run inside the reusable `validate.yml` workflow, so they show up in the GitHub UI and branch protection checks list as `validate / <job name>` (e.g. `validate / Lint Go (Backend & Agent)`).
+
 ### Job failed: "lint-go"
 - Check golangci-lint output in job logs
 - Run locally: `cd backend && golangci-lint run ./internal/...`
 - Fix issues and push again
+
+### Job failed: "gosec"
+- Check the Gosec findings in job logs
+- Run locally: `cd backend && gosec ./...` (or `cd agent && gosec ./...`)
+- Fix or annotate (`#nosec`) the flagged issue with justification
 
 ### Job failed: "test-go"
 - Check test output and race detector warnings
