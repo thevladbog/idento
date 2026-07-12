@@ -645,7 +645,7 @@ func (h *Handler) GetAttendeeZoneHistory(c echo.Context) error {
 	}
 
 	// Enrich with zone details
-	var history []models.MovementHistoryEntry
+	history := []models.MovementHistoryEntry{}
 	for _, checkin := range checkins {
 		zone, err := h.Store.GetEventZoneByID(ctx, checkin.ZoneID)
 		if err != nil {

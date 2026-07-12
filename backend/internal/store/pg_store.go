@@ -393,7 +393,7 @@ func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 	}
 	defer rows.Close()
 
-	var users []*models.User
+	users := []*models.User{}
 	for rows.Next() {
 		var u models.User
 		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
@@ -443,7 +443,7 @@ func (s *PGStore) GetEventStaff(ctx context.Context, eventID uuid.UUID) ([]*mode
 	}
 	defer rows.Close()
 
-	var users []*models.User
+	users := []*models.User{}
 	for rows.Next() {
 		var u models.User
 		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
@@ -529,7 +529,7 @@ func (s *PGStore) GetEventsByTenantID(ctx context.Context, tenantID uuid.UUID) (
 	}
 	defer rows.Close()
 
-	var events []*models.Event
+	events := []*models.Event{}
 	for rows.Next() {
 		var e models.Event
 		var customFieldsJSON []byte
@@ -642,7 +642,7 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 	}
 	defer rows.Close()
 
-	var attendees []*models.Attendee
+	attendees := []*models.Attendee{}
 	for rows.Next() {
 		var a models.Attendee
 		var customFieldsJSON []byte
@@ -762,7 +762,7 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 	}
 	defer rows.Close()
 
-	var keys []*models.APIKey
+	keys := []*models.APIKey{}
 	for rows.Next() {
 		var key models.APIKey
 		if err := rows.Scan(&key.ID, &key.EventID, &key.Name, &key.KeyHash, &key.KeyHashBcrypt, &key.KeyPreview,
@@ -921,7 +921,7 @@ func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*mode
 	}
 	defer rows.Close()
 
-	var tenants []*models.Tenant
+	tenants := []*models.Tenant{}
 	for rows.Next() {
 		var t models.Tenant
 		var settingsJSON []byte
