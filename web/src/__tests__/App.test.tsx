@@ -61,4 +61,16 @@ describe('App /register route mode gating', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /^register$/i })).not.toBeInTheDocument();
   });
+
+  it('redirects to /login when GET /api/instance fails (safe-default fallback)', async () => {
+    // getInstanceInfo()'s own .catch() resolves failures to the 'onprem'
+    // safe default rather than rejecting — this exercises that fallback
+    // through the full SaasOnlyRoute redirect chain, not just the isolated
+    // lib/hook unit tests.
+    vi.mocked(api.get).mockRejectedValue(new Error('network error'));
+    await renderAppAt('/register');
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^register$/i })).not.toBeInTheDocument();
+  });
 });
