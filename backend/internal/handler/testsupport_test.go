@@ -36,6 +36,8 @@ type fakeStore struct {
 	revokeAPIKey              func(id uuid.UUID) error
 	createAttendee            func(attendee *models.Attendee) error
 	updateAttendee            func(attendee *models.Attendee) error
+	getAttendeesByEventID     func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
+	getAttendeeZoneCheckins   func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -148,6 +150,12 @@ func (f *fakeStore) CreateAttendee(_ context.Context, attendee *models.Attendee)
 }
 func (f *fakeStore) UpdateAttendee(_ context.Context, attendee *models.Attendee) error {
 	return f.updateAttendee(attendee)
+}
+func (f *fakeStore) GetAttendeesByEventID(_ context.Context, eventID uuid.UUID, code, search string) ([]*models.Attendee, error) {
+	return f.getAttendeesByEventID(eventID, code, search)
+}
+func (f *fakeStore) GetAttendeeZoneCheckins(_ context.Context, attendeeID uuid.UUID) ([]*models.ZoneCheckin, error) {
+	return f.getAttendeeZoneCheckins(attendeeID)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {

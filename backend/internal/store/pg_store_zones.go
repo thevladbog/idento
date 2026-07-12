@@ -220,7 +220,7 @@ func (s *PGStore) GetZoneAccessRules(ctx context.Context, zoneID uuid.UUID) ([]*
 	}
 	defer rows.Close()
 
-	var rules []*models.ZoneAccessRule
+	rules := []*models.ZoneAccessRule{}
 	for rows.Next() {
 		var rule models.ZoneAccessRule
 		err := rows.Scan(
@@ -369,7 +369,7 @@ func (s *PGStore) GetAttendeeZoneAccessList(ctx context.Context, attendeeID uuid
 	}
 	defer rows.Close()
 
-	var accesses []*models.AttendeeZoneAccess
+	accesses := []*models.AttendeeZoneAccess{}
 	for rows.Next() {
 		var access models.AttendeeZoneAccess
 		err := rows.Scan(
@@ -454,7 +454,7 @@ func (s *PGStore) GetZoneCheckins(ctx context.Context, zoneID uuid.UUID, date ti
 	}
 	defer rows.Close()
 
-	var checkins []*models.ZoneCheckin
+	checkins := []*models.ZoneCheckin{}
 	for rows.Next() {
 		checkin, err := scanZoneCheckin(rows)
 		if err != nil {
@@ -548,7 +548,7 @@ func (s *PGStore) GetStaffZoneAssignments(ctx context.Context, userID uuid.UUID)
 	}
 	defer rows.Close()
 
-	var assignments []*models.StaffZoneAssignment
+	assignments := []*models.StaffZoneAssignment{}
 	for rows.Next() {
 		var assignment models.StaffZoneAssignment
 		err := rows.Scan(
@@ -578,7 +578,7 @@ func (s *PGStore) GetZoneStaffAssignments(ctx context.Context, zoneID uuid.UUID)
 	}
 	defer rows.Close()
 
-	var assignments []*models.StaffZoneAssignment
+	assignments := []*models.StaffZoneAssignment{}
 	for rows.Next() {
 		var assignment models.StaffZoneAssignment
 		err := rows.Scan(

@@ -500,3 +500,40 @@ func TestGetUserZoneAssignments_UserNotFound(t *testing.T) {
 		t.Fatalf("expected 404 for unknown user, got %d", rec.Code)
 	}
 }
+
+// GetAttendeeZoneHistory builds its `history` response by appending to a
+// nil-declared local slice; when an attendee has zero zone check-ins the
+// loop never runs and encoding/json renders the field as `null` instead of
+// `[]`, crashing frontend code that does .forEach/.map on it (same class of
+// bug as the store-layer nil-slice cases).
+func TestGetAttendeeZoneHistory_ReturnsEmptyArrayNotNullWhenNoCheckins(t *testing.T) {
+	tenant := uuid.New()
+	attendeeID := uuid.New()
+	eventID := uuid.New()
+	fs := &fakeStore{
+		getAttendeeByID: func(id uuid.UUID) (*models.Attendee, error) {
+			return &models.Attendee{ID: id, EventID: eventID}, nil
+		},
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: tenant}, nil
+		},
+		getAttendeeZoneCheckins: func(id uuid.UUID) ([]*models.ZoneCheckin, error) {
+			return nil, nil // simulates zero rows: store returns a nil slice
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/", "", tenant.String(), "admin")
+	c.SetParamNames("attendee_id")
+	c.SetParamValues(attendeeID.String())
+
+	if err := h.GetAttendeeZoneHistory(c); err != nil {
+		t.Fatalf("GetAttendeeZoneHistory returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); body != "[]\n" {
+		t.Fatalf("body = %q, want %q (JSON null breaks frontend .forEach)", body, "[]\n")
+	}
+}
