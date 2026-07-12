@@ -1,5 +1,6 @@
 package com.idento.di
 
+import com.idento.data.model.PrinterConfig
 import com.idento.data.model.StationConfig
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.StationConfigPreferences
@@ -26,6 +27,7 @@ import com.idento.presentation.registration.PendingQueueCountSource
 import com.idento.presentation.registration.RegistrationHomeViewModel
 import com.idento.presentation.registration.RegistrationStationGateway
 import com.idento.presentation.settings.SettingsViewModel
+import com.idento.presentation.settings.StationPrinterGateway
 import com.idento.presentation.setup.AuthLogoutGateway
 import com.idento.presentation.setup.AuthTokenSaver
 import com.idento.presentation.setup.BluetoothPrinterGateway
@@ -57,7 +59,22 @@ import org.koin.dsl.module
  * Replaces Hilt ViewModelModule
  */
 val viewModelModule = module {
-    factory { SettingsViewModel(get()) }
+    factory {
+        // StationPrinterGateway adapts StationConfigPreferences into a narrow read/update-printer
+        // seam (see SettingsViewModel.kt) — same read-modify-write shape as StationConfigGateway
+        // in the SetupCompleteViewModel factory below, scoped to just the printer field.
+        val stationConfigPrefs: StationConfigPreferences = get()
+        SettingsViewModel(
+            appPreferences = get(),
+            stationPrinterGateway = object : StationPrinterGateway {
+                override suspend fun get(): PrinterConfig? = stationConfigPrefs.stationConfig.first()?.printer
+                override suspend fun update(printer: PrinterConfig?) {
+                    val current = stationConfigPrefs.stationConfig.first() ?: return
+                    stationConfigPrefs.save(current.copy(printer = printer))
+                }
+            },
+        )
+    }
     factory {
         // SetupLoginViewModel takes narrow fun-interface seams (see SetupLoginViewModel.kt)
         // instead of these concrete classes directly, so it stays unit-testable with plain

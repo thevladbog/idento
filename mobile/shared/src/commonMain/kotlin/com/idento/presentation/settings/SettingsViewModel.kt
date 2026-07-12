@@ -3,6 +3,7 @@ package com.idento.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.idento.data.localization.LocalizationManager
+import com.idento.data.model.PrinterConfig
 import com.idento.data.preferences.AppPreferences
 import com.idento.presentation.theme.ThemeState
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -14,11 +15,28 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
+ * Reads/writes the station's configured printer ([com.idento.data.model.StationConfig.printer])
+ * — a narrow seam onto [com.idento.data.preferences.StationConfigPreferences] (see
+ * `di/ViewModelModule.kt` for how the real singleton is adapted: [update] reads the current
+ * config, copies it with the new printer, and saves). Without this, printer changes in Settings
+ * only mutated local UI state and were silently lost —
+ * [com.idento.presentation.registration.RegistrationHomeViewModel]/
+ * [com.idento.presentation.zonecontrol.ZoneControlViewModel] read the persisted config once at
+ * station start, so staff would see "printer selected" here but printing would keep using
+ * whatever was configured at setup time.
+ */
+interface StationPrinterGateway {
+    suspend fun get(): PrinterConfig?
+    suspend fun update(printer: PrinterConfig?)
+}
+
+/**
  * Settings ViewModel (Cross-platform)
  * Manages app settings, printer configuration, and scanner settings
  */
 class SettingsViewModel(
-    private val appPreferences: AppPreferences
+    private val appPreferences: AppPreferences,
+    private val stationPrinterGateway: StationPrinterGateway,
 ) : ViewModel() {
     
     private val json = Json { ignoreUnknownKeys = true }
@@ -36,8 +54,19 @@ class SettingsViewModel(
     
     init {
         loadAppSettings()
+        loadCurrentPrinter()
     }
-    
+
+    private fun loadCurrentPrinter() {
+        viewModelScope.launch(exceptionHandler) {
+            val printer = stationPrinterGateway.get()
+            _uiState.value = _uiState.value.copy(
+                selectedPrinterName = printer?.name,
+                selectedPrinterAddress = printer?.address,
+            )
+        }
+    }
+
     private fun loadAppSettings() {
         viewModelScope.launch(exceptionHandler) {
             try {
@@ -110,10 +139,10 @@ class SettingsViewModel(
         }
     }
     
-    // Printer Settings (Platform-specific will be implemented later)
+    // Printer Settings
     fun selectBluetoothPrinter(address: String, name: String) {
         viewModelScope.launch(exceptionHandler) {
-            // TODO: Save to PrinterPreferences
+            stationPrinterGateway.update(PrinterConfig(name = name, transport = "bluetooth", address = address))
             _uiState.value = _uiState.value.copy(
                 selectedPrinterName = name,
                 selectedPrinterAddress = address,
@@ -122,13 +151,14 @@ class SettingsViewModel(
             clearMessagesDelayed()
         }
     }
-    
+
     fun selectEthernetPrinter(ip: String, port: Int, name: String) {
         viewModelScope.launch(exceptionHandler) {
-            // TODO: Save to PrinterPreferences
+            val address = "$ip:$port"
+            stationPrinterGateway.update(PrinterConfig(name = name, transport = "ethernet", address = address))
             _uiState.value = _uiState.value.copy(
                 selectedPrinterName = name,
-                selectedPrinterAddress = "$ip:$port",
+                selectedPrinterAddress = address,
                 successMessage = "Printer configured: $name"
             )
             clearMessagesDelayed()
@@ -152,7 +182,7 @@ class SettingsViewModel(
     
     fun clearPrinter() {
         viewModelScope.launch(exceptionHandler) {
-            // TODO: Clear PrinterPreferences
+            stationPrinterGateway.update(null)
             _uiState.value = _uiState.value.copy(
                 selectedPrinterName = null,
                 selectedPrinterAddress = null,
@@ -176,17 +206,20 @@ class SettingsViewModel(
                         val ip = config.ip ?: throw IllegalArgumentException("IP address required for ethernet printer")
                         val port = config.port ?: 9100
                         val name = config.name ?: "Network Printer"
-                        
+                        val address = "$ip:$port"
+
+                        stationPrinterGateway.update(PrinterConfig(name = name, transport = "ethernet", address = address))
                         _uiState.value = _uiState.value.copy(
                             selectedPrinterName = name,
-                            selectedPrinterAddress = "$ip:$port",
+                            selectedPrinterAddress = address,
                             successMessage = "Printer configured: $name"
                         )
                     }
                     "bluetooth", "bt" -> {
                         val address = config.address ?: throw IllegalArgumentException("Bluetooth address required")
                         val name = config.name ?: "Bluetooth Printer"
-                        
+
+                        stationPrinterGateway.update(PrinterConfig(name = name, transport = "bluetooth", address = address))
                         _uiState.value = _uiState.value.copy(
                             selectedPrinterName = name,
                             selectedPrinterAddress = address,
