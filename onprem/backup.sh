@@ -3,6 +3,13 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 postgres_user="${POSTGRES_USER:-idento}"
 postgres_db="${POSTGRES_DB:-idento_db}"
 out="backup-$(date +%Y%m%d-%H%M%S).dump"

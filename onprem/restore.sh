@@ -14,6 +14,13 @@ if [ ! -f "${dump_file}" ]; then
   exit 1
 fi
 
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 postgres_user="${POSTGRES_USER:-idento}"
 postgres_db="${POSTGRES_DB:-idento_db}"
 
