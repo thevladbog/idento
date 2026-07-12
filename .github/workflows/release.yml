@@ -8,7 +8,16 @@ on:
 permissions: {}
 
 jobs:
+  validate:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/validate.yml
+    with:
+      run-backend: true
+      run-web: true
+
   backend-image:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,6 +45,7 @@ jobs:
             ghcr.io/${{ github.repository }}-backend:latest
 
   web-image:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -120,6 +130,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: "idento-*"
           merge-multiple: true
       - name: Generate checksums
         working-directory: dist
