@@ -130,6 +130,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: "idento-*"
           merge-multiple: true
       - name: Generate checksums
         working-directory: dist
