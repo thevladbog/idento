@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getApiBaseUrl } from './api';
 
 export type ImpersonationSummary = {
   durationMinutes: number;
@@ -25,7 +26,7 @@ export async function fetchImpersonationSummary(
   operatorToken: string,
   operatorUserId: string
 ): Promise<ImpersonationSummary> {
-  const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8008';
+  const baseURL = getApiBaseUrl();
   const headers = { Authorization: `Bearer ${operatorToken}` };
   const since = new Date(mintedAt).getTime();
 

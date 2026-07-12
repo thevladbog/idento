@@ -25,4 +25,10 @@ describe('api baseURL resolution', () => {
     const { default: api } = await import('../api');
     expect(api.defaults.baseURL).toBe('http://localhost:8008');
   });
+
+  it('exports getApiBaseUrl for callers that cannot use the shared api client (fonts.ts, impersonationSummary.ts)', async () => {
+    window.__ENV__ = { API_URL: 'https://runtime.example.com' };
+    const { getApiBaseUrl } = await import('../api');
+    expect(getApiBaseUrl()).toBe('https://runtime.example.com');
+  });
 });

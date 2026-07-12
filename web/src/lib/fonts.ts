@@ -1,4 +1,4 @@
-import api from "./api";
+import api, { getApiBaseUrl } from "./api";
 
 export interface FontListItem {
   id: string;
@@ -69,13 +69,13 @@ export const fontsApi = {
 
   // Get font file URL
   getFontFileUrl: (fontId: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8008";
+    const baseUrl = getApiBaseUrl();
     return `${baseUrl}/api/fonts/${fontId}/file`;
   },
 
   // Get CSS URL for all event fonts
   getFontsCSSUrl: (eventId: string): string => {
-    const baseUrl = import.meta.env.VITE_API_URL || "http://localhost:8008";
+    const baseUrl = getApiBaseUrl();
     return `${baseUrl}/api/events/${eventId}/fonts/css`;
   },
 };
