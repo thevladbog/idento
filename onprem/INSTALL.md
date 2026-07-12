@@ -49,6 +49,8 @@ Database migrations run automatically at backend startup — no manual SQL, no d
 ./restore.sh backup-20260101-1200.dump   # asks for confirmation before overwriting the live database
 ```
 
+`restore.sh` automatically stops the `backend` container before restoring (so it can't hold open connections during the restore or read a partially-restored database) and restarts it once the restore completes — expect a brief outage while it does.
+
 Store backup files somewhere outside the host itself (they're plain files — where you copy them afterward is up to you; this repo doesn't provide cloud-storage integration).
 
 ## Troubleshooting

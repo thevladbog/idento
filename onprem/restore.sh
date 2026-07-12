@@ -29,6 +29,13 @@ if [ "${confirmation}" != "restore" ]; then
   exit 1
 fi
 
+echo "Stopping backend to prevent active connections during restore..."
+docker compose stop backend
+
 echo "Restoring ${dump_file} into ${postgres_db}..."
 docker compose exec -T db pg_restore -U "${postgres_user}" -d "${postgres_db}" --clean --if-exists < "${dump_file}"
+
+echo "Restarting backend..."
+docker compose start backend
+
 echo "Done."

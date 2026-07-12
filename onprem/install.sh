@@ -15,7 +15,11 @@ if ! docker compose version >/dev/null 2>&1; then
   echo "ERROR: 'docker compose' (the v2 plugin) is not available. The legacy standalone 'docker-compose' v1 binary is not supported — install the Compose v2 plugin: https://docs.docker.com/compose/install/" >&2
   exit 1
 fi
-echo "OK: Docker and Compose v2 are available."
+if ! command -v openssl >/dev/null 2>&1; then
+  echo "ERROR: openssl is not installed or not on PATH. It's required to generate JWT_SECRET/POSTGRES_PASSWORD." >&2
+  exit 1
+fi
+echo "OK: Docker, Compose v2, and openssl are available."
 
 # 2. Ports 80 and 8008 — best-effort, advisory only (some hosts lack lsof, and
 # firewalls/binding differ), so this warns rather than fails.
@@ -56,6 +60,8 @@ postgres_password=$(openssl rand -hex 32)
 sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=${jwt_secret}/" .env
 sed -i.bak "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=${postgres_password}/" .env
 rm -f .env.bak
+
+chmod 600 .env
 
 echo "Created .env with a freshly generated JWT_SECRET and POSTGRES_PASSWORD."
 echo

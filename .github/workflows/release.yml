@@ -98,9 +98,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Package bundle
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          case "$RELEASE_TAG" in
+            *[!A-Za-z0-9._-]*) echo "Unsupported release tag: $RELEASE_TAG" >&2; exit 1 ;;
+          esac
           mkdir -p dist
-          tar -czf "dist/idento-onprem-${{ github.ref_name }}.tar.gz" -C onprem .
+          tar -czf "dist/idento-onprem-${RELEASE_TAG}.tar.gz" -C onprem .
       - uses: actions/upload-artifact@v4
         with:
           name: idento-onprem-bundle
