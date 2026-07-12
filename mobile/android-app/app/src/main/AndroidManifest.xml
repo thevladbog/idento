@@ -24,9 +24,7 @@
     <uses-permission android:name="com.honeywell.decode.permission.DECODE" />
     <!-- Datalogic -->
     <uses-permission android:name="com.datalogic.device.permission.DECODE" />
-    <!-- Generic scanner access -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    
+
     <application
         android:name=".IdentoApplication"
         android:allowBackup="true"

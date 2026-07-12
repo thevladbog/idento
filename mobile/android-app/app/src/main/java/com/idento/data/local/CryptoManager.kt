@@ -8,8 +8,6 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Encrypts small secrets (JWT, user identity) with an AES-256/GCM key held in the
@@ -20,8 +18,7 @@ import javax.inject.Singleton
  * decrypt as "no valid session" (the user re-authenticates). This also handles the
  * upgrade case where an old plaintext value can't be decrypted.
  */
-@Singleton
-class CryptoManager @Inject constructor() {
+class CryptoManager {
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
