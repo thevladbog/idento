@@ -207,6 +207,39 @@ class KioskViewModelTest {
     }
 
     @Test
+    fun onScanPausedCancelsPendingResetTimerSoItCannotResumeScanningWhilePaused() = runTest(testDispatcher) {
+        val codeFlow = MutableSharedFlow<String>()
+        var startScanningCallCount = 0
+        val trackingScanSource = object : ScanSource {
+            override val connectionState = MutableStateFlow<ScannerConnectionState>(ScannerConnectionState.Camera)
+            override fun startScanning(): Flow<String> {
+                startScanningCallCount++
+                return codeFlow
+            }
+            override fun stopScanning() {}
+            override fun preferCamera() {}
+            override fun setExcludedBluetoothAddress(address: String?) {}
+        }
+        val vm = buildViewModel(
+            scanSource = trackingScanSource,
+            verdictMapper = RegistrationVerdictMapper(AttendeeLookup { _, _ -> ApiResult.Success(fakeAttendee) }),
+            checkInService = successCheckInService(),
+        )
+        codeFlow.emit("QR-007")
+        assertIs<KioskScreenState.Greeting>(vm.uiState.value.screenState)
+        val callsBeforePause = startScanningCallCount
+
+        // App is backgrounded (ON_PAUSE) while the 5s Greeting auto-return timer is still pending.
+        vm.onScanPaused()
+        advanceTimeBy(5_001)
+
+        // Without cancelling resetJob in onScanPaused(), the timer would still fire and call
+        // onScanResumed() -> startScanning() again here, restarting the camera while paused.
+        assertEquals(callsBeforePause, startScanningCallCount)
+        assertIs<KioskScreenState.Greeting>(vm.uiState.value.screenState)
+    }
+
+    @Test
     fun exitStationCallsExitGatewayAndSetsExitedFlag() = runTest(testDispatcher) {
         var exitCalled = false
         val vm = buildViewModel(exitGateway = KioskExitGateway { exitCalled = true })

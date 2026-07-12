@@ -108,6 +108,10 @@ class KioskViewModel(
 
     fun onScanPaused() {
         scanJob?.cancel()
+        // Also cancel a pending Greeting/NeedsStaff auto-return timer — it runs on
+        // viewModelScope, not the Activity lifecycle, so without this it would still fire while
+        // the app is backgrounded and call onScanResumed() (restarting the camera) mid-pause.
+        resetJob?.cancel()
         scanSource.stopScanning()
     }
 

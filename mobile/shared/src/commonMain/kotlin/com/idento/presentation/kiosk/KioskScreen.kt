@@ -123,7 +123,7 @@ private fun KioskLogoExitTarget(onLongPressExit: () -> Unit, modifier: Modifier 
                             awaitRelease()
                             false
                         }
-                    } catch (e: TimeoutCancellationException) {
+                    } catch (_: TimeoutCancellationException) {
                         true
                     }
                     if (heldLongEnough) onLongPressExit()
