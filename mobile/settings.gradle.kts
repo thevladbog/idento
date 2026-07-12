@@ -16,8 +16,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Idento"
-include(":app")
-
-// KMP shared module
+include(":androidApp")
 include(":shared")
-project(":shared").projectDir = file("../shared")
