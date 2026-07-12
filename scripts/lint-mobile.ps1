@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 
 # Get the project root directory
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$AndroidPath = Join-Path $ProjectRoot "mobile\android-app"
+$AndroidPath = Join-Path $ProjectRoot "mobile"
 
 Write-Info "Linting Android app..."
 
@@ -19,10 +19,10 @@ $GradlewSh = Join-Path $AndroidPath "gradlew"
 # Run Android lint
 Set-Location $AndroidPath
 if (Test-Path $GradlewBat) {
-    .\gradlew.bat lint
+    .\gradlew.bat :androidApp:lintDebug
 } elseif (Test-Path $GradlewSh) {
     if (Get-Command bash -ErrorAction SilentlyContinue) {
-        bash ./gradlew lint
+        bash ./gradlew :androidApp:lintDebug
     } else {
         Write-Error "gradlew.bat not found and bash is unavailable to run ./gradlew"
         Write-Info "Install Git Bash or use WSL, or add gradlew.bat to mobile/android-app"
