@@ -5,7 +5,15 @@ import '../../i18n';
 
 const axiosGetMock = vi.fn();
 vi.mock('axios', () => ({
-  default: { get: (...args: unknown[]) => axiosGetMock(...args) },
+  default: {
+    get: (...args: unknown[]) => axiosGetMock(...args),
+    create: () => ({
+      interceptors: {
+        request: { use: vi.fn() },
+        response: { use: vi.fn() },
+      },
+    }),
+  },
 }));
 
 const OPERATOR_ID = 'operator-1';

@@ -1,3 +1,10 @@
 /// <reference types="vite/client" />
 
-declare const __APP_VERSION__: string;
+declare global {
+  const __APP_VERSION__: string;
+  interface Window {
+    __ENV__?: { API_URL?: string };
+  }
+}
+
+export {};
