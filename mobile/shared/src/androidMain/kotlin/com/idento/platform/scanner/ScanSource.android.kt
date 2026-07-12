@@ -35,8 +35,9 @@ private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34
  * Android [ScanSource]: merges the camera scan flow with a generic hardware-scanner broadcast
  * receiver and an auto-connecting BT SPP scanner (bonded devices only, no in-app discovery UI —
  * pairing happens via Android system Bluetooth settings). Per-manufacturer intent extraction
- * (Zebra DataWedge, Honeywell, etc — see the legacy mobile/android-app HardwareScannerService)
- * is intentionally NOT ported; only the manufacturer-agnostic broadcast fallback is.
+ * (Zebra DataWedge, Honeywell, etc — see the legacy pre-redesign Android app's
+ * HardwareScannerService, since deleted) is intentionally NOT ported; only the
+ * manufacturer-agnostic broadcast fallback is.
  *
  * Fixes MOBILE-BUG-04: the ported legacy code called `kotlinx.coroutines.runBlocking { emit(...) }`
  * from inside `BroadcastReceiver.onReceive()`, which runs on the main thread — a slow collector

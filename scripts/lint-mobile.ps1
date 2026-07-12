@@ -25,7 +25,7 @@ if (Test-Path $GradlewBat) {
         bash ./gradlew :androidApp:lintDebug
     } else {
         Write-Error "gradlew.bat not found and bash is unavailable to run ./gradlew"
-        Write-Info "Install Git Bash or use WSL, or add gradlew.bat to mobile/android-app"
+        Write-Info "Install Git Bash or use WSL, or add gradlew.bat to mobile"
         exit 1
     }
 } else {

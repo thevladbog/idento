@@ -70,7 +70,7 @@ class RegistrationCheckInService(
      * Nullable and explicit rather than fetched internally: as of this task, there is no
      * per-event/station `BadgeTemplate` source wired into the M1c registration engine (the only
      * existing mechanism, `EventRepository.getBadgeTemplate`, is used solely by the separate,
-     * older single-attendee `CheckinViewModel` flow — not by this batch check-in service). Sourcing
+     * older single-attendee checkin flow — not by this batch check-in service). Sourcing
      * it end-to-end (fetch + cache per event/station) is left to whichever future task wires this
      * service into the DI graph.
      */
