@@ -7,8 +7,6 @@ set -e
 
 echo "🔨 Building shared framework for iOS..."
 
-cd android-app
-
 # Build for simulator (M1/M2 Mac)
 ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
 
