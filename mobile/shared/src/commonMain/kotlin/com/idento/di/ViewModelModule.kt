@@ -17,13 +17,9 @@ import com.idento.platform.camera.CameraService
 import com.idento.platform.printer.BluetoothPrinterService
 import com.idento.platform.printer.EthernetPrinterService
 import com.idento.platform.scanner.ScanSource
-import com.idento.presentation.attendees.AttendeesListViewModel
-import com.idento.presentation.checkin.CheckinViewModel
-import com.idento.presentation.events.EventsViewModel
 import com.idento.presentation.kiosk.KioskExitGateway
 import com.idento.presentation.kiosk.KioskStationGateway
 import com.idento.presentation.kiosk.KioskViewModel
-import com.idento.presentation.login.LoginViewModel
 import com.idento.presentation.registration.AttendeeSearchSource
 import com.idento.presentation.registration.EventBadgeTemplateSource
 import com.idento.presentation.registration.PendingQueueCountSource
@@ -49,8 +45,6 @@ import com.idento.presentation.setup.SetupPrinterViewModel
 import com.idento.presentation.setup.StationConfigGateway
 import com.idento.presentation.setup.StationProvisioner
 import com.idento.presentation.setup.ZoneLister
-import com.idento.presentation.template.DisplayTemplateViewModel
-import com.idento.presentation.template.TemplateEditorViewModel
 import com.idento.presentation.zonecontrol.CheckinOverrideSource
 import com.idento.presentation.zonecontrol.ZoneControlViewModel
 import com.idento.presentation.zonecontrol.ZoneStationGateway
@@ -63,13 +57,7 @@ import org.koin.dsl.module
  * Replaces Hilt ViewModelModule
  */
 val viewModelModule = module {
-    factory { LoginViewModel(get()) }
-    factory { EventsViewModel(get(), get()) }
-    factory { CheckinViewModel(get(), get(), get(), get()) }
     factory { SettingsViewModel(get()) }
-    factory { AttendeesListViewModel(get()) }
-    factory { TemplateEditorViewModel(get()) }
-    factory { DisplayTemplateViewModel(get(), get(), get()) }
     factory {
         // SetupLoginViewModel takes narrow fun-interface seams (see SetupLoginViewModel.kt)
         // instead of these concrete classes directly, so it stays unit-testable with plain
