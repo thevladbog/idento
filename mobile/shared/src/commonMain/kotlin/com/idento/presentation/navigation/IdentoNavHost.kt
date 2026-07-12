@@ -57,7 +57,7 @@ fun IdentoNavHost(
         startDestination = startDestination,
         modifier = modifier
     ) {
-        // Settings Screen
+        // Settings Screen — reachable from Registration and Zone Control (M4).
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
@@ -131,11 +131,15 @@ fun IdentoNavHost(
         }
 
         composable(Screen.RegistrationHome.route) {
-            RegistrationHomeScreen()
+            RegistrationHomeScreen(
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+            )
         }
 
         composable(Screen.ZoneControlHome.route) {
-            ZoneControlScreen()
+            ZoneControlScreen(
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) },
+            )
         }
 
         composable(Screen.KioskHome.route) {
