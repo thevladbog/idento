@@ -1,6 +1,8 @@
 /**
  * Axios instance for the Idento backend API.
- * - Base URL from VITE_API_URL (default http://localhost:8008).
+ * - Base URL from window.__ENV__.API_URL (runtime, set by the Docker image's
+ *   nginx templating at container start) → VITE_API_URL (build-time, local
+ *   dev override) → http://localhost:8008 (default).
  * - Request interceptor adds Bearer token from localStorage.
  * - Response interceptor clears auth and redirects to /login on 401.
  */
@@ -8,8 +10,19 @@ import axios from 'axios';
 import { toast } from 'sonner';
 import i18n from 'i18next';
 
+/**
+ * Resolves the backend's base URL: runtime-injected window.__ENV__.API_URL
+ * (Docker/production) → build-time Vite env var (local dev override) →
+ * hardcoded localhost default. The single source of truth for this
+ * precedence — fonts.ts and impersonationSummary.ts both need it too,
+ * since they can't route through this file's axios instance directly.
+ */
+export function getApiBaseUrl(): string {
+  return window.__ENV__?.API_URL || import.meta.env.VITE_API_URL || 'http://localhost:8008';
+}
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8008',
+  baseURL: getApiBaseUrl(),
 });
 
 // Request interceptor: Add token to all requests

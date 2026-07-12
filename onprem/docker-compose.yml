@@ -1,6 +1,3 @@
-# Production compose: backend + web + postgres.
-# Copy .env.example to .env and set JWT_SECRET, POSTGRES_PASSWORD,
-# CORS_ALLOWED_ORIGINS, PUBLIC_API_URL before `docker compose -f docker-compose.prod.yml up -d`.
 services:
   db:
     image: postgres:16-alpine
@@ -18,16 +15,16 @@ services:
       retries: 12
 
   backend:
-    build:
-      context: ./backend
-      args:
-        VERSION: ${VERSION:-dev}
+    image: ghcr.io/thevladbog/idento-backend:${VERSION:-latest}
     restart: always
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-idento}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-idento_db}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS in .env}
-      DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-onprem}
+      DEPLOYMENT_MODE: onprem
+      IDENTO_ADMIN_EMAIL: ${IDENTO_ADMIN_EMAIL:?set IDENTO_ADMIN_EMAIL in .env}
+      IDENTO_ADMIN_PASSWORD: ${IDENTO_ADMIN_PASSWORD:?set IDENTO_ADMIN_PASSWORD in .env}
+      IDENTO_ORG_NAME: ${IDENTO_ORG_NAME:-My Organization}
     ports:
       - "8008:8008"
     depends_on:
@@ -35,13 +32,12 @@ services:
         condition: service_healthy
 
   web:
-    build:
-      context: ./web
+    image: ghcr.io/thevladbog/idento-web:${VERSION:-latest}
     restart: always
     environment:
       PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env (e.g. http://your-host:8008)}
     ports:
-      - "80:8080" # container nginx is unprivileged and listens on 8080
+      - "80:8080"
     depends_on:
       - backend
 
