@@ -325,8 +325,8 @@ make lint
 cd web && npm run lint
 
 # Lint Android (if you have mobile dev setup)
-cd mobile/android-app && ./gradlew lint    # Unix
-cd mobile\android-app && .\gradlew.bat lint  # Windows
+cd mobile && ./gradlew :androidApp:lintDebug    # Unix
+cd mobile && .\gradlew.bat :androidApp:lintDebug  # Windows
 ```
 
 ### Database Management
