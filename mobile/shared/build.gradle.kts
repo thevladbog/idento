@@ -92,7 +92,7 @@ kotlin {
             implementation("androidx.lifecycle:lifecycle-viewmodel:2.8.7")
             
             // Navigation
-            implementation("org.jetbrains.androidx.navigation:navigation-compose:2.8.0-alpha10")
+            implementation("org.jetbrains.androidx.navigation:navigation-compose:2.9.2")
         }
         
         androidMain.dependencies {

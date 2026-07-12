@@ -309,7 +309,7 @@ jobs:
 
       - name: Build and test
         working-directory: mobile
-        run: ./gradlew :androidApp:assembleDebug :androidApp:lintDebug :shared:testDebugUnitTest
+        run: ./gradlew :androidApp:assembleDebug :androidApp:lintDebug :shared:testDebugUnitTest :shared:lintDebug
 
       - name: Summary
         if: always()
