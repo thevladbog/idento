@@ -8,6 +8,7 @@ import { LanguageToggle } from '@/components/language-toggle';
 import { OrganizationSwitcher } from '@/components/OrganizationSwitcher';
 import { Logo } from '@/components/Logo';
 import { ImpersonationBanner } from '@/components/ImpersonationBanner';
+import { useInstanceMode } from '@/hooks/useInstanceMode';
 import { Calendar, Home, Users, Settings, Shield } from 'lucide-react';
 
 interface LayoutProps {
@@ -19,13 +20,14 @@ interface LayoutProps {
  *
  * Renders logo, primary navigation links, organization switcher, language and mode toggles, and a logout button.
  * The logout action removes 'token' and 'user' from localStorage and navigates to '/login'.
- * If the stored user has `is_super_admin` truthy, a Super Admin navigation item is included.
+ * If the stored user has `is_super_admin` truthy AND the backend reports saas mode, a Super Admin navigation item is included.
  *
  * @param children - Content to render inside the layout's main area.
  * @returns The layout element containing navigation and the provided children.
  */
 export function Layout({ children }: LayoutProps) {
   const { t } = useTranslation();
+  const { mode } = useInstanceMode();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -75,7 +77,7 @@ export function Layout({ children }: LayoutProps) {
                   {t('equipment')}
                 </Link>
               </Button>
-              {user?.is_super_admin && (
+              {user?.is_super_admin && mode === 'saas' && (
                 <Button variant="ghost" size="sm" asChild className="text-primary">
                   <Link to="/super-admin">
                     <Shield className="mr-2 h-4 w-4" />

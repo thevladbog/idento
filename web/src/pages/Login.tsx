@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import api from "@/lib/api";
 import { clearImpersonationArtifacts } from "@/lib/impersonation";
+import { useInstanceMode } from "@/hooks/useInstanceMode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,7 @@ import { LanguageToggle } from "@/components/language-toggle";
  */
 export default function LoginPage() {
   const { t, i18n } = useTranslation();
+  const { mode } = useInstanceMode();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
@@ -151,12 +153,14 @@ export default function LoginPage() {
               </form>
             </CardContent>
             <CardFooter className="flex flex-col gap-2 items-center">
-              <p className="text-sm text-muted-foreground">
-                {t("dontHaveAccount")}{" "}
-                <Link to="/register" className="underline hover:text-primary">
-                  {t("register")}
-                </Link>
-              </p>
+              {mode === "saas" && (
+                <p className="text-sm text-muted-foreground">
+                  {t("dontHaveAccount")}{" "}
+                  <Link to="/register" className="underline hover:text-primary">
+                    {t("register")}
+                  </Link>
+                </p>
+              )}
               <p className="text-sm text-muted-foreground">
                 {t("staffLogin")}?{" "}
                 <Link to="/qr-login" className="underline hover:text-primary">

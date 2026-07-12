@@ -26,6 +26,7 @@ import Analytics from "./pages/super-admin/Analytics";
 import AuditLog from "./pages/super-admin/AuditLog";
 import { Toaster } from "sonner";
 import { useFavicon } from "./hooks/useFavicon";
+import { useInstanceMode } from "./hooks/useInstanceMode";
 import "./i18n";
 
 function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element, requireSuperAdmin?: boolean }) {
@@ -44,6 +45,17 @@ function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element
   return children;
 }
 
+function SaasOnlyRoute({ children }: { children: JSX.Element }) {
+  const { mode, loading } = useInstanceMode();
+  if (loading) {
+    return null;
+  }
+  if (mode !== "saas") {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
+
 function App() {
   // Dynamic favicon based on language
   useFavicon();
@@ -54,7 +66,7 @@ function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/qr-login" element={<QRLoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register" element={<SaasOnlyRoute><RegisterPage /></SaasOnlyRoute>} />
         <Route
           path="/dashboard"
           element={
