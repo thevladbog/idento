@@ -42,10 +42,10 @@ class SetupStartDestinationTest {
     }
 
     @Test
-    fun startsAtSetupCompleteForKioskMode() {
-        // KIOSK still goes to SetupComplete until M3 implements the Kiosk screen.
+    fun startsAtKioskHomeWhenKioskModeConfigured() {
+        // M3: KIOSK-mode station cold-starts directly at KioskScreen.
         assertEquals(
-            Screen.SetupComplete.route,
+            Screen.KioskHome.route,
             resolveStartDestination(hasStationConfig = true, isLoggedIn = true, stationMode = StationMode.KIOSK),
         )
     }

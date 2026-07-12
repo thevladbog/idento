@@ -20,8 +20,10 @@ import com.idento.platform.scanner.ScanSource
 import com.idento.presentation.attendees.AttendeesListViewModel
 import com.idento.presentation.checkin.CheckinViewModel
 import com.idento.presentation.events.EventsViewModel
+import com.idento.presentation.kiosk.KioskExitGateway
+import com.idento.presentation.kiosk.KioskStationGateway
+import com.idento.presentation.kiosk.KioskViewModel
 import com.idento.presentation.login.LoginViewModel
-import com.idento.presentation.qrscanner.QRScannerViewModel
 import com.idento.presentation.registration.AttendeeSearchSource
 import com.idento.presentation.registration.EventBadgeTemplateSource
 import com.idento.presentation.registration.PendingQueueCountSource
@@ -65,7 +67,6 @@ val viewModelModule = module {
     factory { EventsViewModel(get(), get()) }
     factory { CheckinViewModel(get(), get(), get(), get()) }
     factory { SettingsViewModel(get()) }
-    factory { QRScannerViewModel(get()) }
     factory { AttendeesListViewModel(get()) }
     factory { TemplateEditorViewModel(get()) }
     factory { DisplayTemplateViewModel(get(), get(), get()) }
@@ -146,6 +147,7 @@ val viewModelModule = module {
             stationConfigPreferences = object : StationConfigGateway {
                 override suspend fun save(config: StationConfig) = stationConfigPreferences.save(config)
                 override suspend fun clear() = stationConfigPreferences.clear()
+                override suspend fun get(): StationConfig? = stationConfigPreferences.stationConfig.first()
             },
             authPreferences = AuthLogoutGateway(authPreferences::clearAuth),
         )
@@ -211,6 +213,30 @@ val viewModelModule = module {
                         is com.idento.data.network.ApiResult.Loading -> com.idento.data.network.ApiResult.Loading
                     }
                 }
+            },
+        )
+    }
+    factory {
+        // KioskViewModel follows the same narrow-seam pattern as RegistrationHomeViewModel/
+        // ZoneControlViewModel, but reuses RegistrationVerdictMapper/RegistrationCheckInService
+        // directly rather than defining new seams for them — Kiosk is self-service Registration,
+        // not a separate check-in pipeline.
+        val stationConfigPrefs: StationConfigPreferences = get()
+        val eventRepository: EventRepository = get()
+        val authPreferences: AuthPreferences = get()
+        KioskViewModel(
+            stationGateway = KioskStationGateway {
+                stationConfigPrefs.stationConfig.filterNotNull().first()
+            },
+            verdictMapper = get<RegistrationVerdictMapper>(),
+            checkInService = get<RegistrationCheckInService>(),
+            scanSource = get<ScanSource>(),
+            badgeTemplateSource = EventBadgeTemplateSource { eventId ->
+                eventRepository.getBadgeTemplate(eventId)
+            },
+            exitGateway = KioskExitGateway {
+                stationConfigPrefs.clear()
+                authPreferences.clearAuth()
             },
         )
     }

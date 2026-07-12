@@ -27,6 +27,16 @@ data class SetupCompleteUiState(
 interface StationConfigGateway {
     suspend fun save(config: StationConfig)
     suspend fun clear()
+
+    /**
+     * Returns the currently-persisted [StationConfig], or `null` if nothing has been saved yet.
+     * [finish] checks this FIRST, before touching [SetupWizardDraft]: re-entry to this screen
+     * (e.g. Kiosk's lockdown-exit route navigating back to `Screen.SetupComplete`) mounts a fresh
+     * `SetupCompleteViewModel` whose [SetupWizardDraft] singleton has already been `reset()` by
+     * the original wizard run, so re-deriving from it would throw. When a config is already
+     * persisted, that's the durable source of truth and the draft must not be touched at all.
+     */
+    suspend fun get(): StationConfig?
 }
 
 /**
@@ -65,6 +75,11 @@ class SetupCompleteViewModel(
 
     fun finish() {
         viewModelScope.launch(exceptionHandler) {
+            val existing = stationConfigPreferences.get()
+            if (existing != null) {
+                _uiState.value = SetupCompleteUiState(stationConfig = existing)
+                return@launch
+            }
             val config = draft.toStationConfig(deviceNumber = draft.deviceNumber, staffName = draft.staffName)
             stationConfigPreferences.save(config)
             draft.reset()
