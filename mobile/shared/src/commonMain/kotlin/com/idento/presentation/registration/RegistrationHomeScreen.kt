@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
@@ -52,6 +54,7 @@ import org.koin.compose.koinInject
 @Composable
 fun RegistrationHomeScreen(
     viewModel: RegistrationHomeViewModel = koinInject(),
+    onNavigateToSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -72,28 +75,36 @@ fun RegistrationHomeScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        StatusBar(
-            cells = listOf(
-                StatusCell(
-                    value = uiState.zoneName,
-                    label = stringResource(StringKey.REGISTRATION_STATUSBAR_ZONE_LABEL),
+        Box(modifier = Modifier.fillMaxWidth()) {
+            StatusBar(
+                cells = listOf(
+                    StatusCell(
+                        value = uiState.zoneName,
+                        label = stringResource(StringKey.REGISTRATION_STATUSBAR_ZONE_LABEL),
+                    ),
+                    StatusCell(
+                        value = uiState.printerLabel,
+                        label = stringResource(StringKey.REGISTRATION_STATUSBAR_PRINTER_LABEL),
+                        valueColor = if (uiState.printerStatusOk) IdentoColors.Brand else IdentoColors.TextSecondary,
+                    ),
+                    StatusCell(
+                        value = uiState.pendingQueueCount.toString(),
+                        label = stringResource(StringKey.REGISTRATION_STATUSBAR_QUEUE_LABEL),
+                        valueColor = if (uiState.pendingQueueCount > 0) IdentoColors.Queue else IdentoColors.TextPrimary,
+                    ),
+                    StatusCell(
+                        value = uiState.sessionCheckedCount.toString(),
+                        label = stringResource(StringKey.REGISTRATION_STATUSBAR_CHECKED_LABEL),
+                    ),
                 ),
-                StatusCell(
-                    value = uiState.printerLabel,
-                    label = stringResource(StringKey.REGISTRATION_STATUSBAR_PRINTER_LABEL),
-                    valueColor = if (uiState.printerStatusOk) IdentoColors.Brand else IdentoColors.TextSecondary,
-                ),
-                StatusCell(
-                    value = uiState.pendingQueueCount.toString(),
-                    label = stringResource(StringKey.REGISTRATION_STATUSBAR_QUEUE_LABEL),
-                    valueColor = if (uiState.pendingQueueCount > 0) IdentoColors.Queue else IdentoColors.TextPrimary,
-                ),
-                StatusCell(
-                    value = uiState.sessionCheckedCount.toString(),
-                    label = stringResource(StringKey.REGISTRATION_STATUSBAR_CHECKED_LABEL),
-                ),
-            ),
-        )
+            )
+            IconButton(
+                onClick = onNavigateToSettings,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = IdentoSpacing.md),
+            ) {
+                Icon(AppIcons.Settings, contentDescription = stringResource(StringKey.SETTINGS))
+            }
+        }
 
         ModeSegmentedControl(
             options = listOf(

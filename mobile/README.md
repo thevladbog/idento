@@ -13,8 +13,7 @@ mobile/
 │   ├── androidMain/  # Android-specific
 │   └── iosMain/      # iOS-specific
 │
-├── android-app/      # Android application
-│   └── app/
+├── androidApp/       # Android application (thin shell)
 │
 └── iosApp/           # iOS/iPadOS application
     └── iosApp/
@@ -27,26 +26,23 @@ mobile/
 ### Build Shared Module:
 
 ```bash
-cd android-app
 ./gradlew :shared:build
 ```
 
 ### Run Android:
 
 ```bash
-cd android-app
-./gradlew installDebug
+./gradlew :androidApp:installDebug
 ```
 
 ### Run iOS:
 
 ```bash
 # Build framework
-cd android-app
 ./gradlew :shared:linkDebugFrameworkIosSimulatorArm64
 
 # Install dependencies
-cd ../iosApp
+cd iosApp
 pod install
 
 # Open in Xcode

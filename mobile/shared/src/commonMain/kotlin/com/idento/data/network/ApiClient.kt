@@ -86,10 +86,5 @@ class ApiClient(
     }
 }
 
-/**
- * Platform-specific HTTP client engine configuration
- */
-expect fun createPlatformHttpClient(config: HttpClientConfig<*>.() -> Unit): HttpClient
-
 /** HEADERS in debug (no bodies, so no password/JWT), NONE in release. Pure → unit-testable. */
 fun logLevelFor(isDebug: Boolean): LogLevel = if (isDebug) LogLevel.HEADERS else LogLevel.NONE

@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,6 +48,7 @@ import org.koin.compose.koinInject
 @Composable
 fun ZoneControlScreen(
     viewModel: ZoneControlViewModel = koinInject(),
+    onNavigateToSettings: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -63,24 +66,32 @@ fun ZoneControlScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-        StatusBar(
-            cells = listOf(
-                StatusCell(
-                    value = uiState.zoneName,
-                    label = stringResource(StringKey.ZONE_STATUSBAR_ZONE_LABEL),
+        Box(modifier = Modifier.fillMaxWidth()) {
+            StatusBar(
+                cells = listOf(
+                    StatusCell(
+                        value = uiState.zoneName,
+                        label = stringResource(StringKey.ZONE_STATUSBAR_ZONE_LABEL),
+                    ),
+                    StatusCell(
+                        value = uiState.allowedCount.toString(),
+                        label = stringResource(StringKey.ZONE_STATUSBAR_ALLOWED_LABEL),
+                        valueColor = IdentoColors.Brand,
+                    ),
+                    StatusCell(
+                        value = uiState.deniedCount.toString(),
+                        label = stringResource(StringKey.ZONE_STATUSBAR_DENIED_LABEL),
+                        valueColor = if (uiState.deniedCount > 0) IdentoColors.Denied else IdentoColors.TextPrimary,
+                    ),
                 ),
-                StatusCell(
-                    value = uiState.allowedCount.toString(),
-                    label = stringResource(StringKey.ZONE_STATUSBAR_ALLOWED_LABEL),
-                    valueColor = IdentoColors.Brand,
-                ),
-                StatusCell(
-                    value = uiState.deniedCount.toString(),
-                    label = stringResource(StringKey.ZONE_STATUSBAR_DENIED_LABEL),
-                    valueColor = if (uiState.deniedCount > 0) IdentoColors.Denied else IdentoColors.TextPrimary,
-                ),
-            ),
-        )
+            )
+            IconButton(
+                onClick = onNavigateToSettings,
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = IdentoSpacing.md),
+            ) {
+                Icon(AppIcons.Settings, contentDescription = stringResource(StringKey.SETTINGS))
+            }
+        }
 
         Box(
             modifier = Modifier

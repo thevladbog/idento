@@ -43,12 +43,13 @@ desktop/src-tauri/target/
 desktop/src-tauri/gen/
 
 # Mobile - Android
-mobile/android-app/build/
-mobile/android-app/.gradle/
-mobile/android-app/local.properties
-mobile/android-app/.externalNativeBuild
-mobile/android-app/.cxx/
-mobile/android-app/.kotlin/
+mobile/build/
+mobile/androidApp/build/
+mobile/.gradle/
+mobile/local.properties
+mobile/androidApp/.externalNativeBuild
+mobile/androidApp/.cxx/
+mobile/.kotlin/
 mobile/shared/build/
 *.apk
 *.aab

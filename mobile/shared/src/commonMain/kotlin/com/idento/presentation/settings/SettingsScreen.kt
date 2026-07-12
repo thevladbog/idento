@@ -32,7 +32,6 @@ import org.koin.compose.koinInject
 fun SettingsScreen(
     viewModel: SettingsViewModel = koinInject(),
     onNavigateBack: () -> Unit = {},
-    onNavigateToBluetoothScanner: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
