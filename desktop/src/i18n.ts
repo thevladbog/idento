@@ -127,6 +127,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         print: "Print",
         printFailed: "Print failed",
         badgePrinted: "Badge printed",
+        // API errors
+        tenantSuspended: "This organization is suspended. Contact support to restore access.",
       },
     },
     ru: {
@@ -251,6 +253,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         print: "Печать",
         printFailed: "Ошибка печати",
         badgePrinted: "Бейдж напечатан",
+        // API errors
+        tenantSuspended: "Организация приостановлена. Обратитесь в поддержку для восстановления доступа.",
       },
     },
   },

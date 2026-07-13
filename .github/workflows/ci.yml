@@ -141,6 +141,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies (desktop)
         run: cd desktop && npm ci
+      - name: Lint (desktop)
+        run: cd desktop && npm run lint
       - name: Install Tauri system deps (Linux)
         run: |
           sudo apt-get update
