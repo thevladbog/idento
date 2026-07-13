@@ -16,32 +16,32 @@ class EventApiService(private val apiClient: ApiClient) {
      * Get all events for current user
      */
     suspend fun getEvents(): Result<List<Event>> = runCatching {
-        apiClient.httpClient.get("/api/events").body()
+        apiClient.httpClient.get("/api/events").bodyOrThrow()
     }
-    
+
     /**
      * Get event by ID
      */
     suspend fun getEvent(eventId: String): Result<Event> = runCatching {
-        apiClient.httpClient.get("/api/events/$eventId").body()
+        apiClient.httpClient.get("/api/events/$eventId").bodyOrThrow()
     }
-    
+
     /**
      * Create new event
      */
     suspend fun createEvent(event: Event): Result<Event> = runCatching {
         apiClient.httpClient.post("/api/events") {
             setBody(event)
-        }.body()
+        }.bodyOrThrow()
     }
-    
+
     /**
      * Update event
      */
     suspend fun updateEvent(eventId: String, event: Event): Result<Event> = runCatching {
         apiClient.httpClient.put("/api/events/$eventId") {
             setBody(event)
-        }.body()
+        }.bodyOrThrow()
     }
     
     /**
@@ -74,7 +74,7 @@ class EventApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/events/$eventId/display-template") {
             contentType(ContentType.Application.Json)
             setBody(template)
-        }.body()
+        }.bodyOrThrow()
     }
 
     /** GET /api/events/:event_id/stats?zone= — KPI counters for the mobile status bar. */
@@ -83,6 +83,6 @@ class EventApiService(private val apiClient: ApiClient) {
             if (zoneId != null) {
                 parameter("zone", zoneId)
             }
-        }.body()
+        }.bodyOrThrow()
     }
 }

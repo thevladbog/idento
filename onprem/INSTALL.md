@@ -33,6 +33,15 @@
    should return `{"mode":"onprem",...}`.
 7. Open the web UI at whatever URL you set `PUBLIC_API_URL`'s host to (port 80), and log in with the `IDENTO_ADMIN_EMAIL`/`IDENTO_ADMIN_PASSWORD` you set in step 4. This account is created automatically on first start against an empty database — it is not created again on later restarts, so the credentials you chose in `.env` are the ones that matter.
 
+## Setting up mobile check-in stations
+
+The account created in step 7 has the **admin** role, which by design cannot be used to sign in on the mobile app's "Sign in as manager" self-provisioning flow — provisioning a station requires a **manager** or **staff** account. Before setting up your first mobile check-in station:
+
+1. In the web UI, go to the **Users** page and create a user with the **manager** or **staff** role.
+2. On the mobile device, use that account's credentials in the "Sign in as manager" setup wizard to provision the station.
+
+The admin account remains for managing events, users, and settings in the web UI.
+
 ## Upgrade
 
 ```bash
