@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -25,6 +26,9 @@ type Config struct {
 	AdminEmail         string // on-prem bootstrap
 	AdminPassword      string // on-prem bootstrap
 	AdminOrgName       string // on-prem bootstrap; empty means "apply the default at bootstrap time"
+	// TenantRetentionDays is how long an archived tenant is kept before the
+	// purge job deletes it permanently. 0 disables auto-purge.
+	TenantRetentionDays int
 }
 
 var current *Config
@@ -65,6 +69,17 @@ func Load() (*Config, error) {
 	case ModeSaaS, ModeOnPrem:
 	default:
 		return nil, fmt.Errorf("DEPLOYMENT_MODE must be %q or %q, got %q", ModeSaaS, ModeOnPrem, cfg.DeploymentMode)
+	}
+
+	switch raw := os.Getenv("TENANT_RETENTION_DAYS"); raw {
+	case "":
+		cfg.TenantRetentionDays = 90
+	default:
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("TENANT_RETENTION_DAYS must be a non-negative integer (0 disables auto-purge), got %q", raw)
+		}
+		cfg.TenantRetentionDays = n
 	}
 
 	current = cfg

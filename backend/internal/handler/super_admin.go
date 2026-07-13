@@ -5,6 +5,7 @@ import (
 	"idento/backend/internal/models"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -414,11 +415,16 @@ func (h *Handler) CreateTenantSuper(c echo.Context) error {
 	return c.JSON(http.StatusCreated, tenant)
 }
 
-// lifecycle transition table: action → (required current state, new state).
-var tenantTransitions = map[string]struct{ from, to string }{
-	"suspend":    {"active", "suspended"},
-	"reactivate": {"suspended", "active"},
-	"archive":    {"suspended", "archived"},
+// lifecycle transition table: action → (allowed current states, new state).
+// Reactivate accepts archived because archival is a soft-delete: until the
+// retention purge removes the row, the tenant can come back.
+var tenantTransitions = map[string]struct {
+	froms []string
+	to    string
+}{
+	"suspend":    {froms: []string{"active"}, to: "suspended"},
+	"reactivate": {froms: []string{"suspended", "archived"}, to: "active"},
+	"archive":    {froms: []string{"suspended"}, to: "archived"},
 }
 
 func (h *Handler) setTenantStatus(c echo.Context, action string) error {
@@ -439,9 +445,9 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 	if current == "" {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
 	}
-	if current != tr.from {
+	if !slices.Contains(tr.froms, current) {
 		return c.JSON(http.StatusConflict, map[string]string{
-			"error": fmt.Sprintf("cannot %s a tenant in state %q (requires %q)", action, current, tr.from),
+			"error": fmt.Sprintf(`cannot %s a tenant in state %q (requires "%s")`, action, current, strings.Join(tr.froms, `" or "`)),
 		})
 	}
 	if err := h.Store.UpdateTenantStatus(c.Request().Context(), tenantID, tr.to); err != nil {
