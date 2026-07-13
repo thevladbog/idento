@@ -25,7 +25,7 @@ The platform console (`/super-admin`) is **not** part of this rewrite. It recent
 | Shared UI package | **Yes, from day one:** `packages/ui` (`@idento/ui`) — internal npm-workspace package, source-imported (no build/publish step). Three roadmap consumers share one design language: this panel, the console rewrite (*Idento Console.dc.html*), the desktop kiosk redesign (*Idento Kiosk.dc.html*; kiosk is already React 18 + Vite + Tailwind v4). |
 | Localization | **RU + EN are both first-class from day one** — every UI string through i18n keys in both languages (zod validation messages included), language switcher in the shell, automated key-parity check in CI. No phase ships single-language screens. |
 | Theming | **Light + dark shipped from day one**, user-switchable with system-preference default; every `@idento/ui` component is token-based and validated in both themes (kit stories/tests render both). |
-| AI agent rules | Working rules for AI agents are a **P0 deliverable**: new `.cursor/rules/ui-package.mdc`, updates to root `AGENTS.md` and `.github/copilot-instructions.md` (see §3.4). |
+| AI agent rules | Working rules for AI agents are a **P0 deliverable**, targeting Codex and Claude Code: root `AGENTS.md` section + scoped `packages/ui/AGENTS.md` and `panel/AGENTS.md`, plus `.github/copilot-instructions.md` updates (see §3.4). No new Cursor rules. |
 | Auth/session | Keep JWT-in-localStorage for v1 (WEB-SEC-04/05 migration is a separate track). Token storage isolated behind one adapter so an httpOnly-cookie move later touches one module. |
 | Prior product decisions (from the design chat, reused verbatim) | Home = events list + live strip; web check-in = registration-desk fallback (kiosks primary); tablet targets check-in + monitoring only; global Users (Team) and per-event Staff stay separate surfaces. |
 
@@ -71,11 +71,12 @@ panel/src/
 
 ### 3.4 Rules for AI agents (P0 deliverable)
 
-The repo's agent-instruction chain (`AGENTS.md` → `.github/copilot-instructions.md` → `.cursor/rules/*.mdc`) gets the new-world rules so every future agent session lands correctly:
+The team works mainly with Codex and Claude Code — rules live in the `AGENTS.md` chain both tools read natively (root file + nested files picked up when working inside a directory). No new Cursor rules.
 
-- New rule file `.cursor/rules/ui-package.mdc` covering: primitives (StatusPill, ConfirmDialog, EmptyState, DataTable, …) come **only** from `@idento/ui` — never re-implemented inside an app; a missing primitive is added to the package, not to the app; package content boundary (no i18n/api/feature imports, strings via props); colors only via semantic tokens — hardcoded hex values are a review-blocker; every new UI string lands in EN **and** RU in the same change; every component/screen must work in light **and** dark theme.
-- `.github/copilot-instructions.md`: npm-workspace layout (`packages/ui`, `panel/`), install/build/lint/test commands for both, and the note that `web/` is frozen for feature work (critical fixes only) while the rewrite runs — console work targets `web/`, panel work targets `panel/`.
-- Root `AGENTS.md`: link the new rule file next to the existing Go/Android/web ones.
+- **Root `AGENTS.md`** gets a "Web frontend (panel + shared UI)" section: primitives (StatusPill, ConfirmDialog, EmptyState, DataTable, …) come **only** from `@idento/ui` — never re-implemented inside an app; a missing primitive is added to the package, not to the app; colors only via semantic tokens — hardcoded hex values are a review-blocker; every new UI string lands in EN **and** RU in the same change; every component/screen must work in light **and** dark theme; `web/` is frozen for feature work (critical fixes only) while the rewrite runs.
+- **Scoped `packages/ui/AGENTS.md`**: the package content boundary in depth — no i18n/api/feature imports, strings via props, `react >=18` peer (no React-19-only APIs), theme-ability rules for new tokens/variants.
+- **Scoped `panel/AGENTS.md`**: feature-sliced layout, TanStack Router/Query conventions, openapi-first workflow (spec → regenerate client), i18n and testing expectations.
+- **`.github/copilot-instructions.md`**: npm-workspace layout and install/build/lint/test commands for `packages/ui` and `panel/`.
 - The same rules apply to the future console and kiosk initiatives when they adopt `@idento/ui`.
 - No emoji as UI, lucide icons only; WCAG AA; all dialogs on the Dialog primitive; `aria-live` on verdicts; full EN/RU parity including zod messages.
 
@@ -99,7 +100,7 @@ The repo's agent-instruction chain (`AGENTS.md` → `.github/copilot-instruction
 
 Each phase is its own spec → plan → PR cycle (like the console batches). Cutover happens only at P5; until then production is untouched.
 
-- **P0 Foundation.** npm workspaces root + `packages/ui` scaffold; `panel/` scaffold, CI, Dockerfile (repo-root build context); tokens + type ramp (1a) and component kit (1b) in `@idento/ui`; app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer, language + theme switchers — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); i18n infrastructure with EN/RU from the first screen; light/dark theming wired through tokens; AI-agent rules (§3.4); openapi truth-up + client generation.
+- **P0 Foundation.** npm workspaces root + `packages/ui` scaffold; `panel/` scaffold, CI, Dockerfile (repo-root build context); tokens + type ramp (1a) and component kit (1b) in `@idento/ui`; app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer, language + theme switchers — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); i18n infrastructure with EN/RU from the first screen; light/dark theming wired through tokens; AI-agent rules in the `AGENTS.md` chain (§3.4); openapi truth-up + client generation.
 - **P1 Events & workspace spine.** Home 1c with live strip (polls existing counters in P1; upgrades to SSE when backend #4 lands in P4); event CRUD; workspace 1f with readiness pipeline (backend #6 — the equipment-check step stays "not done" until its P3/P4 wiring exists); Event Settings 6a (anchor rail, scoped per-card saves — no full-PUT snapshots, fonts UI and API-keys UI on existing endpoints, real danger zone through typed confirm).
 - **P2 People & data.** Attendees at scale (backend #1): DataTable at 5,000+, bulk bar, import wizard (worker, Windows-1251 auto-detect with override, progress, per-row error report), attendee drawer 3e; Zones 6b (+ rules, backend #7); Staff 6c (QR logins, print cards, revoke/regenerate).
 - **P3 Badge editor.** Three-pane shell 4a; save model — scoped PATCH, four save states incl. server conflict, dirty-state guard on navigation/tab close/Escape; ZPL preview 4d ("the truth" render); printer-font flow with first-class Cyrillic coverage checks; test print via agent.
