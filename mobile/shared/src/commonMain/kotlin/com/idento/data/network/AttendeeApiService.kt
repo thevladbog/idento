@@ -24,32 +24,32 @@ class AttendeeApiService(private val apiClient: ApiClient) {
      * Get all attendees for event
      */
     suspend fun getAttendees(eventId: String): Result<List<Attendee>> = runCatching {
-        apiClient.httpClient.get("/api/events/$eventId/attendees").body()
+        apiClient.httpClient.get("/api/events/$eventId/attendees").bodyOrThrow()
     }
-    
+
     /**
      * Get attendee by ID
      */
     suspend fun getAttendee(attendeeId: String): Result<Attendee> = runCatching {
-        apiClient.httpClient.get("/api/attendees/$attendeeId").body()
+        apiClient.httpClient.get("/api/attendees/$attendeeId").bodyOrThrow()
     }
-    
+
     /**
      * Create new attendee
      */
     suspend fun createAttendee(eventId: String, attendee: Attendee): Result<Attendee> = runCatching {
         apiClient.httpClient.post("/api/events/$eventId/attendees") {
             setBody(attendee)
-        }.body()
+        }.bodyOrThrow()
     }
-    
+
     /**
      * Update attendee (full update)
      */
     suspend fun updateAttendee(attendeeId: String, attendee: Attendee): Result<Attendee> = runCatching {
         apiClient.httpClient.patch("/api/attendees/$attendeeId") {
             setBody(attendee)
-        }.body()
+        }.bodyOrThrow()
     }
     
     /**
@@ -93,14 +93,14 @@ class AttendeeApiService(private val apiClient: ApiClient) {
     suspend fun blockAttendee(attendeeId: String, reason: String): Result<Attendee> = runCatching {
         apiClient.httpClient.post("/api/attendees/$attendeeId/block") {
             setBody(mapOf("reason" to reason))
-        }.body()
+        }.bodyOrThrow()
     }
-    
+
     /**
      * Unblock attendee
      */
     suspend fun unblockAttendee(attendeeId: String): Result<Attendee> = runCatching {
-        apiClient.httpClient.post("/api/attendees/$attendeeId/unblock").body()
+        apiClient.httpClient.post("/api/attendees/$attendeeId/unblock").bodyOrThrow()
     }
     
     /**
@@ -116,7 +116,7 @@ class AttendeeApiService(private val apiClient: ApiClient) {
     suspend fun searchAttendees(eventId: String, query: String): Result<List<Attendee>> = runCatching {
         apiClient.httpClient.get("/api/events/$eventId/attendees") {
             parameter("search", query)
-        }.body()
+        }.bodyOrThrow()
     }
     
     /**
@@ -131,7 +131,7 @@ class AttendeeApiService(private val apiClient: ApiClient) {
     suspend fun getAttendeeByCode(eventId: String, code: String): Result<Attendee?> = apiRunCatching {
         apiClient.httpClient.get("/api/events/$eventId/attendees") {
             parameter("code", code)
-        }.body<List<Attendee>>().firstOrNull()
+        }.bodyOrThrow<List<Attendee>>().firstOrNull()
     }
 
     /** POST /api/events/:event_id/checkins/batch — idempotent offline-sync flush. */
@@ -139,7 +139,7 @@ class AttendeeApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/events/$eventId/checkins/batch") {
             contentType(ContentType.Application.Json)
             setBody(items)
-        }.body()
+        }.bodyOrThrow()
     }
 
     /** POST /api/events/:event_id/checkins/override — staff "proceed anyway" audit log. */
@@ -147,6 +147,6 @@ class AttendeeApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/events/$eventId/checkins/override") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }.body()
+        }.bodyOrThrow()
     }
 }

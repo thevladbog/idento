@@ -8,17 +8,7 @@ import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-
-/**
- * Error response from API
- */
-@Serializable
-data class ApiErrorResponse(
-    val error: String? = null,
-    val message: String? = null
-)
 
 /**
  * Auth API Service (Ktor version)

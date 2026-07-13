@@ -1,6 +1,12 @@
 package com.idento.data.network
 
+import io.ktor.client.call.*
+import io.ktor.client.statement.*
+import io.ktor.http.*
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 
 /**
  * Like [runCatching], but rethrows [CancellationException] instead of wrapping it in
@@ -14,6 +20,40 @@ suspend inline fun <T> apiRunCatching(crossinline block: suspend () -> T): Resul
     } catch (e: Throwable) {
         Result.failure(e)
     }
+
+/**
+ * Error response shape returned by the backend on non-2xx responses.
+ */
+@Serializable
+data class ApiErrorResponse(
+    val error: String? = null,
+    val message: String? = null
+)
+
+/** Thrown by [bodyOrThrow] for a non-2xx response, carrying the backend's own error message. */
+class ApiException(val status: HttpStatusCode, message: String) : Exception(message)
+
+@PublishedApi
+internal val apiErrorJson = Json { ignoreUnknownKeys = true }
+
+/**
+ * Deserializes a successful response as [T]. On a non-2xx response, parses the body as
+ * [ApiErrorResponse] instead of [T] and throws [ApiException] with the backend's own message —
+ * calling plain [io.ktor.client.call.body] here would otherwise try to deserialize the error body
+ * (e.g. `{"error": "..."}`) as the success DTO and fail with a confusing [SerializationException]
+ * about missing fields, hiding the backend's actual error message from the caller.
+ */
+suspend inline fun <reified T> HttpResponse.bodyOrThrow(): T {
+    if (status.isSuccess()) return body()
+    val text = bodyAsText()
+    val parsed = try {
+        apiErrorJson.decodeFromString<ApiErrorResponse>(text)
+    } catch (e: SerializationException) {
+        null
+    }
+    val message = (parsed?.error ?: parsed?.message ?: text).ifBlank { status.description }
+    throw ApiException(status, message)
+}
 
 /**
  * Sealed class for API call results

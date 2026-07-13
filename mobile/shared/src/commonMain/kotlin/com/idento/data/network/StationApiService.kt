@@ -4,7 +4,6 @@ import com.idento.data.model.CreateProvisioningTokenRequestDto
 import com.idento.data.model.CreateProvisioningTokenResponseDto
 import com.idento.data.model.ProvisionStationRequestDto
 import com.idento.data.model.ProvisionStationResponseDto
-import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 
@@ -15,13 +14,13 @@ class StationApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/events/$eventId/stations/provisioning-token") {
             contentType(ContentType.Application.Json)
             setBody(CreateProvisioningTokenRequestDto(staffUserId = staffUserId))
-        }.body()
+        }.bodyOrThrow()
     }
 
     suspend fun provisionStation(token: String, deviceInfo: Map<String, String>? = null): Result<ProvisionStationResponseDto> = apiRunCatching {
         apiClient.httpClient.post("/api/stations/provision") {
             contentType(ContentType.Application.Json)
             setBody(ProvisionStationRequestDto(token = token, deviceInfo = deviceInfo))
-        }.body()
+        }.bodyOrThrow()
     }
 }
