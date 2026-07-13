@@ -21,4 +21,5 @@ object DataStoreNames {
     const val CHECKIN = "checkin_preferences"
     const val DISPLAY_TEMPLATES = "display_templates"
     const val STATION_CONFIG = "station_config"
+    const val NETWORK_CONFIG = "network_config"
 }
