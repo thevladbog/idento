@@ -28,6 +28,27 @@ func expectPurgeTx(mock pgxmock.PgxPoolIface, id uuid.UUID) {
 	mock.ExpectCommit()
 }
 
+// retentionDays <= 0 means "disabled" — the method must not touch the
+// database at all (a zero interval would otherwise match every archived
+// tenant). No expectations are set, so any query would fail the test.
+func TestPurgeExpiredTenantsNoopWhenRetentionDisabled(t *testing.T) {
+	for _, days := range []int{0, -1} {
+		mock, err := pgxmock.NewPool()
+		if err != nil {
+			t.Fatalf("pgxmock.NewPool: %v", err)
+		}
+		s := &PGStore{db: mock}
+		purged, err := s.PurgeExpiredTenants(context.Background(), days)
+		if err != nil || purged != nil {
+			t.Errorf("PurgeExpiredTenants(%d) = %v, %v; want nil, nil", days, purged, err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+		mock.Close()
+	}
+}
+
 func TestPurgeExpiredTenantsPurgesEachInOneTx(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

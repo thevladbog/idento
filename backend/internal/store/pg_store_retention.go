@@ -27,6 +27,12 @@ var errTenantNoLongerEligible = errors.New("tenant no longer eligible for purge"
 // actor is written. One tenant failing does not stop the rest; the combined
 // error is returned alongside the successfully purged list.
 func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([]PurgedTenant, error) {
+	// Defense in depth: retentionDays <= 0 means "auto-purge disabled". The
+	// worker never calls us then, but without this guard a zero interval
+	// would match (and delete) every archived tenant.
+	if retentionDays <= 0 {
+		return nil, nil
+	}
 	rows, err := s.db.Query(ctx, `SELECT id, name, archived_at FROM tenants
 		WHERE status = 'archived' AND archived_at < NOW() - make_interval(days => $1)`, retentionDays)
 	if err != nil {

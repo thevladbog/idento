@@ -376,6 +376,8 @@ git commit -m "feat(super-admin): allow reactivating archived tenants until purg
 
 ### Task 5: Store — PurgeExpiredTenants
 
+> **Note:** the implementation snippet in Step 3 reflects the *final* shipped code, including the whole-branch-review hardening (guarded in-tx DELETE with `errTenantNoLongerEligible` skip, audit-actor detach clause, `retentionDays <= 0` guard — commit `e548f65` and follow-ups). The Step 1 test code shows the original plan-time expectations; see `backend/internal/store/pg_store_retention_test.go` for the final tests.
+
 **Files:**
 - Create: `backend/internal/store/pg_store_retention.go`
 - Modify: `backend/internal/store/interface.go` (Store interface, near `UpdateTenantStatus` line 31)
@@ -525,6 +527,10 @@ type PurgedTenant struct {
 	Name string
 }
 
+// errTenantNoLongerEligible signals that a purge candidate stopped matching
+// the purge conditions between listing and deletion (e.g. it was reactivated).
+var errTenantNoLongerEligible = errors.New("tenant no longer eligible for purge")
+
 // PurgeExpiredTenants hard-deletes tenants archived more than retentionDays
 // ago. Per tenant, in one transaction: users that must survive (super admins,
 // members of other tenants) are detached, the tenant row is deleted (FKs
@@ -532,6 +538,12 @@ type PurgedTenant struct {
 // actor is written. One tenant failing does not stop the rest; the combined
 // error is returned alongside the successfully purged list.
 func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([]PurgedTenant, error) {
+	// Defense in depth: retentionDays <= 0 means "auto-purge disabled". The
+	// worker never calls us then, but without this guard a zero interval
+	// would match (and delete) every archived tenant.
+	if retentionDays <= 0 {
+		return nil, nil
+	}
 	rows, err := s.db.Query(ctx, `SELECT id, name, archived_at FROM tenants
 		WHERE status = 'archived' AND archived_at < NOW() - make_interval(days => $1)`, retentionDays)
 	if err != nil {
@@ -560,6 +572,9 @@ func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([
 	var errs []error
 	for _, c := range candidates {
 		if err := s.purgeTenant(ctx, c.id, c.name, c.archivedAt, retentionDays); err != nil {
+			if errors.Is(err, errTenantNoLongerEligible) {
+				continue
+			}
 			errs = append(errs, fmt.Errorf("purge tenant %s (%s): %w", c.id, c.name, err))
 			continue
 		}
@@ -576,18 +591,30 @@ func (s *PGStore) purgeTenant(ctx context.Context, id uuid.UUID, name string, ar
 	//nolint:errcheck
 	defer tx.Rollback(ctx) // no-op after Commit
 
-	// Detach users that must survive the cascade: super admins and users with
-	// memberships in other tenants. Their user_tenants row for this tenant
-	// still cascades away with the tenant.
+	// Detach users that must survive the cascade: super admins, users with
+	// memberships in other tenants, and users with admin_audit_log actor rows
+	// (e.g. a demoted ex-super-admin) — that table's NO ACTION FK would
+	// otherwise block the tenant delete. Their user_tenants row for this
+	// tenant still cascades away with the tenant.
 	if _, err := tx.Exec(ctx, `UPDATE users SET tenant_id = NULL
 		WHERE tenant_id = $1
 		  AND (is_super_admin OR EXISTS (
-		      SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $1))`, id); err != nil {
+		      SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $1)
+		  OR EXISTS (
+		      SELECT 1 FROM admin_audit_log al WHERE al.admin_user_id = users.id))`, id); err != nil {
 		return fmt.Errorf("detach shared users: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, id); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM tenants
+		WHERE id = $1 AND status = 'archived' AND archived_at < NOW() - make_interval(days => $2)`, id, retentionDays)
+	if err != nil {
 		return fmt.Errorf("delete tenant: %w", err)
+	}
+	// Re-verified inside the transaction: if the tenant was reactivated (or
+	// already purged by another replica) since the candidate SELECT, roll
+	// back the detach and skip — no audit entry, not counted as purged.
+	if tag.RowsAffected() == 0 {
+		return errTenantNoLongerEligible
 	}
 
 	changes, err := json.Marshal(map[string]interface{}{
@@ -806,7 +833,7 @@ In `backend/main.go` add imports `"time"` and `"idento/backend/internal/retentio
 
 In `.env.example`, after the `# DEPLOYMENT_MODE=saas` line add:
 
-```
+```text
 # Days an archived tenant is kept before the daily purge deletes it and all
 # its data permanently (default: 90; 0 disables auto-purge)
 # TENANT_RETENTION_DAYS=90
@@ -814,7 +841,7 @@ In `.env.example`, after the `# DEPLOYMENT_MODE=saas` line add:
 
 In `docs/DUAL_DISTRIBUTION_REWORK.md`, at the end of the "### P1.4 Tenant lifecycle for operators" section body, append:
 
-```
+```text
 - **2026-07-13:** retention policy implemented — `archived_at` stamp, `TENANT_RETENTION_DAYS` (default 90, 0 disables), daily purge with audit trail, reactivate-until-purged. Spec: `docs/superpowers/specs/2026-07-13-tenant-archival-retention-design.md`.
 ```
 

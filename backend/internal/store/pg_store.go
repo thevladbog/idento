@@ -281,8 +281,8 @@ func (s *PGStore) ProvisionTenantWithAdmin(ctx context.Context, tenantName, emai
 func (s *PGStore) GetTenantByID(ctx context.Context, id uuid.UUID) (*models.Tenant, error) {
 	var t models.Tenant
 	var settingsJSON []byte
-	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
-	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
+	query := `SELECT id, name, status, archived_at, settings, logo_url, website, contact_email, created_at, updated_at FROM tenants WHERE id = $1`
+	err := s.db.QueryRow(ctx, query, id).Scan(&t.ID, &t.Name, &t.Status, &t.ArchivedAt, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
