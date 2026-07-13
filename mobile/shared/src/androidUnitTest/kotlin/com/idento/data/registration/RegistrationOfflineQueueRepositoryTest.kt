@@ -77,6 +77,17 @@ class RegistrationOfflineQueueRepositoryTest {
         assertEquals(1, stillPending.size)
         assertEquals("cooling-down", stillPending.first().clientUuid)
     }
+
+    @Test
+    fun clearAllRemovesEveryQueuedItem() = runTest {
+        repository.enqueue("evt-1", BatchCheckinItemDto(clientUuid = "u1", attendeeId = "att-1", at = "2026-07-11T10:00:00Z", deviceNumber = 3, kind = "checkin"))
+        repository.enqueue("evt-2", BatchCheckinItemDto(clientUuid = "u2", attendeeId = "att-2", at = "2026-07-11T10:00:00Z", deviceNumber = 3, kind = "checkin"))
+        assertEquals(2, repository.getPending().size)
+
+        repository.clearAll()
+
+        assertEquals(0, repository.getPending().size)
+    }
 }
 
 private class FakeBatchCheckinSubmitter : com.idento.data.registration.BatchCheckinSubmitter {

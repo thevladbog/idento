@@ -114,6 +114,13 @@ fun ServerUrlScreen(
                     Text(stringResource(StringKey.SERVER_URL_SAVE))
                 }
             }
+
+            TextButton(
+                onClick = { viewModel.resetToDefault(onSaved = onSaved) },
+                enabled = !uiState.isSaving,
+            ) {
+                Text(stringResource(StringKey.SERVER_URL_RESET_TO_DEFAULT))
+            }
         }
     }
 }

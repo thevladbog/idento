@@ -82,6 +82,18 @@ class RegistrationOfflineQueueRepository(
         queries.countAll().asFlow().mapToOne(Dispatchers.Default).map { it.toInt() }
 
     /**
+     * Drops every queued registration check-in unconditionally — used when the app is pointed at
+     * a different server (see `ServerUrlSaveGateway`'s `clearSession`), since a queued item was
+     * addressed to the *previous* server's event/attendee and would otherwise get flushed to the
+     * new server on the next successful sync pass.
+     */
+    suspend fun clearAll() {
+        withContext(Dispatchers.Default) {
+            queries.deleteAll()
+        }
+    }
+
+    /**
      * Attempts [BatchCheckinSubmitter.submitBatchCheckins] for every queued item (grouped by
      * `eventId`, since the endpoint is scoped to a single event per call), removing items the
      * backend confirms (`"created"` or `"already_exists"` — both mean the check-in is now

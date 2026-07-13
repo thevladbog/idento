@@ -37,10 +37,26 @@ class ServerConnectionChecker(private val block: suspend (String) -> Result<Stri
 class ServerUrlSaveGateway(
     private val save: suspend (String) -> Unit,
     private val clearSession: suspend () -> Unit,
+    private val resetToDefault: suspend () -> Unit,
 ) {
+    /**
+     * Clears the session *before* saving the new URL, not after. `save` flips `ApiClient`'s live
+     * `baseUrlProvider` result synchronously (see `NetworkPreferences`), so if the auth token
+     * were cleared second, any request racing the switch — a background sync pass, an in-flight
+     * screen load — could attach the *previous* server's bearer token to the *new* host,
+     * leaking that credential to wherever the operator just pointed the app. Clearing first means
+     * the worst case is a request that briefly goes out unauthenticated, not one that leaks a
+     * live token cross-server.
+     */
     suspend fun saveAndClearSession(url: String) {
-        save(url)
         clearSession()
+        save(url)
+    }
+
+    /** Same ordering rationale as [saveAndClearSession]: clear the session before switching. */
+    suspend fun resetToDefaultAndClearSession() {
+        clearSession()
+        resetToDefault()
     }
 }
 
@@ -96,7 +112,7 @@ class ServerUrlViewModel(
     }
 
     fun testConnection() {
-        val url = _uiState.value.url
+        val url = _uiState.value.url.trim()
         when (val validation = validateServerUrl(url)) {
             is ServerUrlValidation.Invalid -> {
                 _uiState.value = _uiState.value.copy(validationError = validation.reason)
@@ -105,11 +121,18 @@ class ServerUrlViewModel(
             ServerUrlValidation.Valid -> {}
         }
         _uiState.value = _uiState.value.copy(
+            url = url,
             validationError = null,
             connectionCheckState = ConnectionCheckState.Checking,
         )
         viewModelScope.launch(exceptionHandler) {
             val result = connectionChecker.check(url)
+            // Guard against a stale result: if the field was edited to a different URL while
+            // this probe was in flight, that edit already reset connectionCheckState to Idle
+            // (see onUrlChanged) — applying this now-stale result would show a Connected/Failed
+            // verdict for a URL that was never actually checked. Only apply it if the field
+            // still holds the exact URL this probe was launched for.
+            if (_uiState.value.url.trim() != url) return@launch
             _uiState.value = _uiState.value.copy(
                 connectionCheckState = result.fold(
                     onSuccess = { mode -> ConnectionCheckState.Success(mode) },
@@ -121,7 +144,7 @@ class ServerUrlViewModel(
 
     /** [onSaved] fires only after both the save and the session clear complete. */
     fun save(onSaved: () -> Unit = {}) {
-        val url = _uiState.value.url
+        val url = _uiState.value.url.trim()
         when (val validation = validateServerUrl(url)) {
             is ServerUrlValidation.Invalid -> {
                 _uiState.value = _uiState.value.copy(validationError = validation.reason)
@@ -129,10 +152,25 @@ class ServerUrlViewModel(
             }
             ServerUrlValidation.Valid -> {}
         }
-        _uiState.value = _uiState.value.copy(validationError = null, isSaving = true)
+        _uiState.value = _uiState.value.copy(url = url, validationError = null, isSaving = true)
         viewModelScope.launch(exceptionHandler) {
             onSave.saveAndClearSession(url)
             _uiState.value = _uiState.value.copy(isSaving = false)
+            onSaved()
+        }
+    }
+
+    /**
+     * Clears any saved custom URL, returning to [com.idento.data.network.getDefaultBaseUrl] —
+     * the only way back to the platform default once a custom URL has been saved, since [save]
+     * rejects a blank field as [ServerUrlInvalidReason.MALFORMED] rather than treating it as
+     * "clear the override".
+     */
+    fun resetToDefault(onSaved: () -> Unit = {}) {
+        _uiState.value = _uiState.value.copy(validationError = null, isSaving = true)
+        viewModelScope.launch(exceptionHandler) {
+            onSave.resetToDefaultAndClearSession()
+            _uiState.value = _uiState.value.copy(url = "", isSaving = false)
             onSaved()
         }
     }

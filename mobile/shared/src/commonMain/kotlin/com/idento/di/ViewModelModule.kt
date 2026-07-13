@@ -5,12 +5,14 @@ import com.idento.data.model.StationConfig
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.NetworkPreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.PrintQueueRepository
 import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationOfflineQueueRepository
 import com.idento.data.registration.RegistrationVerdictMapper
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
+import com.idento.data.repository.OfflineCheckInRepository
 import com.idento.data.repository.StationRepository
 import com.idento.data.repository.ZoneRepository
 import com.idento.data.zonecontrol.ZoneScanSource
@@ -269,6 +271,9 @@ val viewModelModule = module {
         val networkPreferences: NetworkPreferences = get()
         val stationConfigPreferences: StationConfigPreferences = get()
         val authPreferences: AuthPreferences = get()
+        val registrationOfflineQueue: RegistrationOfflineQueueRepository = get()
+        val zoneOfflineQueue: OfflineCheckInRepository = get()
+        val printQueue: PrintQueueRepository = get()
         ServerUrlViewModel(
             currentUrlProvider = { networkPreferences.getBaseUrlSync() },
             connectionChecker = ServerConnectionChecker { url ->
@@ -295,7 +300,14 @@ val viewModelModule = module {
                 clearSession = {
                     stationConfigPreferences.clear()
                     authPreferences.clearAuth()
+                    // A queued registration/zone check-in or print job was addressed to the
+                    // *previous* server's event/attendee — leaving it queued would flush or
+                    // print it against the new server once sync resumes there.
+                    registrationOfflineQueue.clearAll()
+                    zoneOfflineQueue.clearAll()
+                    printQueue.clearAll()
                 },
+                resetToDefault = networkPreferences::clear,
             ),
         )
     }

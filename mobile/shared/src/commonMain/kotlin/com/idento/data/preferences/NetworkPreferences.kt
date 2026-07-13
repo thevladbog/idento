@@ -10,7 +10,6 @@ import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -54,13 +53,19 @@ class NetworkPreferences(dataStoreFactory: DataStoreFactory) {
     /** Synchronous, cache-backed read — see the class doc for why this can't just be `suspend`. */
     fun getBaseUrlSync(): String? = cachedUrl.value
 
+    /**
+     * Persists first, then updates the in-memory cache — the reverse order would leave
+     * [getBaseUrlSync] (and therefore [com.idento.data.network.ApiClient]'s live
+     * `baseUrlProvider`) pointed at [url] even if the DataStore write below throws, stranding the
+     * app on a server it never actually saved a record of switching to.
+     */
     suspend fun save(url: String) {
-        cachedUrl.value = url
         dataStore.edit { prefs -> prefs[CUSTOM_BASE_URL] = url }
+        cachedUrl.value = url
     }
 
     suspend fun clear() {
-        cachedUrl.value = null
         dataStore.edit { prefs -> prefs.remove(CUSTOM_BASE_URL) }
+        cachedUrl.value = null
     }
 }

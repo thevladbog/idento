@@ -41,12 +41,15 @@ class ServerUrlViewModelTest {
         connectionCheck: suspend (String) -> Result<String> = { Result.success("onprem") },
         savedUrls: MutableList<String> = mutableListOf(),
         cleared: MutableList<Unit> = mutableListOf(),
+        resetCount: MutableList<Unit> = mutableListOf(),
+        events: MutableList<String>? = null,
     ) = ServerUrlViewModel(
         currentUrlProvider = { currentUrl },
         connectionChecker = ServerConnectionChecker(connectionCheck),
         onSave = ServerUrlSaveGateway(
-            save = { url -> savedUrls.add(url) },
-            clearSession = { cleared.add(Unit) },
+            save = { url -> savedUrls.add(url); events?.add("save") },
+            clearSession = { cleared.add(Unit); events?.add("clear") },
+            resetToDefault = { resetCount.add(Unit); events?.add("reset") },
         ),
     )
 
@@ -114,6 +117,56 @@ class ServerUrlViewModelTest {
         vm.save { savedFired = true }
         assertEquals(listOf("http://192.168.1.10:8008"), saved)
         assertEquals(1, cleared.size)
+        assertTrue(savedFired)
+    }
+
+    @Test
+    fun save_trimsUrlBeforePersistingAndUpdatingState() = runTest(testDispatcher) {
+        val saved = mutableListOf<String>()
+        val vm = viewModel(savedUrls = saved)
+        vm.onUrlChanged("  http://192.168.1.10:8008  ")
+        vm.save()
+        assertEquals(listOf("http://192.168.1.10:8008"), saved)
+        assertEquals("http://192.168.1.10:8008", vm.uiState.value.url)
+    }
+
+    @Test
+    fun save_clearsSessionBeforeSaving() = runTest(testDispatcher) {
+        val events = mutableListOf<String>()
+        val vm = viewModel(events = events)
+        vm.onUrlChanged("http://192.168.1.10:8008")
+        vm.save()
+        // A leaked bearer token to the new host is the failure mode if this order ever flips —
+        // see ServerUrlSaveGateway.saveAndClearSession's doc.
+        assertEquals(listOf("clear", "save"), events)
+    }
+
+    @Test
+    fun testConnection_ignoresStaleResultIfUrlChangedMidFlight() = runTest(testDispatcher) {
+        lateinit var vm: ServerUrlViewModel
+        vm = viewModel(connectionCheck = { _ ->
+            // Simulate the operator editing the field while this probe is still in flight.
+            vm.onUrlChanged("http://10.0.0.5:8008")
+            Result.success("onprem")
+        })
+        vm.onUrlChanged("http://192.168.1.10:8008")
+        vm.testConnection()
+        // The stale result for the original URL must not be applied — onUrlChanged already reset
+        // this to Idle for the freshly typed URL, which was never actually checked.
+        assertEquals(ConnectionCheckState.Idle, vm.uiState.value.connectionCheckState)
+        assertEquals("http://10.0.0.5:8008", vm.uiState.value.url)
+    }
+
+    @Test
+    fun resetToDefault_clearsUrlAndSessionAndFiresOnSaved() = runTest(testDispatcher) {
+        val cleared = mutableListOf<Unit>()
+        val resetCount = mutableListOf<Unit>()
+        var savedFired = false
+        val vm = viewModel(currentUrl = "http://192.168.1.10:8008", cleared = cleared, resetCount = resetCount)
+        vm.resetToDefault { savedFired = true }
+        assertEquals("", vm.uiState.value.url)
+        assertEquals(1, cleared.size)
+        assertEquals(1, resetCount.size)
         assertTrue(savedFired)
     }
 }
