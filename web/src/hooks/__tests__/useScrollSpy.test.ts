@@ -24,7 +24,7 @@ describe('useScrollSpy', () => {
     `;
     vi.stubGlobal(
       'IntersectionObserver',
-      vi.fn((cb: IntersectionObserverCallback) => {
+      vi.fn(function (cb: IntersectionObserverCallback) {
         observerInstance = new MockIntersectionObserver(cb);
         return observerInstance;
       })
@@ -65,7 +65,7 @@ describe('useScrollSpy - sections mounted after an async loading gate', () => {
 
     vi.stubGlobal(
       'IntersectionObserver',
-      vi.fn((cb: IntersectionObserverCallback) => {
+      vi.fn(function (cb: IntersectionObserverCallback) {
         observerInstance = new MockIntersectionObserver(cb);
         return observerInstance;
       })
