@@ -3,16 +3,14 @@ import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import { globalIgnores } from 'eslint/config'
-import tsPlugin from '@typescript-eslint/eslint-plugin/use-at-your-own-risk/raw-plugin'
-
-const tsRecommended = tsPlugin.flatConfigs['flat/recommended']
+import tseslint from 'typescript-eslint'
 
 export default [
   // src-tauri/ is the Rust shell (and its generated target/ artifacts),
   // not web source to lint — same reasoning as dist.
   globalIgnores(['dist', 'src-tauri']),
   js.configs.recommended,
-  ...tsRecommended,
+  ...tseslint.configs.recommended,
   reactHooks.configs['recommended-latest'],
   reactRefresh.configs.vite,
   {
