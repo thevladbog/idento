@@ -340,6 +340,7 @@ sudo systemctl start idento-agent
 ### CORS
 Агент настроен на прием запросов только от:
 - `http://localhost:5173` (dev web)
+- `http://localhost:5174` (dev web)
 - `http://localhost:3000` (другие локальные сервисы)
 
 Для production обновите настройки CORS в `main.go`.
