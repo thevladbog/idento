@@ -78,3 +78,37 @@ func TestLoadReadsAdminOrgNameWithoutDefaulting(t *testing.T) {
 		t.Errorf("AdminOrgName = %q, want %q", cfg.AdminOrgName, "Acme Events")
 	}
 }
+
+func TestLoadTenantRetentionDays(t *testing.T) {
+	cases := []struct {
+		name    string
+		env     string
+		want    int
+		wantErr bool
+	}{
+		{name: "unset defaults to 90", env: "", want: 90},
+		{name: "explicit value honored", env: "30", want: 30},
+		{name: "zero disables auto-purge", env: "0", want: 0},
+		{name: "negative rejected", env: "-1", wantErr: true},
+		{name: "non-numeric rejected", env: "ninety", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredEnv(t)
+			t.Setenv("TENANT_RETENTION_DAYS", tc.env)
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Load() succeeded with TENANT_RETENTION_DAYS=%q, want error", tc.env)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.TenantRetentionDays != tc.want {
+				t.Errorf("TenantRetentionDays = %d, want %d", cfg.TenantRetentionDays, tc.want)
+			}
+		})
+	}
+}
