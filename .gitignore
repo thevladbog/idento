@@ -66,6 +66,9 @@ mobile/iosApp/build/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+# Claude Code local state (launch.json config, worktree scratch — can be
+# hundreds of MB per worktree, never meant to be committed)
+.claude/
 *.iml
 *.suo
 *.ntvs*

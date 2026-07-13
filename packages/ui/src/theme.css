@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "tw-animate-css"; /* animate-in / slide-in-* utilities used by Dialog & Sheet */
+@source "./";
+
+:root {
+  --background: #fafafa;
+  --foreground: #18181b;
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+  --primary: #00935e;
+  --primary-hover: #00714a;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f0faf5;
+  --accent-foreground: #00714a;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #00935e;
+  --success-foreground: #ffffff;
+  --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --info: #2563eb;
+  --info-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #00935e;
+  /* Same value in both themes — a modal scrim must stay dark even when
+     --foreground (light text in .dark) is not. */
+  --overlay: #09090b;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: #101012;
+  --foreground: #f4f4f5;
+  --card: #18181b;
+  --card-foreground: #f4f4f5;
+  --popover: #18181b;
+  --popover-foreground: #f4f4f5;
+  --primary: #36a16f;
+  --primary-hover: #2c8a5e;
+  --primary-foreground: #ffffff;
+  --secondary: #27272a;
+  --secondary-foreground: #f4f4f5;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #16281f;
+  --accent-foreground: #2fd598;
+  --destructive: #f87171;
+  --destructive-foreground: #18181b;
+  --success: #2fd598;
+  --success-foreground: #052e1c;
+  --warning: #fbbf24;
+  --warning-foreground: #2b1c02;
+  --info: #7ba6f7;
+  --info-foreground: #0c1c3d;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #2fd598;
+  --overlay: #09090b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-verdict-allowed: var(--success);
+  --color-verdict-no-access: var(--destructive);
+  --color-verdict-not-registered: var(--warning);
+  --color-verdict-repeat: var(--info);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* Type ramp — board 1a (px values expressed in rem @16px base) */
+@utility text-page-title {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+@utility text-section-title {
+  font-size: 1rem;
+  line-height: 1.4;
+  font-weight: 700;
+}
+@utility text-card-title {
+  font-size: 0.84375rem;
+  line-height: 1.4;
+  font-weight: 600;
+}
+@utility text-body {
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  font-weight: 400;
+}
+@utility text-caption {
+  font-size: 0.71875rem;
+  line-height: 1.45;
+  font-weight: 400;
+}
+@utility text-code {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  line-height: 1.4;
+}
