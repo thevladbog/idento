@@ -18,8 +18,25 @@ private val PRIVATE_IPV4_PATTERN = Regex(
 )
 
 /**
- * True for a private/loopback/link-local IPv4 literal, `localhost`, or any `.local` mDNS
- * hostname — the set of hosts this app permits reaching over plain HTTP (see
+ * IPv6 loopback (`::1`), link-local (`fe80::/10`), and unique-local (`fc00::/7`) — the IPv6
+ * analogues of [PRIVATE_IPV4_PATTERN]'s ranges. `fe80::/10`'s second byte range 0x80-0xbf is
+ * `[89ab]` as the first hex digit of that byte; `fc00::/7`'s first-byte range 0xfc-0xfd is
+ * `f[cd]`. Tolerant of an optional enclosing `[...]` (the bracket form a URL authority uses for
+ * IPv6 hosts) since `io.ktor.http.Url.host` is a raw string with no documented guarantee of
+ * bracket-stripping.
+ */
+private val PRIVATE_IPV6_PATTERN = Regex(
+    "^\\[?(" +
+        "::1" +
+        "|fe[89ab][0-9a-f]:.*" +
+        "|f[cd][0-9a-f]{2}:.*" +
+        ")\\]?$",
+    RegexOption.IGNORE_CASE,
+)
+
+/**
+ * True for a private/loopback/link-local IPv4 or IPv6 literal, `localhost`, or any `.local`
+ * mDNS hostname — the set of hosts this app permits reaching over plain HTTP (see
  * [validateServerUrl]). Deliberately conservative: a bare hostname that happens to resolve to
  * a private IP at DNS time (but isn't itself `.local`) is NOT accepted here, since this is a
  * string-only check with no network access — only literal IPs and the two well-known local
@@ -28,7 +45,7 @@ private val PRIVATE_IPV4_PATTERN = Regex(
 fun isPrivateOrLocalHost(host: String): Boolean {
     val normalized = host.lowercase()
     if (normalized == "localhost" || normalized.endsWith(".local")) return true
-    return PRIVATE_IPV4_PATTERN.matches(normalized)
+    return PRIVATE_IPV4_PATTERN.matches(normalized) || PRIVATE_IPV6_PATTERN.matches(normalized)
 }
 
 /** Result of [validateServerUrl]. */

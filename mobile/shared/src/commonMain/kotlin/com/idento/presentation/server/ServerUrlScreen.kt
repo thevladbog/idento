@@ -104,7 +104,10 @@ fun ServerUrlScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = viewModel::testConnection) {
+                OutlinedButton(
+                    onClick = viewModel::testConnection,
+                    enabled = !uiState.isSaving && uiState.connectionCheckState !is ConnectionCheckState.Checking,
+                ) {
                     Text(stringResource(StringKey.SERVER_URL_TEST_CONNECTION))
                 }
                 Button(

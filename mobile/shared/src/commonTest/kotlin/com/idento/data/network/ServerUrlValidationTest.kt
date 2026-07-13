@@ -25,6 +25,23 @@ class ServerUrlValidationTest {
     }
 
     @Test
+    fun isPrivateOrLocalHost_acceptsIpv6LoopbackLinkLocalAndUniqueLocal() {
+        assertTrue(isPrivateOrLocalHost("::1"))
+        assertTrue(isPrivateOrLocalHost("[::1]"))
+        assertTrue(isPrivateOrLocalHost("fe80::1"))
+        assertTrue(isPrivateOrLocalHost("FE80::1"))
+        assertTrue(isPrivateOrLocalHost("[fe80::1]"))
+        assertTrue(isPrivateOrLocalHost("fd00::1"))
+        assertTrue(isPrivateOrLocalHost("fc12:3456::1"))
+    }
+
+    @Test
+    fun isPrivateOrLocalHost_rejectsPublicIpv6() {
+        assertFalse(isPrivateOrLocalHost("2001:db8::1")) // documentation range, not private
+        assertFalse(isPrivateOrLocalHost("2606:4700:4700::1111")) // real public resolver (Cloudflare)
+    }
+
+    @Test
     fun isPrivateOrLocalHost_acceptsLocalhostAndDotLocal() {
         assertTrue(isPrivateOrLocalHost("localhost"))
         assertTrue(isPrivateOrLocalHost("LOCALHOST"))
@@ -51,6 +68,22 @@ class ServerUrlValidationTest {
     fun validateServerUrl_acceptsHttpToPrivateHost() {
         assertEquals(ServerUrlValidation.Valid, validateServerUrl("http://192.168.1.10:8008"))
         assertEquals(ServerUrlValidation.Valid, validateServerUrl("http://localhost:8080"))
+    }
+
+    @Test
+    fun validateServerUrl_acceptsHttpToBracketedIpv6PrivateHost() {
+        // Exercises the real Ktor Url parser (not just isPrivateOrLocalHost directly) to confirm
+        // whatever form Url.host actually returns for a bracketed IPv6 authority is handled.
+        assertEquals(ServerUrlValidation.Valid, validateServerUrl("http://[::1]:8080"))
+        assertEquals(ServerUrlValidation.Valid, validateServerUrl("http://[fe80::1]:8080"))
+    }
+
+    @Test
+    fun validateServerUrl_rejectsHttpToPublicIpv6Host() {
+        assertEquals(
+            ServerUrlValidation.Invalid(ServerUrlInvalidReason.HTTP_REQUIRES_PRIVATE_HOST),
+            validateServerUrl("http://[2001:db8::1]:8080"),
+        )
     }
 
     @Test

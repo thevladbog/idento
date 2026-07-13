@@ -96,6 +96,13 @@ class ServerUrlViewModel(
     private val _uiState = MutableStateFlow(ServerUrlUiState(url = currentUrlProvider().orEmpty()))
     val uiState: StateFlow<ServerUrlUiState> = _uiState.asStateFlow()
 
+    // Monotonically increasing counter bumped by both onUrlChanged and testConnection, so a
+    // probe result can be recognized as stale even when it's for the exact same URL string as
+    // the currently in-flight one (e.g. an A -> B -> A edit sequence, or tapping Test Connection
+    // twice in a row before the first probe resolves) — a plain "does the URL still match"
+    // comparison can't distinguish those cases from the probe that's actually still current.
+    private var connectionCheckGeneration = 0L
+
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         _uiState.value = _uiState.value.copy(
             isSaving = false,
@@ -104,6 +111,7 @@ class ServerUrlViewModel(
     }
 
     fun onUrlChanged(value: String) {
+        connectionCheckGeneration++
         _uiState.value = _uiState.value.copy(
             url = value,
             validationError = null,
@@ -125,14 +133,13 @@ class ServerUrlViewModel(
             validationError = null,
             connectionCheckState = ConnectionCheckState.Checking,
         )
+        val requestGeneration = ++connectionCheckGeneration
         viewModelScope.launch(exceptionHandler) {
             val result = connectionChecker.check(url)
-            // Guard against a stale result: if the field was edited to a different URL while
-            // this probe was in flight, that edit already reset connectionCheckState to Idle
-            // (see onUrlChanged) — applying this now-stale result would show a Connected/Failed
-            // verdict for a URL that was never actually checked. Only apply it if the field
-            // still holds the exact URL this probe was launched for.
-            if (_uiState.value.url.trim() != url) return@launch
+            // Guard against a stale result — see connectionCheckGeneration's doc for why a
+            // generation counter, not a URL-string comparison, is what actually distinguishes
+            // this from a still-current probe.
+            if (requestGeneration != connectionCheckGeneration) return@launch
             _uiState.value = _uiState.value.copy(
                 connectionCheckState = result.fold(
                     onSuccess = { mode -> ConnectionCheckState.Success(mode) },

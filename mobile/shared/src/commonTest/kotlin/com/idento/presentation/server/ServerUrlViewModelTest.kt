@@ -1,6 +1,7 @@
 package com.idento.presentation.server
 
 import com.idento.data.network.ServerUrlInvalidReason
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -155,6 +156,40 @@ class ServerUrlViewModelTest {
         // this to Idle for the freshly typed URL, which was never actually checked.
         assertEquals(ConnectionCheckState.Idle, vm.uiState.value.connectionCheckState)
         assertEquals("http://10.0.0.5:8008", vm.uiState.value.url)
+    }
+
+    @Test
+    fun testConnection_ignoresStaleResultAfterAbaEditSequenceToSameUrl() = runTest(testDispatcher) {
+        // A URL-string comparison alone can't catch this: after A -> B -> A, the field is back to
+        // the exact same string the first (now-stale) probe was launched for, so a "does the URL
+        // still match" check would wrongly accept its result. Only a generation counter (bumped
+        // by every onUrlChanged/testConnection call) tells the two probes apart.
+        val firstProbeStarted = CompletableDeferred<Unit>()
+        val releaseFirstProbe = CompletableDeferred<Result<String>>()
+        var callCount = 0
+        val vm = viewModel(connectionCheck = { _ ->
+            callCount++
+            if (callCount == 1) {
+                firstProbeStarted.complete(Unit)
+                releaseFirstProbe.await()
+            } else {
+                Result.success("second")
+            }
+        })
+
+        vm.onUrlChanged("http://192.168.1.10:8008") // A
+        vm.testConnection() // probe 1 for "A" — parks awaiting release
+        assertTrue(firstProbeStarted.isCompleted)
+
+        vm.onUrlChanged("http://10.0.0.5:8008") // B
+        vm.onUrlChanged("http://192.168.1.10:8008") // back to A
+        vm.testConnection() // probe 2 for "A" — resolves immediately with "second"
+
+        assertEquals(ConnectionCheckState.Success("second"), vm.uiState.value.connectionCheckState)
+
+        // Probe 1 (genuinely stale, same URL string as probe 2) must not overwrite probe 2's result.
+        releaseFirstProbe.complete(Result.success("first-stale"))
+        assertEquals(ConnectionCheckState.Success("second"), vm.uiState.value.connectionCheckState)
     }
 
     @Test
