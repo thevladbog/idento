@@ -21,8 +21,14 @@ if (typeof Element.prototype.scrollIntoView === 'undefined') {
 // it internally. Stub it so components using that hook can render in tests.
 if (typeof globalThis.IntersectionObserver === 'undefined') {
   globalThis.IntersectionObserver = class IntersectionObserver {
+    root = null;
+    rootMargin = '';
+    thresholds = [];
     observe() {}
     unobserve() {}
     disconnect() {}
-  };
+    takeRecords() {
+      return [];
+    }
+  } as unknown as typeof IntersectionObserver;
 }
