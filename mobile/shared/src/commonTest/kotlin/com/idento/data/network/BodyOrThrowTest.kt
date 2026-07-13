@@ -5,6 +5,7 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
@@ -18,12 +19,16 @@ import kotlin.test.assertFailsWith
 @Serializable
 private data class FakeSuccessDto(val token: String, val expiresAt: String)
 
-private fun clientRespondingWith(status: HttpStatusCode, body: String): HttpClient {
+private fun mockClientResponding(
+    status: HttpStatusCode,
+    body: String,
+    contentType: String = ContentType.Application.Json.toString(),
+): HttpClient {
     val engine = MockEngine { request ->
         respond(
             content = body,
             status = status,
-            headers = headersOf(HttpHeaders.ContentType, "application/json")
+            headers = headersOf(HttpHeaders.ContentType, contentType)
         )
     }
     return HttpClient(engine) {
@@ -39,8 +44,8 @@ private fun clientRespondingWith(status: HttpStatusCode, body: String): HttpClie
 class BodyOrThrowTest {
 
     @Test
-    fun successResponse_deserializesNormally() = runTest {
-        val client = clientRespondingWith(
+    fun successResponseDeserializesNormally() = runTest {
+        val client = mockClientResponding(
             HttpStatusCode.OK,
             """{"token":"abc","expiresAt":"2026-01-01T00:00:00Z"}"""
         )
@@ -49,10 +54,10 @@ class BodyOrThrowTest {
     }
 
     @Test
-    fun errorResponse_surfacesBackendMessage_insteadOfSerializationCrash() = runTest {
+    fun errorResponseSurfacesBackendMessageInsteadOfSerializationCrash() = runTest {
         // Exactly the 400 body the backend returns for CreateStationProvisioningToken when the
         // target user's role is "admin" (backend/internal/handler/stations.go).
-        val client = clientRespondingWith(
+        val client = mockClientResponding(
             HttpStatusCode.BadRequest,
             """{"error":"Staff user must have a staff or manager role"}"""
         )
@@ -64,8 +69,8 @@ class BodyOrThrowTest {
     }
 
     @Test
-    fun errorResponse_fallsBackToMessageField() = runTest {
-        val client = clientRespondingWith(HttpStatusCode.Forbidden, """{"message":"Not allowed"}""")
+    fun errorResponseFallsBackToMessageField() = runTest {
+        val client = mockClientResponding(HttpStatusCode.Forbidden, """{"message":"Not allowed"}""")
         val error = assertFailsWith<ApiException> {
             client.get("/whatever").bodyOrThrow<FakeSuccessDto>()
         }
@@ -73,8 +78,12 @@ class BodyOrThrowTest {
     }
 
     @Test
-    fun errorResponse_withNonJsonBody_fallsBackToRawText() = runTest {
-        val client = clientRespondingWith(HttpStatusCode.InternalServerError, "gateway timeout")
+    fun errorResponseWithNonJsonBodyFallsBackToRawText() = runTest {
+        val client = mockClientResponding(
+            HttpStatusCode.InternalServerError,
+            "gateway timeout",
+            contentType = ContentType.Text.Plain.toString()
+        )
         val error = assertFailsWith<ApiException> {
             client.get("/whatever").bodyOrThrow<FakeSuccessDto>()
         }
