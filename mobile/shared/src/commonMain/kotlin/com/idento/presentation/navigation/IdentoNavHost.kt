@@ -10,6 +10,7 @@ import com.idento.presentation.settings.SettingsScreen
 import com.idento.data.model.StationMode
 import com.idento.presentation.kiosk.KioskScreen
 import com.idento.presentation.registration.RegistrationHomeScreen
+import com.idento.presentation.server.ServerUrlScreen
 import com.idento.presentation.setup.SetupCompleteScreen
 import com.idento.presentation.setup.SetupDayZoneScreen
 import com.idento.presentation.setup.SetupEventScreen
@@ -59,6 +60,17 @@ fun IdentoNavHost(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(Screen.ServerUrl.route) {
+            ServerUrlScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onSaved = {
+                    navController.navigate(Screen.SetupLogin.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                },
             )
         }
 

@@ -162,6 +162,19 @@ enum class StringKey {
     SETUP_LOGIN_PROVISIONING,
     SETUP_LOGIN_ERROR_INVALID_TOKEN,
     SETUP_LOGIN_ERROR_GENERIC,
+    SETUP_LOGIN_ADVANCED_SERVER,
+
+    SERVER_URL_TITLE,
+    SERVER_URL_DESC,
+    SERVER_URL_PLACEHOLDER,
+    SERVER_URL_TEST_CONNECTION,
+    SERVER_URL_CHECKING,
+    SERVER_URL_CONNECTED,
+    SERVER_URL_CONNECTION_FAILED,
+    SERVER_URL_SAVE,
+    SERVER_URL_ERROR_MALFORMED,
+    SERVER_URL_ERROR_HTTP_REQUIRES_PRIVATE_HOST,
+    SETTINGS_SERVER_ROW_TITLE,
 
     // Setup wizard — Event (step 1/4)
     SETUP_STEP_EVENT_LABEL,
@@ -406,6 +419,19 @@ internal val englishStrings = mapOf(
     StringKey.SETUP_LOGIN_PROVISIONING to "Setting up station…",
     StringKey.SETUP_LOGIN_ERROR_INVALID_TOKEN to "This QR code is invalid or expired",
     StringKey.SETUP_LOGIN_ERROR_GENERIC to "Could not set up this station",
+    StringKey.SETUP_LOGIN_ADVANCED_SERVER to "Advanced: change server",
+
+    StringKey.SERVER_URL_TITLE to "Server URL",
+    StringKey.SERVER_URL_DESC to "Point this device at a different Idento server — for example, an on-prem install on your local network.",
+    StringKey.SERVER_URL_PLACEHOLDER to "http://192.168.1.10:8008",
+    StringKey.SERVER_URL_TEST_CONNECTION to "Test connection",
+    StringKey.SERVER_URL_CHECKING to "Checking...",
+    StringKey.SERVER_URL_CONNECTED to "Connected",
+    StringKey.SERVER_URL_CONNECTION_FAILED to "Connection failed",
+    StringKey.SERVER_URL_SAVE to "Save and sign in",
+    StringKey.SERVER_URL_ERROR_MALFORMED to "Enter a valid http:// or https:// URL",
+    StringKey.SERVER_URL_ERROR_HTTP_REQUIRES_PRIVATE_HOST to "Plain http:// is only allowed for local network addresses. Use https:// for a public server.",
+    StringKey.SETTINGS_SERVER_ROW_TITLE to "Server",
 
     // Setup wizard — Event (step 1/4)
     StringKey.SETUP_STEP_EVENT_LABEL to "1/4 Event",
@@ -645,6 +671,19 @@ internal val russianStrings = mapOf(
     StringKey.SETUP_LOGIN_PROVISIONING to "Настраиваем станцию…",
     StringKey.SETUP_LOGIN_ERROR_INVALID_TOKEN to "QR-код недействителен или устарел",
     StringKey.SETUP_LOGIN_ERROR_GENERIC to "Не удалось настроить станцию",
+    StringKey.SETUP_LOGIN_ADVANCED_SERVER to "Дополнительно: изменить сервер",
+
+    StringKey.SERVER_URL_TITLE to "Адрес сервера",
+    StringKey.SERVER_URL_DESC to "Укажите другой сервер Idento — например, локальную установку в вашей сети.",
+    StringKey.SERVER_URL_PLACEHOLDER to "http://192.168.1.10:8008",
+    StringKey.SERVER_URL_TEST_CONNECTION to "Проверить соединение",
+    StringKey.SERVER_URL_CHECKING to "Проверка...",
+    StringKey.SERVER_URL_CONNECTED to "Подключено",
+    StringKey.SERVER_URL_CONNECTION_FAILED to "Не удалось подключиться",
+    StringKey.SERVER_URL_SAVE to "Сохранить и войти",
+    StringKey.SERVER_URL_ERROR_MALFORMED to "Введите корректный адрес http:// или https://",
+    StringKey.SERVER_URL_ERROR_HTTP_REQUIRES_PRIVATE_HOST to "Обычный http:// разрешён только для адресов локальной сети. Для внешнего сервера используйте https://.",
+    StringKey.SETTINGS_SERVER_ROW_TITLE to "Сервер",
 
     // Setup wizard — Event (step 1/4)
     StringKey.SETUP_STEP_EVENT_LABEL to "1/4 Мероприятие",
