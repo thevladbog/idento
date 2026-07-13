@@ -38,7 +38,9 @@ import org.koin.compose.koinInject
  * driven by [SetupLoginUiState.isManagerMode]: a QR scan viewfinder (default) or a manager
  * email/password form (toggled). Navigates away exactly once per successful attempt via
  * [SetupLoginUiState.nextStep] — [onNavigateToEvent] for the manager path, [onNavigateToMode]
- * for the QR path (Task 9 wires these into the wizard's nav graph).
+ * for the QR path (Task 9 wires these into the wizard's nav graph). [onNavigateToServerUrl]
+ * fires from the "Advanced: change server" link present in both sub-layouts — unlike the two
+ * callbacks above, it's user-initiated at any time, not gated on a successful login attempt.
  */
 @Composable
 fun SetupLoginScreen(
