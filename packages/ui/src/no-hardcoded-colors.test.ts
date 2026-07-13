@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const EXEMPT = new Set(["theme.css"]);
+const EXEMPT = new Set(["theme.css", "theme.test.ts"]);
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 const RGB = /\brgba?\(/;
 
@@ -18,7 +18,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 describe("no hardcoded colors outside theme.css", () => {
   const files = walk(HERE).filter(
-    (f) => !EXEMPT.has(f.split("/").pop()!) && /\.(ts|tsx|css)$/.test(f) && !/\.test\.(ts|tsx)$/.test(f),
+    (f) => !EXEMPT.has(f.split("/").pop()!) && /\.(ts|tsx|css)$/.test(f),
   );
 
   it.each(files)("%s has no hex/rgb literals", (file) => {
