@@ -4,7 +4,7 @@ Companion to the approved design: [docs/superpowers/specs/2026-07-10-saas-onprem
 
 Work is ordered in three phases. Every item lists the affected files and an acceptance criterion. Items within a phase are roughly independent unless noted.
 
-> **Status (2026-07-10): Phase 0 complete** — merged to main via [PR #23](https://github.com/thevladbog/idento/pull/23) (squash `b20311b`), all P0 acceptance criteria verified. Items P1.9–P1.10 below were added from Phase 0 review findings.
+> **Status (2026-07-13): Phases 0, 1, and 2 (P2.1–P2.4) all complete** — every item in this roadmap is merged to main. Phase 0 via [PR #23](https://github.com/thevladbog/idento/pull/23) (squash `b20311b`); Phase 1 via PRs #26/#29/#31; Phase 2 via PRs #40 (P2.1), #42 (P2.2), #43 (P2.3), #56 (P2.4, squash `85ecb2a`). Items P1.9–P1.10 below were added from Phase 0 review findings. Remaining work is only the "Explicitly deferred" list at the bottom of this doc, plus non-roadmap backlog items tracked in session progress logs — no phase is currently in progress.
 
 ---
 
@@ -46,7 +46,7 @@ Work is ordered in three phases. Every item lists the affected files and an acce
 
 ---
 
-## Phase 1 — SaaS launch
+## Phase 1 — SaaS launch ✅ DONE (PRs #26, #29, #31)
 
 ### P1.1 Deployment-mode routing
 - **Change:** in `handler/handler.go`, mount `/auth/register` and `/api/super-admin/*` only when `mode == saas`; move plan seeds out of migration `000009` into mode-aware startup seeding (SaaS: 4 tiers; on-prem: single "Unlimited" plan + subscription).
@@ -91,7 +91,7 @@ Work is ordered in three phases. Every item lists the affected files and an acce
 
 ---
 
-## Phase 2 — On-prem packaging
+## Phase 2 — On-prem packaging ✅ DONE (PRs #40, #42, #43, #56)
 
 ### P2.1 Bootstrap flow
 - **Change:** on `onprem` start with empty DB: create org + admin from `IDENTO_ADMIN_EMAIL/PASSWORD`; flow permanently disabled once an admin exists; invitation-only user creation afterwards.
