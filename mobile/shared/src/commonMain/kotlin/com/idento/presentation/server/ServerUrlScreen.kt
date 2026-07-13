@@ -36,7 +36,7 @@ fun ServerUrlScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(AppIcons.AutoMirrored.ArrowBack, contentDescription = "Back")
+                        Icon(AppIcons.AutoMirrored.ArrowBack, contentDescription = stringResource(StringKey.BACK))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
