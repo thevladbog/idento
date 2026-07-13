@@ -63,6 +63,7 @@ Work is ordered in three phases. Every item lists the affected files and an acce
 ### P1.4 Tenant lifecycle for operators
 - **Change:** tenant `status` (`active|suspended|archived`) as a first-class column; super-admin endpoints: create org, suspend/reactivate, archive (soft-delete + retention policy). Suspension here drives P1.2 (subscription status remains billing-only).
 - **Accept:** lifecycle transitions audited and enforced at runtime.
+- **2026-07-13:** retention policy implemented — `archived_at` stamp, `TENANT_RETENTION_DAYS` (default 90, 0 disables), daily purge with audit trail, reactivate-until-purged. Spec: `docs/superpowers/specs/2026-07-13-tenant-archival-retention-design.md`.
 
 ### P1.5 Impersonation
 - **Change:** `POST /api/super-admin/tenants/:id/impersonate` → 30-min JWT with `imp_by` claim, admin role in target tenant; refresh forbidden; no nested impersonation; all mutating requests with `imp_by` audit-logged; web shows a persistent banner with exit.

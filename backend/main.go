@@ -5,9 +5,11 @@ import (
 	"idento/backend/internal/bootstrap"
 	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
+	"idento/backend/internal/retention"
 	"idento/backend/internal/store"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -427,6 +429,10 @@ func main() {
 
 	// Initialize Handler
 	h := handler.New(pgStore)
+
+	// Tenant retention purge (P1.4 soft-delete): first pass a minute after
+	// boot, then daily. Logs and no-ops when retention is 0.
+	retention.Start(pgStore, cfg.TenantRetentionDays, time.Minute, 24*time.Hour)
 
 	// Initialize Echo
 	e := echo.New()
