@@ -10,6 +10,7 @@ type Tenant struct {
 	ID           uuid.UUID              `json:"id"`
 	Name         string                 `json:"name"`
 	Status       string                 `json:"status"`
+	ArchivedAt   *time.Time             `json:"archived_at,omitempty"`
 	Settings     map[string]interface{} `json:"settings,omitempty"`
 	LogoURL      *string                `json:"logo_url,omitempty"`
 	Website      *string                `json:"website,omitempty"`
@@ -157,7 +158,7 @@ type TenantWithStats struct {
 
 type AdminAuditLog struct {
 	ID          uuid.UUID              `json:"id"`
-	AdminUserID uuid.UUID              `json:"admin_user_id"`
+	AdminUserID *uuid.UUID             `json:"admin_user_id"`
 	Action      string                 `json:"action"`
 	TargetType  string                 `json:"target_type"`
 	TargetID    *uuid.UUID             `json:"target_id"`

@@ -328,7 +328,11 @@ func (s *PGStore) GetTenantStatus(ctx context.Context, id uuid.UUID) (string, er
 
 // UpdateTenantStatus sets the lifecycle status; transition rules live in the handler.
 func (s *PGStore) UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error {
-	tag, err := s.db.Exec(ctx, `UPDATE tenants SET status = $2, updated_at = NOW() WHERE id = $1`, id, status)
+	tag, err := s.db.Exec(ctx, `UPDATE tenants
+		SET status = $2,
+		    archived_at = CASE WHEN $2 = 'archived' THEN NOW() ELSE NULL END,
+		    updated_at = NOW()
+		WHERE id = $1`, id, status)
 	if err != nil {
 		return err
 	}
@@ -962,7 +966,7 @@ func (s *PGStore) UpdateUserTenantRole(ctx context.Context, userID, tenantID uui
 func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interface{}) ([]*models.TenantWithStats, error) {
 	query := `
 		SELECT
-			t.id, t.name, t.status AS tenant_status, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
+			t.id, t.name, t.status AS tenant_status, t.archived_at, t.settings, t.logo_url, t.website, t.contact_email, t.created_at, t.updated_at,
 			s.id as sub_id, s.plan_id as sub_plan_id, s.status AS subscription_status, s.start_date, s.end_date,
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
@@ -997,7 +1001,7 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		var sEndDate *time.Time
 
 		err := rows.Scan(
-			&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+			&t.ID, &t.Name, &t.Status, &t.ArchivedAt, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 			&subID, &subPlanID, &sStatus, &sStartDate, &sEndDate,
 			&spID, &spName, &spSlug, &spTier,
 			&tws.UsersCount, &tws.EventsCount, &tws.AttendeesCount,
