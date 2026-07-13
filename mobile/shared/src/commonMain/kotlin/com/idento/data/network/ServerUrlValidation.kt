@@ -1,6 +1,5 @@
 package com.idento.data.network
 
-import io.ktor.http.URLProtocol
 import io.ktor.http.Url
 
 /**
