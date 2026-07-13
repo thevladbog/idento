@@ -6,7 +6,8 @@ describe("cn", () => {
   });
 
   it("drops falsy values", () => {
-    expect(cn("a", false && "b", undefined, "c")).toBe("a c");
+    const disabled = false;
+    expect(cn("a", disabled && "b", undefined, "c")).toBe("a c");
   });
 
   it("resolves tailwind conflicts (last wins)", () => {
