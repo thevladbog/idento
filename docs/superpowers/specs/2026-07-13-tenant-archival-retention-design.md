@@ -54,12 +54,12 @@ PurgeExpiredTenants(ctx context.Context, retentionDays int) ([]PurgedTenant, err
 
 which selects tenants `WHERE status = 'archived' AND archived_at < NOW() - make_interval(days => $1)` and, **per tenant, in one transaction**:
 
-1. **Detach shared users**: `UPDATE users SET tenant_id = NULL WHERE tenant_id = $tenant AND (is_super_admin OR EXISTS (SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $tenant))`.
-   Without this, the cascade would hard-delete a multi-org user together with their *other* orgs' memberships, and a tenant-homed promoted super admin would abort the whole delete via the `admin_audit_log.admin_user_id` FK. Their `user_tenants` row for the purged tenant still cascades away.
-2. **Delete the tenant**: `DELETE FROM tenants WHERE id = $tenant` — existing `ON DELETE CASCADE` FKs remove users, events, attendees, check-ins, subscriptions, usage logs, org memberships, API keys, fonts, zones, stations.
+1. **Detach shared users**: `UPDATE users SET tenant_id = NULL WHERE tenant_id = $tenant AND (is_super_admin OR EXISTS (SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $tenant) OR EXISTS (SELECT 1 FROM admin_audit_log al WHERE al.admin_user_id = users.id))`.
+   Without this, the cascade would hard-delete a multi-org user together with their *other* orgs' memberships, and any user with `admin_audit_log` rows (a promoted or since-demoted super admin) would abort the whole delete via that table's `admin_user_id` FK. Detaching also preserves audit actor attribution. Their `user_tenants` row for the purged tenant still cascades away.
+2. **Delete the tenant (eligibility re-verified in-tx)**: `DELETE FROM tenants WHERE id = $tenant AND status = 'archived' AND archived_at < NOW() - make_interval(days => $1)` — the purge conditions are re-checked inside the transaction so a tenant reactivated (or already purged by another replica) after the candidate SELECT is never deleted: a 0-row delete rolls the transaction back (undoing the detach) and the tenant is skipped silently with no audit entry. Existing `ON DELETE CASCADE` FKs remove users, events, attendees, check-ins, subscriptions, usage logs, org memberships, API keys, fonts, zones, stations.
 3. **Audit**: insert a `purge_tenant` entry with `admin_user_id = NULL`, `target_type = 'tenant'`, `target_id = $tenant`, `changes = {name, archived_at, retention_days}` — the permanent record that survives the purge.
 
-A failure on one tenant is logged and skipped; the pass continues with the rest. The worker logs one summary line per pass that purged at least one tenant or hit an error; idle passes are silent.
+A failure on one tenant is logged and skipped; the pass continues with the rest. Each pass runs under a 1-hour timeout so a hung connection cannot wedge the loop. The worker logs one summary line per pass that purged at least one tenant or hit an error; idle passes are silent.
 
 **Known limitation (owner-accepted 2026-07-13):** a super admin whose *home* tenant is purged keeps their user account (the detach preserves it) but cannot log in until another operator grants them an org membership — login requires at least one `user_tenants` row. A membership-free super-admin login is tracked as a follow-up.
 
