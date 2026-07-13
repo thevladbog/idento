@@ -23,6 +23,9 @@ The platform console (`/super-admin`) is **not** part of this rewrite. It recent
 | Badge editor | Board option **4a** — classic three-pane (elements / canvas / properties). |
 | Attendee card | Board option **3e** — drawer over the table for v1; full detail page (3d) deferred. |
 | Shared UI package | **Yes, from day one:** `packages/ui` (`@idento/ui`) — internal npm-workspace package, source-imported (no build/publish step). Three roadmap consumers share one design language: this panel, the console rewrite (*Idento Console.dc.html*), the desktop kiosk redesign (*Idento Kiosk.dc.html*; kiosk is already React 18 + Vite + Tailwind v4). |
+| Localization | **RU + EN are both first-class from day one** — every UI string through i18n keys in both languages (zod validation messages included), language switcher in the shell, automated key-parity check in CI. No phase ships single-language screens. |
+| Theming | **Light + dark shipped from day one**, user-switchable with system-preference default; every `@idento/ui` component is token-based and validated in both themes (kit stories/tests render both). |
+| AI agent rules | Working rules for AI agents are a **P0 deliverable**: new `.cursor/rules/ui-package.mdc`, updates to root `AGENTS.md` and `.github/copilot-instructions.md` (see §3.4). |
 | Auth/session | Keep JWT-in-localStorage for v1 (WEB-SEC-04/05 migration is a separate track). Token storage isolated behind one adapter so an httpOnly-cookie move later touches one module. |
 | Prior product decisions (from the design chat, reused verbatim) | Home = events list + live strip; web check-in = registration-desk fallback (kiosks primary); tablet targets check-in + monitoring only; global Users (Team) and per-event Staff stay separate surfaces. |
 
@@ -65,6 +68,15 @@ panel/src/
 - Inter with the defined ramp (page title 20/700 … mono 10.5). Light chrome — dark top bar remains the console's signature.
 - Component kit: StatusPill (always icon + text + color), ConfirmDialog (two tiers, typed confirm for data loss), EmptyState (teaches the pipeline), token-based Skeleton, AgentStatus indicator, DataTable (server-side sort/filter/pagination), Stepper/Wizard, Meter, PageHeader, Tabs, XXL verdict components. The mobile nav drawer and app shells stay in `panel/` — chrome is per app.
 - Package discipline: `@idento/ui` takes all strings via props (no i18n dependency), exposes no data fetching, and is guarded by lint rules against imports from any app.
+
+### 3.4 Rules for AI agents (P0 deliverable)
+
+The repo's agent-instruction chain (`AGENTS.md` → `.github/copilot-instructions.md` → `.cursor/rules/*.mdc`) gets the new-world rules so every future agent session lands correctly:
+
+- New rule file `.cursor/rules/ui-package.mdc` covering: primitives (StatusPill, ConfirmDialog, EmptyState, DataTable, …) come **only** from `@idento/ui` — never re-implemented inside an app; a missing primitive is added to the package, not to the app; package content boundary (no i18n/api/feature imports, strings via props); colors only via semantic tokens — hardcoded hex values are a review-blocker; every new UI string lands in EN **and** RU in the same change; every component/screen must work in light **and** dark theme.
+- `.github/copilot-instructions.md`: npm-workspace layout (`packages/ui`, `panel/`), install/build/lint/test commands for both, and the note that `web/` is frozen for feature work (critical fixes only) while the rewrite runs — console work targets `web/`, panel work targets `panel/`.
+- Root `AGENTS.md`: link the new rule file next to the existing Go/Android/web ones.
+- The same rules apply to the future console and kiosk initiatives when they adopt `@idento/ui`.
 - No emoji as UI, lucide icons only; WCAG AA; all dialogs on the Dialog primitive; `aria-live` on verdicts; full EN/RU parity including zod messages.
 
 ## 4. Backend plan (Go)
@@ -87,7 +99,7 @@ panel/src/
 
 Each phase is its own spec → plan → PR cycle (like the console batches). Cutover happens only at P5; until then production is untouched.
 
-- **P0 Foundation.** npm workspaces root + `packages/ui` scaffold; `panel/` scaffold, CI, Dockerfile (repo-root build context); tokens + type ramp (1a) and component kit (1b) in `@idento/ui`; app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); openapi truth-up + client generation.
+- **P0 Foundation.** npm workspaces root + `packages/ui` scaffold; `panel/` scaffold, CI, Dockerfile (repo-root build context); tokens + type ramp (1a) and component kit (1b) in `@idento/ui`; app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer, language + theme switchers — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); i18n infrastructure with EN/RU from the first screen; light/dark theming wired through tokens; AI-agent rules (§3.4); openapi truth-up + client generation.
 - **P1 Events & workspace spine.** Home 1c with live strip (polls existing counters in P1; upgrades to SSE when backend #4 lands in P4); event CRUD; workspace 1f with readiness pipeline (backend #6 — the equipment-check step stays "not done" until its P3/P4 wiring exists); Event Settings 6a (anchor rail, scoped per-card saves — no full-PUT snapshots, fonts UI and API-keys UI on existing endpoints, real danger zone through typed confirm).
 - **P2 People & data.** Attendees at scale (backend #1): DataTable at 5,000+, bulk bar, import wizard (worker, Windows-1251 auto-detect with override, progress, per-row error report), attendee drawer 3e; Zones 6b (+ rules, backend #7); Staff 6c (QR logins, print cards, revoke/regenerate).
 - **P3 Badge editor.** Three-pane shell 4a; save model — scoped PATCH, four save states incl. server conflict, dirty-state guard on navigation/tab close/Escape; ZPL preview 4d ("the truth" render); printer-font flow with first-class Cyrillic coverage checks; test print via agent.
@@ -98,7 +110,8 @@ Each phase is its own spec → plan → PR cycle (like the console batches). Cut
 
 - **Tests:** vitest + Testing Library + MSW for components/hooks (kit components ship with tests); Playwright e2e for critical flows — login, create event, CSV import happy path, scan loop with emulated scanner input, badge-editor dirty guard. CI-gated.
 - **Error contract:** route-level ErrorBoundaries (a bad date never white-screens the station); load errors render inline with retry — never toasts; toasts only for action feedback; token-based skeletons.
-- **i18n:** every string through react-i18next keys, EN/RU; zod error map through i18n; automated key-parity check in CI.
+- **i18n:** every string through react-i18next keys, EN/RU; zod error map through i18n; automated key-parity check in CI; language switcher in the shell (persisted per user).
+- **Theming:** light + dark from day one, user-switchable (system default); kit components tested in both themes; no hardcoded colors anywhere (lint-guarded).
 - **Success metrics (from the brief):** new organizer reaches a check-in-ready event in ≤ 30 min without docs; scan → verdict < 1 s perceived; zero double-prints; no scan outcome silently lost; attendee lists fluid at 5,000+; zero native `confirm()`; one StatusPill / ConfirmDialog / EmptyState implementation panel-wide.
 
 ## 7. Out of scope
