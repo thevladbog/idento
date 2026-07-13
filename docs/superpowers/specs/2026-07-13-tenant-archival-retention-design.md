@@ -61,6 +61,8 @@ which selects tenants `WHERE status = 'archived' AND archived_at < NOW() - make_
 
 A failure on one tenant is logged and skipped; the pass continues with the rest. The worker logs one summary line per pass that purged at least one tenant or hit an error; idle passes are silent.
 
+**Known limitation (owner-accepted 2026-07-13):** a super admin whose *home* tenant is purged keeps their user account (the detach preserves it) but cannot log in until another operator grants them an org membership — login requires at least one `user_tenants` row. A membership-free super-admin login is tracked as a follow-up.
+
 ## 5. Testing
 
 Follow the fake-store patterns in [super_admin_lifecycle_test.go](../../../backend/internal/handler/super_admin_lifecycle_test.go):

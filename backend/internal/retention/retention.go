@@ -26,12 +26,17 @@ func Start(s Store, retentionDays int, initialDelay, interval time.Duration) boo
 	}
 	log.Printf("Tenant retention purge enabled: archived tenants are deleted after %d days", retentionDays)
 	go func() {
+		runPass := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+			defer cancel()
+			RunOnce(ctx, s, retentionDays)
+		}
 		time.Sleep(initialDelay)
-		RunOnce(context.Background(), s, retentionDays)
+		runPass()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
-			RunOnce(context.Background(), s, retentionDays)
+			runPass()
 		}
 	}()
 	return true

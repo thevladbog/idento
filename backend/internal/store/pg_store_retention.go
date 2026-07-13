@@ -16,6 +16,10 @@ type PurgedTenant struct {
 	Name string
 }
 
+// errTenantNoLongerEligible signals that a purge candidate stopped matching
+// the purge conditions between listing and deletion (e.g. it was reactivated).
+var errTenantNoLongerEligible = errors.New("tenant no longer eligible for purge")
+
 // PurgeExpiredTenants hard-deletes tenants archived more than retentionDays
 // ago. Per tenant, in one transaction: users that must survive (super admins,
 // members of other tenants) are detached, the tenant row is deleted (FKs
@@ -38,7 +42,7 @@ func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([
 		var c candidate
 		if err := rows.Scan(&c.id, &c.name, &c.archivedAt); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, fmt.Errorf("scan expired tenant: %w", err)
 		}
 		candidates = append(candidates, c)
 	}
@@ -51,6 +55,9 @@ func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([
 	var errs []error
 	for _, c := range candidates {
 		if err := s.purgeTenant(ctx, c.id, c.name, c.archivedAt, retentionDays); err != nil {
+			if errors.Is(err, errTenantNoLongerEligible) {
+				continue
+			}
 			errs = append(errs, fmt.Errorf("purge tenant %s (%s): %w", c.id, c.name, err))
 			continue
 		}
@@ -67,18 +74,30 @@ func (s *PGStore) purgeTenant(ctx context.Context, id uuid.UUID, name string, ar
 	//nolint:errcheck
 	defer tx.Rollback(ctx) // no-op after Commit
 
-	// Detach users that must survive the cascade: super admins and users with
-	// memberships in other tenants. Their user_tenants row for this tenant
-	// still cascades away with the tenant.
+	// Detach users that must survive the cascade: super admins, users with
+	// memberships in other tenants, and users with admin_audit_log actor rows
+	// (e.g. a demoted ex-super-admin) — that table's NO ACTION FK would
+	// otherwise block the tenant delete. Their user_tenants row for this
+	// tenant still cascades away with the tenant.
 	if _, err := tx.Exec(ctx, `UPDATE users SET tenant_id = NULL
 		WHERE tenant_id = $1
 		  AND (is_super_admin OR EXISTS (
-		      SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $1))`, id); err != nil {
+		      SELECT 1 FROM user_tenants ut WHERE ut.user_id = users.id AND ut.tenant_id <> $1)
+		  OR EXISTS (
+		      SELECT 1 FROM admin_audit_log al WHERE al.admin_user_id = users.id))`, id); err != nil {
 		return fmt.Errorf("detach shared users: %w", err)
 	}
 
-	if _, err := tx.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, id); err != nil {
+	tag, err := tx.Exec(ctx, `DELETE FROM tenants
+		WHERE id = $1 AND status = 'archived' AND archived_at < NOW() - make_interval(days => $2)`, id, retentionDays)
+	if err != nil {
 		return fmt.Errorf("delete tenant: %w", err)
+	}
+	// Re-verified inside the transaction: if the tenant was reactivated (or
+	// already purged by another replica) since the candidate SELECT, roll
+	// back the detach and skip — no audit entry, not counted as purged.
+	if tag.RowsAffected() == 0 {
+		return errTenantNoLongerEligible
 	}
 
 	changes, err := json.Marshal(map[string]interface{}{

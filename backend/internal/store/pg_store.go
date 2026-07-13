@@ -1061,10 +1061,10 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 	var t models.Tenant
 	var settingsJSON []byte
 
-	query := `SELECT id, name, status, settings, logo_url, website, contact_email, created_at, updated_at
+	query := `SELECT id, name, status, archived_at, settings, logo_url, website, contact_email, created_at, updated_at
 	          FROM tenants WHERE id = $1`
 	err := s.db.QueryRow(ctx, query, tenantID).Scan(
-		&t.ID, &t.Name, &t.Status, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
+		&t.ID, &t.Name, &t.Status, &t.ArchivedAt, &settingsJSON, &t.LogoURL, &t.Website, &t.ContactEmail, &t.CreatedAt, &t.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
