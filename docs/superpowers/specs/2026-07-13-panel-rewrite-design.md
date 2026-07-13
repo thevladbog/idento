@@ -22,6 +22,7 @@ The platform console (`/super-admin`) is **not** part of this rewrite. It recent
 | Check-in station | Board option **2c** — split layout with persistent recent-scans rail (last 50, reprint/undo). Mode **2d** (search-first registration desk + degraded-connection banner) included as a station mode. |
 | Badge editor | Board option **4a** — classic three-pane (elements / canvas / properties). |
 | Attendee card | Board option **3e** — drawer over the table for v1; full detail page (3d) deferred. |
+| Shared UI package | **Yes, from day one:** `packages/ui` (`@idento/ui`) — internal npm-workspace package, source-imported (no build/publish step). Three roadmap consumers share one design language: this panel, the console rewrite (*Idento Console.dc.html*), the desktop kiosk redesign (*Idento Kiosk.dc.html*; kiosk is already React 18 + Vite + Tailwind v4). |
 | Auth/session | Keep JWT-in-localStorage for v1 (WEB-SEC-04/05 migration is a separate track). Token storage isolated behind one adapter so an httpOnly-cookie move later touches one module. |
 | Prior product decisions (from the design chat, reused verbatim) | Home = events list + live strip; web check-in = registration-desk fallback (kiosks primary); tablet targets check-in + monitoring only; global Users (Team) and per-event Staff stay separate surfaces. |
 
@@ -29,7 +30,8 @@ The platform console (`/super-admin`) is **not** part of this rewrite. It recent
 
 ### 3.1 Package & deployment
 
-- New top-level package **`panel/`**, fully independent (own `package.json`, Dockerfile, CI). `web/` stays untouched during development.
+- New top-level package **`panel/`** plus the shared **`packages/ui`** (`@idento/ui`). Root `package.json` declares `workspaces: ["packages/*", "panel"]`; `web/`, `landing/`, and `desktop/` keep their standalone installs and join the workspace only when their own initiatives adopt the package. `web/` stays untouched during development.
+- `panel/`'s Docker build context moves to the repo root so the image sees `packages/`.
 - **One image, two SPAs** at cutover: a combined nginx image serves the new panel at `/` and the console at `/super-admin/`. The only change to the old app is `base: '/super-admin/'` in its Vite config so console assets move under `/super-admin/assets/` (no asset-path collision). `docker-compose` topology (SaaS and on-prem) does not change — still a single `web` service.
 - Runtime config: same proven `env.js` + envsubst-on-start pattern (unprivileged nginx, `PUBLIC_API_URL` injected at container start).
 - Edition awareness: shell reads `GET /api/instance` once; on-prem hides register/trial/plans and shows the version tag; SaaS shows trial chip and usage meters. Suspended tenant (`403 tenant_suspended`) renders the dedicated screen (board 7d); impersonation banner per the console spec.
@@ -37,11 +39,15 @@ The platform console (`/super-admin`) is **not** part of this rewrite. It recent
 ### 3.2 Code structure (feature-sliced)
 
 ```
+packages/ui/    # @idento/ui — shared design system (see 3.3):
+                # tokens (@theme CSS), primitives, verdict vocabulary.
+                # Deps: react (peer, >=18), radix, cva, tailwind-merge, lucide.
+                # NO api hooks, NO i18n dep (strings via props), NO app shells,
+                # NO feature components.
 panel/src/
   app/          # providers, router assembly, shell (nav, org switcher, drawers)
-  shared/       # ui kit (shadcn primitives + panel kit), design tokens,
-                # api client (generated from backend/openapi.yaml), agent client
-                # (localhost:3000), i18n, lib
+  shared/       # api client (generated from backend/openapi.yaml), agent client
+                # (localhost:3000), i18n, lib, panel-only ui glue
   features/     # auth, events, workspace, attendees, badge-editor, checkin,
                 # monitor, equipment, zones, staff, settings, org
 ```
@@ -53,11 +59,12 @@ panel/src/
 - **Heavy work off the main thread:** CSV parsing (PapaParse) in a Web Worker.
 - **Canvas:** Konva / react-konva for the badge editor (kept), neutral artboard chrome (no hardcoded `#009246`).
 
-### 3.3 Design foundation (board section 1a/1b)
+### 3.3 Design foundation (board section 1a/1b) — lives in `@idento/ui`
 
-- Semantic token families `success / warning / info` joining `--destructive`, light + dark; shared kiosk verdict set (allowed / no_access / not_registered / already_checked_in — same semantics as mobile `VerdictBand`).
+- Semantic token families `success / warning / info` joining `--destructive`, light + dark; shared kiosk verdict set (allowed / no_access / not_registered / already_checked_in — same semantics as mobile `VerdictBand`). Tokens are theme-able from day one: the console's dark chrome and the kiosk's XXL density are token/variant overrides, not separate components.
 - Inter with the defined ramp (page title 20/700 … mono 10.5). Light chrome — dark top bar remains the console's signature.
-- Panel component kit: StatusPill (always icon + text + color), ConfirmDialog (two tiers, typed confirm for data loss), EmptyState (teaches the pipeline), token-based Skeleton, AgentStatus indicator, DataTable (server-side sort/filter/pagination), Stepper/Wizard, Meter, PageHeader, mobile nav drawer.
+- Component kit: StatusPill (always icon + text + color), ConfirmDialog (two tiers, typed confirm for data loss), EmptyState (teaches the pipeline), token-based Skeleton, AgentStatus indicator, DataTable (server-side sort/filter/pagination), Stepper/Wizard, Meter, PageHeader, Tabs, XXL verdict components. The mobile nav drawer and app shells stay in `panel/` — chrome is per app.
+- Package discipline: `@idento/ui` takes all strings via props (no i18n dependency), exposes no data fetching, and is guarded by lint rules against imports from any app.
 - No emoji as UI, lucide icons only; WCAG AA; all dialogs on the Dialog primitive; `aria-live` on verdicts; full EN/RU parity including zod messages.
 
 ## 4. Backend plan (Go)
@@ -80,7 +87,7 @@ panel/src/
 
 Each phase is its own spec → plan → PR cycle (like the console batches). Cutover happens only at P5; until then production is untouched.
 
-- **P0 Foundation.** `panel/` scaffold, CI, Dockerfile; tokens + type ramp (1a); component kit (1b); app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); openapi truth-up + client generation.
+- **P0 Foundation.** npm workspaces root + `packages/ui` scaffold; `panel/` scaffold, CI, Dockerfile (repo-root build context); tokens + type ramp (1a) and component kit (1b) in `@idento/ui`; app shell (nav, org switcher, edition awareness, suspended screen, impersonation banner, mobile drawer — 7d/7f); auth set (login / register SaaS-only / QR staff login — 7a–7c); openapi truth-up + client generation.
 - **P1 Events & workspace spine.** Home 1c with live strip (polls existing counters in P1; upgrades to SSE when backend #4 lands in P4); event CRUD; workspace 1f with readiness pipeline (backend #6 — the equipment-check step stays "not done" until its P3/P4 wiring exists); Event Settings 6a (anchor rail, scoped per-card saves — no full-PUT snapshots, fonts UI and API-keys UI on existing endpoints, real danger zone through typed confirm).
 - **P2 People & data.** Attendees at scale (backend #1): DataTable at 5,000+, bulk bar, import wizard (worker, Windows-1251 auto-detect with override, progress, per-row error report), attendee drawer 3e; Zones 6b (+ rules, backend #7); Staff 6c (QR logins, print cards, revoke/regenerate).
 - **P3 Badge editor.** Three-pane shell 4a; save model — scoped PATCH, four save states incl. server conflict, dirty-state guard on navigation/tab close/Escape; ZPL preview 4d ("the truth" render); printer-font flow with first-class Cyrillic coverage checks; test print via agent.
@@ -105,3 +112,4 @@ Platform console rewrite (own design file, own track); marketing landing; mobile
 - **Long parallel life of old and new panels** — old `web/` receives only critical fixes during the rewrite; no feature work lands there.
 - **Scale claims** — P2 exits with a seeded 5k-attendee dataset test, not a promise.
 - **Cyrillic printing regression** — P3 exit criteria include a printed test matrix (built-in vs uploaded fonts × RU/EN samples) against the preserved raster path.
+- **Shared-package coupling** — `@idento/ui` keeps `react >=18` as a peer dependency (kiosk is on React 18) and avoids React-19-only APIs; content boundary (no i18n/api/feature code) enforced by lint so three apps' release cycles stay independent.
