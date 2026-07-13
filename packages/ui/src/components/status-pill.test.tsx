@@ -16,4 +16,14 @@ describe("StatusPill", () => {
     render(<StatusPill status="live" label="Live" />);
     expect(screen.getByText("Live").closest("span")).toHaveAttribute("data-status", "live");
   });
+
+  it("applies animate-spin class only to in_progress status icon", () => {
+    const { container: inProgressContainer } = render(<StatusPill status="in_progress" label="In Progress" />);
+    const inProgressIcon = inProgressContainer.querySelector("svg");
+    expect(inProgressIcon).toHaveClass("animate-spin");
+
+    const { container: readyContainer } = render(<StatusPill status="ready" label="Ready" />);
+    const readyIcon = readyContainer.querySelector("svg");
+    expect(readyIcon).not.toHaveClass("animate-spin");
+  });
 });

@@ -33,7 +33,7 @@ export function StatusPill({ status, label, icon, className }: StatusPillProps) 
         className,
       )}
     >
-      <Icon aria-hidden className="size-3.5 shrink-0" />
+      <Icon aria-hidden className={cn("size-3.5 shrink-0", status === "in_progress" && "animate-spin")} />
       {label}
     </span>
   );
