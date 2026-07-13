@@ -1,4 +1,6 @@
 import axios from "axios";
+import { toast } from "sonner";
+import i18n from "../i18n";
 import { getBackendUrl } from "./config";
 
 const SESSION_KEYS = ["token", "user", "tenants", "current_tenant"] as const;
@@ -26,6 +28,11 @@ function createApi() {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
+      // Suspended/blocked organization: one persistent, deduplicated banner.
+      if (error.response?.status === 403 && error.response?.data?.code === "tenant_suspended") {
+        toast.error(i18n.t("tenantSuspended"), { id: "tenant-suspended", duration: Infinity });
+      }
+
       if (error.response?.status === 401) {
         clearSession();
         const path = window.location.pathname + window.location.search;
