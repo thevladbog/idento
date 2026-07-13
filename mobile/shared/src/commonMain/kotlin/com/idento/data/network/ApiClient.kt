@@ -14,6 +14,11 @@ import kotlinx.serialization.json.Json
 /**
  * Ktor HTTP Client для работы с API
  * Заменяет Retrofit из Android версии
+ *
+ * [baseUrlProvider] is a lambda, not a resolved `String` — it's re-invoked on every outgoing
+ * request (see the `defaultRequest` block below), exactly like [tokenProvider]. That's what
+ * lets a server URL saved via the Server URL screen (see `NetworkPreferences`) take effect on
+ * the very next request, with no app restart and no need to rebuild this Koin singleton.
  */
 class ApiClient(
     private val baseUrlProvider: () -> String = ::getDefaultBaseUrl,
