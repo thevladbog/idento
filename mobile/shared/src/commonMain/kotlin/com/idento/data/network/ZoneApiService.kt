@@ -20,16 +20,16 @@ class ZoneApiService(private val apiClient: ApiClient) {
      * Get all zones for an event (mobile app - filtered by staff assignment)
      */
     suspend fun getStaffZones(eventId: String): Result<List<EventZoneWithStats>> = runCatching {
-        apiClient.httpClient.get("/api/mobile/events/$eventId/zones").body()
+        apiClient.httpClient.get("/api/mobile/events/$eventId/zones").bodyOrApiError()
     }
-    
+
     /**
      * Get zone by ID
      */
     suspend fun getZone(zoneId: String): Result<EventZone> = runCatching {
-        apiClient.httpClient.get("/api/zones/$zoneId").body()
+        apiClient.httpClient.get("/api/zones/$zoneId").bodyOrApiError()
     }
-    
+
     /**
      * Perform zone check-in
      */
@@ -37,7 +37,7 @@ class ZoneApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/zones/checkin") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }.body()
+        }.bodyOrApiError()
     }
     
     /**
@@ -49,14 +49,14 @@ class ZoneApiService(private val apiClient: ApiClient) {
         apiClient.httpClient.post("/api/zones/$zoneId/scan") {
             contentType(ContentType.Application.Json)
             setBody(com.idento.data.model.ZoneScanRequestDto(code = code))
-        }.body()
+        }.bodyOrApiError()
     }
 
     /**
      * Get attendee movement history (all zone check-ins)
      */
     suspend fun getAttendeeMovementHistory(attendeeId: String): Result<List<MovementHistoryEntry>> = runCatching {
-        apiClient.httpClient.get("/api/attendees/$attendeeId/movement-history").body()
+        apiClient.httpClient.get("/api/attendees/$attendeeId/movement-history").bodyOrApiError()
     }
     
     /**
