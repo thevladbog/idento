@@ -103,3 +103,38 @@ func TestGetAuditLogWithActionFilter(t *testing.T) {
 		t.Errorf("filters[\"action\"]=%v; want 'impersonate_tenant'", action)
 	}
 }
+
+// Archived tenants are reactivatable until the purge job removes them:
+// "within retention" simply means the row still exists.
+func TestReactivateTenantFromArchived(t *testing.T) {
+	target := uuid.New()
+	var saved string
+	fs := &fakeStore{
+		getTenantStatus:    func(id uuid.UUID) (string, error) { return "archived", nil },
+		updateTenantStatus: func(id uuid.UUID, s string) error { saved = s; return nil },
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+			return nil
+		},
+	}
+	h, c, code := lifecycleCtx(t, fs, target, "reactivate")
+	if err := h.ReactivateTenant(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if code() != http.StatusOK || saved != "active" {
+		t.Fatalf("status=%d saved=%q; want 200/active", code(), saved)
+	}
+}
+
+func TestReactivateTenantFromActiveConflicts(t *testing.T) {
+	target := uuid.New()
+	fs := &fakeStore{
+		getTenantStatus: func(id uuid.UUID) (string, error) { return "active", nil },
+	}
+	h, c, code := lifecycleCtx(t, fs, target, "reactivate")
+	if err := h.ReactivateTenant(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if code() != http.StatusConflict {
+		t.Fatalf("status=%d; want 409 (reactivate only from suspended/archived)", code())
+	}
+}
