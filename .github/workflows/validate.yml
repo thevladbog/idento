@@ -190,7 +190,7 @@ jobs:
         run: cd web && npm ci
 
       - name: Type check
-        run: cd web && npx tsc --noEmit
+        run: cd web && npx tsc -b
 
       - name: Summary
         if: always()
