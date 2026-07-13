@@ -16,17 +16,20 @@ import kotlinx.serialization.json.Json
  * Заменяет Retrofit из Android версии
  */
 class ApiClient(
-    private val baseUrl: String = getDefaultBaseUrl(),
+    private val baseUrlProvider: () -> String = ::getDefaultBaseUrl,
     private val tokenProvider: () -> String? = { null }
 ) {
-    
+
     val httpClient = HttpClient {
-        // Base URL configuration
+        // Base URL configuration — re-evaluated on every request (not baked in once at
+        // construction), exactly like tokenProvider below. This is what lets the Server URL
+        // screen (see NetworkPreferences) take effect immediately after Save, with no app
+        // restart and no need to rebuild this Koin singleton.
         defaultRequest {
-            url(baseUrl)
+            url(baseUrlProvider())
             contentType(ContentType.Application.Json)
         }
-        
+
         // JSON Serialization
         install(ContentNegotiation) {
             json(Json {
@@ -35,7 +38,7 @@ class ApiClient(
                 ignoreUnknownKeys = true
             })
         }
-        
+
         // Logging — HEADERS only (never bodies: the login body carries the plaintext
         // password and responses carry the JWT), gated to debug, with the bearer token
         // and any session cookie redacted from the header dump (parity with Android).
@@ -47,7 +50,7 @@ class ApiClient(
                     header.equals(HttpHeaders.Cookie, ignoreCase = true)
             }
         }
-        
+
         // Authentication
         install(Auth) {
             bearer {
@@ -56,7 +59,7 @@ class ApiClient(
                         BearerTokens(accessToken = token, refreshToken = "")
                     }
                 }
-                
+
                 refreshTokens {
                     // TODO: Implement token refresh logic if needed
                     tokenProvider()?.let { token ->
@@ -65,7 +68,7 @@ class ApiClient(
                 }
             }
         }
-        
+
         // Timeout configuration
         install(HttpTimeout) {
             requestTimeoutMillis = 30000
@@ -73,14 +76,10 @@ class ApiClient(
             socketTimeoutMillis = 30000
         }
     }
-    
-    /**
-     * Update base URL (для переключения между dev/prod серверами)
-     */
-    fun updateBaseUrl(newBaseUrl: String): ApiClient {
-        return ApiClient(newBaseUrl, tokenProvider)
-    }
-    
+
+    /** Test-only accessor confirming the current resolved value of [baseUrlProvider]. */
+    fun baseUrlProviderForTest(): String = baseUrlProvider()
+
     fun close() {
         httpClient.close()
     }
