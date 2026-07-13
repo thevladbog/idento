@@ -23,7 +23,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - uses: docker/setup-qemu-action@v3
@@ -51,7 +51,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - uses: docker/setup-qemu-action@v3
@@ -78,10 +78,10 @@ jobs:
       matrix:
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
       - name: Build
@@ -94,7 +94,7 @@ jobs:
           go build -trimpath \
             -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o "idento-backend_linux_${{ matrix.goarch }}" .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: idento-backend_linux_${{ matrix.goarch }}
           path: backend/idento-backend_linux_${{ matrix.goarch }}
@@ -104,7 +104,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           persist-credentials: false
       - name: Package bundle
@@ -116,7 +116,7 @@ jobs:
           esac
           mkdir -p dist
           tar -czf "dist/idento-onprem-${RELEASE_TAG}.tar.gz" -C onprem .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: idento-onprem-bundle
           path: dist/idento-onprem-${{ github.ref_name }}.tar.gz
@@ -127,7 +127,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           pattern: "idento-*"
