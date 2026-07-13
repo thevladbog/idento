@@ -60,5 +60,15 @@
 	<!-- Network (for Ethernet printers) -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Idento needs local network access to connect to Ethernet label printers</string>
+
+	<!-- Allows plain HTTP to private/local-network addresses only (on-prem installs) — public
+	     hosts, including our own SaaS domain, still require HTTPS under default ATS. This is
+	     the iOS-native equivalent of the Android network_security_config.xml change in this
+	     same task set: unlike Android, iOS has a single built-in flag for exactly this. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
