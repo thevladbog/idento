@@ -26,6 +26,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       mobile: ${{ steps.filter.outputs.mobile }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      shared-ui: ${{ steps.filter.outputs.shared-ui }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -43,6 +44,11 @@ jobs:
               - 'mobile/**'
             desktop:
               - 'desktop/**'
+            shared-ui:
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.npmrc'
 
   # Backend + web validation (lint, security scan, test, build)
   validate:
@@ -51,6 +57,7 @@ jobs:
     with:
       run-backend: ${{ needs.changes.outputs.backend == 'true' }}
       run-web: ${{ needs.changes.outputs.web == 'true' }}
+      run-shared-ui: ${{ needs.changes.outputs.shared-ui == 'true' }}
 
   # Build + lint Android (conditional, only for mobile changes)
   build-android:

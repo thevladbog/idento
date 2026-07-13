@@ -15,6 +15,7 @@ jobs:
     with:
       run-backend: true
       run-web: true
+      run-shared-ui: true
 
   backend-image:
     needs: validate

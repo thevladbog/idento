@@ -9,6 +9,9 @@ on:
       run-web:
         type: boolean
         default: true
+      run-shared-ui:
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -259,3 +262,85 @@ jobs:
           echo "## Web Build Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Web built successfully" >> $GITHUB_STEP_SUMMARY
           du -sh web/dist >> $GITHUB_STEP_SUMMARY
+
+  # TypeScript type checking (shared UI package — packages/ui)
+  typecheck-shared-ui:
+    name: TypeScript Type Check (Shared UI)
+    runs-on: ubuntu-latest
+    if: inputs.run-shared-ui
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck -w @idento/ui
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Shared UI Type Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Type checking completed" >> $GITHUB_STEP_SUMMARY
+
+  # Lint shared UI (ESLint)
+  lint-shared-ui:
+    name: Lint Shared UI (ESLint)
+    runs-on: ubuntu-latest
+    if: inputs.run-shared-ui
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint with annotations
+        run: npm run lint -w @idento/ui
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Shared UI ESLint Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Shared UI linting completed" >> $GITHUB_STEP_SUMMARY
+
+  # Test shared UI (tokens, primitives, verdict vocabulary)
+  test-shared-ui:
+    name: Test Shared UI
+    runs-on: ubuntu-latest
+    needs: [typecheck-shared-ui, lint-shared-ui]
+    if: inputs.run-shared-ui
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test -w @idento/ui
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Shared UI Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Shared UI tests completed" >> $GITHUB_STEP_SUMMARY
