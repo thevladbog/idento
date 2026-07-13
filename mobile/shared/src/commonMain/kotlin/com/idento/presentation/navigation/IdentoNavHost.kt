@@ -60,6 +60,7 @@ fun IdentoNavHost(
         composable(Screen.Settings.route) {
             SettingsScreen(
                 onNavigateBack = { navController.popBackStack() },
+                onNavigateToServerUrl = { navController.navigate(Screen.ServerUrl.route) },
             )
         }
 
@@ -84,7 +85,10 @@ fun IdentoNavHost(
                     navController.navigate(Screen.SetupMode.route) {
                         popUpTo(Screen.SetupLogin.route) { inclusive = true }
                     }
-                }
+                },
+                onNavigateToServerUrl = {
+                    navController.navigate(Screen.ServerUrl.route)
+                },
             )
         }
 

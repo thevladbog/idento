@@ -2,6 +2,7 @@ package com.idento.presentation.setup
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,6 +45,7 @@ fun SetupLoginScreen(
     viewModel: SetupLoginViewModel = koinInject(),
     onNavigateToEvent: () -> Unit = {},
     onNavigateToMode: () -> Unit = {},
+    onNavigateToServerUrl: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
@@ -64,15 +66,27 @@ fun SetupLoginScreen(
             .background(IdentoColors.Background)
     ) {
         if (uiState.isManagerMode) {
-            ManagerLoginContent(uiState = uiState, viewModel = viewModel)
+            ManagerLoginContent(
+                uiState = uiState,
+                viewModel = viewModel,
+                onNavigateToServerUrl = onNavigateToServerUrl,
+            )
         } else {
-            QrScanContent(uiState = uiState, viewModel = viewModel)
+            QrScanContent(
+                uiState = uiState,
+                viewModel = viewModel,
+                onNavigateToServerUrl = onNavigateToServerUrl,
+            )
         }
     }
 }
 
 @Composable
-private fun QrScanContent(uiState: SetupLoginUiState, viewModel: SetupLoginViewModel) {
+private fun QrScanContent(
+    uiState: SetupLoginUiState,
+    viewModel: SetupLoginViewModel,
+    onNavigateToServerUrl: () -> Unit,
+) {
     // Scanning starts automatically as soon as this sub-layout appears.
     LaunchedEffect(Unit) { viewModel.startQrScan() }
 
@@ -141,11 +155,26 @@ private fun QrScanContent(uiState: SetupLoginUiState, viewModel: SetupLoginViewM
                 onClick = viewModel::toggleManagerMode,
             ),
         )
+
+        Text(
+            text = stringResource(StringKey.SETUP_LOGIN_ADVANCED_SERVER),
+            color = IdentoColors.TextSecondary,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onNavigateToServerUrl)
+                .padding(vertical = IdentoSpacing.md),
+        )
     }
 }
 
 @Composable
-private fun ManagerLoginContent(uiState: SetupLoginUiState, viewModel: SetupLoginViewModel) {
+private fun ManagerLoginContent(
+    uiState: SetupLoginUiState,
+    viewModel: SetupLoginViewModel,
+    onNavigateToServerUrl: () -> Unit,
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -213,6 +242,17 @@ private fun ManagerLoginContent(uiState: SetupLoginUiState, viewModel: SetupLogi
                 label = stringResource(StringKey.SETUP_LOGIN_BACK_TO_QR),
                 onClick = viewModel::toggleManagerMode,
             ),
+        )
+
+        Text(
+            text = stringResource(StringKey.SETUP_LOGIN_ADVANCED_SERVER),
+            color = IdentoColors.TextSecondary,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onNavigateToServerUrl)
+                .padding(vertical = IdentoSpacing.md),
         )
     }
 }

@@ -87,6 +87,7 @@ val viewModelModule = module {
                     stationConfigPrefs.save(current.copy(printer = printer))
                 }
             },
+            networkPreferences = get(),
         )
     }
     factory {
