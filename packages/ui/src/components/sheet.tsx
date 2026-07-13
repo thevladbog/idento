@@ -27,7 +27,7 @@ export const SheetContent = React.forwardRef<
     VariantProps<typeof sheetVariants> & { closeLabel: string }
 >(({ className, children, side, closeLabel, ...props }, ref) => (
   <DialogPrimitive.Portal>
-    <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40" />
+    <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-overlay/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
     <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       {children}
       <DialogPrimitive.Close

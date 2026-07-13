@@ -9,7 +9,7 @@ const SEMANTIC_TOKENS = [
   "--background", "--foreground", "--card", "--popover", "--primary",
   "--primary-hover", "--secondary", "--muted", "--muted-foreground",
   "--accent", "--destructive", "--success", "--warning", "--info",
-  "--border", "--input", "--ring", "--radius",
+  "--border", "--input", "--ring", "--overlay", "--radius",
 ];
 
 function block(selector: string): string {
@@ -50,6 +50,13 @@ describe("theme.css tokens", () => {
     expect(css).toContain("--color-verdict-no-access: var(--destructive)");
     expect(css).toContain("--color-verdict-not-registered: var(--warning)");
     expect(css).toContain("--color-verdict-repeat: var(--info)");
+  });
+
+  it("keeps --overlay dark in both themes (modal scrim, not text-derived)", () => {
+    const root = block(":root");
+    const dark = block(".dark");
+    expect(root).toContain("--overlay: #09090b");
+    expect(dark).toContain("--overlay: #09090b");
   });
 
   it("defines the Inter type ramp utilities", () => {

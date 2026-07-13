@@ -6,7 +6,7 @@ import {
 import { Input } from "./input";
 import { Label } from "./label";
 
-export interface ConfirmDialogProps {
+export type ConfirmDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -16,9 +16,13 @@ export interface ConfirmDialogProps {
   closeLabel: string;
   onConfirm: () => void;
   destructive?: boolean;
-  typedConfirmation?: string;
-  typedConfirmationLabel?: string;
-}
+} & (
+  // Tier 2 (typed confirm) needs a visible label for the input's accessible
+  // name — @idento/ui has no i18n fallback text to supply one, so the type
+  // forces callers to pass both together or neither.
+  | { typedConfirmation?: undefined; typedConfirmationLabel?: never }
+  | { typedConfirmation: string; typedConfirmationLabel: string }
+);
 
 export function ConfirmDialog({
   open, onOpenChange, title, description, confirmLabel, cancelLabel, closeLabel,

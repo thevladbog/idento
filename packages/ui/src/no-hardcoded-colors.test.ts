@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -18,7 +18,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 describe("no hardcoded colors outside theme.css", () => {
   const files = walk(HERE).filter(
-    (f) => !EXEMPT.has(f.split("/").pop()!) && /\.(ts|tsx|css)$/.test(f),
+    (f) => !EXEMPT.has(basename(f)) && /\.(ts|tsx|css)$/.test(f),
   );
 
   it.each(files)("%s has no hex/rgb literals", (file) => {

@@ -8,9 +8,9 @@ export default tseslint.config(js.configs.recommended, ...tseslint.configs.recom
       "error",
       {
         patterns: [
-          { group: ["i18next", "i18next/*", "react-i18next"], message: "@idento/ui is i18n-agnostic — take strings via props." },
-          { group: ["axios", "openapi-fetch", "@tanstack/*"], message: "@idento/ui must not fetch data or route." },
-          { group: ["**/panel/*", "**/web/*", "**/desktop/*"], message: "@idento/ui must not import from apps." },
+          { group: ["i18next", "i18next/**", "react-i18next", "react-i18next/**"], message: "@idento/ui is i18n-agnostic — take strings via props." },
+          { group: ["axios", "openapi-fetch", "@tanstack/**"], message: "@idento/ui must not fetch data or route." },
+          { group: ["**/panel/**", "**/web/**", "**/desktop/**"], message: "@idento/ui must not import from apps." },
         ],
       },
     ],

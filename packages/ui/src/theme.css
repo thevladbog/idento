@@ -29,6 +29,9 @@
   --border: #e4e4e7;
   --input: #e4e4e7;
   --ring: #00935e;
+  /* Same value in both themes — a modal scrim must stay dark even when
+     --foreground (light text in .dark) is not. */
+  --overlay: #09090b;
   --radius: 0.5rem;
 }
 
@@ -59,6 +62,7 @@
   --border: #27272a;
   --input: #27272a;
   --ring: #2fd598;
+  --overlay: #09090b;
 }
 
 @theme inline {
@@ -88,6 +92,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
   --color-verdict-allowed: var(--success);
   --color-verdict-no-access: var(--destructive);
   --color-verdict-not-registered: var(--warning);

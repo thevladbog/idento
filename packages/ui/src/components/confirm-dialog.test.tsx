@@ -4,22 +4,36 @@ import { useState } from "react";
 import { Button } from "./button";
 import { ConfirmDialog } from "./confirm-dialog";
 
-function Harness(props: { typedConfirmation?: string; onConfirm: () => void; destructive?: boolean }) {
+type HarnessProps = { onConfirm: () => void; destructive?: boolean } & (
+  | { typedConfirmation?: undefined }
+  | { typedConfirmation: string }
+);
+
+function Harness(props: HarnessProps) {
   const [open, setOpen] = useState(false);
+  const common = {
+    open,
+    onOpenChange: setOpen,
+    title: "Delete event",
+    description: "This cannot be undone.",
+    confirmLabel: "Delete event",
+    cancelLabel: "Cancel",
+    closeLabel: "Close",
+    onConfirm: props.onConfirm,
+    destructive: props.destructive,
+  };
   return (
     <>
       <Button onClick={() => setOpen(true)}>Trigger</Button>
-      <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
-        title="Delete event"
-        description="This cannot be undone."
-        confirmLabel="Delete event"
-        cancelLabel="Cancel"
-        closeLabel="Close"
-        typedConfirmationLabel="Type partner-day-2026 to confirm"
-        {...props}
-      />
+      {props.typedConfirmation !== undefined ? (
+        <ConfirmDialog
+          {...common}
+          typedConfirmation={props.typedConfirmation}
+          typedConfirmationLabel="Type partner-day-2026 to confirm"
+        />
+      ) : (
+        <ConfirmDialog {...common} />
+      )}
     </>
   );
 }

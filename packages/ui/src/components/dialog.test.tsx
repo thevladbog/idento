@@ -38,4 +38,13 @@ describe("Dialog", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("uses the dark-in-both-themes overlay token, not text-derived foreground", async () => {
+    const user = userEvent.setup();
+    const { baseElement } = render(<TestDialog />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    const overlay = baseElement.querySelector('[class*="bg-overlay"]');
+    expect(overlay).not.toBeNull();
+    expect(baseElement.querySelector('[class*="bg-foreground/40"]')).toBeNull();
+  });
 });
