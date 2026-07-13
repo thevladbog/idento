@@ -1,13 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Release / all non-debug builds: cleartext HTTP is never permitted.
-  The debug variant overrides this file with src/debug/res/xml/network_security_config.xml,
-  which additionally allows cleartext to local dev servers only.
+  Cleartext HTTP is permitted by default — needed to reach an on-prem install at a
+  build-time-unknown private-network address (see NetworkPreferences/ServerUrlValidation in
+  :shared, which is the actual enforcement point restricting plain HTTP to private/loopback/
+  link-local hosts; this file can't express that restriction itself, since <domain> entries only
+  match literal hostnames/IPs, not CIDR ranges). The one exception below: our own SaaS
+  production domain always requires HTTPS regardless of this broader default.
 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false">
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">api.idento.app</domain>
+    </domain-config>
 </network-security-config>
