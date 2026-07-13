@@ -29,6 +29,9 @@ type Store interface {
 	UpdateTenant(ctx context.Context, tenant *models.Tenant) error
 	GetTenantStatus(ctx context.Context, id uuid.UUID) (string, error)
 	UpdateTenantStatus(ctx context.Context, id uuid.UUID, status string) error
+	// PurgeExpiredTenants hard-deletes tenants archived more than
+	// retentionDays ago; see PGStore for detach/cascade/audit semantics.
+	PurgeExpiredTenants(ctx context.Context, retentionDays int) ([]PurgedTenant, error)
 
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
