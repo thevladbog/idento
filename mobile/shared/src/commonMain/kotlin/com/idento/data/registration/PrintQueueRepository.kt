@@ -152,6 +152,17 @@ class PrintQueueRepository(
     }
 
     /**
+     * Drops every queued print job unconditionally — used when the app is pointed at a different
+     * server (see `ServerUrlSaveGateway`'s `clearSession`), since a queued job's ZPL was rendered
+     * for the *previous* server's attendee and would otherwise still print after the switch.
+     */
+    suspend fun clearAll() {
+        withContext(Dispatchers.Default) {
+            queries.deleteAll()
+        }
+    }
+
+    /**
      * Attempts the oldest pending print job that is past its exponential backoff window
      * (`min(attemptCount^2, 300)` seconds since `lastAttemptAt` — see `PrintJob.sq`'s
      * `selectOldestPending`, which performs this filtering in SQL rather than fetching every

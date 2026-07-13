@@ -10,6 +10,7 @@ import com.idento.data.network.getDefaultBaseUrl
 import com.idento.data.preferences.AppPreferences
 import com.idento.data.preferences.AuthPreferences
 import com.idento.data.preferences.DisplayTemplatePreferences
+import com.idento.data.preferences.NetworkPreferences
 import com.idento.data.preferences.StationConfigPreferences
 import com.idento.data.registration.AttendeeLookup
 import com.idento.data.registration.BatchCheckinSubmitter
@@ -62,14 +63,16 @@ val appModule = module {
     single { AuthPreferences(get(), get()) }
     single { DisplayTemplatePreferences(get()) }
     single { StationConfigPreferences(get()) }
+    single { NetworkPreferences(get()) }
     single { SetupWizardDraft() }
 
     // API Client
-    single { 
+    single {
         val authPreferences: AuthPreferences = get()
+        val networkPreferences: NetworkPreferences = get()
         ApiClient(
-            baseUrl = getDefaultBaseUrl(),
-            tokenProvider = { 
+            baseUrlProvider = { networkPreferences.getBaseUrlSync() ?: getDefaultBaseUrl() },
+            tokenProvider = {
                 // Get token from in-memory cache (synchronous access)
                 authPreferences.getTokenSync()
             }

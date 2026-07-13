@@ -32,6 +32,7 @@ import org.koin.compose.koinInject
 fun SettingsScreen(
     viewModel: SettingsViewModel = koinInject(),
     onNavigateBack: () -> Unit = {},
+    onNavigateToServerUrl: () -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsState()
     
@@ -212,6 +213,18 @@ fun SettingsScreen(
                 }
             }
             
+            // === SERVER SECTION ===
+            SettingsSection(title = stringResource(StringKey.SETTINGS_SERVER_ROW_TITLE)) {
+                SettingsGroup {
+                    SettingsRow(
+                        icon = AppIcons.Info,
+                        title = stringResource(StringKey.SETTINGS_SERVER_ROW_TITLE),
+                        value = uiState.currentServerUrl ?: "Default",
+                        onClick = onNavigateToServerUrl,
+                    )
+                }
+            }
+
             // === PRINTER SECTION ===
             SettingsSection(title = "Label Printer") {
                 SettingsGroup {

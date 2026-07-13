@@ -46,3 +46,6 @@ UPDATE PrintJob SET status = 'failed', errorMessage = ? WHERE id = ?;
 
 deleteById:
 DELETE FROM PrintJob WHERE id = ?;
+
+deleteAll:
+DELETE FROM PrintJob;

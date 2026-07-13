@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.idento.data.localization.LocalizationManager
 import com.idento.data.model.PrinterConfig
 import com.idento.data.preferences.AppPreferences
+import com.idento.data.preferences.NetworkPreferences
 import com.idento.presentation.theme.ThemeState
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ interface StationPrinterGateway {
 class SettingsViewModel(
     private val appPreferences: AppPreferences,
     private val stationPrinterGateway: StationPrinterGateway,
+    private val networkPreferences: NetworkPreferences,
 ) : ViewModel() {
     
     private val json = Json { ignoreUnknownKeys = true }
@@ -55,6 +57,11 @@ class SettingsViewModel(
     init {
         loadAppSettings()
         loadCurrentPrinter()
+        loadCurrentServerUrl()
+    }
+
+    private fun loadCurrentServerUrl() {
+        _uiState.value = _uiState.value.copy(currentServerUrl = networkPreferences.getBaseUrlSync())
     }
 
     private fun loadCurrentPrinter() {
@@ -291,7 +298,10 @@ data class SettingsUiState(
     // App Settings
     val themeMode: String = AppPreferences.THEME_SYSTEM,
     val language: String = AppPreferences.LANG_SYSTEM,
-    
+
+    // Server
+    val currentServerUrl: String? = null,
+
     // Printer Settings
     val selectedPrinterName: String? = null,
     val selectedPrinterAddress: String? = null,

@@ -34,5 +34,8 @@ UPDATE PendingRegistrationCheckIn SET attemptCount = ?, lastAttemptAt = ?, error
 deleteById:
 DELETE FROM PendingRegistrationCheckIn WHERE id = ?;
 
+deleteAll:
+DELETE FROM PendingRegistrationCheckIn;
+
 countAll:
 SELECT COUNT(*) FROM PendingRegistrationCheckIn;

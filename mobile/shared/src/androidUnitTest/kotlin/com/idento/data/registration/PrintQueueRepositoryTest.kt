@@ -97,4 +97,16 @@ class PrintQueueRepositoryTest {
         assertEquals(0, printAttempts)
         assertNull(lastSentZpl)
     }
+
+    @Test
+    fun clearAllRemovesEveryQueuedJob() = runTest {
+        val printer = PrinterConfig(name = "Zebra", transport = "bluetooth", address = "00:11:22:33:44:55")
+        repository.enqueue("^XA^FDOne^FS^XZ", printer)
+        repository.enqueue("^XA^FDTwo^FS^XZ", printer)
+        assertEquals(2, repository.getPending().size)
+
+        repository.clearAll()
+
+        assertEquals(0, repository.getPending().size)
+    }
 }

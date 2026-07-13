@@ -62,6 +62,18 @@ Database migrations run automatically at backend startup — no manual SQL, no d
 
 Store backup files somewhere outside the host itself (they're plain files — where you copy them afterward is up to you; this repo doesn't provide cloud-storage integration).
 
+## Badge Printing & Scanning
+
+Printing badges and using barcode/QR scanners from a browser goes through a separate small local service, the **print agent** (bundled with the desktop "Idento Kiosk" app, or installed standalone — see the project's `agent/README.md` for installation). The agent only ever talks to your printers/scanners and to whatever browser tab is open on the same machine; it never talks to the on-prem backend directly.
+
+By default, the agent only accepts requests from a browser at `http://localhost:5173`, `http://localhost:5174`, or `http://localhost:3000` (its development defaults). If your on-prem web UI is served from anywhere else — the `PUBLIC_API_URL`-style host/port you set in `.env`, for example — the agent will silently refuse those calls until you tell it to allow that origin too:
+
+```bash
+AGENT_ALLOWED_ORIGINS=http://your-host,http://your-host:80 <path-to-agent-binary>
+```
+
+(Comma-separated, exact origins — scheme + host + port, no trailing slash. See `agent/README.md` for the config-file equivalent if you're not setting it via environment variable.)
+
 ## Troubleshooting
 
 - **Nothing responds after `docker compose up -d`:** check `docker compose logs backend` and `docker compose logs web` for startup errors — a missing/invalid `.env` value is the most common cause (look for a message naming the specific variable).

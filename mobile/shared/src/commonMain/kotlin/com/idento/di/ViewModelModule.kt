@@ -3,13 +3,16 @@ package com.idento.di
 import com.idento.data.model.PrinterConfig
 import com.idento.data.model.StationConfig
 import com.idento.data.preferences.AuthPreferences
+import com.idento.data.preferences.NetworkPreferences
 import com.idento.data.preferences.StationConfigPreferences
+import com.idento.data.registration.PrintQueueRepository
 import com.idento.data.registration.RegistrationCheckInService
 import com.idento.data.registration.RegistrationOfflineQueueRepository
 import com.idento.data.registration.RegistrationVerdictMapper
 import com.idento.data.repository.AttendeeRepository
 import com.idento.data.repository.AuthRepository
 import com.idento.data.repository.EventRepository
+import com.idento.data.repository.OfflineCheckInRepository
 import com.idento.data.repository.StationRepository
 import com.idento.data.repository.ZoneRepository
 import com.idento.data.zonecontrol.ZoneScanSource
@@ -26,6 +29,9 @@ import com.idento.presentation.registration.EventBadgeTemplateSource
 import com.idento.presentation.registration.PendingQueueCountSource
 import com.idento.presentation.registration.RegistrationHomeViewModel
 import com.idento.presentation.registration.RegistrationStationGateway
+import com.idento.presentation.server.ServerConnectionChecker
+import com.idento.presentation.server.ServerUrlSaveGateway
+import com.idento.presentation.server.ServerUrlViewModel
 import com.idento.presentation.settings.SettingsViewModel
 import com.idento.presentation.settings.StationPrinterGateway
 import com.idento.presentation.setup.AuthLogoutGateway
@@ -50,9 +56,19 @@ import com.idento.presentation.setup.ZoneLister
 import com.idento.presentation.zonecontrol.CheckinOverrideSource
 import com.idento.presentation.zonecontrol.ZoneControlViewModel
 import com.idento.presentation.zonecontrol.ZoneStationGateway
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.json.Json
 import org.koin.dsl.module
+
+@kotlinx.serialization.Serializable
+private data class InstanceProbeResponse(val mode: String)
 
 /**
  * ViewModel Koin Module
@@ -73,6 +89,7 @@ val viewModelModule = module {
                     stationConfigPrefs.save(current.copy(printer = printer))
                 }
             },
+            networkPreferences = get(),
         )
     }
     factory {
@@ -243,6 +260,55 @@ val viewModelModule = module {
                 stationConfigPrefs.clear()
                 authPreferences.clearAuth()
             },
+        )
+    }
+    factory {
+        // ServerUrlViewModel follows the same narrow-seam pattern as the other ViewModels in
+        // this module. The connection check deliberately does NOT go through the shared
+        // ApiClient/Koin singleton — the user is testing a URL that (by definition) isn't saved
+        // yet, so it can't be the app's current baseUrlProvider result. A throwaway, unauthenticated
+        // HttpClient probes the typed URL directly and is closed after the one-shot check.
+        val networkPreferences: NetworkPreferences = get()
+        val stationConfigPreferences: StationConfigPreferences = get()
+        val authPreferences: AuthPreferences = get()
+        val registrationOfflineQueue: RegistrationOfflineQueueRepository = get()
+        val zoneOfflineQueue: OfflineCheckInRepository = get()
+        val printQueue: PrintQueueRepository = get()
+        ServerUrlViewModel(
+            currentUrlProvider = { networkPreferences.getBaseUrlSync() },
+            connectionChecker = ServerConnectionChecker { url ->
+                runCatching {
+                    val probe = HttpClient {
+                        install(ContentNegotiation) {
+                            json(Json { ignoreUnknownKeys = true })
+                        }
+                        install(HttpTimeout) {
+                            requestTimeoutMillis = 10_000
+                        }
+                    }
+                    try {
+                        val response: InstanceProbeResponse =
+                            probe.get("${url.trimEnd('/')}/api/instance").body()
+                        response.mode
+                    } finally {
+                        probe.close()
+                    }
+                }
+            },
+            onSave = ServerUrlSaveGateway(
+                save = networkPreferences::save,
+                clearSession = {
+                    stationConfigPreferences.clear()
+                    authPreferences.clearAuth()
+                    // A queued registration/zone check-in or print job was addressed to the
+                    // *previous* server's event/attendee — leaving it queued would flush or
+                    // print it against the new server once sync resumes there.
+                    registrationOfflineQueue.clearAll()
+                    zoneOfflineQueue.clearAll()
+                    printQueue.clearAll()
+                },
+                resetToDefault = networkPreferences::clear,
+            ),
         )
     }
 }

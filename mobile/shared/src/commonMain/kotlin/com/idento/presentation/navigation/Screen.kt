@@ -5,6 +5,7 @@ package com.idento.presentation.navigation
  */
 sealed class Screen(val route: String) {
     data object Settings : Screen("settings")
+    data object ServerUrl : Screen("server_url")
 
     // Setup wizard (M1b) — all wizard state lives in the shared SetupWizardDraft, not nav args.
     data object SetupLogin : Screen("setup_login")
