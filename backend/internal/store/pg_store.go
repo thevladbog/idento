@@ -630,7 +630,10 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 		escapedSearch := strings.ReplaceAll(search, `\`, `\\`)
 		escapedSearch = strings.ReplaceAll(escapedSearch, "%", `\%`)
 		escapedSearch = strings.ReplaceAll(escapedSearch, "_", `\_`)
-		query += fmt.Sprintf(" AND (a.first_name ILIKE $%d OR a.last_name ILIKE $%d OR a.email ILIKE $%d OR a.code ILIKE $%d) ESCAPE '\\'", argCount, argCount, argCount, argCount)
+		query += fmt.Sprintf(
+			" AND (a.first_name ILIKE $%d ESCAPE '\\' OR a.last_name ILIKE $%d ESCAPE '\\' OR a.email ILIKE $%d ESCAPE '\\' OR a.code ILIKE $%d ESCAPE '\\')",
+			argCount, argCount, argCount, argCount,
+		)
 		args = append(args, "%"+escapedSearch+"%")
 	}
 

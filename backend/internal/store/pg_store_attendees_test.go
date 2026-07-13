@@ -88,7 +88,7 @@ func TestGetAttendeesByEventID_SearchFilterReturnsPartialCaseInsensitiveMatches(
 	rows := pgxmock.NewRows(attendeesByEventColumns)
 	addAttendeeRow(rows, matchID, eventID, "Jane", "Doe", "jane@example.com", "CODE-JANE", now)
 
-	mock.ExpectQuery(`a\.first_name ILIKE \$2 OR a\.last_name ILIKE \$2 OR a\.email ILIKE \$2 OR a\.code ILIKE \$2`).
+	mock.ExpectQuery(`a\.first_name ILIKE \$2 ESCAPE '\\' OR a\.last_name ILIKE \$2 ESCAPE '\\' OR a\.email ILIKE \$2 ESCAPE '\\' OR a\.code ILIKE \$2 ESCAPE '\\'`).
 		WithArgs(eventID, "%jane%").
 		WillReturnRows(rows)
 
