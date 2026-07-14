@@ -13,11 +13,11 @@ export function NavDrawer() {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Menu">
+        <Button variant="ghost" size="icon" className="md:hidden" aria-label={t("navDrawerMenuLabel")}>
           <Menu />
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" closeLabel="Close menu">
+      <SheetContent side="left" closeLabel={t("navDrawerCloseLabel")}>
         <SheetHeader>
           <SheetTitle>{t("appName")}</SheetTitle>
         </SheetHeader>

@@ -21,6 +21,8 @@
   "qrLoginManualPrompt": "Введите код с вашей QR-карты",
   "qrLoginCodeLabel": "Код",
   "qrLoginSubmit": "Войти",
+  "navDrawerCloseLabel": "Закрыть меню",
+  "navDrawerMenuLabel": "Меню",
   "navEvents": "Мероприятия",
   "navTeam": "Команда",
   "navEquipment": "Оборудование",
