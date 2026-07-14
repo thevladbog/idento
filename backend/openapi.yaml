@@ -392,6 +392,84 @@ components:
           description: "HH:MM, inclusive upper bound; null = no upper bound"
         created_at: { type: string, format: date-time }
       required: [id, zone_id, category, allowed, created_at]
+    AttendeeZoneAccess:
+      type: object
+      description: >
+        An individual per-attendee access override for a zone (highest
+        priority in CheckZoneAccess, above category-based ZoneAccessRule).
+      properties:
+        id: { type: string, format: uuid }
+        attendee_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        allowed: { type: boolean }
+        notes: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, attendee_id, zone_id, allowed, created_at, updated_at]
+    StaffZoneAssignment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        assigned_at: { type: string, format: date-time }
+        assigned_by:
+          type: string
+          format: uuid
+          nullable: true
+          description: The caller who created the assignment; nullable in the DB, always populated for rows created via POST /api/zones/{zone_id}/staff.
+      required: [id, user_id, zone_id, assigned_at]
+    ZoneCheckin:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        attendee_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        checked_in_at: { type: string, format: date-time }
+        checked_in_by: { type: string, format: uuid, nullable: true }
+        event_day: { type: string, format: date-time, description: "Date only — time component is truncated by the store." }
+        metadata: { type: object, additionalProperties: true }
+      required: [id, attendee_id, zone_id, checked_in_at, event_day]
+    MovementHistoryEntry:
+      type: object
+      description: >
+        One zone check-in enriched with the zone's name/type at read time
+        (GetAttendeeZoneHistory). If the per-entry zone lookup fails, the
+        checkin is still included with zone_name/zone_type left at their
+        zero value ("") rather than failing the whole request.
+      properties:
+        checkin: { $ref: "#/components/schemas/ZoneCheckin" }
+        zone_name: { type: string }
+        zone_type: { type: string }
+      required: [checkin, zone_name, zone_type]
+    ZoneCheckInResponse:
+      type: object
+      description: >
+        POST /api/zones/checkin's single response envelope, used for every
+        status code the handler itself returns (200/400/403/404/500) — not
+        just the success case. success is false and error is populated on
+        every non-2xx path; checked_in_at has no omitempty on the Go struct
+        so it always serializes (zero value on error paths).
+      properties:
+        success: { type: boolean }
+        attendee: { $ref: "#/components/schemas/Attendee" }
+        zone: { $ref: "#/components/schemas/EventZone" }
+        checked_in_at: { type: string, format: date-time }
+        packet_delivered: { type: boolean }
+        message: { type: string }
+        error: { type: string }
+      required: [success, checked_in_at, packet_delivered]
+    CheckinOverride:
+      type: object
+      description: Audit-logged staff override of an already_checked/not_registered/no_access check-in verdict ("Всё равно пропустить").
+      properties:
+        id: { type: string, format: uuid }
+        attendee_id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid, nullable: true }
+        context: { type: string, enum: [already_checked, not_registered, no_access] }
+        staff_user_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+      required: [id, attendee_id, context, staff_user_id, created_at]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -2345,6 +2423,677 @@ paths:
             requireZoneOwnership) — a GetEventZoneByID failure itself is
             masked as 404 above, not surfaced here — or persisting the
             replacement set ("Failed to update access rules").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{attendee_id}/zone-access:
+    post:
+      operationId: createAttendeeZoneAccess
+      summary: >
+        Create (or, per the store's ON CONFLICT upsert, replace) an
+        individual access override for one attendee/zone pair.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: attendee_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                zone_id must be provided in the body — this route has no
+                zone_id path param. attendee_id from the path always
+                overwrites any attendee_id in the body; id/created_at/
+                updated_at are always overwritten by the store.
+              properties:
+                zone_id: { type: string, format: uuid }
+                allowed: { type: boolean }
+                notes: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Created access override.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendeeZoneAccess" }
+        "400":
+          description: attendee_id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Two causes, same shape. The attendee itself does not exist — OR
+            a store failure loading it is masked as this same 404
+            ("Attendee not found"; this handler loads via the plain,
+            non-tenant-scoped Store.GetAttendeeByID, same pattern as GET
+            /api/attendees/{id}/qr, not requireAttendeeOwnership). Versus
+            the attendee's event does not exist / belongs to a different
+            tenant ("Event not found", from requireEventOwnership, checked
+            once the attendee has loaded).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the attendee's event ownership
+            ("Internal error", via requireEventOwnership+writeErr — a
+            GetAttendeeByID failure itself is masked as 404 above, not
+            surfaced here), or persisting the override ("Failed to create
+            access override").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: getAttendeeZoneAccess
+      summary: All individual access overrides for an attendee
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: attendee_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Access overrides for the attendee.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AttendeeZoneAccess" }
+        "400":
+          description: attendee_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist (or a GetAttendeeByID store failure is
+            masked as the same 404 — see POST on this same path), or the
+            attendee's event does not exist / belongs to a different tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the attendee's event ownership
+            ("Internal error"), or fetching the overrides ("Failed to get
+            access overrides").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendee-zone-access/{id}:
+    put:
+      operationId: updateAttendeeZoneAccess
+      summary: Update an individual access override's allowed/notes fields
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                Only allowed/notes are persisted — store.UpdateAttendeeZoneAccess's
+                UPDATE statement ignores zone_id/attendee_id from the body.
+                The zone used for the ownership check is the EXISTING
+                record's zone_id (looked up before Bind runs), not the
+                body's. id is overwritten from the path; zone_id/attendee_id
+                given in the body pass through unchanged into the JSON
+                response even though they are never persisted.
+              properties:
+                zone_id: { type: string, format: uuid }
+                allowed: { type: boolean }
+                notes: { type: string, nullable: true }
+      responses:
+        "200":
+          description: >
+            Updated override, echoed back with allowed/notes as persisted
+            but attendee_id/zone_id/created_at/updated_at exactly as bound
+            from the request (not re-read from the store).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttendeeZoneAccess" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Three causes, same shape. The override itself does not exist —
+            OR a GetAttendeeZoneAccessByID store failure is masked as this
+            same 404 ("Access override not found"; same masking class as
+            requireZoneOwnership's own zone lookup, applied here to a third
+            entity type). Versus the override's zone does not exist ("Zone
+            not found"), or the zone's parent event does not exist / belongs
+            to a different tenant ("Event not found") — both from the
+            nested requireZoneOwnership call.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership — a GetAttendeeZoneAccessByID or
+            GetEventZoneByID failure is masked as 404 above, not surfaced
+            here), or persisting the update ("Failed to update access
+            override").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteAttendeeZoneAccess
+      summary: Delete an individual access override
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Confirmation message — NOT the override record.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Same three causes as PUT on this path: override missing/store
+            failure ("Access override not found"), zone missing ("Zone not
+            found"), or foreign-tenant event ("Event not found").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error"), or persisting the delete ("Failed to delete access
+            override").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/{zone_id}/staff:
+    post:
+      operationId: assignStaffToZone
+      summary: Assign a staff member to a zone (silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: string, format: uuid }
+              required: [user_id]
+      responses:
+        "201":
+          description: >
+            Created assignment. Store.AssignStaffToZone sets id/assigned_at
+            on the same pointer it's given before returning, so the
+            response reflects the persisted values.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StaffZoneAssignment" }
+        "400":
+          description: zone_id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership — a GetEventZoneByID failure itself is
+            masked as 404 above), or persisting the assignment ("Failed to
+            assign staff").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: getZoneStaff
+      summary: All staff assigned to a zone, as raw assignment records
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Assignments for the zone (StaffZoneAssignment rows — NOT full
+            User records, contrast GET /api/events/{event_id}/staff which
+            joins through to users).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StaffZoneAssignment" }
+        "400":
+          description: zone_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error"), or fetching assignments ("Failed to get staff
+            assignments").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/{zone_id}/staff/{user_id}:
+    delete:
+      operationId: removeStaffFromZone
+      summary: >
+        Remove a staff member from a zone. Idempotent — DELETE on a pair
+        that was never assigned still returns 200 (the store's DELETE
+        simply affects zero rows; there is no existence check).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Confirmation message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: zone_id or user_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership) — note this checks
+            zone_id only, not that user_id was ever actually assigned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error"), or persisting the removal ("Failed to remove staff").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/users/{user_id}/zones:
+    get:
+      operationId: getUserZoneAssignments
+      summary: >
+        All zone assignments for a target user. Authorization is NOT via
+        requireEventOwnership/requireAttendeeOwnership/requireZoneOwnership
+        (the target user_id is caller-supplied and unrelated to any single
+        event/zone) — instead the handler checks membership in the caller's
+        ACTIVE tenant directly via Store.GetUserTenantRole, inline (not one
+        of the shared authz.go helpers). Non-members and unknown user_ids
+        both render as the same uniform 404.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Zone assignments for the user (across every zone, not scoped to one event).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/StaffZoneAssignment" }
+        "400":
+          description: user_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            user_id has no role in the caller's active tenant
+            (GetUserTenantRole returns "" — covers both "user does not
+            exist" and "user belongs to a different tenant", same uniform
+            404 either way).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure checking tenant membership ("Failed to verify
+            user membership" — unlike the 404 above, a GetUserTenantRole
+            error is surfaced honestly as a 500, not folded into the 404),
+            or fetching the assignments ("Failed to get zone assignments").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/checkin:
+    post:
+      operationId: zoneCheckIn
+      summary: >
+        Scan an attendee's code at a zone: validates zone/time/registration/
+        access, auto-registers on a registration zone, and records the
+        check-in (idempotent per attendee/zone/event_day — re-scanning the
+        same day returns 200 with message "Already checked in" instead of a
+        duplicate record). Rate-limited like /auth/login (10 req/min per
+        IP) since it's a high-frequency, low-friction scan surface.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attendee_code: { type: string }
+                zone_id: { type: string, format: uuid }
+                event_day: { type: string, format: date-time }
+              required: [attendee_code, zone_id, event_day]
+      responses:
+        "200":
+          description: >
+            Check-in recorded (message "Check-in successful"), or already
+            recorded for this attendee/zone/event_day (message "Already
+            checked in") — both success=true.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneCheckInResponse" }
+        "400":
+          description: Malformed request body (success=false, error "Invalid request").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneCheckInResponse" }
+        "403":
+          description: >
+            Multiple distinct causes, two different shapes. Business-logic
+            denials from inside the handler (ZoneCheckInResponse,
+            success=false): caller is staff but not assigned to this zone
+            ("Not assigned to this zone"), the zone is not active ("Zone is
+            not active"), the current time is outside the zone's
+            open/close window ("Zone is closed at this time"), the
+            attendee must register first ("Attendee must register first"),
+            or CheckZoneAccess denies / errors ("Access denied" or its
+            error string). Versus tenant_suspended from the tenant gate,
+            which runs BEFORE the handler and always uses the plain Error
+            shape, never ZoneCheckInResponse.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/ZoneCheckInResponse" }
+                  - { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Two causes, both rendered as ZoneCheckInResponse (success=false).
+            The zone itself does not exist / its parent event does not
+            exist or belongs to a different tenant (requireZoneOwnership's
+            httpError re-wrapped into this response's shape instead of the
+            plain Error shape every other requireZoneOwnership caller
+            uses) — or the attendee_code does not match any attendee in the
+            zone's event ("Attendee not found").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneCheckInResponse" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership, fetching
+            zone staff assignments, persisting an auto-registration update,
+            verifying existing check-in status, or persisting the new
+            check-in — all rendered as ZoneCheckInResponse (success=false)
+            since every return in this handler after Bind uses that shape,
+            unlike every other zones.go handler which uses the plain Error
+            shape for its 500s.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneCheckInResponse" }
+  /api/zones/{zone_id}/checkins:
+    get:
+      operationId: getZoneCheckins
+      summary: Check-ins for a zone on a specific day (defaults to today when ?date is omitted)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: date
+          in: query
+          schema: { type: string }
+          description: "YYYY-MM-DD; defaults to today (server time) when omitted."
+      responses:
+        "200":
+          description: Check-ins for the zone on the requested (or default) day.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ZoneCheckin" }
+        "400":
+          description: zone_id is not a UUID, or date does not parse as YYYY-MM-DD.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error"), or fetching check-ins ("Failed to get check-ins").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{attendee_id}/zone-history:
+    get:
+      operationId: getAttendeeZoneHistory
+      summary: An attendee's full zone movement history, each entry enriched with the zone's name/type at read time
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: attendee_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Movement history for the attendee, most recent first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MovementHistoryEntry" }
+        "400":
+          description: attendee_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist (or a GetAttendeeByID store failure is
+            masked as the same 404 — this handler loads via the plain,
+            non-tenant-scoped Store.GetAttendeeByID, same pattern as POST
+            /api/attendees/{attendee_id}/zone-access), or the attendee's
+            event does not exist / belongs to a different tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the attendee's event ownership
+            ("Internal error"), or fetching the check-in history ("Failed
+            to get history"). A per-entry GetEventZoneByID failure while
+            enriching zone_name/zone_type is logged and skipped, not
+            surfaced as an error — the checkin is still included with those
+            fields blank.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkins/override:
+    post:
+      operationId: createCheckinOverride
+      summary: >
+        Log a staff override ("Всё равно пропустить") of an
+        already_checked/not_registered/no_access check-in verdict, for
+        audit purposes. Does not itself perform a check-in.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attendee_id: { type: string, format: uuid }
+                context: { type: string, enum: [already_checked, not_registered, no_access] }
+                zone_id: { type: string, format: uuid, nullable: true }
+              required: [attendee_id, context]
+      responses:
+        "201":
+          description: Logged override.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinOverride" }
+        "400":
+          description: >
+            event_id is not a UUID, the request body is malformed, or
+            context is not one of already_checked/not_registered/no_access.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Three causes, same shape. Event does not exist / foreign tenant
+            (requireEventOwnership, "Event not found"). Attendee does not
+            exist, belongs to a different event, OR a GetAttendeeByID store
+            failure is masked identically ("Attendee not found" — the
+            handler's check is `err != nil || attendee == nil ||
+            attendee.EventID != eventID`, so a wrong-event attendee is
+            indistinguishable from a missing one). Zone does not exist,
+            belongs to a different event, OR a GetEventZoneByID store
+            failure is masked identically ("Zone not found") — only
+            checked when zone_id is given in the body.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error", via
+            requireEventOwnership+writeErr — the attendee/zone lookup
+            failures above are masked as 404, not surfaced here), or
+            persisting the override ("Failed to log override").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

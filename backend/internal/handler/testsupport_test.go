@@ -39,6 +39,14 @@ type fakeStore struct {
 	createZoneCheckin         func(checkin *models.ZoneCheckin) error
 	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
 	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
+	createAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
+	getAttendeeZoneAccessList func(attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error)
+	updateAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
+	deleteAttendeeZoneAccess  func(id uuid.UUID) error
+	assignStaffToZone         func(assignment *models.StaffZoneAssignment) error
+	removeStaffFromZone       func(userID, zoneID uuid.UUID) error
+	checkZoneAccess           func(attendeeID, zoneID uuid.UUID) (bool, string, error)
+	getZoneCheckins           func(zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error)
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
@@ -177,6 +185,30 @@ func (f *fakeStore) GetUserByID(_ context.Context, id uuid.UUID) (*models.User, 
 }
 func (f *fakeStore) GetAttendeeZoneAccessByID(_ context.Context, id uuid.UUID) (*models.AttendeeZoneAccess, error) {
 	return f.getAttendeeZoneAccessByID(id)
+}
+func (f *fakeStore) CreateAttendeeZoneAccess(_ context.Context, access *models.AttendeeZoneAccess) error {
+	return f.createAttendeeZoneAccess(access)
+}
+func (f *fakeStore) GetAttendeeZoneAccessList(_ context.Context, attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error) {
+	return f.getAttendeeZoneAccessList(attendeeID)
+}
+func (f *fakeStore) UpdateAttendeeZoneAccess(_ context.Context, access *models.AttendeeZoneAccess) error {
+	return f.updateAttendeeZoneAccess(access)
+}
+func (f *fakeStore) DeleteAttendeeZoneAccess(_ context.Context, id uuid.UUID) error {
+	return f.deleteAttendeeZoneAccess(id)
+}
+func (f *fakeStore) AssignStaffToZone(_ context.Context, assignment *models.StaffZoneAssignment) error {
+	return f.assignStaffToZone(assignment)
+}
+func (f *fakeStore) RemoveStaffFromZone(_ context.Context, userID, zoneID uuid.UUID) error {
+	return f.removeStaffFromZone(userID, zoneID)
+}
+func (f *fakeStore) CheckZoneAccess(_ context.Context, attendeeID, zoneID uuid.UUID) (bool, string, error) {
+	return f.checkZoneAccess(attendeeID, zoneID)
+}
+func (f *fakeStore) GetZoneCheckins(_ context.Context, zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error) {
+	return f.getZoneCheckins(zoneID, date)
 }
 func (f *fakeStore) GetStaffZoneAssignments(_ context.Context, userID uuid.UUID) ([]*models.StaffZoneAssignment, error) {
 	return f.getStaffZoneAssignments(userID)
