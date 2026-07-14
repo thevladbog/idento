@@ -106,6 +106,8 @@ jobs:
             agent/go.sum
 
       - name: Test backend with coverage
+        env:
+          OPENAPI_COVERAGE: "1"
         run: |
           cd backend
           go test -race -coverprofile=coverage.out -covermode=atomic ./...

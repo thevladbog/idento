@@ -44,6 +44,7 @@ type fakeStore struct {
 	getTenantStatus                     func(id uuid.UUID) (string, error)
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
+	getUserByQRToken                    func(token string) (*models.User, error)
 	createUser                          func(u *models.User) error
 	addUserToTenant                     func(ut *models.UserTenant) error
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
@@ -172,6 +173,9 @@ func (f *fakeStore) UpdateTenantStatus(_ context.Context, id uuid.UUID, status s
 }
 func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
 	return f.getUserByEmail(email)
+}
+func (f *fakeStore) GetUserByQRToken(_ context.Context, token string) (*models.User, error) {
+	return f.getUserByQRToken(token)
 }
 func (f *fakeStore) CreateUser(_ context.Context, u *models.User) error { return f.createUser(u) }
 func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) error {

@@ -1,244 +1,112 @@
+# Idento REST API — contract for the customer panel and shared surfaces.
+#
+# TRUTH RULES (P0.3):
+# - This file is contract-tested: backend/internal/handler/openapi_contract_*_test.go
+#   validates real handler responses against these schemas, and TestMain
+#   (OPENAPI_COVERAGE=1) fails if any documented operation lacks a test.
+# - New endpoints are documented HERE FIRST, then implemented, then contract-tested,
+#   then the panel client is regenerated (npm run generate:api -w panel).
+#
+# INTENTIONALLY UNDOCUMENTED surfaces (documented in their own tracks):
+#   /api/mobile/*, POST /api/zones/{zone_id}/scan          — mobile track
+#   POST /api/events/{event_id}/checkins/batch             — mobile offline sync
+#   GET|POST /api/sync                                     — desktop/mobile sync
+#   POST /api/public/import                                — external API-key integration
+#   /api/super-admin/*                                     — platform console (web/)
+#   GET /api/version, /openapi.yaml, /docs, /printer-qr,
+#   POST /api/util/printers/generate-qr                    — utility surfaces
 openapi: 3.0.3
 info:
-  title: Idento Backend API
-  description: |
-    REST API для системы регистрации и чекина участников мероприятий Idento.
-    
-    ## Основные возможности:
-    - Управление мероприятиями
-    - Управление участниками
-    - Чекин участников
-    - Управление пользователями и ролями
-    - Импорт/экспорт данных
-    - Генерация QR-кодов
-    - Шаблоны бейджей
-  version: 1.0.0
-  contact:
-    name: Idento Support
-    email: support@idento.app
-  license:
-    name: MIT
-    
+  title: Idento API
+  version: "1.0"
+  description: Idento event check-in platform REST API.
 servers:
-  - url: http://localhost:8008
-    description: Local development server
-  - url: https://api.idento.app
-    description: Production server
-
-tags:
-  - name: Auth
-    description: Аутентификация и авторизация
-  - name: Events
-    description: Управление мероприятиями
-  - name: Attendees
-    description: Управление участниками
-  - name: Users
-    description: Управление пользователями
-  - name: Staff
-    description: Управление персоналом мероприятий
-  - name: Import/Export
-    description: Импорт и экспорт данных
-
+  - url: /
 components:
   securitySchemes:
-    BearerAuth:
+    bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT token для авторизации. Получается через /api/auth/login
-      
   schemas:
+    Error:
+      type: object
+      description: >
+        Standard handler error: {"error": "..."} with an optional machine code
+        (e.g. code=tenant_suspended on 403 from the tenant gate).
+      properties:
+        error: { type: string }
+        code: { type: string }
+      required: [error]
+    HTTPError:
+      type: object
+      description: echo.NewHTTPError / rate-limiter shape.
+      properties:
+        message: { type: string }
+      required: [message]
     User:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        role:
-          type: string
-          enum: [admin, manager, staff]
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-          
-    Event:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        email: { type: string }
+        role: { type: string, enum: [admin, manager, staff] }
+        is_super_admin: { type: boolean }
+        has_qr_token: { type: boolean }
+        qr_token_created_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, tenant_id, email, role, is_super_admin, has_qr_token, created_at, updated_at]
+    Tenant:
       type: object
       properties:
-        id:
-          type: string
-          format: uuid
-        tenant_id:
-          type: string
-          format: uuid
-        name:
-          type: string
-        description:
-          type: string
-        start_date:
-          type: string
-          format: date-time
-        end_date:
-          type: string
-          format: date-time
-        location:
-          type: string
-        field_schema:
-          type: array
-          items:
-            type: string
-          description: Список полей для участников
-        custom_fields:
-          type: object
-          additionalProperties: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-          
-    Attendee:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        event_id:
-          type: string
-          format: uuid
-        first_name:
-          type: string
-        last_name:
-          type: string
-        email:
-          type: string
-          format: email
-        company:
-          type: string
-        position:
-          type: string
-        code:
-          type: string
-          description: Уникальный код участника для чекина
-        checkin_status:
-          type: boolean
-        checked_in_at:
-          type: string
-          format: date-time
-        checked_in_by:
-          type: string
-          format: uuid
-        checked_in_by_email:
-          type: string
-        printed_count:
-          type: integer
-        blocked:
-          type: boolean
-        block_reason:
-          type: string
-        custom_fields:
-          type: object
-          additionalProperties: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-          
-    LoginRequest:
-      type: object
-      required:
-        - email
-        - password
-      properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-          
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string }
+        archived_at: { type: string, format: date-time }
+        settings: { type: object, additionalProperties: true }
+        logo_url: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+        contact_email: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, name, status, created_at, updated_at]
     LoginResponse:
       type: object
       properties:
-        token:
-          type: string
-        user:
-          $ref: '#/components/schemas/User'
-          
-    Error:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+        tenants:
+          type: array
+          items: { $ref: "#/components/schemas/Tenant" }
+        current_tenant: { $ref: "#/components/schemas/Tenant" }
+      required: [token, user, tenants, current_tenant]
+    RegisterResponse:
       type: object
       properties:
-        error:
-          type: string
-        message:
-          type: string
-
-    BadgeZPLRequest:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+        tenants:
+          type: array
+          items: { $ref: "#/components/schemas/Tenant" }
+      required: [token, user, tenants]
+    QrLoginResponse:
       type: object
-      required:
-        - attendee_id
       properties:
-        attendee_id:
-          type: string
-          format: uuid
-          description: ID участника для печати бейджа
-
-    BadgeZPLResponse:
-      type: object
-      required:
-        - zpl
-      properties:
-        zpl:
-          type: string
-          description: Готовая ZPL-разметка для отправки на принтер (Zebra)
-
-security:
-  - BearerAuth: []
-
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+      required: [token, user]
+  responses:
+    RateLimited:
+      description: Rate limit exceeded (10/min per IP).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/HTTPError" }
 paths:
-  /api/auth/login:
+  /auth/login:
     post:
-      tags:
-        - Auth
-      summary: Вход в систему
-      description: Аутентификация пользователя по email и паролю
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/LoginRequest'
-      responses:
-        '200':
-          description: Успешная аутентификация
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          description: Неверные учетные данные
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-                
-  /api/auth/register:
-    post:
-      tags:
-        - Auth
-      summary: Регистрация нового пользователя
+      operationId: login
+      summary: Email + password login
       security: []
       requestBody:
         required: true
@@ -246,240 +114,37 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - email
-                - password
               properties:
-                email:
-                  type: string
-                  format: email
-                password:
-                  type: string
-                  format: password
+                email: { type: string }
+                password: { type: string }
+              required: [email, password]
       responses:
-        '201':
-          description: Пользователь успешно создан
+        "200":
+          description: Authenticated; token carries the default tenant.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '400':
-          description: Некорректные данные
-          
-  /api/events:
-    get:
-      tags:
-        - Events
-      summary: Получить список мероприятий
-      description: Возвращает все мероприятия текущего пользователя
-      responses:
-        '200':
-          description: Список мероприятий
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400":
+          description: Malformed or empty email/password.
           content:
             application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Event'
-                  
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Wrong credentials or user has no organizations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500":
+          description: Store or token error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /auth/register:
     post:
-      tags:
-        - Events
-      summary: Создать новое мероприятие
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - name
-              properties:
-                name:
-                  type: string
-                description:
-                  type: string
-                start_date:
-                  type: string
-                  format: date-time
-                end_date:
-                  type: string
-                  format: date-time
-                location:
-                  type: string
-      responses:
-        '201':
-          description: Мероприятие создано
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Event'
-                
-  /api/events/{id}:
-    get:
-      tags:
-        - Events
-      summary: Получить мероприятие по ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Данные мероприятия
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Event'
-        '404':
-          description: Мероприятие не найдено
-          
-    put:
-      tags:
-        - Events
-      summary: Обновить мероприятие
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Event'
-      responses:
-        '200':
-          description: Мероприятие обновлено
-
-  /api/events/{id}/badge-zpl:
-    post:
-      tags:
-        - Events
-      summary: Получить готовую ZPL для печати бейджа
-      description: |
-        По шаблону бейджа мероприятия (event.custom_fields.badgeTemplate) и данным участника
-        генерирует готовую ZPL-разметку. Клиент отправляет полученный ZPL на принтер через agent POST /print.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-          description: ID мероприятия
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BadgeZPLRequest'
-      responses:
-        '200':
-          description: Готовая ZPL
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BadgeZPLResponse'
-        '400':
-          description: Некорректный запрос или шаблон
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: Мероприятие или участник не найдены
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '403':
-          description: Доступ запрещён
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-          
-  /api/events/{id}/attendees:
-    get:
-      tags:
-        - Attendees
-      summary: Получить список участников мероприятия
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Список участников
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Attendee'
-                  
-    post:
-      tags:
-        - Attendees
-      summary: Добавить участника
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - first_name
-                - last_name
-                - email
-              properties:
-                first_name:
-                  type: string
-                last_name:
-                  type: string
-                email:
-                  type: string
-                  format: email
-                company:
-                  type: string
-                position:
-                  type: string
-                custom_fields:
-                  type: object
-      responses:
-        '201':
-          description: Участник добавлен
-          
-  /api/events/{id}/attendees/bulk:
-    post:
-      tags:
-        - Import/Export
-      summary: Массовый импорт участников
-      description: Импорт участников из CSV или JSON
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      operationId: register
+      summary: Self-serve tenant + admin signup (SaaS-only — this route is not mounted on-prem and 404s there)
+      security: []
       requestBody:
         required: true
         content:
@@ -487,97 +152,36 @@ paths:
             schema:
               type: object
               properties:
-                attendees:
-                  type: array
-                  items:
-                    type: object
+                tenant_name: { type: string }
+                email: { type: string }
+                password: { type: string }
+              required: [tenant_name, email, password]
       responses:
-        '200':
-          description: Результат импорта
+        "201":
+          description: Tenant created (or existing user attached to a new tenant).
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  imported:
-                    type: integer
-                  duplicates:
-                    type: integer
-                  errors:
-                    type: integer
-                  duplicate_list:
-                    type: array
-                    items:
-                      type: object
-                      
-  /api/attendees/{id}:
-    get:
-      tags:
-        - Attendees
-      summary: Получить участника по ID
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Данные участника
+              schema: { $ref: "#/components/schemas/RegisterResponse" }
+        "400":
+          description: Malformed or empty fields.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Attendee'
-                
-    put:
-      tags:
-        - Attendees
-      summary: Обновить участника
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Attendee'
-      responses:
-        '200':
-          description: Участник обновлен
-          
-    delete:
-      tags:
-        - Attendees
-      summary: Удалить участника
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204':
-          description: Участник удален
-          
-  /api/attendees/{id}/block:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: Existing email with wrong password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store or token error.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /auth/login-qr:
     post:
-      tags:
-        - Attendees
-      summary: Заблокировать участника
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      operationId: loginWithQr
+      summary: Staff login by QR-card token
+      security: []
       requestBody:
         required: true
         content:
@@ -585,130 +189,27 @@ paths:
             schema:
               type: object
               properties:
-                reason:
-                  type: string
+                qr_token: { type: string }
+              required: [qr_token]
       responses:
-        '200':
-          description: Участник заблокирован
-          
-  /api/attendees/{id}/unblock:
-    post:
-      tags:
-        - Attendees
-      summary: Разблокировать участника
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Участник разблокирован
-          
-  /api/attendees/code/{code}:
-    get:
-      tags:
-        - Attendees
-      summary: Найти участника по коду
-      description: Используется для чекина по QR-коду или штрих-коду
-      parameters:
-        - name: code
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Участник найден
+        "200":
+          description: Authenticated as the staff user's own tenant/role.
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Attendee'
-        '404':
-          description: Участник не найден
-          
-  /api/users:
-    get:
-      tags:
-        - Users
-      summary: Получить список пользователей
-      responses:
-        '200':
-          description: Список пользователей
+              schema: { $ref: "#/components/schemas/QrLoginResponse" }
+        "400":
+          description: Malformed body (echo.NewHTTPError shape).
           content:
             application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-                  
-    post:
-      tags:
-        - Users
-      summary: Создать пользователя
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - email
-                - password
-                - role
-              properties:
-                email:
-                  type: string
-                  format: email
-                password:
-                  type: string
-                role:
-                  type: string
-                  enum: [admin, manager, staff]
-      responses:
-        '201':
-          description: Пользователь создан
-          
-  /api/events/{eventId}/staff:
-    get:
-      tags:
-        - Staff
-      summary: Получить персонал мероприятия
-      parameters:
-        - name: eventId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Список персонала
-          
-    post:
-      tags:
-        - Staff
-      summary: Назначить персонал на мероприятие
-      parameters:
-        - name: eventId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                user_id:
-                  type: string
-                  format: uuid
-      responses:
-        '200':
-          description: Персонал назначен
-
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "401":
+          description: Unknown or expired QR token (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "500":
+          description: Token mint failure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
