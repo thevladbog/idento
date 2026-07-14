@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="text-caption text-muted-foreground">{t("onPremVersionTag", { version: instance.data.version })}</span>
         ) : null}
         <nav className="hidden items-center gap-4 md:flex">
-          <Link to="/" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+          <Link to="/" activeOptions={{ exact: true }} className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
             {t("navEvents")}
           </Link>
           <Link to="/team" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">

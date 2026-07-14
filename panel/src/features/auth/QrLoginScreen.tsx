@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { authErrorKey } from "../../shared/api/authErrorKey";
 import { loginWithQr } from "../../shared/api/client";
 import { saveSession } from "../../shared/api/session";
 
@@ -17,7 +18,8 @@ export function QrLoginScreen() {
   const [code, setCode] = React.useState("");
 
   const mutation = useMutation({
-    mutationFn: () => loginWithQr(code),
+    mutationKey: ["loginWithQr"],
+    mutationFn: () => loginWithQr(code.trim()),
     onSuccess: (auth) => {
       saveSession({ ...auth, tenants: [], current_tenant: undefined });
       navigate({ to: "/" });
@@ -44,7 +46,7 @@ export function QrLoginScreen() {
               <Input id="qr-code" value={code} onChange={(e) => setCode(e.target.value)} required />
             </div>
             {mutation.isError ? (
-              <p className="text-body text-destructive">{mutation.error.message}</p>
+              <p className="text-body text-destructive">{t(authErrorKey(mutation.error))}</p>
             ) : null}
             <Button type="submit" disabled={mutation.isPending}>
               {t("qrLoginSubmit")}

@@ -61,6 +61,6 @@ describe("LoginScreen", () => {
     await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect(await screen.findByText("Invalid credentials")).toBeInTheDocument();
+    expect(await screen.findByText("Incorrect email/code or password. Please try again.")).toBeInTheDocument();
   });
 });

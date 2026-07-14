@@ -32,11 +32,19 @@ const registerRoute = createRoute({
   // this redirects before the form even renders (LoginScreen separately
   // hides the link to get here).
   beforeLoad: async () => {
-    const instance = await queryClient.ensureQueryData({
-      queryKey: ["instance"],
-      queryFn: getInstance,
-      staleTime: Infinity,
-    });
+    let instance;
+    try {
+      instance = await queryClient.ensureQueryData({
+        queryKey: ["instance"],
+        queryFn: getInstance,
+        staleTime: Infinity,
+      });
+    } catch {
+      // Network/5xx failure: fail closed to the safe default (treat as
+      // non-saas) instead of surfacing an unhandled error state that would
+      // bypass this SaaS-only guard.
+      throw redirect({ to: "/login" });
+    }
     if (instance.mode !== "saas") {
       throw redirect({ to: "/login" });
     }

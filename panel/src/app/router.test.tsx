@@ -29,4 +29,11 @@ describe("router — /register edition guard", () => {
     await router.load();
     expect(router.state.location.pathname).toBe("/register");
   });
+
+  it("redirects /register to /login when the instance lookup fails (network error)", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("network down"));
+    router.update({ history: createMemoryHistory({ initialEntries: ["/register"] }) });
+    await router.load();
+    expect(router.state.location.pathname).toBe("/login");
+  });
 });

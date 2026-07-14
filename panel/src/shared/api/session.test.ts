@@ -55,4 +55,33 @@ describe("session", () => {
     expect(getTenants()).toEqual([]);
     expect(getCurrentTenant()).toBeNull();
   });
+
+  it("saveSession clears a stale parked impersonation session on a fresh login", () => {
+    localStorage.setItem("impersonation", JSON.stringify({ tenantId: "t1", tenantName: "Acme", expiresAt: "2999-01-01", mintedAt: "2020-01-01" }));
+    localStorage.setItem("operator_token", "operator-tok");
+
+    saveSession(AUTH);
+
+    expect(localStorage.getItem("impersonation")).toBeNull();
+    expect(localStorage.getItem("operator_token")).toBeNull();
+    expect(getToken()).toBe("tok-1");
+  });
+
+  it("getCurrentUser self-heals and returns null when stored JSON is malformed", () => {
+    localStorage.setItem("user", "not valid json{{{");
+    expect(getCurrentUser()).toBeNull();
+    expect(localStorage.getItem("user")).toBeNull();
+  });
+
+  it("getTenants self-heals and returns [] when stored JSON is malformed", () => {
+    localStorage.setItem("tenants", "not valid json{{{");
+    expect(getTenants()).toEqual([]);
+    expect(localStorage.getItem("tenants")).toBeNull();
+  });
+
+  it("getCurrentTenant self-heals and returns null when stored JSON is malformed", () => {
+    localStorage.setItem("current_tenant", "not valid json{{{");
+    expect(getCurrentTenant()).toBeNull();
+    expect(localStorage.getItem("current_tenant")).toBeNull();
+  });
 });

@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { authErrorKey } from "../../shared/api/authErrorKey";
 import { register } from "../../shared/api/client";
 import { saveSession } from "../../shared/api/session";
 
@@ -16,6 +17,7 @@ export function RegisterScreen() {
   const [password, setPassword] = React.useState("");
 
   const mutation = useMutation({
+    mutationKey: ["register"],
     mutationFn: () => register(orgName, email, password),
     onSuccess: (auth) => {
       saveSession(auth);
@@ -51,7 +53,7 @@ export function RegisterScreen() {
               <Input id="register-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </div>
             {mutation.isError ? (
-              <p className="text-body text-destructive">{mutation.error.message}</p>
+              <p className="text-body text-destructive">{t(authErrorKey(mutation.error))}</p>
             ) : null}
             <Button type="submit" disabled={mutation.isPending}>
               {t("registerSubmit")}

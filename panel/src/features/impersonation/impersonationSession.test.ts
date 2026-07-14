@@ -32,9 +32,14 @@ describe("impersonationSession", () => {
   });
 
   it("self-heals and returns null when the stored session is malformed JSON", () => {
+    localStorage.setItem("operator_token", "operator-tok");
+    localStorage.setItem("token", "impersonation-tok");
     localStorage.setItem("impersonation", "not valid json{{{");
+
     expect(getImpersonation()).toBeNull();
     expect(localStorage.getItem("impersonation")).toBeNull();
+    expect(localStorage.getItem("token")).toBe("operator-tok");
+    expect(localStorage.getItem("operator_token")).toBeNull();
   });
 
   it("endImpersonation restores the parked operator token and clears the session key", () => {

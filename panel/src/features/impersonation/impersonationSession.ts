@@ -16,7 +16,7 @@ export function getImpersonation(): ImpersonationSession | null {
   try {
     session = JSON.parse(raw) as ImpersonationSession;
   } catch {
-    localStorage.removeItem(SESSION_KEY);
+    endImpersonation();
     return null;
   }
   if (new Date(session.expiresAt).getTime() <= Date.now()) {

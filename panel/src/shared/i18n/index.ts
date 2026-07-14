@@ -17,4 +17,11 @@ i18n
     },
   });
 
+// Keep <html lang> in sync with the active UI language — index.html only
+// sets a static "en" default, so assistive tech and browser translation
+// heuristics would otherwise keep treating the panel as English forever.
+i18n.on("languageChanged", (lng) => {
+  document.documentElement.lang = lng;
+});
+
 export default i18n;
