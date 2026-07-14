@@ -97,7 +97,7 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
         {t("workspaceSettings")}
       </Link>
 
-      {readiness?.ready !== true ? (
+      {readiness !== undefined && readiness.ready !== true ? (
         <div className="mt-auto rounded-md border border-warning/30 bg-warning/10 p-2 text-caption text-warning">
           {t("workspaceUnlockHint")}
         </div>
@@ -106,9 +106,19 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
   );
 }
 
+// Status -> icon shape + color, kept as one lookup so the two never drift
+// apart (a `done` step is both the CheckCircle2 shape *and* the success
+// color; the reviewer flagged that the color half of this pairing was
+// missing entirely).
+const STEP_STATUS_ICON: Record<ReadinessStep["status"], { icon: typeof CheckCircle2; className: string }> = {
+  done: { icon: CheckCircle2, className: "text-success" },
+  not_done: { icon: Circle, className: "text-muted-foreground" },
+  skipped: { icon: MinusCircle, className: "text-muted-foreground" },
+};
+
 function StepRow({ step, index }: { step: ReadinessStep; index: number }) {
   const { t } = useTranslation();
-  const Icon = step.status === "done" ? CheckCircle2 : step.status === "skipped" ? MinusCircle : Circle;
+  const { icon: Icon, className: iconClassName } = STEP_STATUS_ICON[step.status];
   // Icon + color alone can't convey status to assistive tech (WCAG 1.4.1) —
   // every status gets a real (sr-only) text label here, mirroring
   // ReadinessCell's tooltip pattern of always pairing icon + text + color.
@@ -117,7 +127,7 @@ function StepRow({ step, index }: { step: ReadinessStep; index: number }) {
 
   return (
     <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body">
-      <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+      <Icon aria-hidden className={cn("size-3.5 shrink-0", iconClassName)} />
       <span className="flex-1">
         {index} · {t(STEP_LABEL_KEYS[step.key])}
         {step.key === "zones" && step.status === "skipped" ? (

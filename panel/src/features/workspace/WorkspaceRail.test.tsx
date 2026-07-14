@@ -69,6 +69,20 @@ describe("WorkspaceRail", () => {
     expect(screen.queryByText("optional")).not.toBeInTheDocument();
   });
 
+  it("colors each step icon by status — success for done, muted for not_done/skipped", () => {
+    // ZONES_SKIPPED_READINESS has one of every status (2 done, 2 not_done,
+    // 1 skipped), so a wrong/hardcoded color mapping shows up immediately.
+    // Icon color is asserted on the <svg> itself (not the row's text color)
+    // via the same `text-success`/`text-muted-foreground` token classes the
+    // rest of this component and ReadinessCell already use — the Check-in
+    // row's Lock icon has no color class of its own (inherits from its
+    // parent), so it can't false-positive into these counts.
+    const { container } = renderRail(<WorkspaceRail eventId="evt-1" readiness={ZONES_SKIPPED_READINESS} active="overview" />);
+
+    expect(container.querySelectorAll("svg.text-success")).toHaveLength(2); // attendees, staff
+    expect(container.querySelectorAll("svg.text-muted-foreground")).toHaveLength(3); // badge, zones, equipment
+  });
+
   it("shows the muted zones-optional suffixes (header + row) only when zones is skipped", () => {
     renderRail(<WorkspaceRail eventId="evt-1" readiness={ZONES_SKIPPED_READINESS} active="overview" />);
 
@@ -97,6 +111,15 @@ describe("WorkspaceRail", () => {
     // Check-in/Settings are static nav, not readiness-derived, so they still render.
     expect(screen.getByText("Check-in")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+  });
+
+  it("hides the unlock hint while readiness is still loading (undefined), even though ready !== true", () => {
+    // Regression guard: `readiness?.ready !== true` is true both while
+    // loading (readiness undefined) and once loaded-but-not-ready — only the
+    // latter should render the hint. Rendering it during loading asserts
+    // "not ready yet" before the component actually knows the answer.
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={undefined} active="overview" />);
+    expect(screen.queryByText("Finish the badge and run a test print to unlock check-in.")).not.toBeInTheDocument();
   });
 
   it("highlights Overview as active when active is 'overview'", () => {
