@@ -2,7 +2,7 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label,
 } from "@idento/ui";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { register } from "../../shared/api/client";
@@ -59,9 +59,9 @@ export function RegisterScreen() {
           </form>
           <p className="mt-4 text-caption text-muted-foreground">
             {t("registerSignInPrompt")}{" "}
-            <a className="text-primary underline-offset-4 hover:underline" href="/login">
+            <Link className="text-primary underline-offset-4 hover:underline" to="/login">
               {t("registerSignInLink")}
-            </a>
+            </Link>
           </p>
         </CardContent>
       </Card>

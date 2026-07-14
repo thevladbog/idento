@@ -30,6 +30,14 @@ describe("session", () => {
     expect(getCurrentTenant()).toEqual(AUTH.tenants[0]);
   });
 
+  it("clears a stale current_tenant when a later session has no tenant to fall back to (QR login)", () => {
+    saveSession(AUTH);
+    expect(getCurrentTenant()).toEqual(AUTH.current_tenant);
+
+    saveSession({ ...AUTH, tenants: [], current_tenant: undefined });
+    expect(getCurrentTenant()).toBeNull();
+  });
+
   it("updateToken and updateCurrentTenant patch in place without touching user/tenants", () => {
     saveSession(AUTH);
     updateToken("tok-2");

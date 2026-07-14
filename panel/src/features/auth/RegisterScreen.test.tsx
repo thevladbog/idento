@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -6,9 +7,18 @@ import { RegisterScreen } from "./RegisterScreen";
 import { getCurrentTenant } from "../../shared/api/session";
 import "../../shared/i18n";
 
+// RegisterScreen now renders `Link` for in-app navigation, which needs a
+// router context to resolve hrefs. These tests exercise form submission, not
+// routing, so a minimal single-route router is enough to satisfy that context.
+const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
+
 function renderWithQuery(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterContextProvider router={testRouter}>{ui}</RouterContextProvider>
+    </QueryClientProvider>,
+  );
 }
 
 describe("RegisterScreen", () => {

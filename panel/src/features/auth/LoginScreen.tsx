@@ -2,7 +2,7 @@ import {
   Button, Card, CardContent, CardHeader, CardTitle, Input, Label,
 } from "@idento/ui";
 import { useMutation } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { login } from "../../shared/api/client";
@@ -56,15 +56,15 @@ export function LoginScreen() {
           {instance.data?.mode === "saas" ? (
             <p className="mt-4 text-caption text-muted-foreground">
               {t("loginCreateOrgPrompt")}{" "}
-              <a className="text-primary underline-offset-4 hover:underline" href="/register">
+              <Link className="text-primary underline-offset-4 hover:underline" to="/register">
                 {t("loginCreateOrgLink")}
-              </a>
+              </Link>
             </p>
           ) : null}
           <p className="mt-2 text-caption">
-            <a className="text-primary underline-offset-4 hover:underline" href="/qr-login">
+            <Link className="text-primary underline-offset-4 hover:underline" to="/qr-login">
               {t("loginStaffLink")}
-            </a>
+            </Link>
           </p>
         </CardContent>
       </Card>

@@ -18,7 +18,11 @@ export function saveSession(auth: AuthResponse): void {
   localStorage.setItem(USER_KEY, JSON.stringify(auth.user));
   localStorage.setItem(TENANTS_KEY, JSON.stringify(auth.tenants));
   const current = auth.current_tenant ?? auth.tenants[0];
-  if (current) localStorage.setItem(CURRENT_TENANT_KEY, JSON.stringify(current));
+  if (current) {
+    localStorage.setItem(CURRENT_TENANT_KEY, JSON.stringify(current));
+  } else {
+    localStorage.removeItem(CURRENT_TENANT_KEY);
+  }
 }
 
 export function updateToken(token: string): void {
