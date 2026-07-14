@@ -12,6 +12,17 @@ const AUTH: AuthResponse = {
   current_tenant: { id: "t1", name: "Acme Events" },
 };
 
+// openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch Response,
+// so mocks need real Response instances rather than bare `{ok,status,json}`
+// objects, and it calls the global fetch as `fetch(request: Request, init)`
+// rather than `fetch(url, init)`.
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("OrgSwitcher", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -20,11 +31,7 @@ describe("OrgSwitcher", () => {
   });
 
   it("lists every tenant and switches on selection", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ token: "tok-2", current_tenant: AUTH.tenants[1] }),
-    });
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { token: "tok-2", current_tenant: AUTH.tenants[1] }));
     const user = userEvent.setup();
     const queryClient = new QueryClient();
     render(
@@ -36,11 +43,9 @@ describe("OrgSwitcher", () => {
     await user.click(screen.getByRole("button", { name: /Acme Events/ }));
     await user.click(await screen.findByRole("menuitem", { name: "Beta Org" }));
 
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith(
-        "http://api.test/api/auth/switch-tenant",
-        expect.objectContaining({ body: JSON.stringify({ tenant_id: "t2" }) }),
-      ),
-    );
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    const req = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls[0][0];
+    expect(req.url).toBe("http://api.test/api/auth/switch-tenant");
+    expect(await req.clone().text()).toBe(JSON.stringify({ tenant_id: "t2" }));
   });
 });

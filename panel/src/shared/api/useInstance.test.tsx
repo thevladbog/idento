@@ -6,11 +6,13 @@ import { useInstance } from "./useInstance";
 describe("useInstance", () => {
   it("fetches GET /api/instance and resolves the mode", async () => {
     window.__ENV__ = { API_URL: "http://api.test" };
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "onprem", version: "1.0", license: null }),
-    });
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        new Response(JSON.stringify({ mode: "onprem", version: "1.0", license: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

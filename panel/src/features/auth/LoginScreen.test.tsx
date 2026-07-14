@@ -28,16 +28,25 @@ describe("LoginScreen", () => {
   });
 
   it("submits email+password and saves the session on success", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        token: "tok-1",
-        user: { id: "u1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" },
-        tenants: [{ id: "t1", name: "Acme" }],
-        current_tenant: { id: "t1", name: "Acme" },
-      }),
-    });
+    // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
+    // Response, so mocks need real Response instances rather than bare
+    // `{ok,status,json}` objects. LoginScreen fires two separate fetch calls
+    // (useInstance's GET /api/instance on mount, then the login POST on
+    // submit), and a Response's body can only be read once — mockImplementation
+    // hands back a fresh Response per call instead of replaying one exhausted
+    // instance.
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        new Response(
+          JSON.stringify({
+            token: "tok-1",
+            user: { id: "u1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" },
+            tenants: [{ id: "t1", name: "Acme" }],
+            current_tenant: { id: "t1", name: "Acme" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
     const user = userEvent.setup();
     renderWithQuery(<LoginScreen />);
 
@@ -49,11 +58,15 @@ describe("LoginScreen", () => {
   });
 
   it("shows an error message when the backend rejects the credentials", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      json: () => Promise.resolve({ error: "Invalid credentials" }),
-    });
+    // Same fresh-Response-per-call reasoning as above: useInstance's GET and
+    // the login POST both hit this mock.
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        new Response(JSON.stringify({ error: "Invalid credentials" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
     const user = userEvent.setup();
     renderWithQuery(<LoginScreen />);
 
