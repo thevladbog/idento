@@ -1,0 +1,44 @@
+import { Link } from "@tanstack/react-router";
+import type * as React from "react";
+import { useTranslation } from "react-i18next";
+import { OrgSwitcher } from "./OrgSwitcher";
+import { NavDrawer } from "./NavDrawer";
+import { LanguageSwitcher } from "../../shared/ui/LanguageSwitcher";
+import { ThemeSwitcher } from "../../shared/ui/ThemeSwitcher";
+import { useInstance } from "../../shared/api/useInstance";
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
+  const instance = useInstance();
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex items-center gap-4 border-b border-border px-4 py-3">
+        <NavDrawer />
+        <span className="text-section-title">{t("appName")}</span>
+        <OrgSwitcher />
+        {instance.data?.mode === "onprem" ? (
+          <span className="text-caption text-muted-foreground">ON-PREM · v{instance.data.version}</span>
+        ) : null}
+        <nav className="hidden items-center gap-4 md:flex">
+          <Link to="/" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+            {t("navEvents")}
+          </Link>
+          <Link to="/team" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+            {t("navTeam")}
+          </Link>
+          <Link to="/equipment" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+            {t("navEquipment")}
+          </Link>
+          <Link to="/organization" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+            {t("navOrganization")}
+          </Link>
+        </nav>
+        <div className="ml-auto flex items-center gap-1">
+          <LanguageSwitcher />
+          <ThemeSwitcher />
+        </div>
+      </header>
+      <main className="flex-1">{children}</main>
+    </div>
+  );
+}
