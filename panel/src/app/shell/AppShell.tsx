@@ -3,6 +3,7 @@ import type * as React from "react";
 import { useTranslation } from "react-i18next";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { NavDrawer } from "./NavDrawer";
+import { ImpersonationBanner } from "../../features/impersonation/ImpersonationBanner";
 import { LanguageSwitcher } from "../../shared/ui/LanguageSwitcher";
 import { ThemeSwitcher } from "../../shared/ui/ThemeSwitcher";
 import { useInstance } from "../../shared/api/useInstance";
@@ -12,6 +13,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const instance = useInstance();
   return (
     <div className="flex min-h-screen flex-col bg-background">
+      <ImpersonationBanner />
       <header className="flex items-center gap-4 border-b border-border px-4 py-3">
         <NavDrawer />
         <span className="text-section-title">{t("appName")}</span>

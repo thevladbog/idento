@@ -53,6 +53,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Organization" })).toBeInTheDocument();
     expect(screen.getByText("page content")).toBeInTheDocument();
     expect(screen.queryByText(/ON-PREM/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/impersonat/i)).not.toBeInTheDocument();
   });
 
   it("shows the ON-PREM version tag when the instance is on-prem", async () => {
