@@ -46,6 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- Context provider + its hook are meant to live together; not a real Fast Refresh issue for this pattern.
 export function useTheme(): ThemeContextValue {
   const ctx = React.useContext(ThemeContext);
   if (!ctx) throw new Error("useTheme must be used within a ThemeProvider");
