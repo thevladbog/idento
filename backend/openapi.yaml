@@ -1105,6 +1105,64 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      operationId: patchEvent
+      summary: >
+        Partial update — only fields present in the body are changed
+        (absent fields keep their stored values, unlike updateEvent's
+        full replace). custom_fields is deliberately NOT patchable here:
+        it holds the badge template, whose scoped save model arrives with
+        the badge editor (P3). JSON null on a date field is treated the
+        same as absent (clearing a date via PATCH is not supported).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                start_date: { type: string, format: date-time }
+                end_date: { type: string, format: date-time }
+                location: { type: string }
+                field_schema:
+                  type: array
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: The updated event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "400":
+          description: id is not a UUID, or the body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Event not found or belongs to another tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error") or
+            persisting the update ("Failed to update event").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     delete:
       operationId: deleteEvent
       summary: >

@@ -93,3 +93,78 @@ func TestContractDeleteEvent(t *testing.T) {
 	}
 	validateResponse(t, http.MethodDelete, path, rec)
 }
+
+func TestContractPatchEvent(t *testing.T) {
+	tenantID := uuid.New()
+	start := time.Now().Add(24 * time.Hour)
+	event := p1Event(tenantID, "Original Name")
+	event.Location = "Original Hall"
+	event.StartDate = &start
+	event.CustomFields = map[string]interface{}{"badgeTemplate": "KEEP-ME"}
+
+	var saved *models.Event
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		updateEvent:  func(e *models.Event) error { saved = e; return nil },
+	})
+	e := echo.New()
+	path := "/api/events/" + event.ID.String()
+
+	// 200: only name provided — location/start_date/custom_fields untouched.
+	c, rec := newAuthedContext(e, http.MethodPatch, path, `{"name":"Renamed"}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+	if err := h.PatchEvent(c); err != nil {
+		t.Fatalf("PatchEvent: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if saved == nil || saved.Name != "Renamed" {
+		t.Fatalf("name not applied: %+v", saved)
+	}
+	if saved.Location != "Original Hall" {
+		t.Fatalf("location clobbered: %q", saved.Location)
+	}
+	if saved.StartDate == nil || !saved.StartDate.Equal(start) {
+		t.Fatalf("start_date clobbered: %v", saved.StartDate)
+	}
+	if saved.CustomFields["badgeTemplate"] != "KEEP-ME" {
+		t.Fatalf("custom_fields clobbered: %+v", saved.CustomFields)
+	}
+	validateResponse(t, http.MethodPatch, path, rec)
+
+	// custom_fields in the body must be IGNORED (not applied, not an error).
+	c, rec = newAuthedContext(e, http.MethodPatch, path,
+		`{"location":"New Hall","custom_fields":{"badgeTemplate":"EVIL"}}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+	if err := h.PatchEvent(c); err != nil {
+		t.Fatalf("PatchEvent: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if saved.Location != "New Hall" {
+		t.Fatalf("location not applied: %q", saved.Location)
+	}
+	if saved.CustomFields["badgeTemplate"] != "KEEP-ME" {
+		t.Fatalf("custom_fields must be immune to PATCH: %+v", saved.CustomFields)
+	}
+	validateResponse(t, http.MethodPatch, path, rec)
+
+	// 400: not a UUID.
+	c, rec = newAuthedContext(e, http.MethodPatch, "/api/events/nope", `{}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id")
+	c.SetParamNames("id")
+	c.SetParamValues("nope")
+	if err := h.PatchEvent(c); err != nil {
+		t.Fatalf("PatchEvent: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
+	}
+	validateResponse(t, http.MethodPatch, "/api/events/nope", rec)
+}
