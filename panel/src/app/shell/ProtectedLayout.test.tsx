@@ -28,11 +28,16 @@ describe("ProtectedLayout", () => {
     localStorage.clear();
     window.__ENV__ = { API_URL: "http://api.test" };
     window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "saas", version: "1.0", license: null }),
-    });
+    // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
+    // Response, so the mock needs a real Response instance rather than a
+    // bare `{ok,status,json}` object — AppShell's useInstance() call would
+    // otherwise silently fail (React Query swallows the error, masking it).
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ mode: "saas", version: "1.0", license: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
   });
 
   it("redirects to /login when there is no session", async () => {

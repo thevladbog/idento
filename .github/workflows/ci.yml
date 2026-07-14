@@ -52,6 +52,7 @@ jobs:
               - '.npmrc'
             panel:
               - 'panel/**'
+              - 'packages/**'
               - 'backend/openapi.yaml'
               - 'package.json'
               - 'package-lock.json'
