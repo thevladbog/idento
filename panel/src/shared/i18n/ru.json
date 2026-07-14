@@ -130,6 +130,7 @@
   "settingsKeyRevokeTitle": "Отозвать ключ",
   "settingsKeyRevokeBody": "Интеграции, использующие этот ключ, немедленно перестанут работать.",
   "settingsKeyRevokeConfirm": "Отозвать",
+  "settingsKeyRevokeError": "Не удалось отозвать ключ. Попробуйте ещё раз.",
   "settingsKeyCreate": "+ Создать ключ",
   "settingsKeyCreateError": "Не удалось создать ключ.",
   "settingsKeyShownOnce": "Полный ключ показывается один раз при создании — сохраните его в надёжном месте. Отзыв необратим.",

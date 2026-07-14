@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { ApiKeysCard } from "./ApiKeysCard";
 import { startMswServer } from "../../../test/msw";
@@ -32,9 +32,12 @@ let keys: APIKey[] = [ACTIVE, REVOKED];
 let listHitCount = 0;
 let deleteCount = 0;
 let lastDeletedKeyId: string | undefined;
+let deleteStatusOverride: number | null = null;
+let deleteDelayMs = 0;
 let createCount = 0;
 let lastCreateBody: unknown;
 let createStatusOverride: number | null = null;
+let createDelayMs = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/api-keys", () => {
@@ -44,6 +47,7 @@ const server = startMswServer(
   http.post("http://api.test/api/events/:eventId/api-keys", async ({ request }) => {
     createCount += 1;
     lastCreateBody = await request.json();
+    if (createDelayMs) await delay(createDelayMs);
     if (createStatusOverride) {
       return HttpResponse.json({ error: "bad request" }, { status: createStatusOverride });
     }
@@ -57,9 +61,13 @@ const server = startMswServer(
     keys = [...keys, created];
     return HttpResponse.json({ api_key: created, plain_key: "idnt_live_newnewnewSECRETVALUE" }, { status: 201 });
   }),
-  http.delete("http://api.test/api/events/:eventId/api-keys/:keyId", ({ params }) => {
+  http.delete("http://api.test/api/events/:eventId/api-keys/:keyId", async ({ params }) => {
     deleteCount += 1;
     lastDeletedKeyId = params.keyId as string;
+    if (deleteDelayMs) await delay(deleteDelayMs);
+    if (deleteStatusOverride) {
+      return HttpResponse.json({ error: "server error" }, { status: deleteStatusOverride });
+    }
     keys = keys.map((k) => (k.id === params.keyId ? { ...k, revoked_at: "2026-06-21T00:00:00.000Z" } : k));
     return HttpResponse.json({ message: "revoked" });
   }),
@@ -77,9 +85,12 @@ describe("ApiKeysCard", () => {
     listHitCount = 0;
     deleteCount = 0;
     lastDeletedKeyId = undefined;
+    deleteStatusOverride = null;
+    deleteDelayMs = 0;
     createCount = 0;
     lastCreateBody = undefined;
     createStatusOverride = null;
+    createDelayMs = 0;
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
@@ -228,5 +239,87 @@ describe("ApiKeysCard", () => {
     await user.click(screen.getByRole("button", { name: "+ Create key" }));
     dialog = await screen.findByRole("dialog");
     expect(within(dialog).queryByText("Couldn't create the key.")).not.toBeInTheDocument();
+  });
+
+  // Regression test for the close-during-pending race: the create POST is
+  // still in flight when the user closes the dialog (Cancel here, but X /
+  // Escape / overlay all funnel through the same setCreateOpen(false)).
+  // `createKey.reset()` on close only detaches the mutation observer — it
+  // does not cancel the in-flight request or stop `onSuccess` from firing
+  // once the response lands late. Pre-fix, that late `onSuccess` still sets
+  // `plainKey`, and reopening the dialog then shows that stray, unlabeled
+  // secret directly in the reveal state instead of a fresh form.
+  it("never resurfaces a stray plain_key if the create dialog is closed before the POST resolves (close-during-pending race)", async () => {
+    createDelayMs = 50;
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Race key");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    // Close (Cancel) while the delayed POST is still in flight.
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // Let the delayed response land well after the close.
+    await waitFor(() => expect(createCount).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, createDelayMs + 100));
+
+    // Reopen: must be a genuinely fresh create form — the stray secret from
+    // the aborted attempt above must never surface, labeled or not.
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("idnt_live_newnewnewSECRETVALUE")).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: "+ Create key" })).toBeInTheDocument();
+  });
+
+  it("shows an inline error when revoking fails, and clears it on a subsequent successful revoke", async () => {
+    deleteStatusOverride = 500;
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    const activeRow = screen.getByText("CRM sync").closest("li") as HTMLElement;
+    await user.click(within(activeRow).getByRole("button", { name: "Revoke…" }));
+
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(deleteCount).toBe(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByText("Couldn't revoke the key. Try again.")).toBeInTheDocument();
+    // The key is still active — the failed DELETE must not be reflected as
+    // if it succeeded.
+    expect(within(activeRow).getByRole("button", { name: "Revoke…" })).toBeInTheDocument();
+
+    // A subsequent successful revoke clears the stale error.
+    deleteStatusOverride = null;
+    await user.click(within(activeRow).getByRole("button", { name: "Revoke…" }));
+    dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(deleteCount).toBe(2));
+    await waitFor(() => expect(screen.queryByText("Couldn't revoke the key. Try again.")).not.toBeInTheDocument());
+  });
+
+  it("disables the ConfirmDialog's confirm button while the revoke request is pending, to prevent a double DELETE", async () => {
+    deleteDelayMs = 50;
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    const activeRow = screen.getByText("CRM sync").closest("li") as HTMLElement;
+    await user.click(within(activeRow).getByRole("button", { name: "Revoke…" }));
+
+    const dialog = await screen.findByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "Revoke" });
+    await user.click(confirmButton);
+
+    expect(confirmButton).toBeDisabled();
+    await waitFor(() => expect(deleteCount).toBe(1));
   });
 });

@@ -30,11 +30,21 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [revokeTarget, setRevokeTarget] = React.useState<APIKey | null>(null);
+  const [revokeError, setRevokeError] = React.useState(false);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [plainKey, setPlainKey] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const copiedTimeoutRef = React.useRef<number | undefined>(undefined);
+  // Set false whenever the create dialog is open (i.e. the in-flight
+  // create's response is still relevant) and true the moment it closes for
+  // any reason (Cancel/X/Escape/overlay). `createKey.reset()` on close only
+  // detaches the mutation observer — it does NOT cancel the in-flight
+  // request or stop `onSuccess` from firing when the response lands late.
+  // Without this guard, a close-before-response race would let a stray
+  // `plain_key` sneak into `plainKey` state and resurface unlabeled the
+  // next time the dialog is opened.
+  const createAbortedRef = React.useRef(false);
 
   React.useEffect(() => () => window.clearTimeout(copiedTimeoutRef.current), []);
 
@@ -47,6 +57,14 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   const revokeKey = $api.useMutation("delete", "/api/events/{event_id}/api-keys/{key_id}", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: listQueryKey });
+      setRevokeError(false);
+      setRevokeTarget(null);
+    },
+    onError: () => {
+      // Close the dialog so the inline error below is actually visible
+      // (it lives in the card, behind the modal overlay while open), and
+      // leave revokeTarget's key un-revoked in the list.
+      setRevokeError(true);
       setRevokeTarget(null);
     },
   });
@@ -54,6 +72,9 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   const createKey = $api.useMutation("post", "/api/events/{event_id}/api-keys", {
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: listQueryKey });
+      // See createAbortedRef above: if the dialog was closed before this
+      // response arrived, the secret must never be shown.
+      if (createAbortedRef.current) return;
       setPlainKey(created.plain_key);
     },
   });
@@ -63,7 +84,11 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   // re-confirmed for Task 4/5's dialogs), and reopening must show a fresh
   // form rather than a stale error or the previous reveal.
   React.useEffect(() => {
-    if (createOpen) return;
+    if (createOpen) {
+      createAbortedRef.current = false;
+      return;
+    }
+    createAbortedRef.current = true;
     setName("");
     setPlainKey(null);
     setCopied(false);
@@ -134,7 +159,10 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
                           type="button"
                           variant="link"
                           className="text-destructive"
-                          onClick={() => setRevokeTarget(key)}
+                          onClick={() => {
+                            setRevokeError(false);
+                            setRevokeTarget(key);
+                          }}
                         >
                           {t("settingsKeyRevoke")}
                         </Button>
@@ -147,6 +175,8 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
           ) : (
             <p className="text-body text-muted-foreground">{t("settingsKeysEmpty")}</p>
           )}
+
+          {revokeError ? <p className="text-body text-destructive">{t("settingsKeyRevokeError")}</p> : null}
 
           <div className="flex flex-col items-start gap-2">
             <Button type="button" onClick={() => setCreateOpen(true)}>
@@ -169,6 +199,7 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
           cancelLabel={t("createEventCancel")}
           closeLabel={t("workspaceDialogClose")}
           destructive
+          confirmDisabled={revokeKey.isPending}
           onConfirm={() =>
             revokeKey.mutate({
               params: { path: { event_id: eventId, key_id: revokeTarget.id } },

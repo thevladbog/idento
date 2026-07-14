@@ -130,6 +130,7 @@
   "settingsKeyRevokeTitle": "Revoke key",
   "settingsKeyRevokeBody": "Integrations using this key stop working immediately.",
   "settingsKeyRevokeConfirm": "Revoke",
+  "settingsKeyRevokeError": "Couldn't revoke the key. Try again.",
   "settingsKeyCreate": "+ Create key",
   "settingsKeyCreateError": "Couldn't create the key.",
   "settingsKeyShownOnce": "The full key is shown once at creation — store it safely. Revoking is immediate.",
