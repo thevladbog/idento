@@ -67,6 +67,12 @@ type fakeStore struct {
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
 	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
+	getEventsByTenantID func(tenantID uuid.UUID) ([]*models.Event, error)
+	createEvent         func(event *models.Event) error
+	updateEvent         func(event *models.Event) error
+	getEventStaff       func(eventID uuid.UUID) ([]*models.User, error)
+	assignStaffToEvent  func(assignment *models.EventStaff) error
+
 	applyBatchCheckin     func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error)
 	createCheckinOverride func(o *models.CheckinOverride) error
 	getEventStats         func(eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
@@ -232,6 +238,22 @@ func (f *fakeStore) ConsumeProvisioningToken(_ context.Context, token string) (*
 }
 func (f *fakeStore) CreateStation(_ context.Context, eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error) {
 	return f.createStation(eventID, staffUserID, deviceInfo)
+}
+
+func (f *fakeStore) GetEventsByTenantID(_ context.Context, tenantID uuid.UUID) ([]*models.Event, error) {
+	return f.getEventsByTenantID(tenantID)
+}
+func (f *fakeStore) CreateEvent(_ context.Context, event *models.Event) error {
+	return f.createEvent(event)
+}
+func (f *fakeStore) UpdateEvent(_ context.Context, event *models.Event) error {
+	return f.updateEvent(event)
+}
+func (f *fakeStore) GetEventStaff(_ context.Context, eventID uuid.UUID) ([]*models.User, error) {
+	return f.getEventStaff(eventID)
+}
+func (f *fakeStore) AssignStaffToEvent(_ context.Context, assignment *models.EventStaff) error {
+	return f.assignStaffToEvent(assignment)
 }
 
 func (f *fakeStore) ApplyBatchCheckin(_ context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error) {
