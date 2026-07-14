@@ -204,6 +204,28 @@ components:
         checked_in: { type: integer }
         zone_stats: { $ref: "#/components/schemas/ZoneScanStats" }
       required: [total_attendees, checked_in]
+    ReadinessStep:
+      type: object
+      properties:
+        key: { type: string, enum: [attendees, badge, zones, staff, equipment] }
+        status: { type: string, enum: [done, not_done, skipped] }
+        count: { type: integer }
+      required: [key, status]
+    EventReadinessResponse:
+      type: object
+      description: >
+        Per-event readiness aggregate (parent-spec backend #6). Steps are
+        always returned in pipeline order: attendees, badge, zones, staff,
+        equipment. ready = attendees.done && badge.done && staff.done —
+        zones never blocks (skipped when the event has no zones), and
+        equipment is always not_done until its P3/P4 wiring exists and
+        never blocks in P1.
+      properties:
+        ready: { type: boolean }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/ReadinessStep" }
+      required: [ready, steps]
     BadgeZplResponse:
       type: object
       description: >
@@ -1105,6 +1127,101 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      operationId: patchEvent
+      summary: >
+        Partial update — only fields present in the body are changed
+        (absent fields keep their stored values, unlike updateEvent's
+        full replace). custom_fields is deliberately NOT patchable here:
+        it holds the badge template, whose scoped save model arrives with
+        the badge editor (P3). JSON null on a date field is treated the
+        same as absent (clearing a date via PATCH is not supported).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                start_date: { type: string, format: date-time }
+                end_date: { type: string, format: date-time }
+                location: { type: string }
+                field_schema:
+                  type: array
+                  maxItems: 200
+                  items: { type: string }
+      responses:
+        "200":
+          description: The updated event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "400":
+          description: id is not a UUID, or the body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Event not found or belongs to another tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error") or
+            persisting the update ("Failed to update event").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteEvent
+      summary: >
+        Soft-delete an event (sets deleted_at; the row stays in the database).
+        GetEvents/GetEvent already exclude soft-deleted events, so a deleted
+        event disappears from every listing and 404s on direct fetch.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Event soft-deleted. No body.
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Event not found or belongs to another tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error") or
+            executing the soft delete ("Failed to delete event").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{id}/badge-zpl:
     post:
       operationId: badgeZpl
@@ -1159,6 +1276,47 @@ paths:
             (requireEventOwnership or requireAttendeeOwnership propagates a
             raw store error through writeErr's fallback branch, instead of
             masking it as a 404).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{id}/readiness:
+    get:
+      operationId: getEventReadiness
+      summary: >
+        Readiness pipeline state for one event — drives Home's readiness
+        indicators and the workspace rail; ready=true unlocks the check-in
+        launch (the launch flow itself is P4).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Readiness aggregate, steps in pipeline order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventReadinessResponse" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Event not found or belongs to another tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership or computing any of the
+            step counts.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

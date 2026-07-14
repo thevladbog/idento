@@ -223,10 +223,12 @@ export interface paths {
         /** Full replace of an event's editable fields. Any authenticated tenant member can call this — the handler checks tenant ownership only, no role restriction. */
         put: operations["updateEvent"];
         post?: never;
-        delete?: never;
+        /** Soft-delete an event (sets deleted_at; the row stays in the database). GetEvents/GetEvent already exclude soft-deleted events, so a deleted event disappears from every listing and 404s on direct fetch. */
+        delete: operations["deleteEvent"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Partial update — only fields present in the body are changed (absent fields keep their stored values, unlike updateEvent's full replace). custom_fields is deliberately NOT patchable here: it holds the badge template, whose scoped save model arrives with the badge editor (P3). JSON null on a date field is treated the same as absent (clearing a date via PATCH is not supported). */
+        patch: operations["patchEvent"];
         trace?: never;
     };
     "/api/events/{id}/badge-zpl": {
@@ -240,6 +242,23 @@ export interface paths {
         put?: never;
         /** Generate ZPL for one attendee's badge from the event's stored badge template */
         post: operations["badgeZpl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}/readiness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness pipeline state for one event — drives Home's readiness indicators and the workspace rail; ready=true unlocks the check-in launch (the launch flow itself is P4). */
+        get: operations["getEventReadiness"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -941,6 +960,18 @@ export interface components {
             total_attendees: number;
             checked_in: number;
             zone_stats?: components["schemas"]["ZoneScanStats"];
+        };
+        ReadinessStep: {
+            /** @enum {string} */
+            key: "attendees" | "badge" | "zones" | "staff" | "equipment";
+            /** @enum {string} */
+            status: "done" | "not_done" | "skipped";
+            count?: number;
+        };
+        /** @description Per-event readiness aggregate (parent-spec backend #6). Steps are always returned in pipeline order: attendees, badge, zones, staff, equipment. ready = attendees.done && badge.done && staff.done — zones never blocks (skipped when the event has no zones), and equipment is always not_done until its P3/P4 wiring exists and never blocks in P1. */
+        EventReadinessResponse: {
+            ready: boolean;
+            steps: components["schemas"]["ReadinessStep"][];
         };
         /** @description JSON wrapper around generated ZPL text — BadgeZPL returns c.JSON, not raw text/plain, so "zpl" is the ZPL program serialized as a JSON string value (not a Content-Type: text/plain body). */
         BadgeZplResponse: {
@@ -2049,6 +2080,132 @@ export interface operations {
             };
         };
     };
+    deleteEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Event soft-deleted. No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership ("Internal error") or executing the soft delete ("Failed to delete event"). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    patchEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name?: string;
+                    /** Format: date-time */
+                    start_date?: string;
+                    /** Format: date-time */
+                    end_date?: string;
+                    location?: string;
+                    field_schema?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description The updated event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"];
+                };
+            };
+            /** @description id is not a UUID, or the body is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership ("Internal error") or persisting the update ("Failed to update event"). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     badgeZpl: {
         parameters: {
             query?: never;
@@ -2104,6 +2261,64 @@ export interface operations {
                 };
             };
             /** @description Store failure resolving event or attendee ownership (requireEventOwnership or requireAttendeeOwnership propagates a raw store error through writeErr's fallback branch, instead of masking it as a 404). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventReadiness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Readiness aggregate, steps in pipeline order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventReadinessResponse"];
+                };
+            };
+            /** @description id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event not found or belongs to another tenant. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or computing any of the step counts. */
             500: {
                 headers: {
                     [name: string]: unknown;

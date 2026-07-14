@@ -23,6 +23,9 @@ work while this rewrite runs (see root `AGENTS.md`).
   directly or via the thin per-endpoint wrappers in `src/shared/api/
   client.ts` that call it. Never call `fetch` directly from a
   feature/component. See "API workflow (openapi-first)" below.
+  New data hooks use `$api` (`src/shared/api/query.ts`). New tests use the MSW
+  helper (`startMswServer` in `src/test/msw.ts`); older hand-stubbed-fetch tests
+  are legacy — leave them, don't "fix" them opportunistically.
 - **Session:** the only file allowed to touch `localStorage` for auth state
   is `src/shared/api/session.ts`. Never read/write `token`/`user`/`tenants`/
   `current_tenant` directly from a component. Exception: `src/features/

@@ -583,6 +583,12 @@ func (s *PGStore) GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.U
 	return event, nil
 }
 
+func (s *PGStore) SoftDeleteEvent(ctx context.Context, id uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE events SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	return err
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error
@@ -664,6 +670,15 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 		attendees = append(attendees, &a)
 	}
 	return attendees, nil
+}
+
+// CountAttendeesByEventID counts non-deleted attendees for an event.
+func (s *PGStore) CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID) (int, error) {
+	var n int
+	// Keep the WHERE clause in lockstep with GetAttendeesByEventID.
+	err := s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`, eventID).Scan(&n)
+	return n, err
 }
 
 func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
