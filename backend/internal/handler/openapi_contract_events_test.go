@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -159,6 +160,25 @@ func TestContractBadgeZpl(t *testing.T) {
 	c.SetParamValues(event.ID.String())
 	if err := h.BadgeZPL(c); err != nil {
 		t.Fatalf("BadgeZPL: %v", err)
+	}
+	validateResponse(t, http.MethodPost, "/api/events/"+event.ID.String()+"/badge-zpl", rec)
+
+	// 500: a raw (non-*httpError) store error from GetEventByIDForTenant
+	// propagates out of requireEventOwnership and hits writeErr's fallback
+	// branch ({"error": "Internal error"}), same as getEvent/updateEvent/etc.
+	h2 := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return nil, errors.New("db unavailable") },
+	})
+	c, rec = newAuthedContext(e, http.MethodPost, "/api/events/"+event.ID.String()+"/badge-zpl",
+		`{"attendee_id":"`+attendee.ID.String()+`"}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id/badge-zpl")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+	if err := h2.BadgeZPL(c); err != nil {
+		t.Fatalf("BadgeZPL (store failure): %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	validateResponse(t, http.MethodPost, "/api/events/"+event.ID.String()+"/badge-zpl", rec)
 }

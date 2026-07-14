@@ -765,8 +765,9 @@ paths:
     put:
       operationId: updateEvent
       summary: >
-        Full replace of an event's editable fields (admin/manager — no
-        explicit role check in the handler beyond tenant ownership).
+        Full replace of an event's editable fields. Any authenticated tenant
+        member can call this — the handler checks tenant ownership only, no
+        role restriction.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -864,6 +865,15 @@ paths:
             Event or attendee does not exist, or belongs to a different
             tenant (both requireEventOwnership and requireAttendeeOwnership
             mask "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event or attendee ownership
+            (requireEventOwnership or requireAttendeeOwnership propagates a
+            raw store error through writeErr's fallback branch, instead of
+            masking it as a 404).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
