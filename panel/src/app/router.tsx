@@ -18,6 +18,18 @@ function HomePlaceholder() {
   return <div className="p-6 text-body">{t("homeComingSoon")}</div>;
 }
 
+// Temporary destination for the "Open event"/"Open monitor" links Home's
+// LiveStrip (Task 6+) points at — registering the real route now (instead of
+// waiting for Task 9) is what lets those `Link to="/events/$eventId"` calls
+// typecheck against the router's route tree. Task 9 replaces this component
+// with the real EventWorkspaceStub (event fetch + name + coming-soon copy)
+// per the P1.1 plan; this placeholder is intentionally minimal.
+// eslint-disable-next-line react-refresh/only-export-components -- same rationale as HomePlaceholder above.
+function EventWorkspacePlaceholder() {
+  const { t } = useTranslation();
+  return <div className="p-6 text-body">{t("placeholderComingSoon")}</div>;
+}
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -91,8 +103,14 @@ const organizationRoute = createRoute({
   component: () => <PlaceholderPage titleKey="navOrganization" />,
 });
 
+const eventStubRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/events/$eventId",
+  component: EventWorkspacePlaceholder,
+});
+
 const routeTree = rootRoute.addChildren([
-  protectedLayoutRoute.addChildren([indexRoute, teamRoute, equipmentRoute, organizationRoute]),
+  protectedLayoutRoute.addChildren([indexRoute, teamRoute, equipmentRoute, organizationRoute, eventStubRoute]),
   loginRoute,
   registerRoute,
   qrLoginRoute,

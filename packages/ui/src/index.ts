@@ -18,6 +18,7 @@ export { Switch } from "./components/switch";
 export { Avatar, AvatarFallback, AvatarImage } from "./components/avatar";
 export { STATUS_PILL_STATUSES, StatusPill, type StatusPillProps, type StatusPillStatus } from "./components/status-pill";
 export { Skeleton } from "./components/skeleton";
+export { Progress, type ProgressProps } from "./components/progress";
 export { EmptyState, type EmptyStateProps } from "./components/empty-state";
 export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dialog";
 export { AGENT_STATES, AgentStatus, type AgentState, type AgentStatusProps } from "./components/agent-status";
