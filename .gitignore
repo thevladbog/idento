@@ -35,6 +35,7 @@ coverage.out
 node_modules/
 web/dist
 web/dist-ssr
+panel/dist
 *.tsbuildinfo
 
 # Desktop (Tauri / Vite)

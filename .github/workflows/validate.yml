@@ -12,6 +12,9 @@ on:
       run-shared-ui:
         type: boolean
         default: true
+      run-panel:
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -344,3 +347,120 @@ jobs:
         run: |
           echo "## Shared UI Test Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Shared UI tests completed" >> $GITHUB_STEP_SUMMARY
+
+  # TypeScript type checking (customer panel — panel/)
+  typecheck-panel:
+    name: TypeScript Type Check (Panel)
+    runs-on: ubuntu-latest
+    if: inputs.run-panel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck -w panel
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Panel Type Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Type checking completed" >> $GITHUB_STEP_SUMMARY
+
+  # Lint panel (ESLint)
+  lint-panel:
+    name: Lint Panel (ESLint)
+    runs-on: ubuntu-latest
+    if: inputs.run-panel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint with annotations
+        run: npm run lint -w panel
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Panel ESLint Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Panel linting completed" >> $GITHUB_STEP_SUMMARY
+
+  # Test panel
+  test-panel:
+    name: Test Panel
+    runs-on: ubuntu-latest
+    needs: [typecheck-panel, lint-panel]
+    if: inputs.run-panel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test -w panel
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Panel Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Panel tests completed" >> $GITHUB_STEP_SUMMARY
+
+  # Build panel
+  build-panel:
+    name: Build Panel
+    runs-on: ubuntu-latest
+    needs: [typecheck-panel, lint-panel]
+    if: inputs.run-panel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build -w panel
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: panel-dist
+          path: panel/dist
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "## Panel Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Panel built successfully" >> $GITHUB_STEP_SUMMARY
+          du -sh panel/dist >> $GITHUB_STEP_SUMMARY
