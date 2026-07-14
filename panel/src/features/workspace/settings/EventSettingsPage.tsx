@@ -1,6 +1,7 @@
 import { Skeleton, cn } from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
+import { FontsCard } from "./FontsCard";
 import { GeneralCard } from "./GeneralCard";
 import { $api } from "../../../shared/api/query";
 import { useScrollSpy } from "../../../shared/hooks/useScrollSpy";
@@ -20,9 +21,9 @@ const RAIL_ITEMS: { id: (typeof SECTION_IDS)[number]; labelKey: string; destruct
 
 // Board 6a — the event settings page: a left anchor rail (scroll-spy
 // active-highlighting via the ported useScrollSpy) beside stacked card
-// sections. Only General is real in this task; Fonts/API keys/Danger zone
-// are inline placeholders that Tasks 5-7 replace one-by-one (reconciliation
-// #5 in the task brief narrows the board's 7-item rail down to these 4).
+// sections. General and Fonts are real; API keys/Danger zone are inline
+// placeholders that Tasks 6-7 replace one-by-one (reconciliation #5 in the
+// task brief narrows the board's 7-item rail down to these 4).
 export function EventSettingsPage() {
   const { t } = useTranslation();
   const { eventId } = routeApi.useParams();
@@ -72,7 +73,7 @@ export function EventSettingsPage() {
             <GeneralCard event={event} />
           </section>
           <section id="settings-fonts">
-            <FontsCardPlaceholder />
+            <FontsCard eventId={event.id} />
           </section>
           <section id="settings-api-keys">
             <ApiKeysCardPlaceholder />
@@ -86,18 +87,8 @@ export function EventSettingsPage() {
   );
 }
 
-// Minimal inline placeholders — Tasks 5-7 replace these one-by-one with the
-// real Fonts/API-keys/Danger-zone cards.
-function FontsCardPlaceholder() {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <h3 className="text-section-title">{t("settingsFonts")}</h3>
-      <p className="text-body text-muted-foreground">{t("placeholderComingSoon")}</p>
-    </div>
-  );
-}
-
+// Minimal inline placeholders — Tasks 6-7 replace these one-by-one with the
+// real API-keys/Danger-zone cards.
 function ApiKeysCardPlaceholder() {
   const { t } = useTranslation();
   return (

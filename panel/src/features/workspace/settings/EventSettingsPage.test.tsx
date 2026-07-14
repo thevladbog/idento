@@ -77,6 +77,10 @@ const server = startMswServer(
       updated_at: "",
     });
   }),
+  // FontsCard (mounted in the Fonts section) fetches this for real —
+  // stubbed here (this file only cares about page-level assembly, not
+  // FontsCard's own behavior, which FontsCard.test.tsx owns).
+  http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
 );
 void server;
 
