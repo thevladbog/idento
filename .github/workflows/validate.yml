@@ -426,6 +426,12 @@ jobs:
       - name: Test
         run: npm test -w panel
 
+      - name: OpenAPI client drift check
+        run: |
+          npm run generate:api -w panel
+          git diff --exit-code -- panel/src/shared/api/schema.d.ts \
+            || { echo "::error::schema.d.ts is stale — run 'npm run generate:api -w panel' and commit"; exit 1; }
+
       - name: Summary
         if: always()
         run: |
