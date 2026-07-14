@@ -233,6 +233,105 @@ components:
         staff_jwt: { type: string }
         device_number: { type: integer }
       required: [station_config, staff_jwt, device_number]
+    Attendee:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        email: { type: string }
+        company: { type: string }
+        position: { type: string }
+        code: { type: string }
+        checkin_status: { type: boolean }
+        checked_in_at: { type: string, format: date-time, nullable: true }
+        checked_in_by: { type: string, format: uuid, nullable: true }
+        checked_in_by_email:
+          type: string
+          nullable: true
+          description: Email of the user who checked the attendee in (set once, on the first check-in transition).
+        checked_in_device_number: { type: integer, nullable: true }
+        checked_in_point_name: { type: string, nullable: true }
+        printed_count: { type: integer }
+        blocked: { type: boolean }
+        block_reason: { type: string, nullable: true }
+        packet_delivered: { type: boolean }
+        registered_at: { type: string, format: date-time, nullable: true }
+        registration_zone_id: { type: string, format: uuid, nullable: true }
+        custom_fields: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Soft-delete marker set by DELETE /api/attendees/{id}; the row is never hard-deleted.
+      required:
+        [
+          id,
+          event_id,
+          first_name,
+          last_name,
+          email,
+          company,
+          position,
+          code,
+          checkin_status,
+          printed_count,
+          blocked,
+          packet_delivered,
+          created_at,
+          updated_at,
+        ]
+    DuplicateInfo:
+      type: object
+      description: One row BulkCreateAttendees skipped, keyed by why it was considered a duplicate of an existing attendee.
+      properties:
+        email: { type: string }
+        code: { type: string }
+        first_name: { type: string }
+        last_name: { type: string }
+        reason: { type: string, enum: [email, code] }
+      required: [email, first_name, last_name, reason]
+    BulkImportResponse:
+      type: object
+      properties:
+        message: { type: string }
+        created: { type: integer }
+        skipped: { type: integer }
+        total: { type: integer }
+        duplicates:
+          type: array
+          items: { $ref: "#/components/schemas/DuplicateInfo" }
+      required: [message, created, skipped, total]
+    BulkLimitExceededError:
+      type: object
+      description: >
+        BulkCreateAttendees' own 403 body when importing the whole batch
+        would push attendees_per_event over its plan max — built inline in
+        the handler (calling Store.CheckAttendeeLimit directly with
+        adding=len(req.Attendees)), NOT middleware.CheckAttendeeLimits
+        (which only wraps the single-create route and always checks
+        adding=1). Same fields as LimitExceededError plus "adding" — the
+        batch size being requested — so it cannot reuse that schema
+        (LimitExceededError is additionalProperties: false).
+      properties:
+        error: { type: string }
+        current: { type: integer }
+        max: { type: integer, description: "-1 means unlimited" }
+        adding: { type: integer }
+        upgrade_required: { type: boolean }
+        limit_type: { type: string }
+      required: [error, current, max, adding, upgrade_required, limit_type]
+      additionalProperties: false
+    GenerateAttendeeCodesResponse:
+      type: object
+      properties:
+        status: { type: string }
+        updated_count: { type: integer }
+        message: { type: string }
+      required: [status, updated_count, message]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -1084,6 +1183,628 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: Token generation or persistence failure.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/attendees:
+    get:
+      operationId: getAttendees
+      summary: >
+        Attendees for an event, optionally filtered by an exact code match
+        (mobile QR/barcode scan lookup) and/or a search substring across
+        name/email/code (mobile attendee search). Omitting both query
+        params returns the full event attendee list.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: code
+          in: query
+          schema: { type: string }
+          description: Exact match against Attendee.code.
+        - name: search
+          in: query
+          schema: { type: string }
+          description: Substring match across name/email/code.
+      responses:
+        "200":
+          description: Attendees for the event (all, or filtered by code/search).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            fetching attendees ("Failed to fetch attendees") — both render
+            as Error via c.JSON.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      operationId: createAttendee
+      summary: Create an attendee for an event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                No field is required by the handler — an empty body creates
+                an attendee with every field blank. code defaults to a
+                generated UUID string when omitted or empty.
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                email: { type: string }
+                company: { type: string }
+                position: { type: string }
+                code: { type: string }
+                custom_fields: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: >
+            Created attendee. Usage is logged best-effort afterward (a
+            LogUsage failure is logged server-side but does not fail the
+            request), same pattern as POST /api/events.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: >
+            event_id is not a UUID — checked identically by
+            middleware.CheckAttendeeLimits before the handler runs, so the
+            handler's own duplicate check on this route is unreachable — or
+            the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: >
+            tenant_suspended from the tenant gate (Error), or
+            middleware.CheckAttendeeLimits rejected the request because the
+            event is at/over its attendees_per_event plan limit
+            (LimitExceededError). For this single-create route (adding
+            always =1), CheckAttendeeLimits happens to build the exact same
+            body shape as middleware.CheckLimits even though it's a
+            separate function — contrast BulkLimitExceededError on the
+            /bulk route, where "adding" (the batch size) is a real extra
+            field.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/LimitExceededError" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership, checked by the handler after the
+            middleware passes).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            middleware.CheckAttendeeLimits' own store failure checking the
+            limit ("Failed to check attendee limit" — unlike
+            middleware.CheckLimits, which folds a store error into the same
+            403 as a real limit breach, CheckAttendeeLimits surfaces a
+            store failure honestly as a 500), a store failure resolving
+            event ownership ("Internal error"), or a failure persisting the
+            attendee ("Failed to create attendee"). All render as Error via
+            c.JSON.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/attendees/bulk:
+    post:
+      operationId: bulkCreateAttendees
+      summary: CSV-import bulk-create attendees for an event, skipping rows that duplicate an existing email or code
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                attendees:
+                  type: array
+                  items: { type: object, additionalProperties: true }
+                  description: One object per row; keys map to standard fields case-insensitively, everything is also kept in custom_fields.
+                field_schema:
+                  type: array
+                  items: { type: string }
+                  description: If given, replaces the event's stored field_schema (persisted best-effort; failure is logged, not returned).
+              required: [attendees]
+      responses:
+        "201":
+          description: >
+            Import summary. Per-row CreateAttendee failures inside the loop
+            are silently counted as skipped, not surfaced as a distinct
+            error status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BulkImportResponse" }
+        "400":
+          description: >
+            event_id is not a UUID, the request body is malformed, or
+            attendees is empty — all via echo.NewHTTPError.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: >
+            tenant_suspended from the tenant gate (Error), or the whole
+            batch would push attendees_per_event over its plan max
+            (BulkLimitExceededError) — checked in-handler via
+            Store.CheckAttendeeLimit(..., len(req.Attendees)), NOT
+            middleware.CheckAttendeeLimits (which only wraps the
+            single-create route and always checks adding=1).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/BulkLimitExceededError" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error", via
+            writeErr — Error shape), or a failure checking the batch limit
+            ("Failed to check attendee limit", via echo.NewHTTPError —
+            HTTPError shape). The field-schema update and the
+            existing-attendees lookup both degrade gracefully on failure
+            (logged only) rather than returning an error to the client.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/HTTPError" }
+  /api/events/{event_id}/attendees/generate-codes:
+    post:
+      operationId: generateAttendeeCodes
+      summary: Backfill a unique code for every attendee in the event that doesn't already have one
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Count of attendees updated. Per-attendee UpdateAttendee
+            failures inside the loop are logged and skipped, not surfaced
+            as errors.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateAttendeeCodesResponse" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            fetching attendees ("Failed to get attendees").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/attendees/export:
+    get:
+      operationId: exportAttendeesCsv
+      summary: CSV export of an event's attendees (Content-Disposition attachment)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            CSV body built with encoding/csv into a strings.Builder and sent
+            via c.String — NOT any of the JSON error shapes. The handler
+            sets Content-Type: text/csv explicitly before calling c.String;
+            Echo's writeContentType only sets a header when one isn't
+            already present, so the explicit text/csv wins over Echo's
+            text/plain default for c.String. Every header/cell (including
+            attacker-controlled custom-field keys sourced from
+            ExternalImport) is passed through sanitizeCSVField, which
+            prefixes values starting with =, +, -, @, tab, or CR with a
+            single quote to neutralize CSV/formula injection.
+          content:
+            text/csv:
+              schema:
+                type: string
+                description: Raw CSV text — a header row plus one row per attendee.
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"),
+            fetching attendees ("Failed to get attendees"), or writing the
+            CSV itself ("Failed to write CSV header" / "Failed to generate
+            CSV" — both effectively unreachable with a strings.Builder
+            target, but present in the code and share this same Error
+            shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{id}/qr:
+    get:
+      operationId: getAttendeeQr
+      summary: PNG QR code image encoding the attendee's check-in code
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 256x256 PNG, medium error-correction level, Cache-Control public max-age=86400.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: id is not a UUID (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Two distinct causes with distinct shapes. The attendee itself
+            does not exist — OR a store failure loading it is masked as
+            this same 404 ("Attendee not found", HTTPError via
+            echo.NewHTTPError; unlike every other attendee handler, this
+            one loads the attendee with the plain, non-tenant-scoped
+            Store.GetAttendeeByID instead of requireAttendeeOwnership, so a
+            store error and a real miss are indistinguishable here). Versus
+            the attendee's event does not exist / belongs to a different
+            tenant ("Event not found", Error via
+            requireEventOwnership+writeErr, checked separately once the
+            attendee has loaded).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPError" }
+                  - { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the attendee's event ownership
+            ("Internal error", Error via requireEventOwnership+writeErr),
+            or qrcode.Encode failing because the code is too long to fit a
+            QR symbol at this size/recovery level ("Failed to generate QR
+            code", HTTPError via echo.NewHTTPError).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/HTTPError" }
+  /api/attendees/{id}:
+    put:
+      operationId: updateAttendeeHandler
+      summary: >
+        Check-in status update (kept for backward compatibility — PATCH on
+        this same path is the full profile update). Auto-fills
+        checked_in_at and checked_in_by/checked_in_by_email on the first
+        transition to checked-in, and clears all three on uncheck.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkin_status: { type: boolean }
+                checked_in_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: If provided while checking in, used verbatim instead of the server time.
+      responses:
+        "200":
+          description: Updated attendee.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or persisting the update ("Failed to update attendee").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    patch:
+      operationId: updateAttendeeInfo
+      summary: Full update of an attendee's profile fields (every field optional; only provided fields are applied)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Every field is optional; only provided (non-null) fields are applied — same convention as PUT /api/tenants/{id}.
+              properties:
+                first_name: { type: string }
+                last_name: { type: string }
+                email: { type: string }
+                company: { type: string }
+                position: { type: string }
+                code: { type: string }
+                blocked: { type: boolean }
+                custom_fields: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Updated attendee.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or persisting the update ("Failed to update attendee").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteAttendee
+      summary: Soft-delete an attendee (sets deleted_at; the row is never hard-deleted)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Confirmation message — NOT the attendee record, unlike every
+            other mutation on this resource.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or persisting the soft delete ("Failed to delete attendee").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{id}/block:
+    post:
+      operationId: blockAttendee
+      summary: >
+        Block an attendee with a reason. The request body is bound BEFORE
+        checking attendee ownership, so a malformed body 400s even for an
+        attendee id that doesn't exist or isn't the caller's.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200":
+          description: Updated attendee (blocked=true, block_reason set from the request).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or persisting the update ("Failed to update attendee").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{id}/unblock:
+    post:
+      operationId: unblockAttendee
+      summary: Unblock an attendee (clears blocked and block_reason). No request body.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Updated attendee (blocked=false, block_reason cleared).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or persisting the update ("Failed to update attendee").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
