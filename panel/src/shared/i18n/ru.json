@@ -57,6 +57,8 @@
   "readinessStepStaff": "Персонал",
   "readinessStepEquipment": "Оборудование",
   "readinessSkipped": "Пропущено",
+  "readinessStatusDone": "Готово",
+  "readinessStatusNotDone": "Не готово",
   "placeholderComingSoon": "Этот раздел появится на следующем этапе.",
   "tenantSuspendedTitle": "Ваш аккаунт приостановлен",
   "tenantSuspendedBody": "Ваши мероприятия и данные участников в безопасности — ничего не удалено.",

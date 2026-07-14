@@ -57,6 +57,8 @@
   "readinessStepStaff": "Staff",
   "readinessStepEquipment": "Equipment",
   "readinessSkipped": "Skipped",
+  "readinessStatusDone": "Done",
+  "readinessStatusNotDone": "Not done",
   "placeholderComingSoon": "This section is coming in a later phase.",
   "tenantSuspendedTitle": "Your account is paused",
   "tenantSuspendedBody": "Your events and attendee data are safe — nothing is deleted.",

@@ -76,10 +76,23 @@ describe("ReadinessCell", () => {
     expect(tooltip.getByText("Zones")).toBeInTheDocument();
     expect(tooltip.getByText("Staff")).toBeInTheDocument();
     expect(tooltip.getByText("Equipment")).toBeInTheDocument();
-    // The skipped step's dedicated annotation — done/not_done are conveyed
-    // by icon alone (no dedicated i18n key for those two per the brief's
-    // key list), but "skipped" gets an explicit textual callout since a
-    // step silently absent from the count would otherwise be ambiguous.
-    expect(tooltip.getByText("(Skipped)")).toBeInTheDocument();
+
+    // Every status gets a real text annotation next to its label, not just
+    // "skipped" — status must never be conveyed by icon/color alone (WCAG
+    // 1.4.1). "attendees" is done, "badge" is not_done, and "zones" is
+    // skipped in this fixture, so scope each assertion to its own row (the
+    // fixture has two "done" and two "not_done" steps, so the status text
+    // repeats and can't be queried unscoped).
+    const attendeesRow = tooltip.getByText("Attendees").closest("li");
+    expect(attendeesRow).not.toBeNull();
+    expect(within(attendeesRow as HTMLElement).getByText("(Done)")).toBeInTheDocument();
+
+    const badgeRow = tooltip.getByText("Badge").closest("li");
+    expect(badgeRow).not.toBeNull();
+    expect(within(badgeRow as HTMLElement).getByText("(Not done)")).toBeInTheDocument();
+
+    const zonesRow = tooltip.getByText("Zones").closest("li");
+    expect(zonesRow).not.toBeNull();
+    expect(within(zonesRow as HTMLElement).getByText("(Skipped)")).toBeInTheDocument();
   });
 });

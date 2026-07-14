@@ -67,13 +67,21 @@ export function ReadinessCell({ readiness }: ReadinessCellProps) {
           <ul className="flex flex-col gap-1">
             {steps.map((step) => {
               const Icon = step.status === "done" ? CheckCircle2 : step.status === "skipped" ? MinusCircle : Circle;
+              // Icon + color alone can't convey status to assistive tech
+              // (WCAG 1.4.1) — every status gets a real text label here,
+              // mirroring packages/ui's StatusPill pattern of always
+              // pairing icon + text + color.
+              const statusText =
+                step.status === "done"
+                  ? t("readinessStatusDone")
+                  : step.status === "skipped"
+                    ? t("readinessSkipped")
+                    : t("readinessStatusNotDone");
               return (
                 <li key={step.key} className="flex items-center gap-1.5">
                   <Icon aria-hidden className="size-3 shrink-0" />
                   <span>{t(STEP_LABEL_KEYS[step.key])}</span>
-                  {step.status === "skipped" ? (
-                    <span className="text-muted-foreground">({t("readinessSkipped")})</span>
-                  ) : null}
+                  <span className="text-muted-foreground">({statusText})</span>
                 </li>
               );
             })}
