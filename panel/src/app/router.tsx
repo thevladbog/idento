@@ -1,4 +1,5 @@
 import { Outlet, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
+import { useTranslation } from "react-i18next";
 import { LoginScreen } from "../features/auth/LoginScreen";
 import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
@@ -10,6 +11,12 @@ import { queryClient } from "./queryClient";
 export const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
+
+// eslint-disable-next-line react-refresh/only-export-components -- Route component belongs next to the route definitions it backs; not a real Fast Refresh issue for this pattern (same rationale as ProtectedLayout.tsx / ThemeProvider.tsx).
+function HomePlaceholder() {
+  const { t } = useTranslation();
+  return <div className="p-6 text-body">{t("homeComingSoon")}</div>;
+}
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -55,7 +62,7 @@ const indexRoute = createRoute({
   path: "/",
   // P1 replaces this with the real Home (board 1c) — the shell and routing
   // guard are this phase's deliverable, not Home's content.
-  component: () => <div className="p-6 text-body">Signed in — Home ships in P1.</div>,
+  component: HomePlaceholder,
 });
 
 const teamRoute = createRoute({
