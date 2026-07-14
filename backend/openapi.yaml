@@ -33,17 +33,33 @@ components:
       type: object
       description: >
         Standard handler error: {"error": "..."} with an optional machine code
-        (e.g. code=tenant_suspended on 403 from the tenant gate).
+        (e.g. code=tenant_suspended on 403 from the tenant gate). Closed shape
+        (additionalProperties: false) so it never ambiguously matches the
+        richer LimitExceededError body in a oneOf.
       properties:
         error: { type: string }
         code: { type: string }
       required: [error]
+      additionalProperties: false
     HTTPError:
       type: object
       description: echo.NewHTTPError / rate-limiter shape.
       properties:
         message: { type: string }
       required: [message]
+    LimitExceededError:
+      type: object
+      description: >
+        middleware.CheckLimits 403 body when a tenant resource limit
+        (e.g. users) is at or over its plan max.
+      properties:
+        error: { type: string }
+        current: { type: integer }
+        max: { type: integer, description: "-1 means unlimited" }
+        upgrade_required: { type: boolean }
+        limit_type: { type: string }
+      required: [error, current, max, upgrade_required, limit_type]
+      additionalProperties: false
     User:
       type: object
       properties:
@@ -103,6 +119,46 @@ components:
         version: { type: string }
         license: { nullable: true }
       required: [mode, version]
+    MeResponse:
+      type: object
+      description: The caller's identity as carried by the current JWT (not re-read from the DB).
+      properties:
+        user_id: { type: string }
+        tenant_id: { type: string }
+        role: { type: string }
+      required: [user_id, tenant_id, role]
+    SwitchTenantResponse:
+      type: object
+      properties:
+        token: { type: string }
+        current_tenant: { $ref: "#/components/schemas/Tenant" }
+      required: [token, current_tenant]
+    TenantMembership:
+      type: object
+      description: >
+        A tenant summary annotated with the caller's role in it. Distinct
+        from Tenant: this shape is built as a literal map (GetUserTenants,
+        GetTenant), so every key is always present in the JSON — nullable
+        fields serialize as null instead of being omitted, unlike Tenant's
+        omitempty struct fields. Has no status/archived_at.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        settings: { type: object, additionalProperties: true, nullable: true }
+        logo_url: { type: string, nullable: true }
+        website: { type: string, nullable: true }
+        contact_email: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        role: { type: string }
+      required: [id, name, settings, logo_url, website, contact_email, created_at, updated_at, role]
+    QRTokenResponse:
+      type: object
+      properties:
+        qr_token: { type: string }
+        user_id: { type: string }
+        email: { type: string }
+      required: [qr_token, user_id, email]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -246,3 +302,278 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/InstanceInfo" }
+  /api/me:
+    get:
+      operationId: getMe
+      summary: >
+        Caller's identity from the current JWT. NOTE: unlike every other
+        /api/* route, this path is explicitly exempt from TenantGate
+        (middleware.TenantGate hard-codes an early return for "/api/me"), so
+        a suspended tenant's users can still resolve who they are — no 403
+        tenant_suspended is possible here.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Identity carried by the token (not re-read from the DB).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MeResponse" }
+  /api/auth/switch-tenant:
+    post:
+      operationId: switchTenant
+      summary: Mint a new JWT scoped to a different tenant the caller belongs to
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tenant_id: { type: string }
+              required: [tenant_id]
+      responses:
+        "200":
+          description: New token scoped to the requested tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SwitchTenantResponse" }
+        "400":
+          description: Malformed body, or tenant_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: >
+            Impersonation sessions are sealed (no switching tenants while
+            impersonating), or the caller has no membership in tenant_id.
+            Also covers tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to load the user/tenant, or to mint the token.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/tenants:
+    get:
+      operationId: getUserTenants
+      summary: All organizations the caller belongs to, each annotated with their role
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Tenant memberships (role defaults to "viewer" if the per-tenant role lookup fails).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TenantMembership" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to load tenants for the caller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/tenants/{id}:
+    get:
+      operationId: getTenant
+      summary: A single tenant/organization the caller has a role in
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Tenant with the caller's role in it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TenantMembership" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Caller has no role in this tenant, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Tenant does not exist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: updateTenant
+      summary: Update tenant/organization profile fields (admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Every field is optional; only provided (non-null) fields are applied.
+              properties:
+                name: { type: string }
+                settings: { type: object, additionalProperties: true }
+                logo_url: { type: string }
+                website: { type: string }
+                contact_email: { type: string }
+      responses:
+        "200":
+          description: Updated tenant (full record, not the role-annotated membership shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Caller is not admin in this tenant, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Tenant does not exist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failed to persist the update.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/users:
+    get:
+      operationId: getUsers
+      summary: All users in the caller's active tenant (admin/manager only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Users in the tenant.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+        "403":
+          description: >
+            Caller role is not admin/manager (echo.NewHTTPError → HTTPError),
+            or tenant_suspended from the tenant gate (→ Error).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPError" }
+                  - { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to fetch users (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+    post:
+      operationId: createUser
+      summary: Create a staff or manager user in the caller's active tenant (admin only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [staff, manager] }
+              required: [email, password, role]
+      responses:
+        "201":
+          description: Created user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400":
+          description: Malformed body, or role is not staff/manager (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: >
+            Caller is not admin (HTTPError), tenant_suspended from the tenant
+            gate (Error), or middleware.CheckLimits rejected the request
+            because the tenant is at/over its "users" plan limit
+            (LimitExceededError) — this middleware runs before the handler.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPError" }
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/LimitExceededError" }
+        "500":
+          description: >
+            Password hash failure (e.g. password over bcrypt's 72-byte limit),
+            or a store failure creating the user / tenant membership
+            (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+  /api/users/{id}/qr-token:
+    post:
+      operationId: generateQRToken
+      summary: Generate a QR-card login token for a staff user (admin only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: New QR token for the target user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/QRTokenResponse" }
+        "400":
+          description: id is not a UUID (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: >
+            Caller is not admin (HTTPError), or tenant_suspended from the
+            tenant gate (Error).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPError" }
+                  - { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Target user does not exist, or is not a member of the caller's
+            active tenant (uniform 404 either way — doesn't reveal
+            cross-tenant existence).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "500":
+          description: Store failed to persist the new QR token (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }

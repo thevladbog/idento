@@ -41,6 +41,8 @@ type fakeStore struct {
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
+	getTenantByID                       func(id uuid.UUID) (*models.Tenant, error)
+	updateTenant                        func(tenant *models.Tenant) error
 	getTenantStatus                     func(id uuid.UUID) (string, error)
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
@@ -70,6 +72,7 @@ type fakeStore struct {
 	getEventStats         func(eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 
 	checkAttendeeLimit func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
+	checkTenantLimit   func(tenantID uuid.UUID, resourceType string) (bool, int, int, error)
 
 	getPlatformAnalytics func() (*models.PlatformAnalytics, error)
 }
@@ -165,6 +168,12 @@ func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenan
 func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
 	return f.provisionTenantWithAdmin(tenantName, email, password)
 }
+func (f *fakeStore) GetTenantByID(_ context.Context, id uuid.UUID) (*models.Tenant, error) {
+	return f.getTenantByID(id)
+}
+func (f *fakeStore) UpdateTenant(_ context.Context, tenant *models.Tenant) error {
+	return f.updateTenant(tenant)
+}
 func (f *fakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string, error) {
 	return f.getTenantStatus(id)
 }
@@ -239,6 +248,9 @@ func (f *fakeStore) GetEventStats(_ context.Context, eventID uuid.UUID, zoneID *
 
 func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
 	return f.checkAttendeeLimit(tenantID, eventID, adding)
+}
+func (f *fakeStore) CheckTenantLimit(_ context.Context, tenantID uuid.UUID, resourceType string) (bool, int, int, error) {
+	return f.checkTenantLimit(tenantID, resourceType)
 }
 func (f *fakeStore) GetPlatformAnalytics(_ context.Context) (*models.PlatformAnalytics, error) {
 	return f.getPlatformAnalytics()
