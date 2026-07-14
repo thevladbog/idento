@@ -81,6 +81,9 @@ const server = startMswServer(
   // stubbed here (this file only cares about page-level assembly, not
   // FontsCard's own behavior, which FontsCard.test.tsx owns).
   http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
+  // Same rationale for ApiKeysCard, mounted in the API keys section —
+  // ApiKeysCard.test.tsx owns its own behavior.
+  http.get("http://api.test/api/events/:eventId/api-keys", () => HttpResponse.json([])),
 );
 void server;
 

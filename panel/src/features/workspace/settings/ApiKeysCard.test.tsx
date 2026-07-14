@@ -1,0 +1,232 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import type { ReactNode } from "react";
+import { ApiKeysCard } from "./ApiKeysCard";
+import { startMswServer } from "../../../test/msw";
+import "../../../shared/i18n";
+import type { components } from "../../../shared/api/schema";
+
+type APIKey = components["schemas"]["APIKey"];
+
+const ACTIVE: APIKey = {
+  id: "key-1",
+  event_id: "evt-1",
+  name: "CRM sync",
+  key_preview: "idnt_live_a1b2c3d4...",
+  last_used_at: "2026-06-10T09:15:00.000Z",
+  created_at: "2026-06-01T12:00:00.000Z",
+};
+
+const REVOKED: APIKey = {
+  id: "key-2",
+  event_id: "evt-1",
+  name: "Old integration",
+  key_preview: "idnt_live_zzzz9999...",
+  revoked_at: "2026-06-15T00:00:00.000Z",
+  created_at: "2026-05-01T00:00:00.000Z",
+};
+
+let keys: APIKey[] = [ACTIVE, REVOKED];
+let listHitCount = 0;
+let deleteCount = 0;
+let lastDeletedKeyId: string | undefined;
+let createCount = 0;
+let lastCreateBody: unknown;
+let createStatusOverride: number | null = null;
+
+const server = startMswServer(
+  http.get("http://api.test/api/events/:eventId/api-keys", () => {
+    listHitCount += 1;
+    return HttpResponse.json(keys);
+  }),
+  http.post("http://api.test/api/events/:eventId/api-keys", async ({ request }) => {
+    createCount += 1;
+    lastCreateBody = await request.json();
+    if (createStatusOverride) {
+      return HttpResponse.json({ error: "bad request" }, { status: createStatusOverride });
+    }
+    const created: APIKey = {
+      id: "key-new",
+      event_id: "evt-1",
+      name: (lastCreateBody as { name?: string }).name ?? "",
+      key_preview: "idnt_live_newnewnew...",
+      created_at: "2026-06-20T00:00:00.000Z",
+    };
+    keys = [...keys, created];
+    return HttpResponse.json({ api_key: created, plain_key: "idnt_live_newnewnewSECRETVALUE" }, { status: 201 });
+  }),
+  http.delete("http://api.test/api/events/:eventId/api-keys/:keyId", ({ params }) => {
+    deleteCount += 1;
+    lastDeletedKeyId = params.keyId as string;
+    keys = keys.map((k) => (k.id === params.keyId ? { ...k, revoked_at: "2026-06-21T00:00:00.000Z" } : k));
+    return HttpResponse.json({ message: "revoked" });
+  }),
+);
+void server;
+
+function renderWithProviders(ui: ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
+describe("ApiKeysCard", () => {
+  beforeEach(() => {
+    keys = [ACTIVE, REVOKED];
+    listHitCount = 0;
+    deleteCount = 0;
+    lastDeletedKeyId = undefined;
+    createCount = 0;
+    lastCreateBody = undefined;
+    createStatusOverride = null;
+    window.__ENV__ = { API_URL: "http://api.test" };
+  });
+
+  // jsdom itself has no Clipboard implementation, but `userEvent.setup()`
+  // (called per-test, after this helper must run) auto-attaches its own
+  // getter-only clipboard stub to `navigator` (real jsdom has none; the
+  // stub is testing-library's) — a mock installed before `setup()` is
+  // clobbered by it, so this must be called AFTER `userEvent.setup()`, and
+  // must use `defineProperty` (assignment throws on a getter-only property).
+  function mockClipboard() {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    return writeText;
+  }
+
+  it("renders keys with name, masked key preview, created/last-used dates, and a dimmed revoked row with a Revoked pill", async () => {
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    expect(await screen.findByText("CRM sync")).toBeInTheDocument();
+    expect(screen.getByText("idnt_live_a1b2c3d4...")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-01")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-10")).toBeInTheDocument();
+
+    // Revoked row: name still shown, dimmed, "Revoked" pill instead of a
+    // revoke action, em-dash for the never-set last-used date.
+    const revokedRow = screen.getByText("Old integration").closest("li");
+    expect(revokedRow).not.toBeNull();
+    expect(revokedRow?.className).toContain("opacity");
+    expect(within(revokedRow as HTMLElement).getByText("Revoked")).toBeInTheDocument();
+    expect(within(revokedRow as HTMLElement).getByText("—")).toBeInTheDocument();
+    expect(within(revokedRow as HTMLElement).queryByRole("button", { name: "Revoke…" })).not.toBeInTheDocument();
+
+    // Active row still offers Revoke…
+    const activeRow = screen.getByText("CRM sync").closest("li");
+    expect(within(activeRow as HTMLElement).getByRole("button", { name: "Revoke…" })).toBeInTheDocument();
+  });
+
+  it("shows a muted empty-state caption when there are no keys", async () => {
+    keys = [];
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    expect(
+      await screen.findByText("No API keys yet — create one to push attendees from your registration forms or CRM."),
+    ).toBeInTheDocument();
+  });
+
+  it("revokes a key: confirm dialog -> DELETE -> list invalidated", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    const initialHits = listHitCount;
+
+    const activeRow = screen.getByText("CRM sync").closest("li") as HTMLElement;
+    await user.click(within(activeRow).getByRole("button", { name: "Revoke…" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Integrations using this key stop working immediately\./)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => expect(deleteCount).toBe(1));
+    expect(lastDeletedKeyId).toBe("key-1");
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(initialHits));
+  });
+
+  it("creates a key: POST with the entered name -> reveal shows the plain key once, with a copy button and warning", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Registration form");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    await waitFor(() => expect(createCount).toBe(1));
+    expect(lastCreateBody).toEqual({ name: "Registration form" });
+
+    expect(await within(dialog).findByText("idnt_live_newnewnewSECRETVALUE")).toBeInTheDocument();
+    expect(within(dialog).getByText("This is the only time the key is shown.")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Done" })).toBeInTheDocument();
+
+    // list refetched after create too
+    await waitFor(() => expect(screen.getAllByText(/CRM sync|Registration form/)).toHaveLength(2));
+  });
+
+  it("copies the revealed plain key to the clipboard", async () => {
+    const user = userEvent.setup();
+    const writeText = mockClipboard();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    await within(dialog).findByText("idnt_live_newnewnewSECRETVALUE");
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+
+    expect(writeText).toHaveBeenCalledWith("idnt_live_newnewnewSECRETVALUE");
+  });
+
+  it("clears the plain key and resets the create mutation when the dialog is closed in reveal state, so reopening shows a fresh form", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+    await within(dialog).findByText("idnt_live_newnewnewSECRETVALUE");
+
+    // Close while still in the reveal state (Done button acts as close).
+    await user.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // Reopen: must be a fresh create form, not stale reveal content.
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("idnt_live_newnewnewSECRETVALUE")).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("");
+    expect(within(dialog).getByRole("button", { name: "+ Create key" })).toBeInTheDocument();
+  });
+
+  it("resets a stale create error on close/reopen, not just the reveal state", async () => {
+    createStatusOverride = 400;
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    expect(await within(dialog).findByText("Couldn't create the key.")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    dialog = await screen.findByRole("dialog");
+    expect(within(dialog).queryByText("Couldn't create the key.")).not.toBeInTheDocument();
+  });
+});
