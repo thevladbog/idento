@@ -18,11 +18,11 @@ work while this rewrite runs (see root `AGENTS.md`).
   nest under the pathless `_app` layout route (`beforeLoad: protectedBeforeLoad`)
   so the session guard and suspended-tenant takeover apply automatically;
   don't add ad-hoc auth checks inside individual route components.
-- **Data fetching:** TanStack Query. Auth/session calls go through
-  `src/shared/api/client.ts`'s hand-written `fetch` wrappers — do not call
-  `fetch` directly from a feature/component. (A generated OpenAPI client
-  lands in phase P0.3; once it exists, new endpoints should use it instead
-  of hand-written wrappers.)
+- **Data fetching:** TanStack Query. All calls go through the generated,
+  typed `openapi-fetch` client — `api` in `src/shared/api/http.ts` — either
+  directly or via the thin per-endpoint wrappers in `src/shared/api/
+  client.ts` that call it. Never call `fetch` directly from a
+  feature/component. See "API workflow (openapi-first)" below.
 - **Session:** the only file allowed to touch `localStorage` for auth state
   is `src/shared/api/session.ts`. Never read/write `token`/`user`/`tenants`/
   `current_tenant` directly from a component. Exception: `src/features/
@@ -39,3 +39,18 @@ work while this rewrite runs (see root `AGENTS.md`).
 - **Verify before finishing any change here:**
   `npm test -w panel && npm run typecheck -w panel && npm run lint -w panel && npm run build -w panel`
   from the repo root.
+
+## API workflow (openapi-first)
+
+`backend/openapi.yaml` is the contract and it is enforced: Go contract tests
+validate every documented operation (coverage-gated in CI), and the panel's
+`src/shared/api/schema.d.ts` is generated from it (drift-checked in CI).
+
+- New endpoint: document it in `backend/openapi.yaml` FIRST → implement the
+  handler → add a Go contract test (`openapi_contract_*_test.go`, uses
+  `validateResponse`) → `npm run generate:api -w panel` → call it through the
+  typed `api` client (`src/shared/api/http.ts`).
+- Never hand-write a `fetch` against an undocumented path.
+- Never hand-edit `schema.d.ts` — regenerate it; on merge conflict, regenerate.
+- All requests go through the `api` client so the auth middleware and
+  `ApiError` normalization (tenant_suspended, global 401) apply.
