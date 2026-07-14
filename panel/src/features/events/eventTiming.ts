@@ -5,11 +5,24 @@ export type EventPhase = "running" | "upcoming" | "past";
 
 // End-of-day of the effective end date (end ?? start), so a single-day
 // event stays "running" through its whole day.
+//
+// `start_date`/`end_date` are bare calendar dates that the create dialog
+// stores as UTC-midnight ISO timestamps (see CreateEventDialog), and the
+// Home rows/strip display them pinned to UTC (see EventRow/LiveStrip,
+// commit 252effb). Phase classification is pinned to UTC for the same
+// reason: end-of-day must mean the end of the UTC calendar day the value
+// denotes, so an event's bucket agrees with the UTC date shown next to it.
+// Using local `setHours` here would let a viewer behind UTC see a running
+// event as "past" during its own displayed day (e.g. a single-day event
+// stored at 2026-07-20T00:00:00Z would classify as "past" for a UTC-4
+// viewer by ~00:00 their local time on Jul 20 — the very day the row
+// shows). It also keeps classification deterministic regardless of the
+// machine timezone the tests run under.
 function effectiveEnd(e: ApiEvent): Date | null {
   const raw = e.end_date ?? e.start_date;
   if (!raw) return null;
   const d = new Date(raw);
-  d.setHours(23, 59, 59, 999);
+  d.setUTCHours(23, 59, 59, 999);
   return d;
 }
 
