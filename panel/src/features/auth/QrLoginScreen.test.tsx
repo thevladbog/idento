@@ -21,7 +21,8 @@ describe("QrLoginScreen", () => {
     // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
     // Response, so the mock needs a real Response instance, and it calls the
     // global fetch as `fetch(request: Request, init)` rather than
-    // `fetch(url, init)`.
+    // `fetch(url, init)`. Routed by URL (rather than assuming call order) so
+    // this stays correct if a background mount query is ever added here.
     global.fetch = vi.fn().mockImplementation(
       () =>
         new Response(
@@ -39,8 +40,10 @@ describe("QrLoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => expect(getCurrentUser()?.role).toBe("staff"));
-    const req = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls[0][0];
-    expect(req.url).toBe("http://api.test/auth/login-qr");
-    expect(await req.clone().text()).toBe(JSON.stringify({ qr_token: "QR-4471" }));
+    const calls = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls;
+    const req = calls.find(([r]) => r.url.includes("/login-qr"))?.[0];
+    expect(req).toBeDefined();
+    expect(req!.url).toBe("http://api.test/auth/login-qr");
+    expect(await req!.clone().text()).toBe(JSON.stringify({ qr_token: "QR-4471" }));
   });
 });

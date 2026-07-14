@@ -1529,10 +1529,12 @@ paths:
               properties:
                 attendees:
                   type: array
+                  maxItems: 5000
                   items: { type: object, additionalProperties: true }
                   description: One object per row; keys map to standard fields case-insensitively, everything is also kept in custom_fields.
                 field_schema:
                   type: array
+                  maxItems: 200
                   items: { type: string }
                   description: If given, replaces the event's stored field_schema (persisted best-effort; failure is logged, not returned).
               required: [attendees]
@@ -2425,6 +2427,7 @@ paths:
           application/json:
             schema:
               type: array
+              maxItems: 500
               description: >
                 One entry per rule to keep; any existing rules for this zone
                 not included here are deleted. id/zone_id/created_at on each

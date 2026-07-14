@@ -44,8 +44,10 @@ describe("OrgSwitcher", () => {
     await user.click(await screen.findByRole("menuitem", { name: "Beta Org" }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalled());
-    const req = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls[0][0];
-    expect(req.url).toBe("http://api.test/api/auth/switch-tenant");
-    expect(await req.clone().text()).toBe(JSON.stringify({ tenant_id: "t2" }));
+    const calls = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls;
+    const req = calls.find(([r]) => r.url.includes("/switch-tenant"))?.[0];
+    expect(req).toBeDefined();
+    expect(req!.url).toBe("http://api.test/api/auth/switch-tenant");
+    expect(await req!.clone().text()).toBe(JSON.stringify({ tenant_id: "t2" }));
   });
 });
