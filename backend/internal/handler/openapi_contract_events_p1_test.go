@@ -280,3 +280,129 @@ func TestContractGetEventReadiness(t *testing.T) {
 	}
 	validateResponse(t, http.MethodGet, path, rec)
 }
+
+// TestContractGetEventReadinessBadgeTemplateShapes covers the badge-readiness
+// shapes that actually occur in production. The shipped badge editor
+// (web/src/pages/BadgeTemplateEditorV2.tsx's handleSave) always PUTs
+// custom_fields with badgeTemplate as a JS object
+// ({width_mm, height_mm, dpi, elements}); Postgres JSONB round-trips that
+// back out as map[string]interface{} (see pg_store.go), never as a string.
+// These cases exercise that real map shape — with a non-empty, empty, and
+// absent "elements" array — alongside the string-based shapes the original
+// TestContractGetEventReadiness scenarios already cover, to lock in the fix
+// for the "any non-nil, non-string value counts as done" bug in
+// GetEventReadiness.
+func TestContractGetEventReadinessBadgeTemplateShapes(t *testing.T) {
+	tenantID := uuid.New()
+
+	// attendees=1, zones=0 (skipped, never blocks), staff=1: isolates
+	// "ready" so it hinges entirely on the badge step under test.
+	store := func(event *models.Event) *fakeStore {
+		return &fakeStore{
+			getEventByID:            func(uuid.UUID) (*models.Event, error) { return event, nil },
+			countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
+			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
+			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+		}
+	}
+	e := echo.New()
+	run := func(event *models.Event) (*httptest.ResponseRecorder, string) {
+		path := "/api/events/" + event.ID.String() + "/readiness"
+		c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+		c.SetPath("/api/events/:id/readiness")
+		c.SetParamNames("id")
+		c.SetParamValues(event.ID.String())
+		if err := New(store(event)).GetEventReadiness(c); err != nil {
+			t.Fatalf("GetEventReadiness: %v", err)
+		}
+		return rec, path
+	}
+	badgeStatus := func(t *testing.T, rec *httptest.ResponseRecorder, path string) (string, bool) {
+		t.Helper()
+		var resp struct {
+			Ready bool `json:"ready"`
+			Steps []struct {
+				Key    string `json:"key"`
+				Status string `json:"status"`
+			} `json:"steps"`
+		}
+		if err := jsonUnmarshalBody(rec, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		validateResponse(t, http.MethodGet, path, rec)
+		for _, s := range resp.Steps {
+			if s.Key == "badge" {
+				return s.Status, resp.Ready
+			}
+		}
+		t.Fatal("badge step missing from response")
+		return "", false
+	}
+
+	// (a) Map-shaped template with a non-empty elements array — the real
+	// shape written by BadgeTemplateEditorV2's handleSave — must be done.
+	withElements := p1Event(tenantID, "Map Template With Elements")
+	withElements.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(50),
+			"height_mm": float64(30),
+			"dpi":       float64(203),
+			"elements": []interface{}{
+				map[string]interface{}{"type": "text", "id": "el-1"},
+			},
+		},
+	}
+	rec, path := run(withElements)
+	if status, ready := badgeStatus(t, rec, path); status != readinessDone || !ready {
+		t.Fatalf("map template with elements must be badge=done and not block ready, got status=%s ready=%v", status, ready)
+	}
+
+	// (b) Map-shaped template with an empty elements array — a freshly
+	// created blank canvas — is not print-ready and must be not_done.
+	emptyElements := p1Event(tenantID, "Map Template Empty Elements")
+	emptyElements.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(50),
+			"height_mm": float64(30),
+			"dpi":       float64(203),
+			"elements":  []interface{}{},
+		},
+	}
+	rec, path = run(emptyElements)
+	if status, ready := badgeStatus(t, rec, path); status != readinessNotDone || ready {
+		t.Fatalf("blank-canvas map template (empty elements) must be badge=not_done and block ready, got status=%s ready=%v", status, ready)
+	}
+
+	// (b2) Map-shaped template with no "elements" key at all behaves the
+	// same as an empty array — not_done.
+	absentElements := p1Event(tenantID, "Map Template Absent Elements")
+	absentElements.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(50),
+			"height_mm": float64(30),
+			"dpi":       float64(203),
+		},
+	}
+	rec, path = run(absentElements)
+	if status, ready := badgeStatus(t, rec, path); status != readinessNotDone || ready {
+		t.Fatalf("map template without an elements key must be badge=not_done and block ready, got status=%s ready=%v", status, ready)
+	}
+
+	// (c) Existing string-based "done" scenario (as used elsewhere in the
+	// contract tests) must keep working under the new type-aware check.
+	stringTemplate := p1Event(tenantID, "String Template")
+	stringTemplate.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
+	rec, path = run(stringTemplate)
+	if status, ready := badgeStatus(t, rec, path); status != readinessDone || !ready {
+		t.Fatalf("non-empty string template must be badge=done and not block ready, got status=%s ready=%v", status, ready)
+	}
+
+	// (c2) An empty string must remain not_done — it never counted as done
+	// and the fix must not change that.
+	emptyString := p1Event(tenantID, "Empty String Template")
+	emptyString.CustomFields = map[string]interface{}{"badgeTemplate": ""}
+	rec, path = run(emptyString)
+	if status, ready := badgeStatus(t, rec, path); status != readinessNotDone || ready {
+		t.Fatalf("empty string template must be badge=not_done and block ready, got status=%s ready=%v", status, ready)
+	}
+}
