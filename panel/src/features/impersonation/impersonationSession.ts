@@ -12,9 +12,15 @@ const TOKEN_KEY = "token";
 export function getImpersonation(): ImpersonationSession | null {
   const raw = localStorage.getItem(SESSION_KEY);
   if (!raw) return null;
-  const session = JSON.parse(raw) as ImpersonationSession;
-  if (new Date(session.expiresAt).getTime() <= Date.now()) {
+  let session: ImpersonationSession;
+  try {
+    session = JSON.parse(raw) as ImpersonationSession;
+  } catch {
     localStorage.removeItem(SESSION_KEY);
+    return null;
+  }
+  if (new Date(session.expiresAt).getTime() <= Date.now()) {
+    endImpersonation();
     return null;
   }
   return session;
