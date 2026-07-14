@@ -451,21 +451,12 @@ func main() {
 	// Register Routes
 	h.RegisterRoutes(e, cfg.DeploymentMode)
 
-	// Health Check
-	e.GET("/health", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
-	})
+	// Meta routes (health check, instance metadata)
+	handler.RegisterMetaRoutes(e, cfg.DeploymentMode, version)
 
 	// Version / instance metadata (public: web reads the mode before login).
 	e.GET("/api/version", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"version": version})
-	})
-	e.GET("/api/instance", func(c echo.Context) error {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"mode":    cfg.DeploymentMode,
-			"version": version,
-			"license": nil,
-		})
 	})
 
 	// OpenAPI spec endpoint

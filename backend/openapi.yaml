@@ -96,6 +96,13 @@ components:
         token: { type: string }
         user: { $ref: "#/components/schemas/User" }
       required: [token, user]
+    InstanceInfo:
+      type: object
+      properties:
+        mode: { type: string, enum: [saas, onprem] }
+        version: { type: string }
+        license: { nullable: true }
+      required: [mode, version]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -213,3 +220,29 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /health:
+    get:
+      operationId: health
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                required: [status]
+  /api/instance:
+    get:
+      operationId: getInstance
+      summary: Deployment mode & version (public — frontends read this before login)
+      security: []
+      responses:
+        "200":
+          description: Instance metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InstanceInfo" }
