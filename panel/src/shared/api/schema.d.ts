@@ -3797,7 +3797,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Updated override, echoed back with allowed/notes as persisted but attendee_id/zone_id/created_at/updated_at exactly as bound from the request (not re-read from the store). */
+            /** @description Updated override, echoed back with allowed/notes as persisted. attendee_id/zone_id/created_at pass through exactly as bound from the request (zero/absent when the client omits them — the UPDATE ignores those columns), but updated_at is NOT client-bound: store.UpdateAttendeeZoneAccess stamps access.UpdatedAt = time.Now() onto the returned struct before persisting, so the response carries a fresh server timestamp. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -3980,7 +3980,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created assignment. Store.AssignStaffToZone sets id/assigned_at on the same pointer it's given before returning, so the response reflects the persisted values. */
+            /** @description Assignment. Store.AssignStaffToZone sets id/assigned_at on the same pointer it's given before the INSERT. On a first assignment those are the persisted values. On a duplicate (user_id, zone_id) pair the INSERT is a no-op (ON CONFLICT DO NOTHING), yet the response still carries the freshly generated id/assigned_at — which were NOT persisted; the stored row keeps its original values from the first assignment. */
             201: {
                 headers: {
                     [name: string]: unknown;
