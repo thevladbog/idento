@@ -39,6 +39,8 @@
   "themeLight": "Light",
   "themeDark": "Dark",
   "themeSystem": "System",
+  "themeSwitcherLabel": "Theme",
+  "languageSwitcherLabel": "Language",
   "orgSwitcherCount_one": "{{count}} organization",
   "orgSwitcherCount_other": "{{count}} organizations",
   "onPremVersionTag": "ON-PREM · v{{version}}"

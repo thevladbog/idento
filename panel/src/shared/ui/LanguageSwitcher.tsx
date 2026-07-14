@@ -10,11 +10,11 @@ const LANGUAGES = [
 ] as const;
 
 export function LanguageSwitcher() {
-  const { i18n } = useTranslation();
+  const { i18n, t } = useTranslation();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Language">
+        <Button variant="ghost" size="icon" aria-label={t("languageSwitcherLabel")}>
           <Languages />
         </Button>
       </DropdownMenuTrigger>
