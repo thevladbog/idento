@@ -7,12 +7,13 @@ import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
 // Isolated route tree matching the real app's shape closely enough for
-// `eventStubRoute.useParams()` to resolve: that route object is bound to
-// the id "/_app/events/$eventId" (app/router.tsx's real `_app` pathless
-// layout is its parent), and `.useParams()` looks up the active match by
-// that id string against whichever router is in context — not by JS object
-// identity — so this test router reconstructs the same pathless-layout-id
-// shape (without pulling in the real ProtectedLayout's auth machinery).
+// `EventWorkspaceStub`'s `getRouteApi("/_app/events/$eventId").useParams()`
+// to resolve: that id string is app/router.tsx's real `_app` pathless
+// layout id plus this route's `/events/$eventId` path, and `getRouteApi`
+// looks up the active match by that id string against whichever router is
+// in context — not by JS object identity — so this test router reconstructs
+// the same pathless-layout-id shape (without pulling in the real
+// ProtectedLayout's auth machinery).
 function buildRouter(initialPath: string) {
   const rootRoute = createRootRoute();
   const appLayoutRoute = createRoute({ getParentRoute: () => rootRoute, id: "_app", component: () => <Outlet /> });

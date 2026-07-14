@@ -1,25 +1,24 @@
 import { Button, Skeleton } from "@idento/ui";
-import { Link } from "@tanstack/react-router";
+import { Link, getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
-import { eventStubRoute } from "../../app/router";
 import { $api } from "../../shared/api/query";
 
 // Minimal placeholder for the real event workspace (badges, attendees,
 // check-in, etc. — P1.2). Confirms the event exists and is reachable via
 // this tenant, shows its name, and offers a way back to Home.
 //
-// Imports `eventStubRoute` back from app/router.tsx (which imports this
-// component for its own `component:` field) — a circular import, but a safe
-// one: `eventStubRoute` is only read inside the component function body, by
-// which point both modules have finished evaluating. `.useParams()` on the
-// route object itself gives strictly-typed params without needing a
-// string-literal `from` id (which would otherwise have to be the router's
-// internal "/_app/events/$eventId" id, not the "/events/$eventId" path
-// `Link`'s `to` prop uses — pathless layout routes like `_app` add an id
-// segment but no URL segment).
+// Uses `getRouteApi` with the route's string id ("/_app/events/$eventId" —
+// the "_app" pathless layout's id plus this route's "/events/$eventId"
+// path) instead of importing the `eventStubRoute` object from
+// app/router.tsx. That avoids a circular import between this module and
+// router.tsx (which imports this component for its `component:` field)
+// while still giving strictly-typed params, since `getRouteApi` resolves
+// against the registered route tree by id string, not by object identity.
+const routeApi = getRouteApi("/_app/events/$eventId");
+
 export function EventWorkspaceStub() {
   const { t } = useTranslation();
-  const { eventId } = eventStubRoute.useParams();
+  const { eventId } = routeApi.useParams();
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
 
   if (eventQuery.isLoading) {

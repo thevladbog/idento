@@ -84,7 +84,7 @@ const organizationRoute = createRoute({
   component: () => <PlaceholderPage titleKey="navOrganization" />,
 });
 
-export const eventStubRoute = createRoute({
+const eventStubRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/events/$eventId",
   component: EventWorkspaceStub,
