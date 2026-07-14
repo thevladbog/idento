@@ -16,17 +16,27 @@ import (
 // newUploadContext builds a multipart/form-data POST request for
 // UploadEventFont, with JWT claims already set under "user" like
 // middleware.JWT does.
-func newUploadContext(e *echo.Echo, tenantID string, userID uuid.UUID, fields map[string]string, fileField, fileName string, fileContent []byte) (echo.Context, *httptest.ResponseRecorder) {
+func newUploadContext(t *testing.T, e *echo.Echo, tenantID string, userID uuid.UUID, fields map[string]string, fileField, fileName string, fileContent []byte) (echo.Context, *httptest.ResponseRecorder) {
+	t.Helper()
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	for k, v := range fields {
-		_ = writer.WriteField(k, v)
+		if err := writer.WriteField(k, v); err != nil {
+			t.Fatalf("WriteField(%q): %v", k, err)
+		}
 	}
 	if fileField != "" {
-		part, _ := writer.CreateFormFile(fileField, fileName)
-		_, _ = part.Write(fileContent)
+		part, err := writer.CreateFormFile(fileField, fileName)
+		if err != nil {
+			t.Fatalf("CreateFormFile(%q, %q): %v", fileField, fileName, err)
+		}
+		if _, err := part.Write(fileContent); err != nil {
+			t.Fatalf("part.Write: %v", err)
+		}
 	}
-	_ = writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/", body)
 	req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
@@ -48,175 +58,129 @@ func validFontFields() map[string]string {
 	}
 }
 
-func TestUploadEventFont_Returns201OnSuccess(t *testing.T) {
-	tenantID := uuid.New()
-	userID := uuid.New()
-	eventID := uuid.New()
-	var savedFont *models.Font
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
+func TestUploadEventFont(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		mutateFields func(fields map[string]string)
+		fileName     string
+		fileContent  []byte
+		storeErr     error
+		foreignOwner bool // caller's tenant differs from the event's owner tenant
+		wantStatus   int
+		validate     func(t *testing.T, saved *models.Font, eventID, userID uuid.UUID)
+	}{
+		{
+			name:        "success",
+			fileName:    "font.ttf",
+			fileContent: []byte("fake-ttf-bytes"),
+			wantStatus:  http.StatusCreated,
+			validate: func(t *testing.T, saved *models.Font, eventID, userID uuid.UUID) {
+				if saved == nil {
+					t.Fatal("expected Store.CreateFont to be called")
+				}
+				if saved.UploadedBy != userID {
+					t.Errorf("expected UploadedBy %s, got %s", userID, saved.UploadedBy)
+				}
+				if saved.EventID != eventID {
+					t.Errorf("expected EventID %s, got %s", eventID, saved.EventID)
+				}
+				if saved.Format != "truetype" {
+					t.Errorf("expected format truetype, got %s", saved.Format)
+				}
+			},
 		},
-		createFont: func(font *models.Font) error {
-			savedFont = font
-			return nil
+		{
+			name:         "rejects without license accepted",
+			mutateFields: func(fields map[string]string) { delete(fields, "license_accepted") },
+			fileName:     "font.ttf",
+			fileContent:  []byte("fake-ttf-bytes"),
+			wantStatus:   http.StatusBadRequest,
 		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	c, rec := newUploadContext(e, tenantID.String(), userID, validFontFields(), "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
-
-	err := h.UploadEventFont(c)
-	if err != nil {
-		t.Fatalf("unexpected handler error: %v", err)
-	}
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if savedFont == nil {
-		t.Fatal("expected Store.CreateFont to be called")
-	}
-	if savedFont.UploadedBy != userID {
-		t.Errorf("expected UploadedBy %s, got %s", userID, savedFont.UploadedBy)
-	}
-	if savedFont.EventID != eventID {
-		t.Errorf("expected EventID %s, got %s", eventID, savedFont.EventID)
-	}
-	if savedFont.Format != "truetype" {
-		t.Errorf("expected format truetype, got %s", savedFont.Format)
-	}
-}
-
-func TestUploadEventFont_RejectsWithoutLicenseAccepted(t *testing.T) {
-	tenantID := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
+		{
+			name:         "rejects missing name",
+			mutateFields: func(fields map[string]string) { delete(fields, "name") },
+			fileName:     "font.ttf",
+			fileContent:  []byte("fake-ttf-bytes"),
+			wantStatus:   http.StatusBadRequest,
 		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	fields := validFontFields()
-	delete(fields, "license_accepted")
-	c, rec := newUploadContext(e, tenantID.String(), uuid.New(), fields, "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
-
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestUploadEventFont_RejectsMissingName(t *testing.T) {
-	tenantID := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
+		{
+			name:        "rejects invalid format",
+			fileName:    "font.txt",
+			fileContent: []byte("not-a-font"),
+			wantStatus:  http.StatusBadRequest,
 		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	fields := validFontFields()
-	delete(fields, "name")
-	c, rec := newUploadContext(e, tenantID.String(), uuid.New(), fields, "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
-
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestUploadEventFont_RejectsInvalidFormat(t *testing.T) {
-	tenantID := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
+		{
+			name:        "returns conflict on duplicate",
+			fileName:    "font.ttf",
+			fileContent: []byte("fake-ttf-bytes"),
+			storeErr:    &pgUniqueViolationError{},
+			wantStatus:  http.StatusConflict,
+		},
+		{
+			name:        "returns internal server error on store failure",
+			fileName:    "font.ttf",
+			fileContent: []byte("fake-ttf-bytes"),
+			storeErr:    errBoom,
+			wantStatus:  http.StatusInternalServerError,
+		},
+		{
+			name:         "forbids foreign tenant",
+			fileName:     "font.ttf",
+			fileContent:  []byte("fake-ttf-bytes"),
+			foreignOwner: true,
+			wantStatus:   http.StatusNotFound,
 		},
 	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	c, rec := newUploadContext(e, tenantID.String(), uuid.New(), validFontFields(), "file", "font.txt", []byte("not-a-font"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
 
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestUploadEventFont_ReturnsConflictOnDuplicate(t *testing.T) {
-	tenantID := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
-		},
-		createFont: func(font *models.Font) error {
-			return &pgUniqueViolationError{}
-		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	c, rec := newUploadContext(e, tenantID.String(), uuid.New(), validFontFields(), "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
+			tenantID := uuid.New()
+			ownerTenant := tenantID
+			if tc.foreignOwner {
+				ownerTenant = uuid.New()
+			}
+			userID := uuid.New()
+			eventID := uuid.New()
 
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected 409, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
+			var savedFont *models.Font
+			fs := &fakeStore{
+				getEventByID: func(id uuid.UUID) (*models.Event, error) {
+					return &models.Event{ID: id, TenantID: ownerTenant}, nil
+				},
+				createFont: func(font *models.Font) error {
+					if tc.storeErr != nil {
+						return tc.storeErr
+					}
+					savedFont = font
+					return nil
+				},
+			}
+			h := &Handler{Store: fs}
+			e := echo.New()
 
-func TestUploadEventFont_ReturnsInternalServerErrorOnStoreFailure(t *testing.T) {
-	tenantID := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: tenantID}, nil
-		},
-		createFont: func(font *models.Font) error {
-			return errBoom
-		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	c, rec := newUploadContext(e, tenantID.String(), uuid.New(), validFontFields(), "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
+			fields := validFontFields()
+			if tc.mutateFields != nil {
+				tc.mutateFields(fields)
+			}
 
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
+			c, rec := newUploadContext(t, e, tenantID.String(), userID, fields, "file", tc.fileName, tc.fileContent)
+			c.SetParamNames("event_id")
+			c.SetParamValues(eventID.String())
 
-func TestUploadEventFont_ForbidsForeignTenant(t *testing.T) {
-	ownerTenant := uuid.New()
-	caller := uuid.New()
-	eventID := uuid.New()
-	fs := &fakeStore{
-		getEventByID: func(id uuid.UUID) (*models.Event, error) {
-			return &models.Event{ID: id, TenantID: ownerTenant}, nil
-		},
-	}
-	h := &Handler{Store: fs}
-	e := echo.New()
-	c, rec := newUploadContext(e, caller.String(), uuid.New(), validFontFields(), "file", "font.ttf", []byte("fake-ttf-bytes"))
-	c.SetParamNames("event_id")
-	c.SetParamValues(eventID.String())
-
-	_ = h.UploadEventFont(c)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+			if err := h.UploadEventFont(c); err != nil {
+				t.Fatalf("unexpected handler error: %v", err)
+			}
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d: %s", tc.wantStatus, rec.Code, rec.Body.String())
+			}
+			if tc.validate != nil {
+				tc.validate(t, savedFont, eventID, userID)
+			}
+		})
 	}
 }
 
