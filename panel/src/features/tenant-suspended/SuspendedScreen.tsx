@@ -10,7 +10,7 @@ export function SuspendedScreen() {
         <h1 className="text-page-title">{t("tenantSuspendedTitle")}</h1>
         <p className="text-body text-muted-foreground">{t("tenantSuspendedBody")}</p>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.location.assign("mailto:support@idento.io")}>
+          <Button variant="outline" onClick={() => window.location.assign("mailto:support@idento.app")}>
             {t("tenantSuspendedContactSupport")}
           </Button>
           <Button
