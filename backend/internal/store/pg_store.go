@@ -583,6 +583,12 @@ func (s *PGStore) GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.U
 	return event, nil
 }
 
+func (s *PGStore) SoftDeleteEvent(ctx context.Context, id uuid.UUID) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE events SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
+	return err
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

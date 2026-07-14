@@ -1105,6 +1105,43 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteEvent
+      summary: >
+        Soft-delete an event (sets deleted_at; the row stays in the database).
+        GetEvents/GetEvent already exclude soft-deleted events, so a deleted
+        event disappears from every listing and 404s on direct fetch.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Event soft-deleted. No body.
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Event not found or belongs to another tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error") or
+            executing the soft delete ("Failed to delete event").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{id}/badge-zpl:
     post:
       operationId: badgeZpl

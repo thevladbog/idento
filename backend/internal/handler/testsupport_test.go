@@ -90,6 +90,7 @@ type fakeStore struct {
 	getEventsByTenantID func(tenantID uuid.UUID) ([]*models.Event, error)
 	createEvent         func(event *models.Event) error
 	updateEvent         func(event *models.Event) error
+	softDeleteEvent     func(id uuid.UUID) error
 	getEventStaff       func(eventID uuid.UUID) ([]*models.User, error)
 	assignStaffToEvent  func(assignment *models.EventStaff) error
 
@@ -328,6 +329,9 @@ func (f *fakeStore) CreateEvent(_ context.Context, event *models.Event) error {
 }
 func (f *fakeStore) UpdateEvent(_ context.Context, event *models.Event) error {
 	return f.updateEvent(event)
+}
+func (f *fakeStore) SoftDeleteEvent(_ context.Context, id uuid.UUID) error {
+	return f.softDeleteEvent(id)
 }
 func (f *fakeStore) GetEventStaff(_ context.Context, eventID uuid.UUID) ([]*models.User, error) {
 	return f.getEventStaff(eventID)

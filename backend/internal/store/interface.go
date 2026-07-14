@@ -63,6 +63,9 @@ type Store interface {
 	// (nil, nil) otherwise — callers cannot distinguish "missing" from "foreign".
 	GetEventByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Event, error)
 	UpdateEvent(ctx context.Context, event *models.Event) error
+	// SoftDeleteEvent marks an event deleted (deleted_at = now()); listings
+	// and direct fetches already exclude soft-deleted rows.
+	SoftDeleteEvent(ctx context.Context, id uuid.UUID) error
 
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are

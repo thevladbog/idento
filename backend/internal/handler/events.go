@@ -123,3 +123,19 @@ func (h *Handler) UpdateEvent(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, event)
 }
+
+// DeleteEvent soft-deletes an event (deleted_at); GetEvents/GetEventByID
+// already exclude soft-deleted rows, so it vanishes from all listings.
+func (h *Handler) DeleteEvent(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event ID"})
+	}
+	if _, err := h.requireEventOwnership(c, id); err != nil {
+		return writeErr(c, err)
+	}
+	if err := h.Store.SoftDeleteEvent(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete event"})
+	}
+	return c.NoContent(http.StatusNoContent)
+}
