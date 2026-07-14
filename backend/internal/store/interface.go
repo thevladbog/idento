@@ -73,6 +73,9 @@ type Store interface {
 	// search does a case-insensitive substring match across
 	// first/last name, email, and code.
 	GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, code string, search string) ([]*models.Attendee, error)
+	// CountAttendeesByEventID counts non-deleted attendees for an event; kept
+	// in lockstep with GetAttendeesByEventID's WHERE clause.
+	CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID) (int, error)
 	GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error)
 	GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error)
 	// GetAttendeeByIDForTenant scopes the attendee through its event's tenant.

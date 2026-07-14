@@ -672,6 +672,15 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 	return attendees, nil
 }
 
+// CountAttendeesByEventID counts non-deleted attendees for an event.
+func (s *PGStore) CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID) (int, error) {
+	var n int
+	// Keep the WHERE clause in lockstep with GetAttendeesByEventID.
+	err := s.db.QueryRow(ctx,
+		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`, eventID).Scan(&n)
+	return n, err
+}
+
 func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
 	var a models.Attendee
 	var customFieldsJSON []byte

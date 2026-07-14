@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -167,4 +168,115 @@ func TestContractPatchEvent(t *testing.T) {
 		t.Fatalf("want 400, got %d", rec.Code)
 	}
 	validateResponse(t, http.MethodPatch, "/api/events/nope", rec)
+}
+
+func TestContractGetEventReadiness(t *testing.T) {
+	tenantID := uuid.New()
+
+	fullStore := func(event *models.Event, attendees int, zones, staff int) *fakeStore {
+		zoneList := make([]*models.EventZone, zones)
+		for i := range zoneList {
+			zoneList[i] = &models.EventZone{ID: uuid.New(), EventID: event.ID}
+		}
+		staffList := make([]*models.User, staff)
+		for i := range staffList {
+			staffList[i] = &models.User{ID: uuid.New()}
+		}
+		return &fakeStore{
+			getEventByID:            func(uuid.UUID) (*models.Event, error) { return event, nil },
+			countAttendeesByEventID: func(uuid.UUID) (int, error) { return attendees, nil },
+			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return zoneList, nil },
+			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return staffList, nil },
+		}
+	}
+	e := echo.New()
+	run := func(h *Handler, event *models.Event) (*httptest.ResponseRecorder, string) {
+		path := "/api/events/" + event.ID.String() + "/readiness"
+		c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+		c.SetPath("/api/events/:id/readiness")
+		c.SetParamNames("id")
+		c.SetParamValues(event.ID.String())
+		if err := h.GetEventReadiness(c); err != nil {
+			t.Fatalf("GetEventReadiness: %v", err)
+		}
+		return rec, path
+	}
+
+	// Fully ready: attendees+badge+staff done, zones done too.
+	ready := p1Event(tenantID, "Ready Event")
+	ready.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
+	rec, path := run(New(fullStore(ready, 340, 2, 3)), ready)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Ready bool `json:"ready"`
+		Steps []struct {
+			Key    string `json:"key"`
+			Status string `json:"status"`
+			Count  *int   `json:"count"`
+		} `json:"steps"`
+	}
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !resp.Ready {
+		t.Fatalf("want ready=true: %+v", resp)
+	}
+	wantOrder := []string{"attendees", "badge", "zones", "staff", "equipment"}
+	if len(resp.Steps) != 5 {
+		t.Fatalf("want 5 steps, got %d", len(resp.Steps))
+	}
+	for i, s := range resp.Steps {
+		if s.Key != wantOrder[i] {
+			t.Fatalf("step %d = %s, want %s", i, s.Key, wantOrder[i])
+		}
+	}
+	if resp.Steps[4].Status != "not_done" {
+		t.Fatalf("equipment must be not_done in P1, got %s", resp.Steps[4].Status)
+	}
+	if resp.Steps[0].Count == nil || *resp.Steps[0].Count != 340 {
+		t.Fatalf("attendees count wrong: %+v", resp.Steps[0])
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// Draft: nothing done — zones skipped (not blocking), ready=false.
+	draft := p1Event(tenantID, "Draft Event")
+	rec, path = run(New(fullStore(draft, 0, 0, 0)), draft)
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Ready {
+		t.Fatal("draft must not be ready")
+	}
+	if resp.Steps[2].Status != "skipped" {
+		t.Fatalf("zones with 0 zones must be skipped, got %s", resp.Steps[2].Status)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// Zones present but staff missing: zones done, ready still false.
+	partial := p1Event(tenantID, "Partial Event")
+	partial.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
+	rec, path = run(New(fullStore(partial, 12, 1, 0)), partial)
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Ready {
+		t.Fatal("missing staff must block ready")
+	}
+	if resp.Steps[2].Status != "done" {
+		t.Fatalf("zones with 1 zone must be done, got %s", resp.Steps[2].Status)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 500: count failure.
+	broken := New(&fakeStore{
+		getEventByID:            func(uuid.UUID) (*models.Event, error) { return ready, nil },
+		countAttendeesByEventID: func(uuid.UUID) (int, error) { return 0, errors.New("db down") },
+	})
+	rec, path = run(broken, ready)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", rec.Code)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
 }
