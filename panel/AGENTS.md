@@ -25,7 +25,11 @@ work while this rewrite runs (see root `AGENTS.md`).
   of hand-written wrappers.)
 - **Session:** the only file allowed to touch `localStorage` for auth state
   is `src/shared/api/session.ts`. Never read/write `token`/`user`/`tenants`/
-  `current_tenant` directly from a component.
+  `current_tenant` directly from a component. Exception: `src/features/
+  impersonation/impersonationSession.ts` deliberately manages its own
+  `impersonation`/`operator_token` lifecycle and directly reads/writes the
+  `token` key as part of restoring the parked operator token on exit — this
+  is intentional architecture, not a violation to flag or "fix."
 - **i18n:** every user-facing string is a `react-i18next` key, added to
   **both** `src/shared/i18n/en.json` and `ru.json` in the same change.
   `src/shared/i18n/keyParity.test.ts` fails the suite otherwise.
