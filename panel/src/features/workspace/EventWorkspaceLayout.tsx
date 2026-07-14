@@ -103,12 +103,6 @@ export function EventWorkspaceLayout() {
   );
 }
 
-// Task 3 replaces this with the real Overview panel (board 1f §4).
-export function WorkspaceOverviewPlaceholder() {
-  const { t } = useTranslation();
-  return <p className="text-body text-muted-foreground">{t("workspaceComingSoon")}</p>;
-}
-
 // Task 4 replaces this with the real Event Settings page (board 6a).
 export function WorkspaceSettingsPlaceholder() {
   const { t } = useTranslation();

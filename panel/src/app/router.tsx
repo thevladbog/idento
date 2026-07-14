@@ -4,9 +4,10 @@ import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
 import {
-  EventWorkspaceLayout, WorkspaceOverviewPlaceholder, WorkspaceSettingsPlaceholder,
+  EventWorkspaceLayout, WorkspaceSettingsPlaceholder,
 } from "../features/workspace/EventWorkspaceLayout";
 import { HomePage } from "../features/home/HomePage";
+import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -95,7 +96,7 @@ const eventWorkspaceRoute = createRoute({
 const eventOverviewRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/",
-  component: WorkspaceOverviewPlaceholder, // Task 3 swaps to WorkspaceOverview
+  component: WorkspaceOverview,
 });
 
 const eventSettingsRoute = createRoute({
