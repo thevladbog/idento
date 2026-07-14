@@ -33,7 +33,7 @@ export function EventWorkspaceStub() {
   if (eventQuery.isError || !eventQuery.data) {
     return (
       <div className="flex flex-col items-start gap-3 p-6">
-        <p className="text-body text-destructive">{t("homeLoadError")}</p>
+        <p className="text-body text-destructive">{t("workspaceLoadError")}</p>
         <Button asChild variant="outline">
           <Link to="/">{t("workspaceBackHome")}</Link>
         </Button>

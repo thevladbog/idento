@@ -65,7 +65,7 @@ describe("EventWorkspaceStub", () => {
   it("renders the load-error message and a back-Home link when the event fetch fails", async () => {
     renderAt("/events/evt-missing");
 
-    expect(await screen.findByText("Couldn't load your events.")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn't load this event.")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /Back to Home/ });
     expect(link).toHaveAttribute("href", "/");
     await waitFor(() => expect(screen.queryByRole("heading")).not.toBeInTheDocument());

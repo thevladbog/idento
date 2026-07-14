@@ -20,7 +20,14 @@ describe("classifyEvent under a behind-UTC timezone (America/New_York)", () => {
     process.env.TZ = "America/New_York"; // UTC-4 in July (EDT)
   });
   afterAll(() => {
-    process.env.TZ = originalTz;
+    // `process.env.TZ = undefined` would coerce to the string "undefined"
+    // rather than actually unsetting it — delete when the process started
+    // with no TZ set, to avoid leaking a bogus timezone into later tests.
+    if (originalTz === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = originalTz;
+    }
   });
 
   it("confirms the test process really is behind UTC", () => {

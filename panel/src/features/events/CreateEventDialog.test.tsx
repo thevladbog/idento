@@ -108,4 +108,53 @@ describe("CreateEventDialog", () => {
     await waitFor(() => expect(createCount).toBe(1));
     expect(lastCreateBody).toEqual({ name: "Minimal Event" });
   });
+
+  it("shows a localized error (not zod's raw English message) when location is too long", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CreateEventDialog open onOpenChange={vi.fn()} />);
+
+    await user.type(screen.getByLabelText("Event name"), "Conference");
+    await user.type(screen.getByLabelText("Location"), "x".repeat(301));
+    await user.click(screen.getByRole("button", { name: "Create event" }));
+
+    expect(await screen.findByText("Keep the location under 300 characters.")).toBeInTheDocument();
+    expect(screen.queryByText(/String must contain/)).not.toBeInTheDocument();
+    expect(createCount).toBe(0);
+  });
+
+  it("resets the failed create mutation on close, so reopening doesn't show a stale server error", async () => {
+    server.use(http.post("http://api.test/api/events", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+    // A single shared QueryClient across the whole open->close->open cycle
+    // (via `rerender` on the same tree, not a fresh render) is essential:
+    // this is what actually exercises `createEvent.reset()` on close — a
+    // brand-new QueryClient per rerender would clear the stale error for
+    // free and the test would pass even without the fix.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <CreateEventDialog open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+
+    await user.type(screen.getByLabelText("Event name"), "Will Fail");
+    await user.click(screen.getByRole("button", { name: "Create event" }));
+    expect(await screen.findByText("Couldn't create the event. Please try again.")).toBeInTheDocument();
+
+    // Close, then reopen — the failed mutation's error state must not carry
+    // over into the fresh attempt.
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <CreateEventDialog open={false} onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <CreateEventDialog open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByText("Couldn't create the event. Please try again.")).not.toBeInTheDocument();
+  });
 });

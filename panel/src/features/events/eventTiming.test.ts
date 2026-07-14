@@ -1,4 +1,4 @@
-import { classifyEvent, splitEvents } from "./eventTiming";
+import { classifyEvent, isDateOnly, splitEvents } from "./eventTiming";
 import type { components } from "../../shared/api/schema";
 
 type ApiEvent = components["schemas"]["Event"];
@@ -27,6 +27,31 @@ describe("classifyEvent", () => {
   });
   it("an undated event is upcoming (a draft)", () => {
     expect(classifyEvent(ev({}), NOW)).toBe("upcoming");
+  });
+  it("honors an explicit end_date with a real time — does not push it to end of day", () => {
+    // Started 08:00, genuinely ended 10:00 (e.g. via the older web/ admin's
+    // datetime-local form) — must be "past" well before the UTC day is over,
+    // not still "running" until 23:59:59.999Z.
+    const event = ev({ start_date: "2026-07-14T08:00:00Z", end_date: "2026-07-14T10:00:00Z" });
+    expect(classifyEvent(event, new Date("2026-07-14T12:00:00Z"))).toBe("past");
+    expect(classifyEvent(event, new Date("2026-07-14T09:00:00Z"))).toBe("running");
+  });
+  it("extends a date-only end_date (all-day) to the end of its UTC day", () => {
+    // Both dates are the create dialog's UTC-midnight all-day placeholders —
+    // the event should still read as running through the whole final day.
+    const event = ev({ start_date: "2026-07-14T00:00:00.000Z", end_date: "2026-07-14T00:00:00.000Z" });
+    expect(classifyEvent(event, new Date("2026-07-14T23:00:00Z"))).toBe("running");
+  });
+});
+
+describe("isDateOnly", () => {
+  it("recognizes UTC-midnight timestamps (with or without milliseconds)", () => {
+    expect(isDateOnly("2026-07-14T00:00:00.000Z")).toBe(true);
+    expect(isDateOnly("2026-07-14T00:00:00Z")).toBe(true);
+  });
+  it("rejects timestamps with a real time component", () => {
+    expect(isDateOnly("2026-07-14T09:30:00.000Z")).toBe(false);
+    expect(isDateOnly("2026-07-14T23:59:59.999Z")).toBe(false);
   });
 });
 

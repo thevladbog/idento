@@ -15,7 +15,7 @@ const createEventSchema = z
     name: z.string().trim().min(1, "createEventNameRequired").max(200, "createEventNameTooLong"),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
-    location: z.string().max(300).optional(),
+    location: z.string().max(300, "createEventLocationTooLong").optional(),
   })
   .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
     message: "createEventDatesOrder",
@@ -40,7 +40,10 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
   const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({});
 
   // Reset all form state whenever the dialog transitions closed, so the next
-  // open starts clean instead of showing the previous attempt's values/errors.
+  // open starts clean instead of showing the previous attempt's values/errors
+  // — including the mutation itself: without this, a failed create leaves
+  // the mutation in `isError` after close, and reopening would immediately
+  // show the stale server-error line before the user has submitted anything.
   React.useEffect(() => {
     if (open) return;
     setName("");
@@ -48,6 +51,11 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
     setEndDate("");
     setLocation("");
     setFieldErrors({});
+    createEvent.reset();
+    // createEvent is a fresh mutation object each render; including it in
+    // the deps would reset on every render instead of only on the
+    // open->closed transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {

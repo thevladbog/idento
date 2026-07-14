@@ -28,7 +28,7 @@ export function UpcomingRow({ event }: { event: ApiEvent }) {
   const { t, i18n } = useTranslation();
   const readiness = useEventReadiness(event.id);
   const attendeeCount = readiness.data?.steps.find((step) => step.key === "attendees")?.count ?? 0;
-  const attendeesNotDone = readiness.data?.steps.find((step) => step.key === "attendees")?.status === "not_done";
+  const attendeesStep = readiness.data?.steps.find((step) => step.key === "attendees");
   const dateLabel = formatDate(event, i18n.language);
 
   return (
@@ -43,9 +43,21 @@ export function UpcomingRow({ event }: { event: ApiEvent }) {
       </div>
       <div className="flex items-center justify-between gap-3 md:contents">
         <ReadinessCell readiness={readiness.data} />
-        <Link to="/events/$eventId" params={{ eventId: event.id }} className="text-body text-primary hover:underline">
-          {attendeesNotDone ? t("homeImportAttendees") : t("homeContinueSetup")}
-        </Link>
+        {/* Readiness-driven, so must wait for the step data to actually
+            resolve — while it's still loading, `attendeesStep` is undefined
+            and defaulting to "Continue setup" could route a fresh,
+            no-attendees event to the wrong next step. */}
+        {readiness.isLoading ? (
+          <Skeleton className="h-4 w-28" />
+        ) : (
+          <Link
+            to="/events/$eventId"
+            params={{ eventId: event.id }}
+            className="text-body text-primary hover:underline"
+          >
+            {attendeesStep?.status === "not_done" ? t("homeImportAttendees") : t("homeContinueSetup")}
+          </Link>
+        )}
       </div>
     </div>
   );

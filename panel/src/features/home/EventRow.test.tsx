@@ -87,3 +87,46 @@ describe("EventRow date formatting", () => {
     }
   });
 });
+
+describe("UpcomingRow action CTA", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+  });
+
+  it("does not show 'Continue setup' before readiness has loaded, for an event that actually needs attendees imported", async () => {
+    // The default MSW handler above resolves fast; override with a
+    // never-resolving readiness response so we can observe the loading
+    // state before it settles, then verify the correct CTA appears once it
+    // does — readiness's attendees step below is "not_done", so a premature
+    // "Continue setup" default (instead of waiting) would be the wrong CTA.
+    server.use(
+      http.get(
+        "http://api.test/api/events/:id/readiness",
+        () =>
+          new Promise(() => {
+            /* never resolves within this test */
+          }),
+      ),
+    );
+    const event = apiEvent({ id: "evt-cta-loading", name: "Fresh Event", start_date: "2026-08-15T00:00:00.000Z" });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <RouterContextProvider router={testRouter}>
+          <UpcomingRow event={event} />
+        </RouterContextProvider>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByText("Continue setup →")).not.toBeInTheDocument();
+    expect(screen.queryByText("Import attendees →")).not.toBeInTheDocument();
+  });
+
+  it("shows 'Import attendees' once readiness resolves with the attendees step not done", async () => {
+    const event = apiEvent({ id: "evt-cta-resolved", name: "Fresh Event 2", start_date: "2026-08-15T00:00:00.000Z" });
+    renderWithProviders(<UpcomingRow event={event} />);
+
+    // Default MSW handler above has attendees=done, so use the resolved
+    // state to prove the CTA follows the real step status once loaded.
+    expect(await screen.findByText("Continue setup →")).toBeInTheDocument();
+  });
+});

@@ -82,6 +82,54 @@ describe("LiveStrip", () => {
     expect(screen.queryByText(/Main hall/i)).not.toBeInTheDocument();
   });
 
+  it("shows an 'All day' label instead of a fabricated midnight time range for a date-only running event", async () => {
+    // Both dates are the create dialog's UTC-midnight all-day placeholders —
+    // no real time was ever entered, so formatting them as a "12:00 AM–12:00
+    // AM" time range would show a time no one chose.
+    const running = apiEvent({
+      id: "evt-allday",
+      name: "All-Day Fest",
+      start_date: "2026-07-14T00:00:00.000Z",
+      end_date: "2026-07-14T00:00:00.000Z",
+    });
+    renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
+
+    expect(await screen.findByText("All day")).toBeInTheDocument();
+    expect(screen.queryByText(/12:00 AM/)).not.toBeInTheDocument();
+  });
+
+  it("shows a loading state (not fabricated zero check-ins) while stats are still loading", () => {
+    const running = apiEvent({
+      id: "evt-loading",
+      name: "Loading Event",
+      start_date: "2026-07-14T09:00:00Z",
+      end_date: "2026-07-14T18:00:00Z",
+    });
+    renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
+
+    // Before the MSW-mocked stats response resolves, the real counter/progress
+    // bar must not be visible with a misleading "0 / 0".
+    expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("shows an error message (not fabricated zero check-ins) when stats fail to load", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/stats", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    const running = apiEvent({
+      id: "evt-stats-error",
+      name: "Broken Stats Event",
+      start_date: "2026-07-14T09:00:00Z",
+      end_date: "2026-07-14T18:00:00Z",
+    });
+    renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
+
+    expect(await screen.findByText("Couldn't load live stats.")).toBeInTheDocument();
+    expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("renders the upcoming-fallback hero when nothing is running", async () => {
     const upcoming = apiEvent({
       id: "evt-upcoming",

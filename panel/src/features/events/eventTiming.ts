@@ -3,8 +3,25 @@ import type { components } from "../../shared/api/schema";
 export type ApiEvent = components["schemas"]["Event"];
 export type EventPhase = "running" | "upcoming" | "past";
 
-// End-of-day of the effective end date (end ?? start), so a single-day
-// event stays "running" through its whole day.
+// True when an ISO timestamp is exactly UTC midnight — the shape the create
+// dialog's date-only `<input type="date">` picks always produce (see
+// CreateEventDialog). A genuine event time (e.g. from the older web/ admin's
+// datetime-local form) essentially never lands on that exact instant, so
+// this is a safe, cheap way to tell "bare calendar date" apart from "real
+// timestamp" without a separate is-date-only flag from the API. Exported so
+// display code (LiveStrip) can apply the same distinction.
+export function isDateOnly(iso: string): boolean {
+  return iso.endsWith("T00:00:00.000Z") || iso.endsWith("T00:00:00Z");
+}
+
+// End-of-day of the effective end date, so a single-day/date-only event
+// stays "running" through its whole day. Only applied when there's no
+// explicit end_date (falling back to start_date — an event with no
+// announced end is treated as spanning its start day) OR when the value in
+// use is itself date-only (an all-day end date, all-day semantics). A
+// genuine end_date carrying a real time (e.g. "ends at 10:00") is used
+// as-is, not pushed out to midnight — otherwise an event that ended hours
+// ago would still show as running until the end of its UTC day.
 //
 // `start_date`/`end_date` are bare calendar dates that the create dialog
 // stores as UTC-midnight ISO timestamps (see CreateEventDialog), and the
@@ -22,7 +39,10 @@ function effectiveEnd(e: ApiEvent): Date | null {
   const raw = e.end_date ?? e.start_date;
   if (!raw) return null;
   const d = new Date(raw);
-  d.setUTCHours(23, 59, 59, 999);
+  const usingFallback = !e.end_date;
+  if (usingFallback || isDateOnly(raw)) {
+    d.setUTCHours(23, 59, 59, 999);
+  }
   return d;
 }
 
