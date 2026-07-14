@@ -2,6 +2,7 @@ import { Skeleton, cn } from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ApiKeysCard } from "./ApiKeysCard";
+import { DangerZoneCard } from "./DangerZoneCard";
 import { FontsCard } from "./FontsCard";
 import { GeneralCard } from "./GeneralCard";
 import { $api } from "../../../shared/api/query";
@@ -80,22 +81,10 @@ export function EventSettingsPage() {
             <ApiKeysCard eventId={event.id} />
           </section>
           <section id="settings-danger">
-            <DangerZonePlaceholder />
+            <DangerZoneCard event={event} />
           </section>
         </div>
       </div>
-    </div>
-  );
-}
-
-// Minimal inline placeholder — Task 7 replaces this with the real
-// Danger-zone card.
-function DangerZonePlaceholder() {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-lg border border-border bg-card p-6">
-      <h3 className="text-section-title">{t("settingsDanger")}</h3>
-      <p className="text-body text-muted-foreground">{t("placeholderComingSoon")}</p>
     </div>
   );
 }
