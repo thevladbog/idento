@@ -3,7 +3,9 @@ import { LoginScreen } from "../features/auth/LoginScreen";
 import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
-import { EventWorkspaceStub } from "../features/events/EventWorkspaceStub";
+import {
+  EventWorkspaceLayout, WorkspaceOverviewPlaceholder, WorkspaceSettingsPlaceholder,
+} from "../features/workspace/EventWorkspaceLayout";
 import { HomePage } from "../features/home/HomePage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
@@ -84,14 +86,32 @@ const organizationRoute = createRoute({
   component: () => <PlaceholderPage titleKey="navOrganization" />,
 });
 
-const eventStubRoute = createRoute({
+const eventWorkspaceRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/events/$eventId",
-  component: EventWorkspaceStub,
+  component: EventWorkspaceLayout,
+});
+
+const eventOverviewRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/",
+  component: WorkspaceOverviewPlaceholder, // Task 3 swaps to WorkspaceOverview
+});
+
+const eventSettingsRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/settings",
+  component: WorkspaceSettingsPlaceholder, // Task 4 swaps to EventSettingsPage
 });
 
 const routeTree = rootRoute.addChildren([
-  protectedLayoutRoute.addChildren([indexRoute, teamRoute, equipmentRoute, organizationRoute, eventStubRoute]),
+  protectedLayoutRoute.addChildren([
+    indexRoute,
+    teamRoute,
+    equipmentRoute,
+    organizationRoute,
+    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute]),
+  ]),
   loginRoute,
   registerRoute,
   qrLoginRoute,

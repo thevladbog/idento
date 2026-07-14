@@ -56,6 +56,14 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
       <Link
         to="/events/$eventId"
         params={{ eventId }}
+        // Without `exact`, Link's default fuzzy active-matching treats this
+        // as active for ANY nested path under it (including the sibling
+        // `/settings` route, whose path is a string-prefix match on this
+        // one) and would stomp the explicit `aria-current` below with its
+        // own — surfaced once Task 2 actually mounts both sibling routes
+        // together (this rail's own tests only ever exercise a single-route
+        // harness, so it never triggers there).
+        activeOptions={{ exact: true }}
         aria-current={active === "overview" ? "page" : undefined}
         className={cn(
           "flex items-center gap-2 rounded-md px-2 py-1.5 text-body hover:bg-muted",
