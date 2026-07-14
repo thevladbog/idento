@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PastRow, UpcomingRow } from "./EventRow";
 import { LiveStrip } from "./LiveStrip";
+import { CreateEventDialog } from "../events/CreateEventDialog";
 import { splitEvents } from "../events/eventTiming";
 import { useEventsQuery } from "../events/hooks";
 
@@ -54,7 +55,7 @@ export function HomePage() {
             </Button>
           }
         />
-        {/* Task 8 renders <CreateEventDialog> here, controlled by createOpen. */}
+        <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} />
       </div>
     );
   }
@@ -98,7 +99,7 @@ export function HomePage() {
           </div>
         </section>
       ) : null}
-      {/* Task 8 renders <CreateEventDialog> here, controlled by createOpen. */}
+      <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }
