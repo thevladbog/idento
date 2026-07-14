@@ -104,4 +104,30 @@ describe("LiveStrip", () => {
     const { container } = renderWithProviders(<LiveStrip running={undefined} nextUpcoming={undefined} />);
     expect(container.firstChild).toBeNull();
   });
+
+  // `start_date` is a bare calendar date stored as a UTC-midnight ISO
+  // timestamp (see CreateEventDialog) — the upcoming-fallback card's date
+  // must render the SAME calendar day regardless of the viewer's local
+  // timezone. Stubbing TZ to a zone behind UTC (America/Los_Angeles,
+  // UTC-7/8) is what actually exercises the bug: at exactly UTC, or at any
+  // zone ahead of UTC, "2026-08-15T00:00:00.000Z" already prints as "Aug
+  // 15" even without the `timeZone: "UTC"` pin, so only a behind-UTC zone
+  // can tell a correct formatter apart from a broken one here.
+  it("keeps the upcoming-fallback card's date stable for a viewer behind UTC", async () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    try {
+      const upcoming = apiEvent({
+        id: "evt-tz",
+        name: "Timezone Test Event",
+        start_date: "2026-08-15T00:00:00.000Z",
+      });
+      renderWithProviders(<LiveStrip running={undefined} nextUpcoming={upcoming} />);
+
+      expect(await screen.findByText("Timezone Test Event")).toBeInTheDocument();
+      expect(screen.getByText("Aug 15, 2026")).toBeInTheDocument();
+      expect(screen.queryByText("Aug 14, 2026")).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

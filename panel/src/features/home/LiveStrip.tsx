@@ -35,10 +35,19 @@ function formatRunningWindow(event: ApiEvent, locale: string): string | null {
 }
 
 // A single date, or "start – end" when the dates differ, in the viewer's
-// locale — no date library per plan constraints.
+// locale — no date library per plan constraints. `start_date`/`end_date`
+// are bare calendar dates stored as UTC-midnight ISO timestamps (see
+// CreateEventDialog), so the formatter is pinned to UTC to keep the
+// displayed date stable regardless of the viewer's local timezone (without
+// it, viewers behind UTC see the date roll back by one day).
 function formatDateRange(event: ApiEvent, locale: string): string | null {
   if (!event.start_date) return null;
-  const dateFmt = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" });
+  const dateFmt = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
   const start = dateFmt.format(new Date(event.start_date));
   if (!event.end_date) return start;
   const end = dateFmt.format(new Date(event.end_date));

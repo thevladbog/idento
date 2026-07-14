@@ -10,11 +10,18 @@ import { useEventReadiness, useEventStats } from "../events/hooks";
 // `#fafcfb` one-off).
 const ROW_BASE = "grid items-center gap-2 p-3 hover:bg-accent/50 md:gap-4 md:p-4";
 
+// `start_date` is a bare calendar date stored as a UTC-midnight ISO
+// timestamp (see CreateEventDialog) — pinning the formatter to UTC keeps
+// the displayed date stable regardless of the viewer's local timezone
+// (without it, viewers behind UTC see the date roll back by one day).
 function formatDate(event: ApiEvent, locale: string): string | null {
   if (!event.start_date) return null;
-  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(
-    new Date(event.start_date),
-  );
+  return new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(event.start_date));
 }
 
 export function UpcomingRow({ event }: { event: ApiEvent }) {
