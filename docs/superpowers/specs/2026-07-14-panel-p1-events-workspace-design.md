@@ -104,11 +104,24 @@ once implemented, the contract test pins it).
 - **Live-strip hero:** if a running event exists
   (`start_date ≤ now ≤ end_date`), show it with live counters from
   `GET /api/events/{event_id}/stats` polled via TanStack Query
-  `refetchInterval` (~15 s; SSE upgrade is P4). No running event → hero
-  shows the next upcoming event with its readiness bullets and CTA into
-  the workspace. No events at all → EmptyState teaching the create flow.
-- **Upcoming / Past sections** as cards; upcoming cards carry readiness
-  bullets (from §2.1) — action-first copy per board 1c.
+  `refetchInterval` (~15 s; SSE upgrade is P4): checked-in big counter +
+  progress bar, zone breakdown when `zone_stats` is present. The board's
+  "Open monitor" / "Launch check-in station" CTAs are P4 surfaces — in P1
+  the strip's CTA opens the event workspace instead ("stations online" /
+  "scans/min" stats are likewise P4, no P1 data source). No running
+  event → hero shows the next upcoming event with its readiness state and
+  CTA into the workspace. No events at all → EmptyState teaching the
+  create flow.
+- **Upcoming / Past sections** as full-width row lists (board 1c shows
+  table-like rows in one bordered container, not a card grid). Upcoming
+  rows carry a compact readiness indicator — 5-segment bar + "N of M
+  ready" fraction, exactly as board 1c draws it — with the per-step
+  bullet detail (1e's checkmark lines, per the parent decision "bullets
+  borrowed from 1e") shown in a tooltip on the readiness cell; the full
+  bullet list's primary home is the workspace "what's next" panel (P1.2).
+  Row action links are state-dependent, action-first copy per board 1c
+  ("Continue setup →" / "Import attendees →"; past rows get "Report →").
+  Past rows are visually dimmed and show the checked-in result stat.
 - **Create event:** primary CTA opens a dialog (name required; dates,
   location optional) — zod validation with i18n'd messages (EN/RU), on
   success navigate to the new event's workspace route.
