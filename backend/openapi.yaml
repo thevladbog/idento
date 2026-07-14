@@ -470,6 +470,54 @@ components:
         staff_user_id: { type: string, format: uuid }
         created_at: { type: string, format: date-time }
       required: [id, attendee_id, context, staff_user_id, created_at]
+    FontListItem:
+      type: object
+      description: >
+        Lightweight font metadata (models.FontListItem) — the shape actually
+        returned by GET /api/events/{event_id}/fonts (per item) and POST
+        /api/events/{event_id}/fonts (the created item). The full
+        models.Font (which also carries the raw binary Data and
+        uploaded_by/license_accepted_at) is never serialized to JSON by any
+        handler — Data is json:"-" and the other fields are simply not
+        selected by GetFontsByEventID's query — so no separate "Font"
+        component is defined here.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        family: { type: string, description: "CSS font-family value, e.g. \"Roboto\"." }
+        weight: { type: string, description: "e.g. \"normal\", \"bold\", \"700\"." }
+        style: { type: string, description: "\"normal\" or \"italic\"." }
+        format: { type: string, enum: [woff2, woff, truetype, opentype], description: "Derived server-side from the uploaded file's extension." }
+        size: { type: integer, description: "File size in bytes." }
+        created_at: { type: string, format: date-time }
+      required: [id, name, family, weight, style, format, size, created_at]
+    APIKey:
+      type: object
+      description: >
+        models.APIKey with key_hash/key_hash_bcrypt excluded (json:"-" in
+        Go — the secret material is never returned once created; only
+        key_preview, the first 8 characters of the plain key, is exposed
+        for display).
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        key_preview: { type: string, description: "First 8 characters of the plain key plus \"...\"." }
+        expires_at: { type: string, format: date-time, description: "Omitted (not null) when unset — Go's json:\",omitempty\" on a nil *time.Time." }
+        last_used_at: { type: string, format: date-time, description: "Omitted (not null) when unset." }
+        revoked_at: { type: string, format: date-time, description: "Omitted (not null) unless the key was revoked." }
+        created_at: { type: string, format: date-time }
+      required: [id, event_id, name, key_preview, created_at]
+    CreateAPIKeyResponse:
+      type: object
+      description: >
+        POST /api/events/{event_id}/api-keys's 201 body. plain_key is the
+        only time the actual secret is ever returned — it is not
+        recoverable afterward (only key_hash/key_hash_bcrypt are persisted).
+      properties:
+        api_key: { $ref: "#/components/schemas/APIKey" }
+        plain_key: { type: string }
+      required: [api_key, plain_key]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -3143,6 +3191,515 @@ paths:
             Failure redeeming the token, loading the event/staff user,
             resolving the staff user's tenant-scoped role, creating the
             station, or minting the JWT.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/api-keys:
+    get:
+      operationId: getApiKeys
+      summary: List API keys issued for an event (never returns the secret material)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            API keys for the event. Store.GetAPIKeysByEventID's real
+            (PGStore) implementation always initializes an empty slice
+            before scanning rows, so this is a JSON array even with zero
+            keys — never null (unlike GetFontsByEventID below, this handler
+            has no nil-guard of its own, but doesn't need one).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/APIKey" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            Store.GetAPIKeysByEventID itself failing ("Failed to fetch API keys").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      operationId: createApiKey
+      summary: >
+        Mint a new API key for an event. The plain key is returned exactly
+        once, in this response — only its SHA256 (indexed lookup) and
+        bcrypt (verification) hashes are persisted, so it cannot be
+        recovered afterward.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                models.CreateAPIKeyRequest. name's `binding:"required"` Go
+                tag has no effect here — this handler's c.Bind never runs a
+                validator, so an empty name is accepted and simply stored
+                as-is.
+              properties:
+                name: { type: string }
+                expires_at: { type: string, format: date-time, nullable: true }
+      responses:
+        "201":
+          description: The newly created key, with plain_key populated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateAPIKeyResponse" }
+        "400":
+          description: >
+            event_id is not a UUID (checked first) — or, once ownership has
+            passed: the body fails to bind ("Invalid request"), or
+            expires_at is set to a time in the past ("Expiration date must
+            be in the future").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"),
+            middleware.GenerateAPIKey failing ("Failed to generate API
+            key" — practically unreachable, crypto/rand + bcrypt with a
+            fixed valid cost), or Store.CreateAPIKey itself failing
+            ("Failed to create API key").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/api-keys/{key_id}:
+    delete:
+      operationId: revokeApiKey
+      summary: >
+        Revoke an API key. Verifies key_id actually belongs to event_id
+        before revoking (Store.GetAPIKeysByEventID + a membership scan) —
+        without this check, owning any one event would let a caller revoke
+        any API key in the system by pairing their own event_id with a
+        victim's key_id from a different tenant's event (cross-tenant
+        IDOR; see the comment above this check in api_keys.go).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: key_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Key revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: >
+            event_id is not a UUID (checked first) — or, once ownership has
+            passed, key_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist / belongs to a different tenant
+            (requireEventOwnership) — or the event exists but key_id does
+            not appear in its key list (the IDOR guard above; also covers a
+            genuinely nonexistent key_id).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"),
+            Store.GetAPIKeysByEventID failing while running the IDOR guard
+            ("Failed to fetch API keys"), or Store.RevokeAPIKey itself
+            failing ("Failed to revoke API key").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/fonts:
+    get:
+      operationId: getEventFonts
+      summary: List an event's uploaded fonts (lightweight metadata only, no binary data)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            Fonts for the event, ordered by family/weight/style.
+            Store.GetFontsByEventID's real (PGStore) implementation
+            declares `var fonts []*models.FontListItem` (nil until
+            appended), so it CAN return a nil slice for zero rows; the
+            handler explicitly replaces nil with [] before serializing, so
+            this is always a JSON array, never null.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/FontListItem" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            Store.GetFontsByEventID itself failing ("Failed to get fonts").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      operationId: uploadEventFont
+      summary: >
+        Upload a custom font for an event (multipart/form-data). BUG,
+        confirmed by reading the code and reproduced by the contract test:
+        this endpoint currently cannot succeed through any real HTTP
+        request. requireEventOwnership correctly reads the caller's
+        identity as `*models.JWTCustomClaims` (same as every other
+        handler). Immediately afterward, UploadEventFont re-extracts the
+        caller's identity a SECOND time with incompatible logic — `token,
+        ok := c.Get("user").(*jwt.Token)` — but middleware.JWT()
+        (internal/middleware/jwt.go) stores a `*models.JWTCustomClaims`
+        under "user", never a `*jwt.Token`. Since ownership already
+        succeeding proves "user" holds a non-nil `*models.JWTCustomClaims`,
+        it can never also assert as `*jwt.Token`, so `ok` is always false
+        here and the handler unconditionally returns 401 {"error": "Invalid
+        token"} right after every ownership check that passes — it never
+        reaches the license-acceptance check, field validation, file
+        parsing, or Store.CreateFont below. The 201/409/500(save) responses
+        and most of the 400 causes documented here describe what the
+        handler WOULD produce if that one line matched every other
+        handler's pattern (e.g. claimsFromContext); they are unreachable in
+        the current codebase. See the 401 response for the practical
+        contract.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              description: Exact field names read via c.FormValue/c.FormFile in UploadEventFont.
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: >
+                    The font file. Extension must be .woff2, .woff, .ttf,
+                    or .otf (case-insensitive, anything else is rejected);
+                    max size 5MB.
+                name: { type: string, description: "Display name, e.g. \"Roboto Bold\"." }
+                family: { type: string, description: "CSS font-family value, e.g. \"Roboto\"." }
+                weight: { type: string, description: "Defaults to \"normal\" server-side if omitted/empty." }
+                style: { type: string, description: "Defaults to \"normal\" server-side if omitted/empty." }
+                license_accepted:
+                  type: string
+                  description: >
+                    Must be the literal string "true" (read via
+                    c.FormValue, not a form boolean) or the request is
+                    rejected with 400.
+              required: [file, name, family, license_accepted]
+      responses:
+        "201":
+          description: >
+            Font created (FontListItem shape). UNREACHABLE — see the
+            operation summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FontListItem" }
+        "400":
+          description: >
+            event_id is not a UUID (reachable, checked before ownership) —
+            or, unreachable below the 401 bug: missing user_id in the
+            token, missing name/family, an unrecognized file extension, or
+            a file over 5MB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401":
+          description: >
+            The practically-guaranteed outcome once event_id is valid and
+            owned by the caller's tenant — see the operation summary. Also
+            covers the ordinary "no/malformed Authorization header" case
+            from middleware.JWT() itself, before the handler ever runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            A font with the same family/weight/style already exists for
+            this event (Store.CreateFont's unique-constraint branch).
+            UNREACHABLE — see the operation summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error",
+            reachable) — or, unreachable below the 401 bug: reading the
+            uploaded file's contents, or Store.CreateFont itself failing
+            ("Failed to save font").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/fonts/css:
+    get:
+      operationId: getEventFontCss
+      summary: >
+        Auto-generated @font-face CSS for all of an event's fonts, each
+        pointing at GET /api/fonts/{id}/file.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            CSS built with fmt.Fprintf into a strings.Builder and sent via
+            c.String, with Content-Type explicitly set to
+            "text/css; charset=utf-8" beforehand (so Echo's default
+            text/plain never applies). Body is "" with just the leading
+            comment when the event has no fonts (not an error). Documented
+            as `format: binary` — it is genuinely UTF-8 text, but text/css
+            has no body decoder registered in the contract-test harness
+            (openapi3filter only ships JSON-family, text/csv, and
+            text/plain decoders), so `format: binary` routes decoding
+            through the same raw-bytes path already used for the image/png
+            responses elsewhere in this file, instead of failing with
+            "unsupported content type".
+          content:
+            text/css:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            Store.GetFontsByEventID itself failing ("Failed to get fonts").
+            Both render as application/json Error bodies, NOT text/css,
+            despite the 200 response using a different content type.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/fonts/{font_id}:
+    delete:
+      operationId: deleteEventFont
+      summary: Remove a font from an event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: font_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Font deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                required: [status]
+        "400":
+          description: event_id or font_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: >
+            tenant_suspended from the tenant gate — or the font exists but
+            belongs to a different event than event_id ("Font does not
+            belong to this event"), checked AFTER Store.GetFontByID
+            succeeds by ID alone (font lookup is not scoped by event_id).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist / belongs to a different tenant
+            (requireEventOwnership) — or font_id does not resolve at all
+            (Store.GetFontByID returning ANY error, including a raw store
+            failure, is uniformly masked as "Font not found"; unlike
+            requireEventOwnership, there is no separate 500 branch for a
+            font lookup failure here).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            Store.DeleteFont itself failing ("Failed to delete font").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/fonts/{id}/file:
+    get:
+      operationId: getFontFile
+      summary: >
+        Serve a font's binary file, for @font-face src or direct download.
+        Despite the "Public font file endpoint" comment on its route
+        registration (handler.go), this is NOT actually public: it is
+        registered on the `api` group AFTER `api.Use(middleware.JWT())`
+        (handler.go's RegisterRoutes runs `api.Use` once, before any routes
+        — including this one — are added to that group), so every request
+        requires a valid Bearer JWT and passes requireEventOwnership on the
+        font's event, identically to every other /api/* route in this
+        group.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            The raw font bytes, with Cache-Control: public,
+            max-age=31536000 and Content-Type set to the font's stored
+            mime_type (font/woff2, font/woff, font/ttf, or font/otf,
+            depending on the extension it was uploaded with). Documented
+            under the font/* wildcard media type since the concrete
+            Content-Type varies per font and none of the four has a
+            registered body decoder in the contract-test harness;
+            `format: binary` routes decoding through the raw-bytes
+            fallback path, same as image/png elsewhere in this file.
+          content:
+            font/*:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            font_id does not resolve at all (Store.GetFontByID returning
+            ANY error, including a raw store failure, is uniformly masked
+            as "Font not found") — or the font's event does not exist /
+            belongs to a different tenant ("Event not found", via
+            requireEventOwnership, checked only once the font itself has
+            loaded).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the font's event ownership ("Internal
+            error", via requireEventOwnership+writeErr — the font lookup
+            failure above is masked as 404, not surfaced here).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

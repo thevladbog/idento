@@ -30,6 +30,10 @@ type fakeStore struct {
 	bulkUpdateZoneAccessRules func(zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
 	getAttendeeByID           func(id uuid.UUID) (*models.Attendee, error)
 	getFontByID               func(id uuid.UUID) (*models.Font, error)
+	getFontsByEventID         func(eventID uuid.UUID) ([]*models.FontListItem, error)
+	createFont                func(font *models.Font) error
+	deleteFont                func(id uuid.UUID) error
+	createAPIKey              func(apiKey *models.APIKey) error
 	getUserByID               func(id uuid.UUID) (*models.User, error)
 	getUsersByTenantID        func(tenantID uuid.UUID) ([]*models.User, error)
 	getZoneStaffAssign        func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
@@ -158,6 +162,18 @@ func (f *fakeStore) GetAttendeeByIDForTenant(_ context.Context, id, tenantID uui
 }
 func (f *fakeStore) GetFontByID(_ context.Context, id uuid.UUID) (*models.Font, error) {
 	return f.getFontByID(id)
+}
+func (f *fakeStore) GetFontsByEventID(_ context.Context, eventID uuid.UUID) ([]*models.FontListItem, error) {
+	return f.getFontsByEventID(eventID)
+}
+func (f *fakeStore) CreateFont(_ context.Context, font *models.Font) error {
+	return f.createFont(font)
+}
+func (f *fakeStore) DeleteFont(_ context.Context, id uuid.UUID) error {
+	return f.deleteFont(id)
+}
+func (f *fakeStore) CreateAPIKey(_ context.Context, apiKey *models.APIKey) error {
+	return f.createAPIKey(apiKey)
 }
 func (f *fakeStore) GetUsersByTenantID(_ context.Context, tenantID uuid.UUID) ([]*models.User, error) {
 	return f.getUsersByTenantID(tenantID)
