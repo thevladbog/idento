@@ -102,9 +102,3 @@ export function EventWorkspaceLayout() {
     </div>
   );
 }
-
-// Task 4 replaces this with the real Event Settings page (board 6a).
-export function WorkspaceSettingsPlaceholder() {
-  const { t } = useTranslation();
-  return <p className="text-body text-muted-foreground">{t("workspaceComingSoon")}</p>;
-}

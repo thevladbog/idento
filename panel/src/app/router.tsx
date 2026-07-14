@@ -3,11 +3,10 @@ import { LoginScreen } from "../features/auth/LoginScreen";
 import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
-import {
-  EventWorkspaceLayout, WorkspaceSettingsPlaceholder,
-} from "../features/workspace/EventWorkspaceLayout";
+import { EventWorkspaceLayout } from "../features/workspace/EventWorkspaceLayout";
 import { HomePage } from "../features/home/HomePage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
+import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -102,7 +101,7 @@ const eventOverviewRoute = createRoute({
 const eventSettingsRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/settings",
-  component: WorkspaceSettingsPlaceholder, // Task 4 swaps to EventSettingsPage
+  component: EventSettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
