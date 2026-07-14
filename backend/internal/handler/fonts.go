@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
@@ -55,49 +54,12 @@ func (h *Handler) UploadEventFont(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	// Safely extract user from context
-	userToken := c.Get("user")
-	if userToken == nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "Unauthorized",
-		})
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
 	}
 
-	token, ok := userToken.(*jwt.Token)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "Invalid token",
-		})
-	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{
-			"error": "Invalid token claims",
-		})
-	}
-
-	// Safely extract user_id from claims
-	userIDValue, exists := claims["user_id"]
-	if !exists {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Missing user_id in token",
-		})
-	}
-
-	var userIDStr string
-	switch v := userIDValue.(type) {
-	case string:
-		userIDStr = v
-	case float64:
-		userIDStr = fmt.Sprintf("%.0f", v)
-	default:
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Invalid user_id format",
-		})
-	}
-
-	userID, err := uuid.Parse(userIDStr)
+	userID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "Invalid user ID",
