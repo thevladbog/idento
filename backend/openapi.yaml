@@ -332,6 +332,66 @@ components:
         updated_count: { type: integer }
         message: { type: string }
       required: [status, updated_count, message]
+    EventZone:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        zone_type: { type: string, description: "registration, general, vip, workshop" }
+        order_index: { type: integer }
+        open_time: { type: string, nullable: true, description: "HH:MM format" }
+        close_time: { type: string, nullable: true, description: "HH:MM format" }
+        is_registration_zone: { type: boolean }
+        requires_registration: { type: boolean }
+        is_active: { type: boolean }
+        settings: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required:
+        [
+          id,
+          event_id,
+          name,
+          zone_type,
+          order_index,
+          is_registration_zone,
+          requires_registration,
+          is_active,
+          created_at,
+          updated_at,
+        ]
+    EventZoneWithStats:
+      type: object
+      description: >
+        GetEventZones' with_stats=true response shape (store.GetEventZonesWithStats) —
+        each zone paired with aggregate counts computed at read time. zone is
+        always populated (never null) — the store builds one of these per row
+        already-scanned from GetEventZones.
+      properties:
+        zone: { $ref: "#/components/schemas/EventZone" }
+        total_checkins: { type: integer }
+        today_checkins: { type: integer }
+        assigned_staff: { type: integer }
+        access_rules_count: { type: integer }
+      required: [zone, total_checkins, today_checkins, assigned_staff, access_rules_count]
+    ZoneAccessRule:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        zone_id: { type: string, format: uuid }
+        category: { type: string }
+        allowed: { type: boolean }
+        time_from:
+          type: string
+          nullable: true
+          description: "HH:MM, inclusive lower bound; null = no lower bound"
+        time_to:
+          type: string
+          nullable: true
+          description: "HH:MM, inclusive upper bound; null = no upper bound"
+        created_at: { type: string, format: date-time }
+      required: [id, zone_id, category, allowed, created_at]
   responses:
     RateLimited:
       description: Rate limit exceeded (10/min per IP).
@@ -1805,6 +1865,468 @@ paths:
           description: >
             Store failure resolving attendee ownership ("Internal error"),
             or persisting the update ("Failed to update attendee").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/zones:
+    post:
+      operationId: createEventZone
+      summary: Create a zone for an event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: No field is required by the handler — an empty body creates a zone with every field blank/zero.
+              properties:
+                name: { type: string }
+                zone_type: { type: string }
+                order_index: { type: integer }
+                open_time: { type: string, nullable: true, description: "HH:MM format" }
+                close_time: { type: string, nullable: true, description: "HH:MM format" }
+                is_registration_zone: { type: boolean }
+                requires_registration: { type: boolean }
+                is_active: { type: boolean }
+                settings: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created zone.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventZone" }
+        "400":
+          description: event_id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            persisting the zone ("Failed to create zone").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: getEventZones
+      summary: >
+        Zones for an event, ordered by order_index. With ?with_stats=true,
+        each entry is paired with aggregate counts (EventZoneWithStats)
+        instead of a plain EventZone.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: with_stats
+          in: query
+          schema: { type: string }
+          description: Exact string match against "true" (not a real boolean parse); any other value behaves like it's absent.
+      responses:
+        "200":
+          description: Zones for the event, plain or stats-annotated depending on with_stats.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/EventZone" }
+                  - type: array
+                    items: { $ref: "#/components/schemas/EventZoneWithStats" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership ("Internal error"), or
+            fetching zones ("Failed to get zones", from either the plain or
+            with_stats path).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/{id}:
+    get:
+      operationId: getEventZone
+      summary: A single zone, scoped to the caller's tenant via its parent event
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventZone" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Two causes, same shape (requireZoneOwnership): the zone does not
+            exist (or GetEventZoneByID failed — both collapse to "Zone not
+            found", no store-error distinction unlike requireEventOwnership),
+            or the zone's parent event does not exist / belongs to a
+            different tenant ("Event not found", from the nested
+            requireEventOwnership call).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: updateEventZone
+      summary: Full replace of a zone's editable fields
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                Every field is applied unconditionally (zone.Name = req.Name,
+                etc.) — omitting a field in the body blanks it out rather
+                than preserving the existing value, same as PUT /api/events/{id}.
+              properties:
+                name: { type: string }
+                zone_type: { type: string }
+                order_index: { type: integer }
+                open_time: { type: string, nullable: true, description: "HH:MM format" }
+                close_time: { type: string, nullable: true, description: "HH:MM format" }
+                is_registration_zone: { type: boolean }
+                requires_registration: { type: boolean }
+                is_active: { type: boolean }
+                settings: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Updated zone (fields applied verbatim from the request body).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventZone" }
+        "400":
+          description: id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            or persisting the update ("Failed to update zone").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      operationId: deleteEventZone
+      summary: Delete a zone (hard delete — no soft-delete marker, unlike DELETE /api/attendees/{id})
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Confirmation message — NOT the zone record.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            or persisting the delete ("Failed to delete zone").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/{id}/qr:
+    get:
+      operationId: getZoneQrCode
+      summary: PNG QR code encoding zone-selection data (zone_id/event_id/zone_name/type=zone_select)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: 256x256 PNG, medium error-correction level.
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            json.Marshal failing on the QR payload ("Failed to generate QR
+            data" — effectively unreachable, the payload is plain strings),
+            or qrcode.Encode failing because the payload is too long to fit
+            a QR symbol at this size/recovery level ("Failed to generate QR
+            code" — reachable via an overlong zone name).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/zones/{zone_id}/access-rules:
+    post:
+      operationId: createZoneAccessRule
+      summary: Create (or, per the store's ON CONFLICT upsert, replace) an access rule for one attendee category on a zone
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: No field is required by the handler — an empty body creates a rule with every field blank/zero.
+              properties:
+                category: { type: string }
+                allowed: { type: boolean }
+                time_from: { type: string, nullable: true, description: "HH:MM, inclusive lower bound" }
+                time_to: { type: string, nullable: true, description: "HH:MM, inclusive upper bound" }
+      responses:
+        "201":
+          description: Created access rule.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoneAccessRule" }
+        "400":
+          description: zone_id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            or persisting the rule ("Failed to create access rule").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: getZoneAccessRules
+      summary: All access rules for a zone
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Access rules for the zone.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ZoneAccessRule" }
+        "400":
+          description: zone_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            or fetching rules ("Failed to get access rules").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: bulkUpdateZoneAccessRules
+      summary: >
+        Replace every access rule for a zone in one call (delete-then-insert
+        in a single transaction). Request is an array of rules; the response
+        is a confirmation message, NOT the array of rules that were written
+        (contrast the singular POST on this same collection, which echoes
+        back the created rule).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: zone_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              description: >
+                One entry per rule to keep; any existing rules for this zone
+                not included here are deleted. id/zone_id/created_at on each
+                entry are ignored — the store assigns a fresh id, this path's
+                zone_id, and created_at=now() to every row it inserts.
+              items:
+                type: object
+                properties:
+                  category: { type: string }
+                  allowed: { type: boolean }
+                  time_from: { type: string, nullable: true, description: "HH:MM, inclusive lower bound" }
+                  time_to: { type: string, nullable: true, description: "HH:MM, inclusive upper bound" }
+      responses:
+        "200":
+          description: Confirmation message.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                required: [message]
+        "400":
+          description: zone_id is not a UUID, or the request body is malformed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Zone does not exist, or its parent event does not exist / belongs
+            to a different tenant (requireZoneOwnership).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving zone/event ownership ("Internal error"),
+            or persisting the replacement set ("Failed to update access rules").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

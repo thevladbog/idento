@@ -20,6 +20,14 @@ type fakeStore struct {
 	store.Store
 	getEventByID              func(id uuid.UUID) (*models.Event, error)
 	getEventZoneByID          func(id uuid.UUID) (*models.EventZone, error)
+	createEventZone           func(zone *models.EventZone) error
+	getEventZones             func(eventID uuid.UUID) ([]*models.EventZone, error)
+	getEventZonesWithStats    func(eventID uuid.UUID) ([]*models.EventZoneWithStats, error)
+	updateEventZone           func(zone *models.EventZone) error
+	deleteEventZone           func(id uuid.UUID) error
+	createZoneAccessRule      func(rule *models.ZoneAccessRule) error
+	getZoneAccessRules        func(zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
+	bulkUpdateZoneAccessRules func(zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
 	getAttendeeByID           func(id uuid.UUID) (*models.Attendee, error)
 	getFontByID               func(id uuid.UUID) (*models.Font, error)
 	getUserByID               func(id uuid.UUID) (*models.User, error)
@@ -100,6 +108,30 @@ func (f *fakeStore) GetEventByIDForTenant(_ context.Context, id, tenantID uuid.U
 
 func (f *fakeStore) GetEventZoneByID(_ context.Context, id uuid.UUID) (*models.EventZone, error) {
 	return f.getEventZoneByID(id)
+}
+func (f *fakeStore) CreateEventZone(_ context.Context, zone *models.EventZone) error {
+	return f.createEventZone(zone)
+}
+func (f *fakeStore) GetEventZones(_ context.Context, eventID uuid.UUID) ([]*models.EventZone, error) {
+	return f.getEventZones(eventID)
+}
+func (f *fakeStore) GetEventZonesWithStats(_ context.Context, eventID uuid.UUID) ([]*models.EventZoneWithStats, error) {
+	return f.getEventZonesWithStats(eventID)
+}
+func (f *fakeStore) UpdateEventZone(_ context.Context, zone *models.EventZone) error {
+	return f.updateEventZone(zone)
+}
+func (f *fakeStore) DeleteEventZone(_ context.Context, id uuid.UUID) error {
+	return f.deleteEventZone(id)
+}
+func (f *fakeStore) CreateZoneAccessRule(_ context.Context, rule *models.ZoneAccessRule) error {
+	return f.createZoneAccessRule(rule)
+}
+func (f *fakeStore) GetZoneAccessRules(_ context.Context, zoneID uuid.UUID) ([]*models.ZoneAccessRule, error) {
+	return f.getZoneAccessRules(zoneID)
+}
+func (f *fakeStore) BulkUpdateZoneAccessRules(_ context.Context, zoneID uuid.UUID, rules []*models.ZoneAccessRule) error {
+	return f.bulkUpdateZoneAccessRules(zoneID, rules)
 }
 func (f *fakeStore) GetAttendeeByID(_ context.Context, id uuid.UUID) (*models.Attendee, error) {
 	return f.getAttendeeByID(id)
