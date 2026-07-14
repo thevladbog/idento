@@ -6,7 +6,6 @@ import "../i18n";
 
 describe("ThemeSwitcher", () => {
   it("opens a menu with Light/Dark/System options", async () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
     const user = userEvent.setup();
     render(
       <ThemeProvider>

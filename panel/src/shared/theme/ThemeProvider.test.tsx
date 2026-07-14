@@ -18,7 +18,6 @@ describe("ThemeProvider", () => {
   });
 
   it("defaults to system and does not add .dark when the OS prefers light", () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
     render(
       <ThemeProvider>
         <Probe />
@@ -29,7 +28,6 @@ describe("ThemeProvider", () => {
   });
 
   it("setTheme('dark') adds .dark to <html> and persists to localStorage", () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() });
     render(
       <ThemeProvider>
         <Probe />
