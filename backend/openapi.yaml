@@ -3416,27 +3416,9 @@ paths:
     post:
       operationId: uploadEventFont
       summary: >
-        Upload a custom font for an event (multipart/form-data). BUG,
-        confirmed by reading the code and reproduced by the contract test:
-        this endpoint currently cannot succeed through any real HTTP
-        request. requireEventOwnership correctly reads the caller's
-        identity as `*models.JWTCustomClaims` (same as every other
-        handler). Immediately afterward, UploadEventFont re-extracts the
-        caller's identity a SECOND time with incompatible logic — `token,
-        ok := c.Get("user").(*jwt.Token)` — but middleware.JWT()
-        (internal/middleware/jwt.go) stores a `*models.JWTCustomClaims`
-        under "user", never a `*jwt.Token`. Since ownership already
-        succeeding proves "user" holds a non-nil `*models.JWTCustomClaims`,
-        it can never also assert as `*jwt.Token`, so `ok` is always false
-        here and the handler unconditionally returns 401 {"error": "Invalid
-        token"} right after every ownership check that passes — it never
-        reaches the license-acceptance check, field validation, file
-        parsing, or Store.CreateFont below. The 201/409/500(save) responses
-        and most of the 400 causes documented here describe what the
-        handler WOULD produce if that one line matched every other
-        handler's pattern (e.g. claimsFromContext); they are unreachable in
-        the current codebase. See the 401 response for the practical
-        contract.
+        Upload a custom font for an event (multipart/form-data). Requires
+        accepting the font license terms; the file must be one of the
+        supported formats and under the size limit.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: event_id
@@ -3471,27 +3453,16 @@ paths:
               required: [file, name, family, license_accepted]
       responses:
         "201":
-          description: >
-            Font created (FontListItem shape). UNREACHABLE — see the
-            operation summary.
+          description: Font created (FontListItem shape).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/FontListItem" }
         "400":
           description: >
-            event_id is not a UUID (reachable, checked before ownership) —
-            or, unreachable below the 401 bug: missing user_id in the
-            token, missing name/family, an unrecognized file extension, or
+            event_id is not a UUID (checked before ownership) — or, once
+            ownership passes: license_accepted is not the literal string
+            "true", name/family missing, an unrecognized file extension, or
             a file over 5MB.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-        "401":
-          description: >
-            The practically-guaranteed outcome once event_id is valid and
-            owned by the caller's tenant — see the operation summary. Also
-            covers the ordinary "no/malformed Authorization header" case
-            from middleware.JWT() itself, before the handler ever runs.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3511,16 +3482,14 @@ paths:
           description: >
             A font with the same family/weight/style already exists for
             this event (Store.CreateFont's unique-constraint branch).
-            UNREACHABLE — see the operation summary.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving event ownership ("Internal error",
-            reachable) — or, unreachable below the 401 bug: reading the
-            uploaded file's contents, or Store.CreateFont itself failing
-            ("Failed to save font").
+            Store failure resolving event ownership, reading the uploaded
+            file's contents, or Store.CreateFont itself failing ("Failed to
+            save font").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

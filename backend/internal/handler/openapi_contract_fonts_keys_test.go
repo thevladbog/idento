@@ -179,26 +179,16 @@ func TestContractGetEventFonts(t *testing.T) {
 	validateResponse(t, http.MethodGet, path, rec)
 }
 
-// TestContractUploadEventFont documents and proves a real bug: once
-// requireEventOwnership passes (which correctly reads *models.JWTCustomClaims
-// from context), UploadEventFont re-extracts the caller's identity a SECOND
-// time via `c.Get("user").(*jwt.Token)` — a type middleware.JWT() never
-// stores there (it stores *models.JWTCustomClaims, see jwt.go:46). That
-// assertion can never succeed once ownership has already proven "user" holds
-// a *models.JWTCustomClaims, so this handler unconditionally 401s right
-// after every ownership check that passes, regardless of how well-formed the
-// multipart body is. This test sends a fully valid upload (accepted license,
-// name, family, and a small .ttf payload) and confirms the result is still
-// 401, never 201 — the license check, field validation, file parsing, and
-// Store.CreateFont are all dead code below that line as the handler stands
-// today.
+// TestContractUploadEventFont covers POST /api/events/{event_id}/fonts,
+// including every branch that used to be dead code behind a bug where
+// UploadEventFont re-extracted the caller's identity via
+// `c.Get("user").(*jwt.Token)` — a type middleware.JWT() never stores there
+// — and so unconditionally 401'd right after every ownership check that
+// passed (see git history for the fix: it now reuses claimsFromContext,
+// same as every other handler).
 func TestContractUploadEventFont(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")
-	h := New(&fakeStore{
-		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
-		createFont:   func(*models.Font) error { return nil },
-	})
 	e := echo.New()
 	path := "/api/events/" + event.ID.String() + "/fonts"
 	fields := map[string]string{
@@ -208,6 +198,13 @@ func TestContractUploadEventFont(t *testing.T) {
 		"weight":           "bold",
 		"style":            "normal",
 	}
+
+	// 201: a fully valid upload succeeds and reaches Store.CreateFont.
+	var savedFont *models.Font
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		createFont:   func(f *models.Font) error { savedFont = f; return nil },
+	})
 	c, rec := newAuthedMultipartContext(e, path, fields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
 	c.SetPath("/api/events/:event_id/fonts")
 	c.SetParamNames("event_id")
@@ -215,13 +212,15 @@ func TestContractUploadEventFont(t *testing.T) {
 	if err := h.UploadEventFont(c); err != nil {
 		t.Fatalf("UploadEventFont: %v", err)
 	}
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("want 401 (the c.Get(\"user\").(*jwt.Token) bug — see comment above), got %d, body=%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if savedFont == nil {
+		t.Fatal("expected Store.CreateFont to be called")
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 
-	// 400: event_id is not a UUID (checked before ownership, so this branch
-	// IS reachable despite the 401 bug above).
+	// 400: event_id is not a UUID (checked before ownership).
 	badPath := "/api/events/not-a-uuid/fonts"
 	c, rec = newAuthedMultipartContext(e, badPath, fields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
 	c.SetPath("/api/events/:event_id/fonts")
@@ -258,6 +257,102 @@ func TestContractUploadEventFont(t *testing.T) {
 	c.SetParamValues(event.ID.String())
 	if err := hOwnershipFail.UploadEventFont(c); err != nil {
 		t.Fatalf("UploadEventFont (ownership store failure): %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 400: license_accepted is missing (newly reachable post-fix).
+	hValid := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+	})
+	noLicenseFields := map[string]string{"name": "Roboto Bold", "family": "Roboto"}
+	c, rec = newAuthedMultipartContext(e, path, noLicenseFields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hValid.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (no license): %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 400: name is missing (newly reachable post-fix).
+	noNameFields := map[string]string{"license_accepted": "true", "family": "Roboto"}
+	c, rec = newAuthedMultipartContext(e, path, noNameFields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hValid.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (no name): %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 400: family is missing (newly reachable post-fix).
+	noFamilyFields := map[string]string{"license_accepted": "true", "name": "Roboto Bold"}
+	c, rec = newAuthedMultipartContext(e, path, noFamilyFields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hValid.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (no family): %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 400: unrecognized file extension (newly reachable post-fix).
+	c, rec = newAuthedMultipartContext(e, path, fields, "file", "roboto-bold.txt", []byte("not-a-font"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hValid.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (bad extension): %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 409: a font with the same family/weight/style already exists
+	// (newly reachable post-fix).
+	hDuplicate := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		createFont: func(*models.Font) error {
+			return errors.New(`pq: duplicate key value violates unique constraint "fonts_event_family_weight_style_key"`)
+		},
+	})
+	c, rec = newAuthedMultipartContext(e, path, fields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hDuplicate.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (duplicate): %v", err)
+	}
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
+	// 500: Store.CreateFont fails with a non-duplicate-key error (newly
+	// reachable post-fix).
+	hCreateFail := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		createFont:   func(*models.Font) error { return errors.New("insert failed") },
+	})
+	c, rec = newAuthedMultipartContext(e, path, fields, "file", "roboto-bold.ttf", []byte("fake-ttf-bytes"), tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/fonts")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hCreateFail.UploadEventFont(c); err != nil {
+		t.Fatalf("UploadEventFont (store failure): %v", err)
 	}
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
