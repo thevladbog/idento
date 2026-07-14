@@ -1947,7 +1947,7 @@ paths:
           content:
             application/json:
               schema:
-                oneOf:
+                anyOf:
                   - type: array
                     items: { $ref: "#/components/schemas/EventZone" }
                   - type: array
@@ -2077,8 +2077,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            or persisting the update ("Failed to update zone").
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — or persisting the
+            update ("Failed to update zone").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2120,8 +2123,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            or persisting the delete ("Failed to delete zone").
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — or persisting the
+            delete ("Failed to delete zone").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2162,12 +2168,15 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            json.Marshal failing on the QR payload ("Failed to generate QR
-            data" — effectively unreachable, the payload is plain strings),
-            or qrcode.Encode failing because the payload is too long to fit
-            a QR symbol at this size/recovery level ("Failed to generate QR
-            code" — reachable via an overlong zone name).
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — json.Marshal failing
+            on the QR payload ("Failed to generate QR data" — effectively
+            unreachable, the payload is plain strings), or qrcode.Encode
+            failing because the payload is too long to fit a QR symbol at
+            this size/recovery level ("Failed to generate QR code" —
+            reachable via an overlong zone name).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2218,8 +2227,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            or persisting the rule ("Failed to create access rule").
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — or persisting the
+            rule ("Failed to create access rule").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2259,8 +2271,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            or fetching rules ("Failed to get access rules").
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — or fetching rules
+            ("Failed to get access rules").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -2325,8 +2340,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving zone/event ownership ("Internal error"),
-            or persisting the replacement set ("Failed to update access rules").
+            Store failure resolving the zone's event ownership ("Internal
+            error", from the nested requireEventOwnership call inside
+            requireZoneOwnership) — a GetEventZoneByID failure itself is
+            masked as 404 above, not surfaced here — or persisting the
+            replacement set ("Failed to update access rules").
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

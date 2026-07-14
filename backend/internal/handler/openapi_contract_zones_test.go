@@ -175,6 +175,47 @@ func TestContractGetEventZones(t *testing.T) {
 		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	validateResponse(t, http.MethodGet, path, rec)
+
+	// 200: an event with zero zones returns an empty array on both branches.
+	// An empty array vacuously satisfies BOTH EventZone and EventZoneWithStats
+	// item schemas (no items to distinguish them by), which is exactly why the
+	// 200 response schema must be anyOf (matches at least one) rather than
+	// oneOf (matches exactly one) — kin-openapi's oneOf validation rejects an
+	// empty array as ambiguous ("input matches more than one oneOf schemas").
+	hEmpty := New(&fakeStore{
+		getEventByID:           func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getEventZones:          func(uuid.UUID) ([]*models.EventZone, error) { return []*models.EventZone{}, nil },
+		getEventZonesWithStats: func(uuid.UUID) ([]*models.EventZoneWithStats, error) { return []*models.EventZoneWithStats{}, nil },
+	})
+
+	// 200: empty array, with_stats absent.
+	c, rec = newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/zones")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hEmpty.GetEventZones(c); err != nil {
+		t.Fatalf("GetEventZones (empty): %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
+		t.Fatalf("want empty JSON array body, got %s", got)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 200: empty array, with_stats=true.
+	c, rec = newAuthedContext(e, http.MethodGet, path+"?with_stats=true", "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/zones")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := hEmpty.GetEventZones(c); err != nil {
+		t.Fatalf("GetEventZones (empty, with_stats): %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, path, rec)
 }
 
 func TestContractGetEventZone(t *testing.T) {
@@ -404,7 +445,7 @@ func TestContractGetZoneQRCode(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
 	}
-	validateResponse(t, http.MethodGet, path, rec)
+	validateResponse(t, http.MethodGet, longPath, rec)
 }
 
 func TestContractCreateZoneAccessRule(t *testing.T) {
