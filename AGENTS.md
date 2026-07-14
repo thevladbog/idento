@@ -18,4 +18,4 @@ Rules for the customer-panel rewrite (spec: [docs/superpowers/specs/2026-07-13-p
 - Colors only via semantic tokens (`bg-success`, `text-muted-foreground`, …) — hardcoded hex/rgb values are a review-blocker (test-enforced in `packages/ui`).
 - Every user-facing string ships in **EN and RU** in the same change; every screen works in **light and dark** themes.
 - `web/` is frozen for feature work while the rewrite runs (critical fixes only). Console work targets `web/`; panel work targets `panel/`.
-- Scoped rules: [packages/ui/AGENTS.md](packages/ui/AGENTS.md).
+- Scoped rules: [packages/ui/AGENTS.md](packages/ui/AGENTS.md), [panel/AGENTS.md](panel/AGENTS.md).
