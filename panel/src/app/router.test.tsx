@@ -2,6 +2,16 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { queryClient } from "./queryClient";
 import { router } from "./router";
 
+// openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch Response,
+// so mocks need real Response instances rather than bare `{ok,status,json}`
+// objects.
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("router — /register edition guard", () => {
   beforeEach(() => {
     queryClient.clear();
@@ -9,22 +19,14 @@ describe("router — /register edition guard", () => {
   });
 
   it("redirects /register to /login when the instance is on-prem", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "onprem", version: "1.0", license: null }),
-    });
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "onprem", version: "1.0", license: null }));
     router.update({ history: createMemoryHistory({ initialEntries: ["/register"] }) });
     await router.load();
     expect(router.state.location.pathname).toBe("/login");
   });
 
   it("allows /register to load when the instance is saas", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "saas", version: "1.0", license: null }),
-    });
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "saas", version: "1.0", license: null }));
     router.update({ history: createMemoryHistory({ initialEntries: ["/register"] }) });
     await router.load();
     expect(router.state.location.pathname).toBe("/register");

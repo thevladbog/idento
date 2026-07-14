@@ -20,9 +20,20 @@ type fakeStore struct {
 	store.Store
 	getEventByID              func(id uuid.UUID) (*models.Event, error)
 	getEventZoneByID          func(id uuid.UUID) (*models.EventZone, error)
+	createEventZone           func(zone *models.EventZone) error
+	getEventZones             func(eventID uuid.UUID) ([]*models.EventZone, error)
+	getEventZonesWithStats    func(eventID uuid.UUID) ([]*models.EventZoneWithStats, error)
+	updateEventZone           func(zone *models.EventZone) error
+	deleteEventZone           func(id uuid.UUID) error
+	createZoneAccessRule      func(rule *models.ZoneAccessRule) error
+	getZoneAccessRules        func(zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
+	bulkUpdateZoneAccessRules func(zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
 	getAttendeeByID           func(id uuid.UUID) (*models.Attendee, error)
 	getFontByID               func(id uuid.UUID) (*models.Font, error)
+	getFontsByEventID         func(eventID uuid.UUID) ([]*models.FontListItem, error)
 	createFont                func(font *models.Font) error
+	deleteFont                func(id uuid.UUID) error
+	createAPIKey              func(apiKey *models.APIKey) error
 	getUserByID               func(id uuid.UUID) (*models.User, error)
 	getUsersByTenantID        func(tenantID uuid.UUID) ([]*models.User, error)
 	getZoneStaffAssign        func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
@@ -32,6 +43,14 @@ type fakeStore struct {
 	createZoneCheckin         func(checkin *models.ZoneCheckin) error
 	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
 	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
+	createAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
+	getAttendeeZoneAccessList func(attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error)
+	updateAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
+	deleteAttendeeZoneAccess  func(id uuid.UUID) error
+	assignStaffToZone         func(assignment *models.StaffZoneAssignment) error
+	removeStaffFromZone       func(userID, zoneID uuid.UUID) error
+	checkZoneAccess           func(attendeeID, zoneID uuid.UUID) (bool, string, error)
+	getZoneCheckins           func(zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error)
 	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
 	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey              func(id uuid.UUID) error
@@ -42,9 +61,12 @@ type fakeStore struct {
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
+	getTenantByID                       func(id uuid.UUID) (*models.Tenant, error)
+	updateTenant                        func(tenant *models.Tenant) error
 	getTenantStatus                     func(id uuid.UUID) (string, error)
 	updateTenantStatus                  func(id uuid.UUID, status string) error
 	getUserByEmail                      func(email string) (*models.User, error)
+	getUserByQRToken                    func(token string) (*models.User, error)
 	createUser                          func(u *models.User) error
 	addUserToTenant                     func(ut *models.UserTenant) error
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
@@ -65,11 +87,18 @@ type fakeStore struct {
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
 	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
+	getEventsByTenantID func(tenantID uuid.UUID) ([]*models.Event, error)
+	createEvent         func(event *models.Event) error
+	updateEvent         func(event *models.Event) error
+	getEventStaff       func(eventID uuid.UUID) ([]*models.User, error)
+	assignStaffToEvent  func(assignment *models.EventStaff) error
+
 	applyBatchCheckin     func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error)
 	createCheckinOverride func(o *models.CheckinOverride) error
 	getEventStats         func(eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
 
 	checkAttendeeLimit func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
+	checkTenantLimit   func(tenantID uuid.UUID, resourceType string) (bool, int, int, error)
 
 	getPlatformAnalytics func() (*models.PlatformAnalytics, error)
 }
@@ -92,6 +121,30 @@ func (f *fakeStore) GetEventByIDForTenant(_ context.Context, id, tenantID uuid.U
 func (f *fakeStore) GetEventZoneByID(_ context.Context, id uuid.UUID) (*models.EventZone, error) {
 	return f.getEventZoneByID(id)
 }
+func (f *fakeStore) CreateEventZone(_ context.Context, zone *models.EventZone) error {
+	return f.createEventZone(zone)
+}
+func (f *fakeStore) GetEventZones(_ context.Context, eventID uuid.UUID) ([]*models.EventZone, error) {
+	return f.getEventZones(eventID)
+}
+func (f *fakeStore) GetEventZonesWithStats(_ context.Context, eventID uuid.UUID) ([]*models.EventZoneWithStats, error) {
+	return f.getEventZonesWithStats(eventID)
+}
+func (f *fakeStore) UpdateEventZone(_ context.Context, zone *models.EventZone) error {
+	return f.updateEventZone(zone)
+}
+func (f *fakeStore) DeleteEventZone(_ context.Context, id uuid.UUID) error {
+	return f.deleteEventZone(id)
+}
+func (f *fakeStore) CreateZoneAccessRule(_ context.Context, rule *models.ZoneAccessRule) error {
+	return f.createZoneAccessRule(rule)
+}
+func (f *fakeStore) GetZoneAccessRules(_ context.Context, zoneID uuid.UUID) ([]*models.ZoneAccessRule, error) {
+	return f.getZoneAccessRules(zoneID)
+}
+func (f *fakeStore) BulkUpdateZoneAccessRules(_ context.Context, zoneID uuid.UUID, rules []*models.ZoneAccessRule) error {
+	return f.bulkUpdateZoneAccessRules(zoneID, rules)
+}
 func (f *fakeStore) GetAttendeeByID(_ context.Context, id uuid.UUID) (*models.Attendee, error) {
 	return f.getAttendeeByID(id)
 }
@@ -110,8 +163,17 @@ func (f *fakeStore) GetAttendeeByIDForTenant(_ context.Context, id, tenantID uui
 func (f *fakeStore) GetFontByID(_ context.Context, id uuid.UUID) (*models.Font, error) {
 	return f.getFontByID(id)
 }
+func (f *fakeStore) GetFontsByEventID(_ context.Context, eventID uuid.UUID) ([]*models.FontListItem, error) {
+	return f.getFontsByEventID(eventID)
+}
 func (f *fakeStore) CreateFont(_ context.Context, font *models.Font) error {
 	return f.createFont(font)
+}
+func (f *fakeStore) DeleteFont(_ context.Context, id uuid.UUID) error {
+	return f.deleteFont(id)
+}
+func (f *fakeStore) CreateAPIKey(_ context.Context, apiKey *models.APIKey) error {
+	return f.createAPIKey(apiKey)
 }
 func (f *fakeStore) GetUsersByTenantID(_ context.Context, tenantID uuid.UUID) ([]*models.User, error) {
 	return f.getUsersByTenantID(tenantID)
@@ -139,6 +201,30 @@ func (f *fakeStore) GetUserByID(_ context.Context, id uuid.UUID) (*models.User, 
 }
 func (f *fakeStore) GetAttendeeZoneAccessByID(_ context.Context, id uuid.UUID) (*models.AttendeeZoneAccess, error) {
 	return f.getAttendeeZoneAccessByID(id)
+}
+func (f *fakeStore) CreateAttendeeZoneAccess(_ context.Context, access *models.AttendeeZoneAccess) error {
+	return f.createAttendeeZoneAccess(access)
+}
+func (f *fakeStore) GetAttendeeZoneAccessList(_ context.Context, attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error) {
+	return f.getAttendeeZoneAccessList(attendeeID)
+}
+func (f *fakeStore) UpdateAttendeeZoneAccess(_ context.Context, access *models.AttendeeZoneAccess) error {
+	return f.updateAttendeeZoneAccess(access)
+}
+func (f *fakeStore) DeleteAttendeeZoneAccess(_ context.Context, id uuid.UUID) error {
+	return f.deleteAttendeeZoneAccess(id)
+}
+func (f *fakeStore) AssignStaffToZone(_ context.Context, assignment *models.StaffZoneAssignment) error {
+	return f.assignStaffToZone(assignment)
+}
+func (f *fakeStore) RemoveStaffFromZone(_ context.Context, userID, zoneID uuid.UUID) error {
+	return f.removeStaffFromZone(userID, zoneID)
+}
+func (f *fakeStore) CheckZoneAccess(_ context.Context, attendeeID, zoneID uuid.UUID) (bool, string, error) {
+	return f.checkZoneAccess(attendeeID, zoneID)
+}
+func (f *fakeStore) GetZoneCheckins(_ context.Context, zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error) {
+	return f.getZoneCheckins(zoneID, date)
 }
 func (f *fakeStore) GetStaffZoneAssignments(_ context.Context, userID uuid.UUID) ([]*models.StaffZoneAssignment, error) {
 	return f.getStaffZoneAssignments(userID)
@@ -168,6 +254,12 @@ func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenan
 func (f *fakeStore) ProvisionTenantWithAdmin(_ context.Context, tenantName, email, password string) (*models.Tenant, *models.User, error) {
 	return f.provisionTenantWithAdmin(tenantName, email, password)
 }
+func (f *fakeStore) GetTenantByID(_ context.Context, id uuid.UUID) (*models.Tenant, error) {
+	return f.getTenantByID(id)
+}
+func (f *fakeStore) UpdateTenant(_ context.Context, tenant *models.Tenant) error {
+	return f.updateTenant(tenant)
+}
 func (f *fakeStore) GetTenantStatus(_ context.Context, id uuid.UUID) (string, error) {
 	return f.getTenantStatus(id)
 }
@@ -176,6 +268,9 @@ func (f *fakeStore) UpdateTenantStatus(_ context.Context, id uuid.UUID, status s
 }
 func (f *fakeStore) GetUserByEmail(_ context.Context, email string) (*models.User, error) {
 	return f.getUserByEmail(email)
+}
+func (f *fakeStore) GetUserByQRToken(_ context.Context, token string) (*models.User, error) {
+	return f.getUserByQRToken(token)
 }
 func (f *fakeStore) CreateUser(_ context.Context, u *models.User) error { return f.createUser(u) }
 func (f *fakeStore) AddUserToTenant(_ context.Context, ut *models.UserTenant) error {
@@ -225,6 +320,22 @@ func (f *fakeStore) CreateStation(_ context.Context, eventID, staffUserID uuid.U
 	return f.createStation(eventID, staffUserID, deviceInfo)
 }
 
+func (f *fakeStore) GetEventsByTenantID(_ context.Context, tenantID uuid.UUID) ([]*models.Event, error) {
+	return f.getEventsByTenantID(tenantID)
+}
+func (f *fakeStore) CreateEvent(_ context.Context, event *models.Event) error {
+	return f.createEvent(event)
+}
+func (f *fakeStore) UpdateEvent(_ context.Context, event *models.Event) error {
+	return f.updateEvent(event)
+}
+func (f *fakeStore) GetEventStaff(_ context.Context, eventID uuid.UUID) ([]*models.User, error) {
+	return f.getEventStaff(eventID)
+}
+func (f *fakeStore) AssignStaffToEvent(_ context.Context, assignment *models.EventStaff) error {
+	return f.assignStaffToEvent(assignment)
+}
+
 func (f *fakeStore) ApplyBatchCheckin(_ context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error) {
 	return f.applyBatchCheckin(eventID, staffUserID, item)
 }
@@ -239,6 +350,9 @@ func (f *fakeStore) GetEventStats(_ context.Context, eventID uuid.UUID, zoneID *
 
 func (f *fakeStore) CheckAttendeeLimit(_ context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
 	return f.checkAttendeeLimit(tenantID, eventID, adding)
+}
+func (f *fakeStore) CheckTenantLimit(_ context.Context, tenantID uuid.UUID, resourceType string) (bool, int, int, error) {
+	return f.checkTenantLimit(tenantID, resourceType)
 }
 func (f *fakeStore) GetPlatformAnalytics(_ context.Context) (*models.PlatformAnalytics, error) {
 	return f.getPlatformAnalytics()

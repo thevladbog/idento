@@ -18,14 +18,21 @@ describe("QrLoginScreen", () => {
   });
 
   it("submits the manually entered code and saves the session on success", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        token: "tok-1",
-        user: { id: "u2", tenant_id: "t1", email: "staff@b.com", role: "staff", created_at: "", updated_at: "" },
-      }),
-    });
+    // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
+    // Response, so the mock needs a real Response instance, and it calls the
+    // global fetch as `fetch(request: Request, init)` rather than
+    // `fetch(url, init)`. Routed by URL (rather than assuming call order) so
+    // this stays correct if a background mount query is ever added here.
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        new Response(
+          JSON.stringify({
+            token: "tok-1",
+            user: { id: "u2", tenant_id: "t1", email: "staff@b.com", role: "staff", created_at: "", updated_at: "" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
     const user = userEvent.setup();
     renderWithQuery(<QrLoginScreen />);
 
@@ -33,9 +40,10 @@ describe("QrLoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => expect(getCurrentUser()?.role).toBe("staff"));
-    expect(fetch).toHaveBeenCalledWith(
-      "http://api.test/auth/login-qr",
-      expect.objectContaining({ body: JSON.stringify({ qr_token: "QR-4471" }) }),
-    );
+    const calls = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls;
+    const req = calls.find(([r]) => r.url.includes("/login-qr"))?.[0];
+    expect(req).toBeDefined();
+    expect(req!.url).toBe("http://api.test/auth/login-qr");
+    expect(await req!.clone().text()).toBe(JSON.stringify({ qr_token: "QR-4471" }));
   });
 });

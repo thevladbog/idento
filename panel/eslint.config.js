@@ -5,7 +5,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "public"] },
+  { ignores: ["dist", "public", "src/shared/api/schema.d.ts"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   reactHooks.configs["recommended-latest"],

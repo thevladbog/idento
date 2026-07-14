@@ -28,15 +28,21 @@ describe("RegisterScreen", () => {
   });
 
   it("submits org name, email, password and saves the session on success", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 201,
-      json: () => Promise.resolve({
-        token: "tok-1",
-        user: { id: "u1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" },
-        tenants: [{ id: "t1", name: "Acme Events" }],
-      }),
-    });
+    // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
+    // Response, so the mock needs a real Response instance, and it calls the
+    // global fetch as `fetch(request: Request, init)` rather than
+    // `fetch(url, init)`.
+    global.fetch = vi.fn().mockImplementation(
+      () =>
+        new Response(
+          JSON.stringify({
+            token: "tok-1",
+            user: { id: "u1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" },
+            tenants: [{ id: "t1", name: "Acme Events" }],
+          }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        ),
+    );
     const user = userEvent.setup();
     renderWithQuery(<RegisterScreen />);
 
@@ -46,11 +52,10 @@ describe("RegisterScreen", () => {
     await user.click(screen.getByRole("button", { name: "Create organization" }));
 
     await waitFor(() => expect(getCurrentTenant()?.name).toBe("Acme Events"));
-    expect(fetch).toHaveBeenCalledWith(
-      "http://api.test/auth/register",
-      expect.objectContaining({
-        body: JSON.stringify({ tenant_name: "Acme Events", email: "a@b.com", password: "secretpw" }),
-      }),
+    const req = (fetch as unknown as { mock: { calls: [Request, unknown][] } }).mock.calls[0][0];
+    expect(req.url).toBe("http://api.test/auth/register");
+    expect(await req.clone().text()).toBe(
+      JSON.stringify({ tenant_name: "Acme Events", email: "a@b.com", password: "secretpw" }),
     );
   });
 });

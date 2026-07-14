@@ -21,6 +21,16 @@ const AUTH: AuthResponse = {
   current_tenant: { id: "t1", name: "Acme Events" },
 };
 
+// openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch Response,
+// so mocks need real Response instances rather than bare `{ok,status,json}`
+// objects.
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 describe("AppShell", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -30,11 +40,7 @@ describe("AppShell", () => {
   });
 
   it("renders the nav links and the children content, no ON-PREM tag on saas", () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "saas", version: "1.0", license: null }),
-    });
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "saas", version: "1.0", license: null }));
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
@@ -57,11 +63,7 @@ describe("AppShell", () => {
   });
 
   it("shows the ON-PREM version tag when the instance is on-prem", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({ mode: "onprem", version: "2.4.1", license: null }),
-    });
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "onprem", version: "2.4.1", license: null }));
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
