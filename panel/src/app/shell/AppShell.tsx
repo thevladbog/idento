@@ -17,7 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <span className="text-section-title">{t("appName")}</span>
         <OrgSwitcher />
         {instance.data?.mode === "onprem" ? (
-          <span className="text-caption text-muted-foreground">ON-PREM · v{instance.data.version}</span>
+          <span className="text-caption text-muted-foreground">{t("onPremVersionTag", { version: instance.data.version })}</span>
         ) : null}
         <nav className="hidden items-center gap-4 md:flex">
           <Link to="/" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">

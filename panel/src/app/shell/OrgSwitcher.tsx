@@ -5,10 +5,12 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ChevronsUpDown } from "lucide-react";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { switchTenant } from "../../shared/api/client";
 import { getCurrentTenant, getTenants, updateCurrentTenant, updateToken } from "../../shared/api/session";
 
 export function OrgSwitcher() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [current, setCurrent] = React.useState(getCurrentTenant());
   const tenants = getTenants();
@@ -37,7 +39,7 @@ export function OrgSwitcher() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        <DropdownMenuLabel>{tenants.length} organizations</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("orgSwitcherCount", { count: tenants.length })}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {tenants.map((tenant) => (
           <DropdownMenuItem key={tenant.id} onSelect={() => mutation.mutate(tenant.id)}>
