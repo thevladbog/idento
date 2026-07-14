@@ -45,7 +45,10 @@ func (h *Handler) CreateCheckinOverride(c echo.Context) error {
 		}
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	staffUserID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})

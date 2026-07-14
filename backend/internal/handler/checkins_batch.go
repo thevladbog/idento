@@ -31,7 +31,10 @@ func (h *Handler) BatchCheckin(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Empty batch"})
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	staffUserID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})

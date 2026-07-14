@@ -10,6 +10,25 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// TestCreateCheckinOverride_MissingClaimsReturns401 proves a request with no
+// "user" in context (e.g. corrupted middleware state) gets a clean 401
+// instead of panicking on the raw claims type assertion.
+func TestCreateCheckinOverride_MissingClaimsReturns401(t *testing.T) {
+	eventID := uuid.New()
+	h := &Handler{Store: &fakeStore{}}
+	e := echo.New()
+	body := `{"attendee_id":"` + uuid.New().String() + `","context":"already_checked"}`
+	c, rec := newUnauthedContext(e, http.MethodPost, "/api/events/"+eventID.String()+"/checkins/override", body)
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+	if err := h.CreateCheckinOverride(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing claims, got %d", rec.Code)
+	}
+}
+
 func TestCreateCheckinOverride_RejectsInvalidContext(t *testing.T) {
 	eventID := uuid.New()
 	tenantID := uuid.New()

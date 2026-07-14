@@ -12,6 +12,24 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// TestCreateStationProvisioningToken_MissingClaimsReturns401 proves a request
+// with no "user" in context gets a clean 401 instead of panicking on the raw
+// claims type assertion.
+func TestCreateStationProvisioningToken_MissingClaimsReturns401(t *testing.T) {
+	eventID := uuid.New()
+	h := &Handler{Store: &fakeStore{}}
+	e := echo.New()
+	c, rec := newUnauthedContext(e, http.MethodPost, "/api/events/"+eventID.String()+"/stations/provisioning-token", `{"staff_user_id":"`+uuid.New().String()+`"}`)
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+	if err := h.CreateStationProvisioningToken(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing claims, got %d", rec.Code)
+	}
+}
+
 func TestCreateStationProvisioningToken_RequiresManagerRole(t *testing.T) {
 	eventID := uuid.New()
 	tenantID := uuid.New()
