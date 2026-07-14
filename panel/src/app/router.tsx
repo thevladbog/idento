@@ -1,9 +1,10 @@
 import { Outlet, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
-import { useTranslation } from "react-i18next";
 import { LoginScreen } from "../features/auth/LoginScreen";
 import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
+import { EventWorkspaceStub } from "../features/events/EventWorkspaceStub";
+import { HomePage } from "../features/home/HomePage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -11,24 +12,6 @@ import { queryClient } from "./queryClient";
 export const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
-
-// eslint-disable-next-line react-refresh/only-export-components -- Route component belongs next to the route definitions it backs; not a real Fast Refresh issue for this pattern (same rationale as ProtectedLayout.tsx / ThemeProvider.tsx).
-function HomePlaceholder() {
-  const { t } = useTranslation();
-  return <div className="p-6 text-body">{t("homeComingSoon")}</div>;
-}
-
-// Temporary destination for the "Open event"/"Open monitor" links Home's
-// LiveStrip (Task 6+) points at — registering the real route now (instead of
-// waiting for Task 9) is what lets those `Link to="/events/$eventId"` calls
-// typecheck against the router's route tree. Task 9 replaces this component
-// with the real EventWorkspaceStub (event fetch + name + coming-soon copy)
-// per the P1.1 plan; this placeholder is intentionally minimal.
-// eslint-disable-next-line react-refresh/only-export-components -- same rationale as HomePlaceholder above.
-function EventWorkspacePlaceholder() {
-  const { t } = useTranslation();
-  return <div className="p-6 text-body">{t("placeholderComingSoon")}</div>;
-}
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -80,9 +63,7 @@ const protectedLayoutRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/",
-  // P1 replaces this with the real Home (board 1c) — the shell and routing
-  // guard are this phase's deliverable, not Home's content.
-  component: HomePlaceholder,
+  component: HomePage,
 });
 
 const teamRoute = createRoute({
@@ -103,10 +84,10 @@ const organizationRoute = createRoute({
   component: () => <PlaceholderPage titleKey="navOrganization" />,
 });
 
-const eventStubRoute = createRoute({
+export const eventStubRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/events/$eventId",
-  component: EventWorkspacePlaceholder,
+  component: EventWorkspaceStub,
 });
 
 const routeTree = rootRoute.addChildren([
