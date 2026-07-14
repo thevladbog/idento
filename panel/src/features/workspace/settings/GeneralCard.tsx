@@ -65,6 +65,12 @@ export function GeneralCard({ event }: GeneralCardProps) {
   const [form, setForm] = React.useState<FormState>(() => toFormState(event));
   const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({});
   const [saved, setSaved] = React.useState(false);
+  const savedTimeoutRef = React.useRef<number | undefined>(undefined);
+
+  // Cancel the pending fade-out on unmount so a save that succeeds right
+  // before the user navigates away doesn't call setSaved on an unmounted
+  // component.
+  React.useEffect(() => () => window.clearTimeout(savedTimeoutRef.current), []);
 
   const patchEvent = $api.useMutation("patch", "/api/events/{id}", {
     onSuccess: (updated) => {
@@ -75,7 +81,8 @@ export function GeneralCard({ event }: GeneralCardProps) {
       setBaseline(next);
       setForm(next);
       setSaved(true);
-      window.setTimeout(() => setSaved(false), 2000);
+      window.clearTimeout(savedTimeoutRef.current);
+      savedTimeoutRef.current = window.setTimeout(() => setSaved(false), 2000);
     },
   });
 
