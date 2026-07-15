@@ -205,13 +205,14 @@ function Step1Body({
               {t("importWorkerNote", { size: formatSize(state.file.size) })}
             </span>
           </div>
-          <button
+          <Button
             type="button"
-            className="shrink-0 text-caption font-medium text-primary underline-offset-4 hover:underline"
+            variant="link"
+            className="shrink-0 text-caption"
             onClick={onReplaceClick}
           >
             {t("importReplace")}
-          </button>
+          </Button>
         </div>
       )}
 
