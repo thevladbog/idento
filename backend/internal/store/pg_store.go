@@ -9,6 +9,7 @@ import (
 	"idento/backend/migrations"
 	"io/fs"
 	"log"
+	"math"
 	"net/netip"
 	"sort"
 	"strings"
@@ -679,11 +680,11 @@ func scanAttendeeRow(rows pgx.Rows) (*models.Attendee, error) {
 	var a models.Attendee
 	var customFieldsJSON []byte
 	if err := rows.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scan attendee row: %w", err)
 	}
 	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
 		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("unmarshal custom_fields: %w", err)
 		}
 	}
 	return &a, nil
@@ -705,7 +706,7 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query attendees by event id: %w", err)
 	}
 	defer rows.Close()
 
@@ -717,7 +718,10 @@ func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, 
 		}
 		attendees = append(attendees, a)
 	}
-	return attendees, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("attendees by event id rows: %w", err)
+	}
+	return attendees, nil
 }
 
 // CountAttendeesByEventID counts non-deleted attendees for an event.
@@ -726,7 +730,10 @@ func (s *PGStore) CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID
 	// Keep the WHERE clause in lockstep with GetAttendeesByEventID.
 	err := s.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`, eventID).Scan(&n)
-	return n, err
+	if err != nil {
+		return 0, fmt.Errorf("count attendees by event id: %w", err)
+	}
+	return n, nil
 }
 
 // GetAttendeesPage returns one page of attendees for an event matching f,
@@ -742,7 +749,7 @@ func (s *PGStore) GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f Att
 	var total int
 	countQuery := "SELECT COUNT(*) FROM attendees a" + join + " " + where
 	if err := s.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("count attendees page: %w", err)
 	}
 
 	limitIdx := len(args) + 1
@@ -756,11 +763,18 @@ func (s *PGStore) GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f Att
 		LIMIT $%d OFFSET $%d
 	`, limitIdx, offsetIdx)
 
+	// Defense-in-depth: the handler layer is expected to reject a page value
+	// large enough to overflow this multiplication before calling here, but
+	// don't trust that blindly — guard it again at the store boundary.
+	if f.PerPage > 0 && f.Page-1 > math.MaxInt/f.PerPage {
+		return nil, 0, fmt.Errorf("page/per_page would overflow offset calculation")
+	}
+
 	pageArgs := append(append([]interface{}{}, args...), f.PerPage, (f.Page-1)*f.PerPage)
 
 	rows, err := s.db.Query(ctx, query, pageArgs...)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, fmt.Errorf("query attendees page: %w", err)
 	}
 	defer rows.Close()
 
@@ -768,11 +782,14 @@ func (s *PGStore) GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f Att
 	for rows.Next() {
 		a, err := scanAttendeeRow(rows)
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("scan attendees page row: %w", err)
 		}
 		attendees = append(attendees, a)
 	}
-	return attendees, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("attendees page rows: %w", err)
+	}
+	return attendees, total, nil
 }
 
 func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
