@@ -22,12 +22,19 @@ type DuplicateInfo struct {
 	Reason    string `json:"reason"` // "email" or "code"
 }
 
+type BulkRowError struct {
+	Row     int    `json:"row"`
+	Data    string `json:"data"`
+	Problem string `json:"problem"`
+}
+
 type BulkImportResponse struct {
 	Message    string          `json:"message"`
 	Created    int             `json:"created"`
 	Skipped    int             `json:"skipped"`
 	Total      int             `json:"total"`
 	Duplicates []DuplicateInfo `json:"duplicates,omitempty"`
+	Errors     []BulkRowError  `json:"errors,omitempty"`
 }
 
 // BulkCreateAttendees creates multiple attendees at once (CSV import)
@@ -111,8 +118,9 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 	createdCount := 0
 	skippedCount := 0
 	duplicates := []DuplicateInfo{}
+	errors := []BulkRowError{}
 
-	for _, rowData := range req.Attendees {
+	for i, rowData := range req.Attendees {
 		attendee := &models.Attendee{
 			ID:           uuid.New(),
 			EventID:      eventID,
@@ -157,6 +165,12 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 			attendee.CustomFields[key] = value
 		}
 
+		// Build data string for error reporting (first+last name, fallback to email, may be empty)
+		errorData := strings.TrimSpace(attendee.FirstName + " " + attendee.LastName)
+		if errorData == "" {
+			errorData = attendee.Email
+		}
+
 		// Generate code if not provided
 		if attendee.Code == "" {
 			// Generate unique code
@@ -189,6 +203,16 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 				LastName:  attendee.LastName,
 				Reason:    duplicateReason,
 			})
+			// Track the error
+			problem := "duplicate_email"
+			if duplicateReason == "code" {
+				problem = "duplicate_code"
+			}
+			errors = append(errors, BulkRowError{
+				Row:     i + 1,
+				Data:    errorData,
+				Problem: problem,
+			})
 			skippedCount++
 			c.Logger().Infof("Skipping duplicate attendee: %s %s (%s) - reason: %s",
 				attendee.FirstName, attendee.LastName, attendee.Email, duplicateReason)
@@ -198,6 +222,11 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		// Create attendee
 		if err := h.Store.CreateAttendee(c.Request().Context(), attendee); err != nil {
 			c.Logger().Errorf("Failed to create attendee: %v", err)
+			errors = append(errors, BulkRowError{
+				Row:     i + 1,
+				Data:    errorData,
+				Problem: "create_failed",
+			})
 			skippedCount++
 			continue
 		}
@@ -217,6 +246,7 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		Skipped:    skippedCount,
 		Total:      len(req.Attendees),
 		Duplicates: duplicates,
+		Errors:     errors,
 	}
 
 	return c.JSON(http.StatusCreated, response)

@@ -332,6 +332,18 @@ components:
         last_name: { type: string }
         reason: { type: string, enum: [email, code] }
       required: [email, first_name, last_name, reason]
+    BulkRowError:
+      type: object
+      description: >
+        Per-row error detail from BulkCreateAttendees. Row is 1-based index
+        into the submitted attendees array. Data is display text
+        (first_name+last_name trimmed, fallback to email, may be empty). Problem
+        is a stable string the frontend switches on.
+      properties:
+        row: { type: integer, description: "1-based index in the request attendees array" }
+        data: { type: string, description: "Display text for the row (first+last name, fallback to email)" }
+        problem: { type: string, enum: [duplicate_email, duplicate_code, create_failed] }
+      required: [row, data, problem]
     BulkImportResponse:
       type: object
       properties:
@@ -342,6 +354,12 @@ components:
         duplicates:
           type: array
           items: { $ref: "#/components/schemas/DuplicateInfo" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/BulkRowError" }
+          description: >
+            Per-row errors from the import. Includes duplicates and CreateAttendee
+            failures. Each error is tracked by row number, display data, and problem code.
       required: [message, created, skipped, total]
     BulkLimitExceededError:
       type: object
@@ -1759,9 +1777,10 @@ paths:
       responses:
         "201":
           description: >
-            Import summary. Per-row CreateAttendee failures inside the loop
-            are silently counted as skipped, not surfaced as a distinct
-            error status.
+            Import summary. Per-row failures (duplicate emails/codes and
+            CreateAttendee errors) are tracked in the errors array with
+            row number, display data, and problem code; they are also counted
+            in the skipped total.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BulkImportResponse" }

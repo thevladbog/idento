@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -324,4 +325,178 @@ func TestOpenAPIContract_AttendeesP2_FiltersCompose(t *testing.T) {
 		t.Fatalf("got %+v, want exactly the composed-filter match", got)
 	}
 	validateResponse(t, http.MethodGet, "/api/events/"+event.ID.String()+"/attendees", rec)
+}
+
+// (h) BulkCreateAttendees with per-row errors: row 2 duplicates an existing
+// email, row 3 duplicates an existing code, all others are valid. Assert
+// 201, correct created count, errors array with row/problem/data, legacy
+// duplicates still populated.
+func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Conference")
+
+	// Existing attendee with email alice@example.com
+	existing1 := &models.Attendee{
+		ID:       uuid.New(),
+		EventID:  event.ID,
+		Email:    "alice@example.com",
+		Code:     "CODE-ALICE",
+		FirstName: "Alice",
+		LastName: "Smith",
+	}
+	// Existing attendee with code EXISTING-CODE (will be duplicated by row 3)
+	existing2 := &models.Attendee{
+		ID:       uuid.New(),
+		EventID:  event.ID,
+		Email:    "bob@example.com",
+		Code:     "EXISTING-CODE",
+		FirstName: "Bob",
+		LastName: "Jones",
+	}
+
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeesByEventID: func(uuid.UUID, string, string) ([]*models.Attendee, error) {
+			return []*models.Attendee{existing1, existing2}, nil
+		},
+		checkAttendeeLimit: func(uuid.UUID, uuid.UUID, int) (bool, int, int, error) {
+			return true, 2, 1000, nil // allowed, 2 current, 1000 max
+		},
+		createAttendee: func(a *models.Attendee) error {
+			// Only fail for the specific row we want to test failure on
+			// (in this test, we're only testing duplicates, so create succeeds for non-duplicates)
+			return nil
+		},
+		updateEvent: func(*models.Event) error { return nil },
+	})
+
+	e := echo.New()
+	path := "/api/events/" + event.ID.String() + "/attendees/bulk"
+
+	// Batch: row 1 valid, row 2 email dup, row 3 code dup, row 4 valid, row 5 valid
+	body := map[string]interface{}{
+		"attendees": []map[string]interface{}{
+			{
+				"first_name": "Charlie",
+				"last_name":  "Brown",
+				"email":      "charlie@example.com",
+			},
+			{
+				"first_name": "Diana",
+				"last_name":  "Prince",
+				"email":      "alice@example.com", // DUPLICATE email from existing1
+			},
+			{
+				"first_name": "Eve",
+				"last_name":  "Davis",
+				"code":       "EXISTING-CODE", // DUPLICATE code from existing2
+			},
+			{
+				"first_name": "Frank",
+				"last_name":  "Miller",
+				"email":      "frank@example.com",
+			},
+			{
+				"first_name": "Grace",
+				"last_name":  "Lee",
+				"email":      "grace@example.com",
+			},
+		},
+	}
+
+	bodyBytes, _ := json.Marshal(body)
+	bodyStr := string(bodyBytes)
+
+	c, rec := newAuthedContext(e, http.MethodPost, path, bodyStr, tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/attendees/bulk")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+
+	if err := h.BulkCreateAttendees(c); err != nil {
+		t.Fatalf("BulkCreateAttendees: %v", err)
+	}
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got struct {
+		Message    string `json:"message"`
+		Created    int    `json:"created"`
+		Skipped    int    `json:"skipped"`
+		Total      int    `json:"total"`
+		Duplicates []DuplicateInfo `json:"duplicates,omitempty"`
+		Errors     []struct {
+			Row     int    `json:"row"`
+			Data    string `json:"data"`
+			Problem string `json:"problem"`
+		} `json:"errors,omitempty"`
+	}
+
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Expect: 3 created (rows 1, 4, 5), 2 skipped (rows 2, 3), 5 total
+	if got.Created != 3 || got.Skipped != 2 || got.Total != 5 {
+		t.Fatalf("got created=%d skipped=%d total=%d, want 3/2/5", got.Created, got.Skipped, got.Total)
+	}
+
+	// Check errors array: should have exactly 2 entries for rows 2 and 3
+	if len(got.Errors) != 2 {
+		t.Fatalf("got %d errors, want 2. errors=%+v", len(got.Errors), got.Errors)
+	}
+
+	// Find error for row 2 (email duplicate)
+	var row2Found, row3Found bool
+	for i := range got.Errors {
+		if got.Errors[i].Row == 2 {
+			row2Found = true
+			if got.Errors[i].Problem != "duplicate_email" {
+				t.Fatalf("row 2: got problem=%q, want duplicate_email", got.Errors[i].Problem)
+			}
+			if got.Errors[i].Data != "Diana Prince" {
+				t.Fatalf("row 2: got data=%q, want 'Diana Prince'", got.Errors[i].Data)
+			}
+		} else if got.Errors[i].Row == 3 {
+			row3Found = true
+			if got.Errors[i].Problem != "duplicate_code" {
+				t.Fatalf("row 3: got problem=%q, want duplicate_code", got.Errors[i].Problem)
+			}
+			if got.Errors[i].Data != "Eve Davis" {
+				t.Fatalf("row 3: got data=%q, want 'Eve Davis'", got.Errors[i].Data)
+			}
+		}
+	}
+
+	if !row2Found {
+		t.Fatalf("missing error for row 2")
+	}
+	if !row3Found {
+		t.Fatalf("missing error for row 3")
+	}
+
+	// Check legacy duplicates field is still populated
+	if len(got.Duplicates) != 2 {
+		t.Fatalf("got %d duplicates, want 2. duplicates=%+v", len(got.Duplicates), got.Duplicates)
+	}
+
+	// Verify duplicates are in the response (unchanged behavior)
+	var dup2Email, dup3Code *DuplicateInfo
+	for i := range got.Duplicates {
+		if got.Duplicates[i].Email == "alice@example.com" {
+			dup2Email = &got.Duplicates[i]
+		} else if got.Duplicates[i].Code == "EXISTING-CODE" {
+			dup3Code = &got.Duplicates[i]
+		}
+	}
+
+	if dup2Email == nil || dup2Email.Reason != "email" {
+		t.Fatalf("missing or incorrect email duplicate in legacy duplicates")
+	}
+	if dup3Code == nil || dup3Code.Reason != "code" {
+		t.Fatalf("missing or incorrect code duplicate in legacy duplicates")
+	}
+
+	validateResponse(t, http.MethodPost, "/api/events/"+event.ID.String()+"/attendees/bulk", rec)
 }
