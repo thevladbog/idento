@@ -45,7 +45,22 @@ export interface AddAttendeeDialogProps {
 export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDialogProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const createAttendee = $api.useMutation("post", "/api/events/{event_id}/attendees");
+  // Monotonically-incrementing session id, bumped every time the dialog
+  // closes for any reason (Cancel/X/Escape/overlay). Same
+  // ApiKeysCard.tsx/DangerZoneCard.tsx `createSessionRef`/`deleteSessionRef`
+  // pattern: `createAttendee.reset()` on close only detaches the mutation
+  // observer, it does NOT cancel the in-flight POST or stop `onSuccess` from
+  // firing when the response lands late for a session the user has already
+  // backed out of (and, since the pending-guard below normally prevents
+  // closing while a create is genuinely in flight, this is primarily
+  // defense-in-depth for any path that still changes `open` while pending —
+  // e.g. a parent forcing `open` closed directly). Captured at mutate-time
+  // via `onMutate` and compared exactly in `onSuccess`, so a reopen never
+  // "un-stales" a response tied to a previously-closed session.
+  const createSessionRef = React.useRef(0);
+  const createAttendee = $api.useMutation("post", "/api/events/{event_id}/attendees", {
+    onMutate: () => ({ sessionId: createSessionRef.current }),
+  });
 
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
@@ -61,6 +76,10 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
   // server-error line before the user has submitted anything.
   React.useEffect(() => {
     if (open) return;
+    // Any response still in flight from the closed session is now
+    // permanently stale — a later reopen gets a new session id, so it can
+    // never match again.
+    createSessionRef.current += 1;
     setFirstName("");
     setLastName("");
     setEmail("");
@@ -73,6 +92,24 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
     // open->closed transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Wraps the `onOpenChange` prop for every dismiss path Radix's Dialog
+  // routes through it (X close button, Escape, overlay/outside click, and
+  // the Cancel button below) — while the create POST is genuinely in
+  // flight, a close here would silently discard the in-progress request's
+  // relationship to this dialog session AND (without this guard) let the
+  // user immediately start typing a second attendee's fields into a dialog
+  // whose close the still-pending first request could later hijack via
+  // onSuccess. Blocking dismissal outright while pending is simpler and more
+  // honest than racing the session-ref guard alone.
+  function handleOpenChange(next: boolean) {
+    if (!next && createAttendee.isPending) return;
+    onOpenChange(next);
+  }
+
+  function preventDialogDismiss(e: Event) {
+    if (createAttendee.isPending) e.preventDefault();
+  }
 
   // A stale server error shouldn't survive the user editing any field again
   // — clear it eagerly on the next keystroke rather than waiting for
@@ -122,8 +159,13 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
     createAttendee.mutate(
       { params: { path: { event_id: eventId } }, body },
       {
-        onSuccess: () => {
+        onSuccess: (_data, _vars, onMutateResult) => {
+          // Cache correctness: the attendee WAS created server-side
+          // regardless of whether the user has since backed out of this
+          // dialog session, so invalidation runs unconditionally — only the
+          // close below is gated on the session check.
           void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+          if (onMutateResult?.sessionId !== createSessionRef.current) return;
           onOpenChange(false);
         },
       },
@@ -131,8 +173,14 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={t("createEventCancel")}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        closeLabel={t("createEventCancel")}
+        hideClose={createAttendee.isPending}
+        onEscapeKeyDown={preventDialogDismiss}
+        onPointerDownOutside={preventDialogDismiss}
+        onInteractOutside={preventDialogDismiss}
+      >
         <DialogHeader>
           <DialogTitle>{t("addAttendeeTitle")}</DialogTitle>
         </DialogHeader>
@@ -200,7 +248,12 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
             <p className="text-body text-destructive">{t("addAttendeeServerError")}</p>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={createAttendee.isPending}
+              onClick={() => handleOpenChange(false)}
+            >
               {t("createEventCancel")}
             </Button>
             <Button type="submit" disabled={createAttendee.isPending}>
