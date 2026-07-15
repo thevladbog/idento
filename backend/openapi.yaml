@@ -2031,6 +2031,48 @@ paths:
                   - { $ref: "#/components/schemas/Error" }
                   - { $ref: "#/components/schemas/HTTPError" }
   /api/attendees/{id}:
+    get:
+      operationId: getAttendeeDetail
+      summary: >
+        Fetch a single attendee by id. Used by the panel's attendee drawer to
+        support deep-linking (?attendee=<id> must render correctly on a
+        fresh page load, not just after a client-side row click where the
+        data might already be cached).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The attendee.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     put:
       operationId: updateAttendeeHandler
       summary: >

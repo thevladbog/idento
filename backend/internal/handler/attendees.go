@@ -186,6 +186,24 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 	})
 }
 
+// GetAttendeeDetail fetches a single attendee by id, scoped to the caller's
+// tenant. Used by the panel's attendee drawer to support deep-linking
+// (?attendee=<id> must render correctly on a fresh page load, not just after
+// a client-side row click where the data might already be cached).
+func (h *Handler) GetAttendeeDetail(c echo.Context) error {
+	attendeeID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
+	}
+
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	return c.JSON(http.StatusOK, attendee)
+}
+
 // UpdateAttendee - full update of attendee information
 func (h *Handler) UpdateAttendeeInfo(c echo.Context) error {
 	attendeeID, err := uuid.Parse(c.Param("id"))
