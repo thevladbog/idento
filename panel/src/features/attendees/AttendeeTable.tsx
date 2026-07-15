@@ -49,7 +49,25 @@ export function AttendeeTable({ rows, selected, onToggle, onToggleAll, onRowClic
             <li
               key={row.id}
               onClick={() => onRowClick(row.id)}
-              className={`${ROW_GRID} cursor-pointer px-3.5 py-2 text-caption hover:bg-muted/30 ${isSelected ? "bg-success/5" : ""}`}
+              onKeyDown={(e) => {
+                // Only react when the row itself (not a nested focusable
+                // child — the checkbox or the row-menu button, each
+                // independently focusable/activatable) is what received the
+                // key: without this guard, Space/Enter on the checkbox would
+                // bubble up and ALSO trigger the row's own activation on top
+                // of the checkbox's native toggle.
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  // Space's default is page-scroll; Enter has no default
+                  // here, but preventDefault on both is harmless.
+                  e.preventDefault();
+                  onRowClick(row.id);
+                }
+              }}
+              tabIndex={0}
+              role="button"
+              aria-label={t("attendeesRowOpenLabel", { name: fullName })}
+              className={`${ROW_GRID} cursor-pointer px-3.5 py-2 text-caption hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${isSelected ? "bg-success/5" : ""}`}
             >
               <input
                 type="checkbox"

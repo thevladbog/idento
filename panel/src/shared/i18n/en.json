@@ -197,6 +197,7 @@
   "attendeesLoadError": "Couldn't load attendees.",
   "attendeesSelectAllLabel": "Select all attendees on this page",
   "attendeesSelectAttendeeLabel": "Select {{name}}",
+  "attendeesRowOpenLabel": "Open {{name}}",
   "attendeesRowMenuLabel": "More actions for {{name}}",
   "attendeesPaginationLabel": "Attendees pagination",
   "attendeesPagePrev": "Previous page",

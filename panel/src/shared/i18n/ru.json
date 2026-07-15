@@ -199,6 +199,7 @@
   "attendeesLoadError": "Не удалось загрузить участников.",
   "attendeesSelectAllLabel": "Выбрать всех участников на этой странице",
   "attendeesSelectAttendeeLabel": "Выбрать {{name}}",
+  "attendeesRowOpenLabel": "Открыть {{name}}",
   "attendeesRowMenuLabel": "Ещё действия для {{name}}",
   "attendeesPaginationLabel": "Постраничная навигация участников",
   "attendeesPagePrev": "Предыдущая страница",
