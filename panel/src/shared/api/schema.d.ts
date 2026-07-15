@@ -1088,7 +1088,7 @@ export interface components {
             total: number;
             duplicates?: components["schemas"]["DuplicateInfo"][];
             /** @description Per-row errors from the import. Includes duplicates and CreateAttendee failures. Each error is tracked by row number, display data, and problem code. */
-            errors?: components["schemas"]["BulkRowError"][];
+            errors: components["schemas"]["BulkRowError"][];
         };
         /** @description BulkCreateAttendees' own 403 body when importing the whole batch would push attendees_per_event over its plan max — built inline in the handler (calling Store.CheckAttendeeLimit directly with adding=len(req.Attendees)), NOT middleware.CheckAttendeeLimits (which only wraps the single-create route and always checks adding=1). Same fields as LimitExceededError plus "adding" — the batch size being requested — so it cannot reuse that schema (LimitExceededError is additionalProperties: false). */
         BulkLimitExceededError: {

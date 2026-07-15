@@ -34,7 +34,10 @@ type BulkImportResponse struct {
 	Skipped    int             `json:"skipped"`
 	Total      int             `json:"total"`
 	Duplicates []DuplicateInfo `json:"duplicates,omitempty"`
-	Errors     []BulkRowError  `json:"errors,omitempty"`
+	// Errors is always present (an empty array, never omitted/null, when
+	// there are no per-row errors) — frontend consumers can rely on it
+	// without a `?? []` fallback.
+	Errors []BulkRowError `json:"errors"`
 }
 
 // BulkCreateAttendees creates multiple attendees at once (CSV import)

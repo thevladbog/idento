@@ -360,7 +360,7 @@ components:
           description: >
             Per-row errors from the import. Includes duplicates and CreateAttendee
             failures. Each error is tracked by row number, display data, and problem code.
-      required: [message, created, skipped, total]
+      required: [message, created, skipped, total, errors]
     BulkLimitExceededError:
       type: object
       description: >
