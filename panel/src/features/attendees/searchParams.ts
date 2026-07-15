@@ -21,7 +21,17 @@ export interface AttendeesSearch {
 // string `"2"` — this only needs to narrow/validate, not do its own
 // string->number coercion.
 export function validateAttendeesSearch(search: Record<string, unknown>): AttendeesSearch {
-  const page = typeof search.page === "number" && Number.isFinite(search.page) ? search.page : undefined;
+  // A non-positive or non-integer `page` (e.g. `?page=0`, `?page=-3`,
+  // `?page=1.5` — reachable by editing the URL directly, not just internal
+  // navigation) must never reach the server as-is: the backend correctly
+  // 400s it, which without this guard surfaces as the generic load-error
+  // box instead of gracefully falling back to page 1. Treat it as absent
+  // here so AttendeesPage's `search.page ?? 1` takes over, same as an
+  // omitted `page` param.
+  const page =
+    typeof search.page === "number" && Number.isFinite(search.page) && Number.isInteger(search.page) && search.page > 0
+      ? search.page
+      : undefined;
   const searchText = typeof search.search === "string" && search.search !== "" ? search.search : undefined;
   const zone = typeof search.zone === "string" && search.zone !== "" ? search.zone : undefined;
   const status = search.status === "checked_in" || search.status === "not_checked_in" ? search.status : undefined;

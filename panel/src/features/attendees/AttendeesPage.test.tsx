@@ -54,7 +54,13 @@ interface CapturedRequest {
 }
 
 let capturedRequests: CapturedRequest[] = [];
-let attendeesResponse: unknown = { attendees: [], total: 0, page: 1, per_page: 50 };
+// A plain object is returned as-is regardless of the requested page; a
+// function receives the requested `page` (parsed from the query string) so
+// a single test can simulate different pages returning different envelopes
+// — needed for the out-of-range-page test below, which must return real
+// rows for page 1 but an empty `attendees` array (with nonzero `total`) for
+// the page actually requested.
+let attendeesResponse: unknown | ((page: number) => unknown) = { attendees: [], total: 0, page: 1, per_page: 50 };
 let attendeesStatus = 200;
 
 const ADA = {
@@ -90,6 +96,10 @@ const server = startMswServer(
     capturedRequests.push({ params: url.searchParams });
     if (attendeesStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: attendeesStatus });
+    }
+    if (typeof attendeesResponse === "function") {
+      const requestedPage = Number(url.searchParams.get("page") ?? "1");
+      return HttpResponse.json(attendeesResponse(requestedPage));
     }
     return HttpResponse.json(attendeesResponse);
   }),
@@ -315,4 +325,57 @@ describe("AttendeesPage", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(await within(screen.getByRole("dialog")).findByText("Bob Noll")).toBeInTheDocument();
   });
+
+  // Reproduces the finding: deleting the last row(s) on a non-first page
+  // (via either BulkBar's bulk delete or AttendeeDrawer's single delete)
+  // invalidates and refetches the list without resetting `page`, so the
+  // backend correctly returns `{attendees: [], total: N}` for a page that's
+  // now past the end. Seeding a page-aware fixture (page 3 empty — the
+  // stale "just deleted the last row here" page — page 2 has the real
+  // rows, both reporting total: 12 across a 2-page, per_page: 6 list)
+  // reproduces exactly that server response shape without having to drive
+  // a full delete flow. `total: 12` / `per_page: 6` (rather than something
+  // that collides with a rendered pager page-number button, e.g. 1 or 2)
+  // keeps the header-total assertions below unambiguous.
+  it("auto-clamps an out-of-range page (empty rows, nonzero total) back to the last valid page instead of showing the canonical empty state", async () => {
+    attendeesResponse = (page: number) =>
+      page === 2
+        ? { attendees: [ADA, BOB], total: 12, page: 2, per_page: 6 }
+        : { attendees: [], total: 12, page, per_page: 6 };
+    const router = renderAt("/events/evt-1/attendees?page=3");
+    // Let the page-3 (out-of-range) request land before asserting on it —
+    // otherwise the clamp effect's navigate can win the race and this
+    // assertion would only ever observe the already-clamped page-2 state,
+    // which wouldn't prove the header total was correct *before* the clamp.
+    await waitFor(() => expect(capturedRequests.length).toBeGreaterThan(0));
+
+    // The header total reflects the real nonzero count as soon as the
+    // (out-of-range) page-3 envelope lands — before the clamp navigation
+    // has even happened — and never regresses to a stale/blank value.
+    expect(await screen.findByText("12")).toBeInTheDocument();
+    expect(screen.queryByText("No attendees yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("No attendees match these filters.")).not.toBeInTheDocument();
+
+    // The page effect clamps `page` back to the true last page
+    // (ceil(12 / 6) = 2) and the real rows render there.
+    await waitFor(() => expect(router.state.location.search.page).toBe(2));
+    expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument(); // header total, still correct post-clamp
+    expect(screen.queryByText("No attendees yet")).not.toBeInTheDocument();
+  });
+
+  // Related Minor finding: an invalid `page` (non-positive or non-integer)
+  // must never reach the server as-is — the backend 400s it, which without
+  // the searchParams.ts clamp surfaces as the generic load-error box
+  // instead of gracefully falling back to page 1.
+  it.each([["?page=0", 0], ["?page=-1", -1], ["?page=1.5", 1.5]])(
+    "treats an invalid page param (%s) as page 1 — never sends it to the server, never shows the load-error box",
+    async (_label, _rawValue) => {
+      renderAt(`/events/evt-1/attendees${_label}`);
+
+      expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+      expect(capturedRequests[0]?.params.get("page")).toBe("1");
+      expect(screen.queryByText("Couldn't load attendees.")).not.toBeInTheDocument();
+    },
+  );
 });

@@ -139,6 +139,33 @@ export function AttendeesPage() {
   const total = attendeesQuery.data?.total;
   const totalPages = attendeesQuery.data ? Math.max(1, Math.ceil(attendeesQuery.data.total / attendeesQuery.data.per_page)) : 0;
 
+  // An out-of-range `page` — the current page's rows are empty but the
+  // event has attendees overall (`total > 0`) — is reachable organically:
+  // deleting the last row(s) on a non-first page via either BulkBar's bulk
+  // delete or AttendeeDrawer's single delete invalidates and refetches the
+  // list without resetting `page`, so the backend correctly returns
+  // `{attendees: [], total: N}` for a page that's now past the end (same
+  // thing can happen from editing `?page=` directly). Auto-clamp back to
+  // the true last page here, via the same navigate-on-derived-state pattern
+  // the search-debounce effect above already uses, so this state is never
+  // visibly rendered as the canonical "No attendees yet" empty state next
+  // to a nonzero header total.
+  React.useEffect(() => {
+    if (!attendeesQuery.data) return;
+    if (attendeesQuery.data.attendees.length > 0 || attendeesQuery.data.total === 0) return;
+    const lastPage = Math.max(1, Math.ceil(attendeesQuery.data.total / attendeesQuery.data.per_page));
+    if (page !== lastPage) {
+      void navigate({ search: (prev) => ({ ...prev, page: lastPage }) });
+    }
+  }, [attendeesQuery.data, page, navigate]);
+
+  // Mirrors the effect above: while data has landed showing an out-of-range
+  // page (empty rows, nonzero total), render the loading skeleton for the
+  // one tick before the clamp effect's navigate takes effect, rather than
+  // ever falling into the "no attendees"/"no matches" branches below with a
+  // dataset that contradicts the header total.
+  const isOutOfRangePage = Boolean(attendeesQuery.data && attendeesQuery.data.attendees.length === 0 && attendeesQuery.data.total > 0);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -210,7 +237,9 @@ export function AttendeesPage() {
             {t("retry")}
           </Button>
         </div>
-      ) : rows.length === 0 && !hasActiveFilters ? (
+      ) : isOutOfRangePage ? (
+        <AttendeesTableSkeleton />
+      ) : total === 0 && !hasActiveFilters ? (
         <EmptyState
           icon={Users}
           title={t("attendeesEmptyTitle")}
@@ -226,7 +255,7 @@ export function AttendeesPage() {
             </>
           }
         />
-      ) : rows.length === 0 && hasActiveFilters ? (
+      ) : total === 0 && hasActiveFilters ? (
         <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border p-6">
           <p className="text-body text-muted-foreground">{t("attendeesNoMatches")}</p>
           <button
