@@ -80,6 +80,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
 	api.POST("/events/:event_id/staff", h.AssignStaffToEvent)
+	api.DELETE("/events/:event_id/staff/:user_id", h.UnassignStaffFromEvent)
 	api.POST("/events/:event_id/stations/provisioning-token", h.CreateStationProvisioningToken)
 
 	// Attendees
@@ -89,6 +90,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/events/:event_id/attendees/generate-codes", h.GenerateAttendeeCodes)
 	api.GET("/events/:event_id/attendees/export", h.ExportAttendeesCSV)
 	api.GET("/attendees/:id/qr", h.GetAttendeeQR)
+	api.GET("/attendees/:id", h.GetAttendeeDetail)        // Single-attendee fetch (deep-linking)
 	api.PUT("/attendees/:id", h.UpdateAttendeeHandler)    // For check-in status
 	api.PATCH("/attendees/:id", h.UpdateAttendeeInfo)     // For full info update
 	api.POST("/attendees/:id/block", h.BlockAttendee)     // Block with reason

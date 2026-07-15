@@ -264,3 +264,40 @@ func (h *Handler) GetEventStaff(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, staff)
 }
+
+// UnassignStaffFromEvent removes a staff member from an event
+func (h *Handler) UnassignStaffFromEvent(c echo.Context) error {
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	// Only admin and manager can unassign staff
+	if user.Role != "admin" && user.Role != "manager" {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	}
+
+	eventID := c.Param("event_id")
+	eventUUID, err := uuid.Parse(eventID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid event ID"})
+	}
+
+	userID := c.Param("user_id")
+	userUUID, err := uuid.Parse(userID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid user ID"})
+	}
+
+	// Verify event belongs to the active tenant (scoped lookup, 404 on foreign).
+	if _, err := h.requireEventOwnership(c, eventUUID); err != nil {
+		return writeErr(c, err)
+	}
+
+	// Remove the staff assignment (idempotent — no error if already not assigned)
+	if err := h.Store.RemoveStaffFromEvent(c.Request().Context(), eventUUID, userUUID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to remove staff"})
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}

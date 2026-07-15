@@ -21,6 +21,18 @@ function TestDialog() {
   );
 }
 
+function TestDialogNoClose() {
+  return (
+    <Dialog open>
+      <DialogContent closeLabel="Close" hideClose>
+        <DialogHeader>
+          <DialogTitle>Import in progress</DialogTitle>
+        </DialogHeader>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 describe("Dialog", () => {
   it("opens on trigger click and renders content with a close button", async () => {
     const user = userEvent.setup();
@@ -29,6 +41,12 @@ describe("Dialog", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText("Remove Igor from staff?")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("omits the close button entirely when hideClose is set", () => {
+    render(<TestDialogNoClose />);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
   });
 
   it("closes on Escape", async () => {

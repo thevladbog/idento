@@ -23,12 +23,14 @@ import { $api } from "../../shared/api/query";
 const routeApi = getRouteApi("/_app/events/$eventId");
 
 // `active` is derived from the current pathname rather than route-id
-// matching (e.g. `useMatchRoute`): this layout only ever has two children,
-// so a plain suffix check is simpler and doesn't tie this component's types
-// to the exact child route objects declared in router.tsx.
-function useActiveRailTab(): "overview" | "settings" {
+// matching (e.g. `useMatchRoute`): a plain suffix check is simpler and
+// doesn't tie this component's types to the exact child route objects
+// declared in router.tsx.
+function useActiveRailTab(): "overview" | "settings" | "attendees" {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  return pathname.endsWith("/settings") ? "settings" : "overview";
+  if (pathname.endsWith("/settings")) return "settings";
+  if (pathname.endsWith("/attendees")) return "attendees";
+  return "overview";
 }
 
 export function EventWorkspaceLayout() {

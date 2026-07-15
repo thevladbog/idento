@@ -306,6 +306,22 @@ components:
           created_at,
           updated_at,
         ]
+    AttendeeListPage:
+      type: object
+      description: >
+        Envelope returned by GET /api/events/{event_id}/attendees when the
+        `page` or `per_page` query param is present. `total` is the count of
+        attendees matching the active filters (code/search/zone/status)
+        before paging is applied, not the length of `attendees`.
+      properties:
+        attendees:
+          type: array
+          items: { $ref: "#/components/schemas/Attendee" }
+        total: { type: integer, description: Total matching attendees across all pages. }
+        page: { type: integer }
+        per_page: { type: integer }
+      required: [attendees, total, page, per_page]
+      additionalProperties: false
     DuplicateInfo:
       type: object
       description: One row BulkCreateAttendees skipped, keyed by why it was considered a duplicate of an existing attendee.
@@ -316,6 +332,18 @@ components:
         last_name: { type: string }
         reason: { type: string, enum: [email, code] }
       required: [email, first_name, last_name, reason]
+    BulkRowError:
+      type: object
+      description: >
+        Per-row error detail from BulkCreateAttendees. Row is 1-based index
+        into the submitted attendees array. Data is display text
+        (first_name+last_name trimmed, fallback to email, may be empty). Problem
+        is a stable string the frontend switches on.
+      properties:
+        row: { type: integer, description: "1-based index in the request attendees array" }
+        data: { type: string, description: "Display text for the row (first+last name, fallback to email)" }
+        problem: { type: string, enum: [duplicate_email, duplicate_code, create_failed] }
+      required: [row, data, problem]
     BulkImportResponse:
       type: object
       properties:
@@ -326,7 +354,13 @@ components:
         duplicates:
           type: array
           items: { $ref: "#/components/schemas/DuplicateInfo" }
-      required: [message, created, skipped, total]
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/BulkRowError" }
+          description: >
+            Per-row errors from the import. Includes duplicates and CreateAttendee
+            failures. Each error is tracked by row number, display data, and problem code.
+      required: [message, created, skipped, total, errors]
     BulkLimitExceededError:
       type: object
       description: >
@@ -1474,6 +1508,51 @@ paths:
                 oneOf:
                   - { $ref: "#/components/schemas/Error" }
                   - { $ref: "#/components/schemas/HTTPError" }
+  /api/events/{event_id}/staff/{user_id}:
+    delete:
+      operationId: unassignStaffFromEvent
+      summary: >
+        Remove a staff member from an event. Idempotent — DELETE on a pair
+        that was never assigned still returns 204 (the store's DELETE
+        simply affects zero rows; there is no existence check).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Staff member removed (or was not assigned to begin with).
+        "400":
+          description: event_id or user_id is not a UUID (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership) — note this checks event_id only, not that
+            user_id was ever actually assigned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership or persisting the removal.
+            Both failures emit the standard Error shape.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{event_id}/stations/provisioning-token:
     post:
       operationId: createStationProvisioningToken
@@ -1538,6 +1617,14 @@ paths:
         (mobile QR/barcode scan lookup) and/or a search substring across
         name/email/code (mobile attendee search). Omitting both query
         params returns the full event attendee list.
+      description: >
+        Response shape is a discriminated-by-param-presence oneOf: when
+        NEITHER `page` nor `per_page` is present, the response is the
+        legacy bare array of Attendee (back-compat for mobile clients,
+        unchanged). When EITHER `page` or `per_page` is present, the
+        response is an AttendeeListPage envelope instead, and `zone` /
+        `status` additionally narrow the result set. `page` defaults to 1
+        and `per_page` defaults to 50 when only one of the pair is given.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: event_id
@@ -1552,16 +1639,52 @@ paths:
           in: query
           schema: { type: string }
           description: Substring match across name/email/code.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >
+            1-indexed page number. Presence of this param (or per_page)
+            switches the response to the AttendeeListPage envelope.
+            Defaults to 1 if only per_page is given. Must be >= 1.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+          description: >
+            Page size. Presence of this param (or page) switches the
+            response to the AttendeeListPage envelope. Defaults to 50 if
+            only page is given. Must be between 1 and 200 inclusive.
+        - name: zone
+          in: query
+          schema: { type: string, format: uuid }
+          description: >
+            Event zone UUID. Only applied in the paginated envelope mode
+            (page or per_page present); narrows to attendees with an
+            explicit attendee_zone_access row for that zone with
+            allowed=true.
+        - name: status
+          in: query
+          schema: { type: string, enum: [checked_in, not_checked_in] }
+          description: >
+            Only applied in the paginated envelope mode (page or per_page
+            present); filters on Attendee.checkin_status.
       responses:
         "200":
-          description: Attendees for the event (all, or filtered by code/search).
+          description: >
+            Attendees for the event. A bare array when neither page nor
+            per_page is present (legacy shape, unfiltered by zone/status);
+            an AttendeeListPage envelope otherwise.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Attendee" }
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/Attendee" }
+                  - { $ref: "#/components/schemas/AttendeeListPage" }
         "400":
-          description: event_id is not a UUID.
+          description: >
+            event_id is not a UUID, or (paginated mode only) page < 1,
+            per_page outside 1..200, zone is not a UUID, or status is
+            neither checked_in nor not_checked_in.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1699,9 +1822,10 @@ paths:
       responses:
         "201":
           description: >
-            Import summary. Per-row CreateAttendee failures inside the loop
-            are silently counted as skipped, not surfaced as a distinct
-            error status.
+            Import summary. Per-row failures (duplicate emails/codes and
+            CreateAttendee errors) are tracked in the errors array with
+            row number, display data, and problem code; they are also counted
+            in the skipped total.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BulkImportResponse" }
@@ -1907,6 +2031,48 @@ paths:
                   - { $ref: "#/components/schemas/Error" }
                   - { $ref: "#/components/schemas/HTTPError" }
   /api/attendees/{id}:
+    get:
+      operationId: getAttendeeDetail
+      summary: >
+        Fetch a single attendee by id. Used by the panel's attendee drawer to
+        support deep-linking (?attendee=<id> must render correctly on a
+        fresh page load, not just after a client-side row click where the
+        data might already be cached).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The attendee.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Attendee" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     put:
       operationId: updateAttendeeHandler
       summary: >

@@ -4,6 +4,8 @@ import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
 import { EventWorkspaceLayout } from "../features/workspace/EventWorkspaceLayout";
+import { AttendeesPage } from "../features/attendees/AttendeesPage";
+import { validateAttendeesSearch } from "../features/attendees/searchParams";
 import { HomePage } from "../features/home/HomePage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
@@ -105,13 +107,20 @@ const eventSettingsRoute = createRoute({
   component: EventSettingsPage,
 });
 
+const eventAttendeesRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/attendees",
+  validateSearch: validateAttendeesSearch,
+  component: AttendeesPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
     teamRoute,
     equipmentRoute,
     organizationRoute,
-    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute]),
+    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute]),
   ]),
   loginRoute,
   registerRoute,

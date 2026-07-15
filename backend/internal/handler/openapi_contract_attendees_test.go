@@ -64,6 +64,77 @@ func TestContractGetAttendees(t *testing.T) {
 	validateResponse(t, http.MethodGet, path, rec)
 }
 
+// TestContractGetAttendeeDetail exercises the single-attendee fetch used by
+// the panel's attendee drawer to support deep-linking (?attendee=<id> must
+// render correctly on a fresh page load, not just after a client-side row
+// click where the data might already be cached).
+func TestContractGetAttendeeDetail(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+	})
+	e := echo.New()
+	path := "/api/attendees/" + attendee.ID.String()
+	c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+	c.SetPath("/api/attendees/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(attendee.ID.String())
+	if err := h.GetAttendeeDetail(c); err != nil {
+		t.Fatalf("GetAttendeeDetail: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 404: attendee does not exist (GetAttendeeByID returns nil, nil).
+	hMissing := New(&fakeStore{
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return nil, nil },
+	})
+	c, rec = newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+	c.SetPath("/api/attendees/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(attendee.ID.String())
+	if err := hMissing.GetAttendeeDetail(c); err != nil {
+		t.Fatalf("GetAttendeeDetail (missing): %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 404: attendee exists but belongs to a different tenant (requireAttendeeOwnership
+	// masks "foreign" as "missing" — no existence oracle).
+	c, rec = newAuthedContext(e, http.MethodGet, path, "", uuid.New().String(), "admin")
+	c.SetPath("/api/attendees/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(attendee.ID.String())
+	if err := h.GetAttendeeDetail(c); err != nil {
+		t.Fatalf("GetAttendeeDetail (foreign tenant): %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 400: malformed id — never reaches the store.
+	badPath := "/api/attendees/not-a-uuid"
+	c, rec = newAuthedContext(e, http.MethodGet, badPath, "", tenantID.String(), "admin")
+	c.SetPath("/api/attendees/:id")
+	c.SetParamNames("id")
+	c.SetParamValues("not-a-uuid")
+	if err := h.GetAttendeeDetail(c); err != nil {
+		t.Fatalf("GetAttendeeDetail (malformed id): %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, badPath, rec)
+}
+
 func TestContractCreateAttendee(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")

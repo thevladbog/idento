@@ -2,8 +2,11 @@ package handler
 
 import (
 	"idento/backend/internal/models"
+	"idento/backend/internal/store"
 	"log"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -89,8 +92,17 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 // GetAttendees lists attendees for an event, optionally filtered by an exact
 // `code` match (used by mobile QR/barcode scan lookup) and/or a `search`
 // substring match across name/email/code (used by mobile attendee search).
-// Both are optional query params; when neither is present, behavior is
-// unchanged — the full event attendee list is returned.
+//
+// Back-compat is non-negotiable: mobile clients consume today's bare-array
+// response. The envelope response ({"attendees": [...], "total", "page",
+// "per_page"}) appears ONLY when the `page` or `per_page` query param is
+// present; without them, the response is the unchanged legacy bare array
+// (code/search still apply as before). When either pagination param is
+// present, `zone` (an event zone UUID; matches attendees with an explicit
+// attendee_zone_access allowed=true row for that zone) and `status`
+// (checked_in|not_checked_in) additionally narrow the result, and `page`
+// defaults to 1 / `per_page` defaults to 50 when only one of the pair is
+// given.
 func (h *Handler) GetAttendees(c echo.Context) error {
 	eventID, err := uuid.Parse(c.Param("event_id"))
 	if err != nil {
@@ -103,14 +115,102 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 
 	code := c.QueryParam("code")
 	search := c.QueryParam("search")
+	pageParam := c.QueryParam("page")
+	perPageParam := c.QueryParam("per_page")
 
-	attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, code, search)
+	if pageParam == "" && perPageParam == "" {
+		attendees, err := h.Store.GetAttendeesByEventID(c.Request().Context(), eventID, code, search)
+		if err != nil {
+			c.Logger().Error("Failed to fetch attendees: ", err)
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch attendees"})
+		}
+		return c.JSON(http.StatusOK, attendees)
+	}
+
+	page := 1
+	if pageParam != "" {
+		p, err := strconv.Atoi(pageParam)
+		if err != nil || p < 1 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "page must be a positive integer"})
+		}
+		page = p
+	}
+
+	perPage := 50
+	if perPageParam != "" {
+		pp, err := strconv.Atoi(perPageParam)
+		if err != nil || pp < 1 || pp > 200 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "per_page must be between 1 and 200"})
+		}
+		perPage = pp
+	}
+
+	// Overflow guard: (page-1)*perPage is computed as the SQL OFFSET further
+	// down the stack (store.GetAttendeesPage) — reject a page value large
+	// enough that the multiplication would overflow a signed int, rather than
+	// letting it wrap into a nonsensical (or negative) offset.
+	if page-1 > math.MaxInt/perPage {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "page is too large"})
+	}
+
+	filter := store.AttendeeFilter{
+		Code:    code,
+		Search:  search,
+		Page:    page,
+		PerPage: perPage,
+	}
+
+	if zoneParam := c.QueryParam("zone"); zoneParam != "" {
+		zoneID, err := uuid.Parse(zoneParam)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "zone must be a valid UUID"})
+		}
+		filter.ZoneID = &zoneID
+	}
+
+	if statusParam := c.QueryParam("status"); statusParam != "" {
+		switch statusParam {
+		case "checked_in":
+			checkedIn := true
+			filter.Status = &checkedIn
+		case "not_checked_in":
+			notCheckedIn := false
+			filter.Status = &notCheckedIn
+		default:
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "status must be checked_in or not_checked_in"})
+		}
+	}
+
+	attendees, total, err := h.Store.GetAttendeesPage(c.Request().Context(), eventID, filter)
 	if err != nil {
 		c.Logger().Error("Failed to fetch attendees: ", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch attendees"})
 	}
 
-	return c.JSON(http.StatusOK, attendees)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"attendees": attendees,
+		"total":     total,
+		"page":      page,
+		"per_page":  perPage,
+	})
+}
+
+// GetAttendeeDetail fetches a single attendee by id, scoped to the caller's
+// tenant. Used by the panel's attendee drawer to support deep-linking
+// (?attendee=<id> must render correctly on a fresh page load, not just after
+// a client-side row click where the data might already be cached).
+func (h *Handler) GetAttendeeDetail(c echo.Context) error {
+	attendeeID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid attendee ID"})
+	}
+
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	return c.JSON(http.StatusOK, attendee)
 }
 
 // UpdateAttendee - full update of attendee information

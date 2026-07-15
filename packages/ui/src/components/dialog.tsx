@@ -21,8 +21,8 @@ DialogOverlay.displayName = "DialogOverlay";
 
 export const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeLabel: string }
->(({ className, children, closeLabel, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { closeLabel: string; hideClose?: boolean }
+>(({ className, children, closeLabel, hideClose, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -34,12 +34,18 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        aria-label={closeLabel}
-        className="absolute right-4 top-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <X className="size-4" />
-      </DialogPrimitive.Close>
+      {/* Task 13 (import wizard step 3): the "nothing freezes / can't be
+          interrupted" framing means step 3 of the CSV import has no ✕
+          affordance at all — hideClose lets a consumer suppress it entirely
+          rather than just disabling it, so it's not even in the a11y tree. */}
+      {!hideClose ? (
+        <DialogPrimitive.Close
+          aria-label={closeLabel}
+          className="absolute right-4 top-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <X className="size-4" />
+        </DialogPrimitive.Close>
+      ) : null}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ));

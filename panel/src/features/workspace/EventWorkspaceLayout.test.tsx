@@ -34,8 +34,13 @@ function buildRouter(initialPath: string) {
     path: "/settings",
     component: () => <div>settings content</div>,
   });
+  const attendeesRoute = createRoute({
+    getParentRoute: () => workspaceRoute,
+    path: "/attendees",
+    component: () => <div>attendees content</div>,
+  });
   const routeTree = rootRoute.addChildren([
-    appLayoutRoute.addChildren([homeRoute, workspaceRoute.addChildren([overviewRoute, settingsRoute])]),
+    appLayoutRoute.addChildren([homeRoute, workspaceRoute.addChildren([overviewRoute, settingsRoute, attendeesRoute])]),
   ]);
   return createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [initialPath] }) });
 }
@@ -99,6 +104,15 @@ describe("EventWorkspaceLayout", () => {
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("settings content")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks the rail's Attendees row active and renders the attendees child route's outlet content", async () => {
+    renderAt("/events/evt-1/attendees");
+
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
+    expect(screen.getByText("attendees content")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Attendees/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 

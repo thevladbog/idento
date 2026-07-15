@@ -9,6 +9,7 @@ import (
 	"idento/backend/migrations"
 	"io/fs"
 	"log"
+	"math"
 	"net/netip"
 	"sort"
 	"strings"
@@ -606,68 +607,119 @@ func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee)
 	).Scan(&attendee.ID, &attendee.CreatedAt, &attendee.UpdatedAt)
 }
 
+// escapeILikeSearch escapes ILIKE's own wildcard characters (% and _) and the
+// escape character itself (\) in user-supplied search text before it is
+// wrapped in % for substring matching -- otherwise "jane_doe" would also
+// match "janeXdoe" since _ means "any one character" to ILIKE (email
+// addresses commonly contain literal underscores). Shared by every store
+// method that builds an ILIKE ... ESCAPE '\' search clause over attendees.
+func escapeILikeSearch(search string) string {
+	escaped := strings.ReplaceAll(search, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "%", `\%`)
+	escaped = strings.ReplaceAll(escaped, "_", `\_`)
+	return escaped
+}
+
+// attendeeFilterClause builds the JOIN/WHERE fragment (and matching bind
+// args) shared by GetAttendeesByEventID and GetAttendeesPage, so the two
+// queries' row-selection semantics can never drift apart. join is "" unless
+// zoneID is set, in which case it inner-joins attendee_zone_access to narrow
+// to attendees with an explicit allowed=true override for that zone. where
+// always starts with "WHERE a.event_id = $1 AND a.deleted_at IS NULL" ($1 is
+// always eventID, the first element of the returned args).
+func attendeeFilterClause(eventID uuid.UUID, code, search string, zoneID *uuid.UUID, status *bool) (join string, where string, args []interface{}) {
+	args = []interface{}{eventID}
+	argCount := 2
+
+	if zoneID != nil {
+		join = fmt.Sprintf(" JOIN attendee_zone_access aza ON aza.attendee_id = a.id AND aza.zone_id = $%d AND aza.allowed = true", argCount)
+		args = append(args, *zoneID)
+		argCount++
+	}
+
+	where = "WHERE a.event_id = $1 AND a.deleted_at IS NULL"
+
+	if code != "" {
+		where += fmt.Sprintf(" AND a.code = $%d", argCount)
+		args = append(args, code)
+		argCount++
+	}
+
+	if search != "" {
+		escapedSearch := escapeILikeSearch(search)
+		where += fmt.Sprintf(
+			" AND (a.first_name ILIKE $%d ESCAPE '\\' OR a.last_name ILIKE $%d ESCAPE '\\' OR a.email ILIKE $%d ESCAPE '\\' OR a.code ILIKE $%d ESCAPE '\\')",
+			argCount, argCount, argCount, argCount,
+		)
+		args = append(args, "%"+escapedSearch+"%")
+		argCount++
+	}
+
+	if status != nil {
+		where += fmt.Sprintf(" AND a.checkin_status = $%d", argCount)
+		args = append(args, *status)
+		argCount++ //nolint:ineffassign // kept for consistency — a future clause added after this one needs the incremented value
+	}
+
+	return join, where, args
+}
+
+// attendeeListColumnsSQL is the column list (in scan order) shared by
+// GetAttendeesByEventID and GetAttendeesPage, including the LEFT JOINed
+// checked_in_by_email.
+const attendeeListColumnsSQL = `
+	a.id, a.event_id, a.first_name, a.last_name, a.email, a.company, a.position, a.code,
+	a.checkin_status, a.checked_in_at, a.checked_in_by, a.checked_in_device_number, a.checked_in_point_name, a.printed_count, a.custom_fields,
+	a.blocked, a.block_reason, a.created_at, a.updated_at,
+	u.email as checked_in_by_email
+`
+
+// scanAttendeeRow scans one row shaped by attendeeListColumnsSQL, shared by
+// GetAttendeesByEventID and GetAttendeesPage.
+func scanAttendeeRow(rows pgx.Rows) (*models.Attendee, error) {
+	var a models.Attendee
+	var customFieldsJSON []byte
+	if err := rows.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
+		return nil, fmt.Errorf("scan attendee row: %w", err)
+	}
+	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
+		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
+			return nil, fmt.Errorf("unmarshal custom_fields: %w", err)
+		}
+	}
+	return &a, nil
+}
+
 // GetAttendeesByEventID returns attendees for an event, optionally narrowed by
 // an exact `code` match and/or a case-insensitive `search` substring match
 // across first name/last name/email/code. Pass "" for either to skip that
 // filter — matches the empty-string-means-unset convention used by
 // GetAllUsers' search/tenantIDFilter params (pg_store_super_admin.go).
 func (s *PGStore) GetAttendeesByEventID(ctx context.Context, eventID uuid.UUID, code string, search string) ([]*models.Attendee, error) {
-	query := `
-		SELECT
-			a.id, a.event_id, a.first_name, a.last_name, a.email, a.company, a.position, a.code,
-			a.checkin_status, a.checked_in_at, a.checked_in_by, a.checked_in_device_number, a.checked_in_point_name, a.printed_count, a.custom_fields,
-			a.blocked, a.block_reason, a.created_at, a.updated_at,
-			u.email as checked_in_by_email
+	_, where, args := attendeeFilterClause(eventID, code, search, nil, nil)
+	query := "SELECT" + attendeeListColumnsSQL + `
 		FROM attendees a
 		LEFT JOIN users u ON a.checked_in_by = u.id
-		WHERE a.event_id = $1 AND a.deleted_at IS NULL
+		` + where + `
+		ORDER BY a.last_name, a.first_name
 	`
-	args := []interface{}{eventID}
-	argCount := 2
-
-	if code != "" {
-		query += fmt.Sprintf(" AND a.code = $%d", argCount)
-		args = append(args, code)
-		argCount++
-	}
-
-	if search != "" {
-		// Escape ILIKE's own wildcard characters (% and _) and the escape character
-		// itself (\) in the user-supplied search text before wrapping it in % for
-		// substring matching -- otherwise "jane_doe" would also match "janeXdoe"
-		// since _ means "any one character" to ILIKE (email addresses commonly
-		// contain literal underscores).
-		escapedSearch := strings.ReplaceAll(search, `\`, `\\`)
-		escapedSearch = strings.ReplaceAll(escapedSearch, "%", `\%`)
-		escapedSearch = strings.ReplaceAll(escapedSearch, "_", `\_`)
-		query += fmt.Sprintf(
-			" AND (a.first_name ILIKE $%d ESCAPE '\\' OR a.last_name ILIKE $%d ESCAPE '\\' OR a.email ILIKE $%d ESCAPE '\\' OR a.code ILIKE $%d ESCAPE '\\')",
-			argCount, argCount, argCount, argCount,
-		)
-		args = append(args, "%"+escapedSearch+"%")
-	}
-
-	query += " ORDER BY a.last_name, a.first_name"
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query attendees by event id: %w", err)
 	}
 	defer rows.Close()
 
 	attendees := []*models.Attendee{}
 	for rows.Next() {
-		var a models.Attendee
-		var customFieldsJSON []byte
-		if err := rows.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code, &a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName, &a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
+		a, err := scanAttendeeRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
-			if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
-				return nil, err
-			}
-		}
-		attendees = append(attendees, &a)
+		attendees = append(attendees, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("attendees by event id rows: %w", err)
 	}
 	return attendees, nil
 }
@@ -678,7 +730,66 @@ func (s *PGStore) CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID
 	// Keep the WHERE clause in lockstep with GetAttendeesByEventID.
 	err := s.db.QueryRow(ctx,
 		`SELECT COUNT(*) FROM attendees WHERE event_id = $1 AND deleted_at IS NULL`, eventID).Scan(&n)
-	return n, err
+	if err != nil {
+		return 0, fmt.Errorf("count attendees by event id: %w", err)
+	}
+	return n, nil
+}
+
+// GetAttendeesPage returns one page of attendees for an event matching f,
+// plus the total count matching f (before paging) via a COUNT(*) query that
+// shares the exact same JOIN/WHERE fragment (attendeeFilterClause) as the
+// page query, so the two can never disagree. Ordering is
+// last_name/first_name/id — the trailing id keeps ties (identical
+// last/first name) stably ordered across pages, which a two-column sort
+// alone cannot guarantee.
+func (s *PGStore) GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f AttendeeFilter) ([]*models.Attendee, int, error) {
+	join, where, args := attendeeFilterClause(eventID, f.Code, f.Search, f.ZoneID, f.Status)
+
+	var total int
+	countQuery := "SELECT COUNT(*) FROM attendees a" + join + " " + where
+	if err := s.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count attendees page: %w", err)
+	}
+
+	limitIdx := len(args) + 1
+	offsetIdx := len(args) + 2
+	query := "SELECT" + attendeeListColumnsSQL + `
+		FROM attendees a
+		LEFT JOIN users u ON a.checked_in_by = u.id
+		` + join + `
+		` + where + fmt.Sprintf(`
+		ORDER BY a.last_name, a.first_name, a.id
+		LIMIT $%d OFFSET $%d
+	`, limitIdx, offsetIdx)
+
+	// Defense-in-depth: the handler layer is expected to reject a page value
+	// large enough to overflow this multiplication before calling here, but
+	// don't trust that blindly — guard it again at the store boundary.
+	if f.PerPage > 0 && f.Page-1 > math.MaxInt/f.PerPage {
+		return nil, 0, fmt.Errorf("page/per_page would overflow offset calculation")
+	}
+
+	pageArgs := append(append([]interface{}{}, args...), f.PerPage, (f.Page-1)*f.PerPage)
+
+	rows, err := s.db.Query(ctx, query, pageArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("query attendees page: %w", err)
+	}
+	defer rows.Close()
+
+	attendees := []*models.Attendee{}
+	for rows.Next() {
+		a, err := scanAttendeeRow(rows)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan attendees page row: %w", err)
+		}
+		attendees = append(attendees, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("attendees page rows: %w", err)
+	}
+	return attendees, total, nil
 }
 
 func (s *PGStore) GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error) {
@@ -750,12 +861,12 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 		}
 	}
 	query := `UPDATE attendees SET
-			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5,
-			  checkin_status = $6, checked_in_at = $7, checked_in_by = $8, checked_in_device_number = $9, checked_in_point_name = $10, printed_count = $11, blocked = $12,
-			  block_reason = $13, custom_fields = $14, deleted_at = $15, updated_at = NOW()
-			  WHERE id = $16`
+			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5, code = $6,
+			  checkin_status = $7, checked_in_at = $8, checked_in_by = $9, checked_in_device_number = $10, checked_in_point_name = $11, printed_count = $12, blocked = $13,
+			  block_reason = $14, custom_fields = $15, deleted_at = $16, updated_at = NOW()
+			  WHERE id = $17`
 	_, err = s.db.Exec(ctx, query,
-		attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position,
+		attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
 		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
 		attendee.BlockReason, customFieldsJSON, attendee.DeletedAt, attendee.ID,
 	)

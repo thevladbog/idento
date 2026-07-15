@@ -58,6 +58,7 @@ type fakeStore struct {
 	updateAttendee            func(attendee *models.Attendee) error
 	getAttendeesByEventID     func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
 	countAttendeesByEventID   func(eventID uuid.UUID) (int, error)
+	getAttendeesPage          func(eventID uuid.UUID, f store.AttendeeFilter) ([]*models.Attendee, int, error)
 	getAttendeeZoneCheckins   func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
@@ -88,12 +89,13 @@ type fakeStore struct {
 	consumeProvisioningToken func(token string) (*models.StationProvisioningToken, error)
 	createStation            func(eventID, staffUserID uuid.UUID, deviceInfo map[string]interface{}) (*models.Station, error)
 
-	getEventsByTenantID func(tenantID uuid.UUID) ([]*models.Event, error)
-	createEvent         func(event *models.Event) error
-	updateEvent         func(event *models.Event) error
-	softDeleteEvent     func(id uuid.UUID) error
-	getEventStaff       func(eventID uuid.UUID) ([]*models.User, error)
-	assignStaffToEvent  func(assignment *models.EventStaff) error
+	getEventsByTenantID  func(tenantID uuid.UUID) ([]*models.Event, error)
+	createEvent          func(event *models.Event) error
+	updateEvent          func(event *models.Event) error
+	softDeleteEvent      func(id uuid.UUID) error
+	getEventStaff        func(eventID uuid.UUID) ([]*models.User, error)
+	assignStaffToEvent   func(assignment *models.EventStaff) error
+	removeStaffFromEvent func(eventID, userID uuid.UUID) error
 
 	applyBatchCheckin     func(eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error)
 	createCheckinOverride func(o *models.CheckinOverride) error
@@ -249,6 +251,9 @@ func (f *fakeStore) GetAttendeesByEventID(_ context.Context, eventID uuid.UUID, 
 func (f *fakeStore) CountAttendeesByEventID(_ context.Context, eventID uuid.UUID) (int, error) {
 	return f.countAttendeesByEventID(eventID)
 }
+func (f *fakeStore) GetAttendeesPage(_ context.Context, eventID uuid.UUID, filter store.AttendeeFilter) ([]*models.Attendee, int, error) {
+	return f.getAttendeesPage(eventID, filter)
+}
 func (f *fakeStore) GetAttendeeZoneCheckins(_ context.Context, attendeeID uuid.UUID) ([]*models.ZoneCheckin, error) {
 	return f.getAttendeeZoneCheckins(attendeeID)
 }
@@ -342,6 +347,9 @@ func (f *fakeStore) GetEventStaff(_ context.Context, eventID uuid.UUID) ([]*mode
 }
 func (f *fakeStore) AssignStaffToEvent(_ context.Context, assignment *models.EventStaff) error {
 	return f.assignStaffToEvent(assignment)
+}
+func (f *fakeStore) RemoveStaffFromEvent(_ context.Context, eventID, userID uuid.UUID) error {
+	return f.removeStaffFromEvent(eventID, userID)
 }
 
 func (f *fakeStore) ApplyBatchCheckin(_ context.Context, eventID, staffUserID uuid.UUID, item *models.BatchCheckinItem) (store.BatchCheckinOutcome, error) {

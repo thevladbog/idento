@@ -43,6 +43,10 @@ work while this rewrite runs (see root `AGENTS.md`).
 - **Verify before finishing any change here:**
   `npm test -w panel && npm run typecheck -w panel && npm run lint -w panel && npm run build -w panel`
   from the repo root.
+- **Multi-step async dialogs:** gate every dismiss path (X/Escape/outside-click,
+  not just an explicit Cancel) on one comprehensive `isBusy` check covering
+  ALL in-flight operations, not just the primary mutation — see
+  `ImportWizard.tsx`'s `isStep3Busy`.
 
 ## API workflow (openapi-first)
 
