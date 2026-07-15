@@ -109,6 +109,20 @@ describe("ApiKeysCard", () => {
     return writeText;
   }
 
+  it("renders a header row with Name / Created / Last used column labels above the list", async () => {
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+
+    const nameHeader = screen.getByText("Name");
+    const createdHeader = screen.getByText("Created");
+    const lastUsedHeader = screen.getByText("Last used");
+    const headerRow = nameHeader.closest("div");
+    expect(headerRow).not.toBeNull();
+    expect(within(headerRow as HTMLElement).getByText("Created")).toBe(createdHeader);
+    expect(within(headerRow as HTMLElement).getByText("Last used")).toBe(lastUsedHeader);
+  });
+
   it("renders keys with name, masked key preview, created/last-used dates, and a dimmed revoked row with a Revoked pill", async () => {
     renderWithProviders(<ApiKeysCard eventId="evt-1" />);
 

@@ -14,6 +14,11 @@ export interface ApiKeysCardProps {
   eventId: string;
 }
 
+// Shared between the header row and each key row so the header labels stay
+// pixel-aligned with their columns (Name / masked key preview / Created /
+// Last used / Actions).
+const KEY_ROW_GRID = "grid grid-cols-[1fr_180px_100px_100px_90px] items-center gap-3";
+
 // UTC calendar date, same convention GeneralCard.tsx/FontsCard.tsx use for
 // date-only display of a full timestamp.
 function formatUtcDate(iso: string): string {
@@ -134,44 +139,50 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
           ) : keysQuery.isError ? (
             <p className="text-body text-destructive">{t("settingsLoadError")}</p>
           ) : keys.length > 0 ? (
-            <ul className="flex flex-col divide-y divide-border">
-              {keys.map((key) => {
-                const revoked = Boolean(key.revoked_at);
-                return (
-                  <li
-                    key={key.id}
-                    className={cn(
-                      "grid grid-cols-[1fr_180px_100px_100px_90px] items-center gap-3 py-3",
-                      revoked && "opacity-50",
-                    )}
-                  >
-                    <span className="text-body font-medium">{key.name}</span>
-                    <code className="w-fit rounded bg-muted px-2 py-1 font-mono text-caption">{key.key_preview}</code>
-                    <span className="text-caption text-muted-foreground">{formatUtcDate(key.created_at)}</span>
-                    <span className="text-caption text-muted-foreground">
-                      {key.last_used_at ? formatUtcDate(key.last_used_at) : "—"}
-                    </span>
-                    <div className="flex justify-end">
-                      {revoked ? (
-                        <StatusPill status="error" label={t("settingsKeyRevoked")} />
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="link"
-                          className="text-destructive"
-                          onClick={() => {
-                            setRevokeError(false);
-                            setRevokeTarget(key);
-                          }}
-                        >
-                          {t("settingsKeyRevoke")}
-                        </Button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="flex flex-col">
+              <div className={cn(KEY_ROW_GRID, "border-b border-border pb-2 text-caption font-medium text-muted-foreground")}>
+                <span>{t("settingsKeyName")}</span>
+                <span />
+                <span>{t("settingsKeyCreatedAt")}</span>
+                <span>{t("settingsKeyLastUsed")}</span>
+                <span />
+              </div>
+              <ul className="flex flex-col divide-y divide-border">
+                {keys.map((key) => {
+                  const revoked = Boolean(key.revoked_at);
+                  return (
+                    <li
+                      key={key.id}
+                      className={cn(KEY_ROW_GRID, "py-3", revoked && "opacity-50")}
+                    >
+                      <span className="text-body font-medium">{key.name}</span>
+                      <code className="w-fit rounded bg-muted px-2 py-1 font-mono text-caption">{key.key_preview}</code>
+                      <span className="text-caption text-muted-foreground">{formatUtcDate(key.created_at)}</span>
+                      <span className="text-caption text-muted-foreground">
+                        {key.last_used_at ? formatUtcDate(key.last_used_at) : "—"}
+                      </span>
+                      <div className="flex justify-end">
+                        {revoked ? (
+                          <StatusPill status="error" label={t("settingsKeyRevoked")} />
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="link"
+                            className="text-destructive"
+                            onClick={() => {
+                              setRevokeError(false);
+                              setRevokeTarget(key);
+                            }}
+                          >
+                            {t("settingsKeyRevoke")}
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           ) : (
             <p className="text-body text-muted-foreground">{t("settingsKeysEmpty")}</p>
           )}
