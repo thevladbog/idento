@@ -38,4 +38,24 @@ describe("parseCsv", () => {
       { a: "3", b: "4" },
     ]);
   });
+
+  // Fix 3 (CodeRabbit, PR #65): a well-formed CSV must keep resolving with
+  // an empty `errors` array — this proves the new field doesn't change
+  // behavior for the happy path.
+  it("returns an empty errors array for a well-formed CSV", async () => {
+    const text = "a,b\n1,2\n3,4";
+    const result = await parseCsv(text, { worker: false });
+    expect(result.errors).toEqual([]);
+  });
+
+  // A row with fewer fields than the header is exactly the kind of
+  // malformed-row diagnostic PapaParse's own parser flags via
+  // `results.errors` (FieldMismatch/TooFewFields) — previously read and
+  // discarded, now surfaced.
+  it("surfaces PapaParse's own row-count-mismatch diagnostics via errors, without throwing", async () => {
+    const text = "Name,Email,Company\nPerson 1,person1@example.com,Acme\nPerson 2,person2@example.com\n";
+    const result = await parseCsv(text, { worker: false });
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors[0]).toMatchObject({ code: "TooFewFields" });
+  });
 });
