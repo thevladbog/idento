@@ -47,6 +47,11 @@ export function FontsCard({ eventId }: FontsCardProps) {
   const [removeTarget, setRemoveTarget] = React.useState<FontListItem | null>(null);
   const [deleteError, setDeleteError] = React.useState(false);
   const [uploadError, setUploadError] = React.useState(false);
+  // Real consent gate: the upload body's `license_accepted` flag is
+  // meaningless if it's sent unconditionally regardless of whether the user
+  // actually acknowledged the notice below — this tracks the checkbox the
+  // user must explicitly check before the upload affordance is usable.
+  const [licenseAccepted, setLicenseAccepted] = React.useState(false);
 
   const listQueryKey = ["get", "/api/events/{event_id}/fonts", { params: { path: { event_id: eventId } } }] as const;
 
@@ -97,7 +102,12 @@ export function FontsCard({ eventId }: FontsCardProps) {
         file: file as unknown as string,
         name: derived,
         family: derived,
-        license_accepted: "true",
+        // Wired from real state rather than a hardcoded literal — the
+        // upload input is disabled unless `licenseAccepted` is true (see
+        // below), so this mutation is only ever reachable when it's "true",
+        // but the value itself must still reflect the actual consent state
+        // for correctness/clarity rather than lying by construction.
+        license_accepted: licenseAccepted ? "true" : "false",
       },
       // Multipart investigation (verified against the INSTALLED
       // node_modules/openapi-fetch/src/index.js@0.17.0, not assumed):
@@ -184,15 +194,25 @@ export function FontsCard({ eventId }: FontsCardProps) {
 
           {deleteError ? <p className="text-body text-destructive">{t("settingsFontRemoveError")}</p> : null}
 
-          <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-caption text-warning">
-            {t("settingsFontLicense")}
-          </div>
+          <label
+            htmlFor="fonts-card-license-accepted"
+            className="flex cursor-pointer items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-caption text-warning"
+          >
+            <input
+              id="fonts-card-license-accepted"
+              type="checkbox"
+              className="mt-0.5 shrink-0"
+              checked={licenseAccepted}
+              onChange={(e) => setLicenseAccepted(e.target.checked)}
+            />
+            <span>{t("settingsFontLicense")}</span>
+          </label>
 
           <label
             htmlFor="fonts-card-upload"
             className={cn(
               "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border p-6 text-center text-body text-muted-foreground",
-              uploadFont.isPending && "cursor-not-allowed opacity-60",
+              (uploadFont.isPending || !licenseAccepted) && "cursor-not-allowed opacity-60",
             )}
           >
             {uploadFont.isPending ? (
@@ -207,7 +227,7 @@ export function FontsCard({ eventId }: FontsCardProps) {
               type="file"
               accept=".ttf,.otf,.woff,.woff2"
               className="sr-only"
-              disabled={uploadFont.isPending}
+              disabled={uploadFont.isPending || !licenseAccepted}
               // The wrapping <label>'s visible text includes the "Browse…"
               // trigger too, but the input's accessible name is scoped to
               // just the drop hint via aria-label (aria-label outranks a

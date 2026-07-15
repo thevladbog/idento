@@ -187,6 +187,7 @@ describe("FontsCard", () => {
 
     await screen.findByText("Acme Grotesk");
 
+    await user.click(screen.getByRole("checkbox"));
     const file = makeFile("Roboto Bold.woff2", 12345, "font/woff2");
     const input = screen.getByLabelText("Drop a .ttf / .otf / .woff file here or") as HTMLInputElement;
     await user.upload(input, file);
@@ -207,6 +208,7 @@ describe("FontsCard", () => {
 
     await screen.findByText("Acme Grotesk");
 
+    await user.click(screen.getByRole("checkbox"));
     const file = makeFile("Slow.woff2", 100, "font/woff2");
     const input = screen.getByLabelText("Drop a .ttf / .otf / .woff file here or") as HTMLInputElement;
     await user.upload(input, file);
@@ -222,6 +224,7 @@ describe("FontsCard", () => {
 
     await screen.findByText("Acme Grotesk");
 
+    await user.click(screen.getByRole("checkbox"));
     // Extension must pass the input's own `accept` filter (client-side,
     // enforced by user-event) so the pick reaches our onChange handler at
     // all — the 400 here simulates a server-side rejection (e.g. the
@@ -290,5 +293,33 @@ describe("FontsCard", () => {
         "You are fully responsible for font licensing. By uploading, you confirm you hold the rights to use this font for printing badges.",
       ),
     ).toBeInTheDocument();
+  });
+
+  // Fix: the "accepted" flag must actually mean something — the upload
+  // affordance is unusable until the user has explicitly checked the
+  // license box, not just decorative text next to an always-true flag.
+  it("disables the upload input until the license checkbox is checked, and enables it once checked", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<FontsCard eventId="evt-1" />);
+
+    await screen.findByText("Acme Grotesk");
+
+    const checkbox = screen.getByRole("checkbox");
+    const input = screen.getByLabelText("Drop a .ttf / .otf / .woff file here or") as HTMLInputElement;
+    expect(checkbox).not.toBeChecked();
+    expect(input).toBeDisabled();
+
+    // Uploading while unchecked must not reach the server at all — user-event
+    // itself refuses to fire onChange on a disabled input.
+    const file = makeFile("Blocked.woff2", 100, "font/woff2");
+    await user.upload(input, file);
+    expect(uploadCount).toBe(0);
+
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(input).toBeEnabled();
+
+    await user.upload(input, file);
+    await waitFor(() => expect(uploadCount).toBe(1));
   });
 });
