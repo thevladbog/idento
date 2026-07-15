@@ -14,11 +14,11 @@ type EventReadinessResponse = components["schemas"]["EventReadinessResponse"];
 // enough — no need to reconstruct the app's real route shape (contrast
 // ProtectedLayout.test.tsx / EventWorkspaceStub.test.tsx, which build a
 // matching-route-shape harness because they exercise actual navigation /
-// `getRouteApi` param resolution). `/events/$eventId/settings` doesn't exist
-// in the app's real router yet either (Task 2 adds it) — WorkspaceRail.tsx
-// itself casts that one `to` past the Register-derived union, and this
-// harness only needs to satisfy `Link`'s runtime need for *a* router in
-// context, not a router that actually contains the route.
+// `getRouteApi` param resolution). Both routes are registered in the app's
+// real router (router.tsx) by now, so `Link`'s `to`/`params` typecheck
+// normally with no cast — this harness only needs to satisfy `Link`'s
+// runtime need for *a* router in context, not one that actually contains
+// the route.
 const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
 
 function renderRail(ui: ReactNode) {

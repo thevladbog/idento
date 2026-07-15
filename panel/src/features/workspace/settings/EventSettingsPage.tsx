@@ -23,8 +23,8 @@ const RAIL_ITEMS: { id: (typeof SECTION_IDS)[number]; labelKey: string; destruct
 
 // Board 6a — the event settings page: a left anchor rail (scroll-spy
 // active-highlighting via the ported useScrollSpy) beside stacked card
-// sections. General, Fonts and API keys are real; Danger zone is an inline
-// placeholder that Task 7 replaces (reconciliation #5 in the task brief
+// sections. All four cards — General, Fonts, API keys, Danger zone — are
+// real, fully-implemented components (reconciliation #5 in the task brief
 // narrows the board's 7-item rail down to these 4).
 export function EventSettingsPage() {
   const { t } = useTranslation();

@@ -250,7 +250,13 @@ export function OrganizationPage() {
 
   return (
     <div className="max-w-2xl">
-      <OrganizationForm tenantId={tenant.id} tenant={tenantQuery.data} />
+      {/* `key={tenant.id}` forces a full remount (fresh `useState`
+          initializers) whenever the active tenant changes — OrgSwitcher
+          switches tenants without navigating away from this route, so
+          without this key the same component instance would keep the
+          previous org's baseline/form state and could PUT stale values
+          into the newly-selected tenant's record. */}
+      <OrganizationForm key={tenant.id} tenantId={tenant.id} tenant={tenantQuery.data} />
     </div>
   );
 }

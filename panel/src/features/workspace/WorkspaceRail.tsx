@@ -93,8 +93,8 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
       </div>
 
       <Link
-        to={"/events/$eventId/settings" as never}
-        params={{ eventId } as never}
+        to="/events/$eventId/settings"
+        params={{ eventId }}
         aria-current={active === "settings" ? "page" : undefined}
         className={cn(
           "flex items-center gap-2 rounded-md px-2 py-1.5 text-body text-muted-foreground hover:bg-muted",
