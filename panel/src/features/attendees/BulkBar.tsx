@@ -8,16 +8,9 @@ import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 type Attendee = components["schemas"]["Attendee"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
-
-// Same narrowing helper as AttendeesPage.tsx's zoneIdentity — useEventZones'
-// return type is a union not discriminated by any param this dialog sends.
-function zoneIdentity(entry: EventZone | EventZoneWithStats): { id: string; name: string } {
-  return "zone" in entry ? { id: entry.zone.id, name: entry.zone.name } : { id: entry.id, name: entry.name };
-}
 
 export interface BulkBarProps {
   selected: Attendee[];

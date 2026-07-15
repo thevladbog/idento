@@ -12,21 +12,13 @@ import {
 } from "./hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity, type ZoneListEntry } from "../../shared/lib/zoneIdentity";
 
 type Attendee = components["schemas"]["Attendee"];
 type AttendeeZoneAccess = components["schemas"]["AttendeeZoneAccess"];
 type MovementHistoryEntry = components["schemas"]["MovementHistoryEntry"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
 
 const RECENT_ACTIVITY_LIMIT = 3;
-
-// Same narrowing helper as AttendeesPage.tsx's/BulkBar.tsx's zoneIdentity —
-// useEventZones' return type is a union not discriminated by any param this
-// drawer sends.
-function zoneIdentity(entry: EventZone | EventZoneWithStats): { id: string; name: string } {
-  return "zone" in entry ? { id: entry.zone.id, name: entry.zone.name } : { id: entry.id, name: entry.name };
-}
 
 // Board 3e / task brief: times are rendered "HH:MM" pinned to UTC (same
 // rationale as EventRow.tsx/eventDates.ts — a viewer's local timezone must
@@ -169,7 +161,7 @@ interface DrawerBodyProps {
   zoneHistory: MovementHistoryEntry[] | undefined;
   zoneHistoryLoading: boolean;
   zoneHistoryError: boolean;
-  zones: (EventZone | EventZoneWithStats)[] | undefined;
+  zones: ZoneListEntry[] | undefined;
   zonesLoading: boolean;
   onClose: () => void;
   onEditBusyChange: (busy: boolean) => void;

@@ -9,10 +9,9 @@ import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 type ReadinessStep = components["schemas"]["ReadinessStep"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
 
 // Same rationale as EventWorkspaceLayout.tsx: `getRouteApi` with the parent
 // layout route's string id (not an import from app/router.tsx) avoids a
@@ -36,10 +35,6 @@ const NEXT_DESCRIPTION_KEYS: Record<NextStepKey, string> = {
   equipment: "workspaceNextEquipment",
 };
 
-function zoneName(entry: EventZone | EventZoneWithStats): string {
-  return "zone" in entry ? entry.zone.name : entry.name;
-}
-
 // Board 1f §4 — the workspace index route's Overview panel: a "What's next"
 // card surfacing up to the top two outstanding readiness steps (or an
 // all-ready message), plus a 4-tile stat grid. Mounted at the index route via
@@ -62,7 +57,7 @@ export function WorkspaceOverview() {
 
   const zonesStep = stepsByKey.get("zones");
   const zonesSkipped = zonesStep?.status === "skipped";
-  const zoneNamesCaption = zonesQuery.data?.slice(0, 2).map(zoneName).join(" · ");
+  const zoneNamesCaption = zonesQuery.data?.slice(0, 2).map((entry) => zoneIdentity(entry).name).join(" · ");
 
   return (
     <div className="flex flex-col gap-5">
