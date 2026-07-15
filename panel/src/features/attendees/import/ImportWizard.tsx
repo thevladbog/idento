@@ -482,7 +482,23 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
                   {t("importDownloadErrors", { count: state.rowErrors?.length ?? 0 })}
                 </Button>
               ) : null}
-              <Button type="button" onClick={handleDone}>
+              {/* Gated on the SAME isStep3Busy the dismiss paths use (fix
+                  round 2), not just the outer !isImporting && !chunkFailure
+                  the footer itself renders on. The chunk-import phase can
+                  settle (footer renders) while a per-row "Retry" is still
+                  in flight (retryingRows.size > 0) — without this, clicking
+                  Done mid-retry ran handleDone() immediately: it
+                  invalidates the attendees list and tears the wizard down
+                  BEFORE the retried row exists server-side, and when that
+                  retry later resolves into a reset wizard it never
+                  re-invalidates, so the recovered row silently never shows
+                  up in the list. Disabling (not hiding) Done specifically —
+                  rather than folding retryingRows into the footer's own
+                  render condition — keeps the Download-errors link (which
+                  has no equivalent race; it only reads the already-settled
+                  rowErrors/dedupedRows snapshot synchronously) usable while
+                  a retry is pending. */}
+              <Button type="button" disabled={isStep3Busy} onClick={handleDone}>
                 {t("importDone", { count: state.importProgress?.done ?? 0 })}
               </Button>
             </>

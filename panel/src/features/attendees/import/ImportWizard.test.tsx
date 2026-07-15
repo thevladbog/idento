@@ -642,4 +642,78 @@ describe("ImportWizard step 3 — chunked import", () => {
     await waitFor(() => screen.getByText("3 of 3 imported"));
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
+
+  // Fix round 2: a re-review found the footer's "Done" button was still
+  // gated on the OLD, narrower `!isImporting && !chunkFailure` condition —
+  // NOT `isStep3Busy` (which the X/Escape/outside-click dismiss paths above
+  // already correctly use). Concretely: once the main chunk-import phase
+  // settles with a create_failed row still listed, Done rendered fully
+  // clickable with no `disabled`, so clicking it while a per-row Retry was
+  // still in flight ran `handleDone()` immediately — invalidating the
+  // attendees list and tearing the wizard down BEFORE the retried row
+  // existed server-side. When the retry later resolved into a reset wizard,
+  // it never re-invalidated, so the recovered attendee silently never
+  // appeared until some unrelated future refetch.
+  it("disables Done while a per-row Retry is in flight (even though the chunk-import phase already settled), and Done works normally once the retry resolves", async () => {
+    const user = userEvent.setup();
+    const retryGate = createGate();
+    let retryRequested = false;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+        const body = (await request.json()) as { attendees: Record<string, unknown>[] };
+        if (body.attendees.length === 1) {
+          // The per-row Retry re-POST — gated so the test can attempt to
+          // click Done while it's genuinely still in flight.
+          retryRequested = true;
+          await retryGate.promise;
+          return HttpResponse.json({ message: "ok", created: 1, skipped: 0, total: 1 }, { status: 201 });
+        }
+        return HttpResponse.json(
+          {
+            message: "ok",
+            created: body.attendees.length - 1,
+            skipped: 1,
+            total: body.attendees.length,
+            errors: [{ row: 2, data: "Person 2", problem: "create_failed" }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const { queryClient, onOpenChange } = await continueToStep3Ready(user, buildFixtureCsv(3), "done-inflight.csv");
+    await user.click(screen.getByRole("button", { name: "Import 3 rows" }));
+    await screen.findByText("2 of 3 imported");
+
+    // Chunk-import phase has settled (no chunk in flight, no chunkFailure):
+    // Done renders and is enabled right now.
+    const doneButton = screen.getByRole("button", { name: "Done — 2 in the list" });
+    expect(doneButton).toBeEnabled();
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(retryRequested).toBe(true));
+
+    // Mid single-row-retry: Done is disabled. Attempting to click it anyway
+    // (userEvent correctly skips firing the click on a disabled element,
+    // same as a real browser) must NOT run handleDone's invalidate/close
+    // side effects — proving this isn't just a cosmetic disabled state.
+    expect(doneButton).toBeDisabled();
+    await user.click(doneButton);
+    expect(invalidateSpy).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    retryGate.resolve();
+
+    // Once the retry resolves, Done becomes available again (new count
+    // reflecting the recovered row) and works normally.
+    await waitFor(() => screen.getByText("3 of 3 imported"));
+    const settledDoneButton = screen.getByRole("button", { name: "Done — 3 in the list" });
+    expect(settledDoneButton).toBeEnabled();
+
+    await user.click(settledDoneButton);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });
