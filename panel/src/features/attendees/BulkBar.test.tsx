@@ -36,6 +36,16 @@ const BOB = makeAttendee({ id: "a2", first_name: "Bob", last_name: "Noll" });
 
 let zoneAccessCalls: { attendeeId: string; body: unknown }[] = [];
 let zoneAccessStatusOverride: number | null = null;
+let zoneAccessFailFor: Set<string> = new Set();
+let zoneAccessDelayMs = 0;
+// In-flight tracking for Fix 6: proves the zone-access POSTs are genuinely
+// SEQUENTIAL (never Promise.all-style concurrent) at the network level, not
+// just that they eventually all fire — a batch that fired everything
+// concurrently would still pass the old assertions (same ids, same bodies,
+// same final invalidation) while violating the "one at a time" contract the
+// component's own comments and Fix 6's task brief require.
+let zoneAccessInFlight = 0;
+let zoneAccessMaxInFlight = 0;
 let deleteCalls: string[] = [];
 let deleteStatusOverride: number | null = null;
 let deleteDelayMs = 0;
@@ -69,10 +79,15 @@ const server = startMswServer(
     ]),
   ),
   http.post("http://api.test/api/attendees/:attendeeId/zone-access", async ({ request, params }) => {
+    zoneAccessInFlight += 1;
+    zoneAccessMaxInFlight = Math.max(zoneAccessMaxInFlight, zoneAccessInFlight);
     const body = await request.json();
     zoneAccessCalls.push({ attendeeId: params.attendeeId as string, body });
-    if (zoneAccessStatusOverride) {
-      return HttpResponse.json({ error: "boom" }, { status: zoneAccessStatusOverride });
+    if (zoneAccessDelayMs) await delay(zoneAccessDelayMs);
+    zoneAccessInFlight -= 1;
+    const attendeeId = params.attendeeId as string;
+    if (zoneAccessStatusOverride || zoneAccessFailFor.has(attendeeId)) {
+      return HttpResponse.json({ error: "boom" }, { status: zoneAccessStatusOverride ?? 500 });
     }
     return HttpResponse.json(
       { id: "za1", attendee_id: params.attendeeId, zone_id: "z1", allowed: true, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
@@ -102,6 +117,10 @@ describe("BulkBar", () => {
     window.__ENV__ = { API_URL: "http://api.test" };
     zoneAccessCalls = [];
     zoneAccessStatusOverride = null;
+    zoneAccessFailFor = new Set();
+    zoneAccessDelayMs = 0;
+    zoneAccessInFlight = 0;
+    zoneAccessMaxInFlight = 0;
     deleteCalls = [];
     deleteStatusOverride = null;
     deleteDelayMs = 0;
@@ -132,8 +151,16 @@ describe("BulkBar", () => {
   });
 
   describe("Assign zone", () => {
-    it("opens a dialog listing zones, then POSTs zone-access sequentially (one per selected id) and invalidates the attendees list", async () => {
+    it("opens a dialog listing zones, then POSTs zone-access strictly sequentially (one in flight at a time, one per selected id) and invalidates the attendees list", async () => {
       const user = userEvent.setup();
+      // Delaying each response is what makes "sequential, not Promise.all"
+      // an observable, testable claim: with an instant response, a
+      // concurrent (Promise.all-style) implementation and a sequential one
+      // both produce the exact same call log, so max-in-flight would always
+      // read 1 by accident rather than by proof. The delay creates a window
+      // where a concurrent implementation's second request would overlap
+      // the first, which the max-in-flight counter below would catch.
+      zoneAccessDelayMs = 30;
       const queryClient = renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
@@ -153,6 +180,10 @@ describe("BulkBar", () => {
       await waitFor(() =>
         expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ATTENDEES_LIST_KEY("evt-1") })),
       );
+
+      // The whole batch never had more than 1 request in flight at once —
+      // proof of strict sequential execution, not just eventual completion.
+      expect(zoneAccessMaxInFlight).toBe(1);
     });
 
     it("shows a live x / y progress readout while assigning", async () => {
@@ -179,6 +210,50 @@ describe("BulkBar", () => {
 
       // Both requests still fire even though both fail.
       await waitFor(() => expect(zoneAccessCalls).toHaveLength(2));
+    });
+
+    it("shows an honest success/failure breakdown once the batch settles with some failures, instead of implying full success", async () => {
+      const user = userEvent.setup();
+      zoneAccessFailFor = new Set(["a2"]);
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      await user.click(screen.getByRole("button", { name: "Assign zone" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByText("Main Hall"));
+
+      await waitFor(() => expect(zoneAccessCalls).toHaveLength(2));
+      expect(await screen.findByText("1 of 2 assigned — 1 failed")).toBeInTheDocument();
+      // The plain (dishonest, implies-full-success) "x / y" readout is gone
+      // once the honest breakdown is showing.
+      expect(screen.queryByText(/^2 \/ 2$/)).not.toBeInTheDocument();
+    });
+
+    it("cannot be dismissed via the X close button, Escape, or Cancel while the assign batch is genuinely running", async () => {
+      const user = userEvent.setup();
+      zoneAccessDelayMs = 60;
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      await user.click(screen.getByRole("button", { name: "Assign zone" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByText("Main Hall"));
+
+      // First request in flight — the X close button is hidden entirely
+      // (hideClose while isAssigning), and Escape is a no-op.
+      await waitFor(() => expect(zoneAccessCalls).toHaveLength(1));
+      expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Still open and still running once the second request fires too.
+      await waitFor(() => expect(zoneAccessCalls).toHaveLength(2));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Once the batch genuinely completes, the X button reappears and the
+      // dialog becomes dismissable again.
+      await waitFor(() => expect(screen.queryByText(/2 \/ 2/)).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     });
   });
 
@@ -254,9 +329,35 @@ describe("BulkBar", () => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
     });
 
-    it("a stale response from a cancelled delete batch does not reopen an error or navigate once the dialog is closed", async () => {
+    it("cannot be dismissed via the X close button or Escape while the delete batch is genuinely running", async () => {
       const user = userEvent.setup();
       deleteDelayMs = 60;
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      await user.click(screen.getByRole("button", { name: "Delete…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.type(within(dialog).getByLabelText("Type 2 to confirm"), "2");
+      await user.click(within(dialog).getByRole("button", { name: "Delete…" }));
+
+      // First DELETE is in flight (delayed) — attempt to dismiss via the X
+      // close button and Escape; both must be no-ops while the batch is
+      // genuinely running (Fix 3: a batch delete must not be silently
+      // abandonable mid-way, which would leave some attendees deleted and
+      // some not with no record of which).
+      await waitFor(() => expect(deleteCalls).toHaveLength(1));
+      await user.click(within(dialog).getByRole("button", { name: "Close" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // The batch continues to completion regardless — both DELETEs still
+      // fire (the blocked dismissal did not silently stop the loop).
+      await waitFor(() => expect(deleteCalls).toHaveLength(2));
+    });
+
+    it("a stale response from a cancelled-after-completion delete session does not reopen an error or leak into a freshly reopened dialog", async () => {
+      const user = userEvent.setup();
+      deleteFailFor = new Set(["a2"]);
       renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
 
       await user.click(screen.getByRole("button", { name: "Delete…" }));
@@ -264,17 +365,15 @@ describe("BulkBar", () => {
       await user.type(within(dialog).getByLabelText("Type 2 to confirm"), "2");
       await user.click(within(dialog).getByRole("button", { name: "Delete…" }));
 
-      // First DELETE is in flight (delayed) — cancel now via the dialog's
-      // close (X) button before it resolves.
-      await waitFor(() => expect(deleteCalls).toHaveLength(1));
+      // Batch settles (with a failure) — only NOW, once it's no longer
+      // genuinely running, can the dialog actually be dismissed.
+      await waitFor(() => expect(deleteCalls).toHaveLength(2));
+      expect(await screen.findByText("Some attendees couldn't be deleted. Try again.")).toBeInTheDocument();
       await user.click(within(dialog).getByRole("button", { name: "Close" }));
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
-      // Let the delayed response land.
-      await new Promise((resolve) => setTimeout(resolve, 120));
-
       // No stray error text anywhere, and reopening shows a fresh dialog
-      // (no leftover error / progress state from the cancelled session).
+      // (no leftover error / progress state from the previous session).
       expect(screen.queryByText("Some attendees couldn't be deleted. Try again.")).not.toBeInTheDocument();
 
       await user.click(screen.getByRole("button", { name: "Delete…" }));

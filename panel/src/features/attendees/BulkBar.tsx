@@ -48,11 +48,26 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
 
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [assignProgress, setAssignProgress] = React.useState<Progress | null>(null);
+  // Task 13/ImportWizard-style honesty fix: how many of the ATTEMPTED
+  // zone-access writes in the current/last batch failed — tracked
+  // separately from `assignProgress.done` (which counts attempts, not
+  // successes), so the completion readout can distinguish "50 / 50 attempted"
+  // from "50 attempted, 2 of them failed" instead of implying full success.
+  const [assignFailedCount, setAssignFailedCount] = React.useState(0);
+  // True only while handleAssignZone's sequential loop is genuinely
+  // in-flight (distinct from assignSessionRef/assignProgress, which track
+  // "is this session stale", not "is the loop currently running") — gates
+  // the assign dialog's dismissal below so a user can't silently abandon a
+  // batch partway through with no indication which attendees were skipped.
+  const [isAssigning, setIsAssigning] = React.useState(false);
   const assignSessionRef = React.useRef(0);
 
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleteProgress, setDeleteProgress] = React.useState<Progress | null>(null);
   const [deleteError, setDeleteError] = React.useState(false);
+  // Already tracked "the sequential delete loop is genuinely running" before
+  // this fix (used for confirmDisabled) — reused as-is for the new
+  // dismissal-gating below rather than adding a redundant second flag.
   const [deleting, setDeleting] = React.useState(false);
   const deleteSessionRef = React.useRef(0);
 
@@ -61,10 +76,18 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
 
   function handleAssignOpenChange(open: boolean) {
     if (!open) {
+      // Genuinely still running: ignore the close request outright (X,
+      // Escape, and outside-click all route through this same
+      // onOpenChange — see dialog.tsx/Radix's Close/DismissableLayer, which
+      // both call the single `onOpenChange` prop). Silently abandoning a
+      // batch mid-way would leave an unknown number of the remaining
+      // attendees never assigned, with no record of which ones.
+      if (isAssigning) return;
       // Any progress update or invalidation-triggered close still in flight
       // from this session is now permanently stale.
       assignSessionRef.current += 1;
       setAssignProgress(null);
+      setAssignFailedCount(0);
     }
     setAssignOpen(open);
   }
@@ -72,12 +95,18 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   async function handleAssignZone(zoneId: string) {
     const sessionId = assignSessionRef.current;
     const total = selected.length;
+    setIsAssigning(true);
     setAssignProgress({ done: 0, total });
+    setAssignFailedCount(0);
     let attemptedAny = false;
+    let failedCount = 0;
     for (let i = 0; i < selected.length; i++) {
       // The dialog was closed since this batch started — stop issuing
       // further zone-access writes (already-issued ones still land
-      // server-side; nothing here can abort an in-flight request).
+      // server-side; nothing here can abort an in-flight request). In
+      // practice this is now unreachable via the UI while isAssigning is
+      // true (handleAssignOpenChange blocks the close), but it's kept as
+      // defense-in-depth for any path that still flips the session.
       if (assignSessionRef.current !== sessionId) break;
       attemptedAny = true;
       try {
@@ -86,11 +115,14 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           body: { zone_id: zoneId, allowed: true },
         });
       } catch {
-        // Skip individual failures — the batch continues rather than
-        // aborting on the first error (per the task brief).
+        // Individual failures don't abort the batch (per the task brief) —
+        // but they ARE counted now, so the completion readout can be
+        // honest about them instead of implying full success.
+        failedCount += 1;
       }
       if (assignSessionRef.current === sessionId) {
         setAssignProgress({ done: i + 1, total });
+        setAssignFailedCount(failedCount);
       }
     }
     if (attemptedAny) {
@@ -99,14 +131,19 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       // unconditionally, unlike the UI reactions below.
       await queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
     }
+    setIsAssigning(false);
     // Deliberately does not auto-close on completion: the final "x / x"
-    // readout is the honest confirmation that the batch finished (some
-    // items may have been skipped on failure), so the user closes it
-    // themselves once they've seen it.
+    // readout (now honest about failures too) is the confirmation the user
+    // reads before closing it themselves.
   }
 
   function handleDeleteOpenChange(open: boolean) {
     if (!open) {
+      // Same "genuinely still running" gate as handleAssignOpenChange
+      // above — a batch delete must not be silently abandonable mid-way
+      // either (some attendees would be deleted, some not, with no record
+      // of which).
+      if (deleting) return;
       deleteSessionRef.current += 1;
       setDeleteError(false);
       setDeleteProgress(null);
@@ -128,6 +165,8 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     let hadFailure = false;
     let attemptedAny = false;
     for (let i = 0; i < selected.length; i++) {
+      // Unreachable via the UI while `deleting` is true (see
+      // handleDeleteOpenChange above) — kept as defense-in-depth.
       if (deleteSessionRef.current !== sessionId) break;
       attemptedAny = true;
       try {
@@ -163,50 +202,79 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         <span className="text-body">{t("bulkSelected", { count })}</span>
         <span className="h-4 w-px bg-background/30" aria-hidden="true" />
         <div className="flex items-center gap-3">
-          <button
+          <Button
             type="button"
-            className="text-caption text-background/70 hover:text-background"
+            variant="link"
+            className="h-auto p-0 text-caption text-background/70 hover:text-background hover:no-underline"
             onClick={() => setAssignOpen(true)}
           >
             {t("bulkAssignZone")}
-          </button>
+          </Button>
           {/* Deliberately locked: not a button, no click handler — the
               badge editor this depends on doesn't exist yet. */}
           <span className="cursor-default select-none text-caption text-background/40">
             {t("bulkPrintLocked")}
           </span>
-          <button
+          <Button
             type="button"
-            className="text-caption text-background/70 hover:text-background"
+            variant="link"
+            className="h-auto p-0 text-caption text-background/70 hover:text-background hover:no-underline"
             onClick={() => exportAttendeesCsv(selected)}
           >
             {t("bulkExport")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="text-caption text-destructive hover:opacity-80"
+            variant="link"
+            className="h-auto p-0 text-caption text-destructive hover:opacity-80 hover:no-underline"
             onClick={() => setDeleteOpen(true)}
           >
             {t("bulkDelete")}
-          </button>
+          </Button>
         </div>
-        <button
+        <Button
           type="button"
-          className="ml-auto text-caption text-background/50 hover:text-background"
+          variant="link"
+          className="ml-auto h-auto p-0 text-caption text-background/50 hover:text-background hover:no-underline"
           onClick={onClear}
         >
           {t("bulkClear")}
-        </button>
+        </Button>
       </div>
 
       <Dialog open={assignOpen} onOpenChange={handleAssignOpenChange}>
-        <DialogContent closeLabel={t("workspaceDialogClose")}>
+        <DialogContent
+          closeLabel={t("workspaceDialogClose")}
+          hideClose={isAssigning}
+          onEscapeKeyDown={(e) => {
+            if (isAssigning) e.preventDefault();
+          }}
+          onPointerDownOutside={(e) => {
+            if (isAssigning) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (isAssigning) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t("bulkAssignZone")}</DialogTitle>
           </DialogHeader>
           {assignProgress ? (
             <p className="text-body text-muted-foreground">
-              {t("bulkAssignZoneProgress", { done: assignProgress.done, total: assignProgress.total })}
+              {/* Once the batch has settled (no longer isAssigning) with at
+                  least one failure, the readout switches from the plain "x /
+                  y" attempted-count to an honest success/failure breakdown —
+                  see assignFailedCount's doc comment above. Scope note: this
+                  is a message-honesty fix only; it deliberately does NOT add
+                  a per-row retry affordance for the failed assignments (a
+                  bigger feature, out of budget here). */}
+              {!isAssigning && assignFailedCount > 0
+                ? t("bulkAssignZoneDoneWithFailures", {
+                    succeeded: assignProgress.total - assignFailedCount,
+                    total: assignProgress.total,
+                    failed: assignFailedCount,
+                  })
+                : t("bulkAssignZoneProgress", { done: assignProgress.done, total: assignProgress.total })}
             </p>
           ) : (
             <div className="flex flex-col gap-2">

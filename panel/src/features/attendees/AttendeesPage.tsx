@@ -258,13 +258,9 @@ export function AttendeesPage() {
       ) : total === 0 && hasActiveFilters ? (
         <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border p-6">
           <p className="text-body text-muted-foreground">{t("attendeesNoMatches")}</p>
-          <button
-            type="button"
-            className="text-body text-primary underline-offset-4 hover:underline"
-            onClick={clearFilters}
-          >
+          <Button type="button" variant="link" className="h-auto p-0 font-normal" onClick={clearFilters}>
             {t("attendeesClearFilters")}
-          </button>
+          </Button>
         </div>
       ) : (
         <>
