@@ -1508,6 +1508,54 @@ paths:
                 oneOf:
                   - { $ref: "#/components/schemas/Error" }
                   - { $ref: "#/components/schemas/HTTPError" }
+  /api/events/{event_id}/staff/{user_id}:
+    delete:
+      operationId: unassignStaffFromEvent
+      summary: >
+        Remove a staff member from an event. Idempotent — DELETE on a pair
+        that was never assigned still returns 204 (the store's DELETE
+        simply affects zero rows; there is no existence check).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: Staff member removed (or was not assigned to begin with).
+        "400":
+          description: event_id or user_id is not a UUID (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HTTPError" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership) — note this checks event_id only, not that
+            user_id was ever actually assigned.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership (Error), or persisting
+            the removal (echo.NewHTTPError shape).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/Error" }
+                  - { $ref: "#/components/schemas/HTTPError" }
   /api/events/{event_id}/stations/provisioning-token:
     post:
       operationId: createStationProvisioningToken

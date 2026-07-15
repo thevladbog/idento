@@ -80,6 +80,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
 	api.POST("/events/:event_id/staff", h.AssignStaffToEvent)
+	api.DELETE("/events/:event_id/staff/:user_id", h.UnassignStaffFromEvent)
 	api.POST("/events/:event_id/stations/provisioning-token", h.CreateStationProvisioningToken)
 
 	// Attendees

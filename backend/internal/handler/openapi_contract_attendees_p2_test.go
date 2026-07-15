@@ -501,3 +501,95 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 
 	validateResponse(t, http.MethodPost, "/api/events/"+event.ID.String()+"/attendees/bulk", rec)
 }
+
+// TestOpenAPIContract_UnassignStaffFromEvent exercises the DELETE
+// /api/events/{event_id}/staff/{user_id} endpoint, including basic
+// idempotency and error cases.
+func TestOpenAPIContract_UnassignStaffFromEvent(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	staffUser := &models.User{
+		ID:       uuid.New(),
+		Email:    "staff@example.com",
+		Role:     "staff",
+		TenantID: tenantID,
+	}
+
+	// Track which staff are assigned to the event (simulate store state)
+	assignedStaff := map[uuid.UUID]bool{staffUser.ID: true}
+
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getEventStaff: func(eventID uuid.UUID) ([]*models.User, error) {
+			if assignedStaff[staffUser.ID] {
+				return []*models.User{staffUser}, nil
+			}
+			return []*models.User{}, nil
+		},
+		removeStaffFromEvent: func(eventID, userID uuid.UUID) error {
+			// Idempotent: just mark as not assigned (no error on already-unassigned)
+			assignedStaff[userID] = false
+			return nil
+		},
+	})
+
+	e := echo.New()
+
+	// Step 1: Verify staff is initially in list
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/events/"+event.ID.String()+"/staff", "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/staff")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := h.GetEventStaff(c); err != nil {
+		t.Fatalf("GetEventStaff (before delete): %v", err)
+	}
+	var staffList []*models.User
+	if err := jsonUnmarshalBody(rec, &staffList); err != nil {
+		t.Fatalf("unmarshal staff list: %v", err)
+	}
+	if len(staffList) != 1 || staffList[0].ID != staffUser.ID {
+		t.Fatalf("want 1 staff member initially, got %d staff", len(staffList))
+	}
+
+	// Step 2: DELETE staff from event → 204 success
+	c, rec = newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/staff/:user_id")
+	c.SetParamNames("event_id", "user_id")
+	c.SetParamValues(event.ID.String(), staffUser.ID.String())
+	if err := h.UnassignStaffFromEvent(c); err != nil {
+		t.Fatalf("UnassignStaffFromEvent: %v", err)
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE staff: want 204, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), rec)
+
+	// Step 3: Verify staff is no longer in list
+	c, rec = newAuthedContext(e, http.MethodGet, "/api/events/"+event.ID.String()+"/staff", "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/staff")
+	c.SetParamNames("event_id")
+	c.SetParamValues(event.ID.String())
+	if err := h.GetEventStaff(c); err != nil {
+		t.Fatalf("GetEventStaff (after delete): %v", err)
+	}
+	staffList = nil
+	if err := jsonUnmarshalBody(rec, &staffList); err != nil {
+		t.Fatalf("unmarshal staff list after delete: %v", err)
+	}
+	if len(staffList) != 0 {
+		t.Fatalf("want 0 staff members after delete, got %d staff", len(staffList))
+	}
+
+	// Step 4: DELETE again on same pair → 204 (idempotent)
+	c, rec = newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:event_id/staff/:user_id")
+	c.SetParamNames("event_id", "user_id")
+	c.SetParamValues(event.ID.String(), staffUser.ID.String())
+	if err := h.UnassignStaffFromEvent(c); err != nil {
+		t.Fatalf("UnassignStaffFromEvent (idempotent): %v", err)
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE staff (idempotent): want 204, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), rec)
+}
