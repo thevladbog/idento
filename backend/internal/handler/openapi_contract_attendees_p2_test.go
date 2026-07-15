@@ -337,21 +337,21 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 
 	// Existing attendee with email alice@example.com
 	existing1 := &models.Attendee{
-		ID:       uuid.New(),
-		EventID:  event.ID,
-		Email:    "alice@example.com",
-		Code:     "CODE-ALICE",
+		ID:        uuid.New(),
+		EventID:   event.ID,
+		Email:     "alice@example.com",
+		Code:      "CODE-ALICE",
 		FirstName: "Alice",
-		LastName: "Smith",
+		LastName:  "Smith",
 	}
 	// Existing attendee with code EXISTING-CODE (will be duplicated by row 3)
 	existing2 := &models.Attendee{
-		ID:       uuid.New(),
-		EventID:  event.ID,
-		Email:    "bob@example.com",
-		Code:     "EXISTING-CODE",
+		ID:        uuid.New(),
+		EventID:   event.ID,
+		Email:     "bob@example.com",
+		Code:      "EXISTING-CODE",
 		FirstName: "Bob",
-		LastName: "Jones",
+		LastName:  "Jones",
 	}
 
 	h := New(&fakeStore{
@@ -421,10 +421,10 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 	}
 
 	var got struct {
-		Message    string `json:"message"`
-		Created    int    `json:"created"`
-		Skipped    int    `json:"skipped"`
-		Total      int    `json:"total"`
+		Message    string          `json:"message"`
+		Created    int             `json:"created"`
+		Skipped    int             `json:"skipped"`
+		Total      int             `json:"total"`
 		Duplicates []DuplicateInfo `json:"duplicates,omitempty"`
 		Errors     []struct {
 			Row     int    `json:"row"`
@@ -450,7 +450,8 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 	// Find error for row 2 (email duplicate)
 	var row2Found, row3Found bool
 	for i := range got.Errors {
-		if got.Errors[i].Row == 2 {
+		switch got.Errors[i].Row {
+		case 2:
 			row2Found = true
 			if got.Errors[i].Problem != "duplicate_email" {
 				t.Fatalf("row 2: got problem=%q, want duplicate_email", got.Errors[i].Problem)
@@ -458,7 +459,7 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 			if got.Errors[i].Data != "Diana Prince" {
 				t.Fatalf("row 2: got data=%q, want 'Diana Prince'", got.Errors[i].Data)
 			}
-		} else if got.Errors[i].Row == 3 {
+		case 3:
 			row3Found = true
 			if got.Errors[i].Problem != "duplicate_code" {
 				t.Fatalf("row 3: got problem=%q, want duplicate_code", got.Errors[i].Problem)
