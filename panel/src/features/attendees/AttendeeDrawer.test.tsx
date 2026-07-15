@@ -450,6 +450,69 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await waitFor(() => expect(screen.queryByText("Main hall")).not.toBeInTheDocument());
   });
 
+  // Regression test: `removeZoneAccess` is a SINGLE mutation instance shared
+  // by every zone chip's remove button. Before this fix, each chip derived
+  // its own "removing" state from that shared mutation's `.variables` —
+  // which only ever reflects the MOST RECENTLY fired call. Removing chip A
+  // then chip B (before A's DELETE resolves) overwrote `.variables` to B's
+  // params, making chip A's button read as "not removing" (re-enabled)
+  // while A's DELETE was still genuinely in flight — a double-click on A at
+  // that point would fire a second DELETE for an already-being-deleted row,
+  // which the backend correctly 404s on (DeleteAttendeeZoneAccess is not
+  // idempotent). The fix tracks pending removal per-row in a `Set` instead.
+  it("keeps a zone chip's own remove button disabled for its whole in-flight DELETE, even after a different chip's remove is clicked before it resolves", async () => {
+    const releasers: Record<string, () => void> = {};
+    const deleteCallCounts: Record<string, number> = {};
+    server.use(
+      http.delete("http://api.test/api/attendee-zone-access/:id", async ({ params }) => {
+        const id = params.id as string;
+        deleteCallCounts[id] = (deleteCallCounts[id] ?? 0) + 1;
+        removeZoneAccessCount += 1;
+        lastRemovedZoneAccessId = id;
+        await new Promise<void>((resolve) => {
+          releasers[id] = resolve;
+        });
+        zoneAccessResponse = zoneAccessResponse.filter((row) => row.id !== id);
+        return HttpResponse.json({ message: "deleted" });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(screen.getByText("Main hall")).toBeInTheDocument());
+    expect(screen.getByText("VIP lounge")).toBeInTheDocument();
+
+    const removeMainHall = screen.getByRole("button", { name: "Remove Main hall" });
+    const removeVipLounge = screen.getByRole("button", { name: "Remove VIP lounge" });
+
+    // Remove chip A (za1) — its DELETE hangs until released below.
+    await user.click(removeMainHall);
+    await waitFor(() => expect(deleteCallCounts.za1).toBe(1));
+    expect(removeMainHall).toBeDisabled();
+
+    // Before A's DELETE resolves, remove chip B (za2) — this is the moment
+    // that overwrites the shared mutation's `.variables` to za2's params.
+    await user.click(removeVipLounge);
+    await waitFor(() => expect(deleteCallCounts.za2).toBe(1));
+
+    // Both DELETEs are genuinely still in flight — both buttons must stay
+    // disabled. Pre-fix, chip A's button would have re-enabled here.
+    expect(removeMainHall).toBeDisabled();
+    expect(removeVipLounge).toBeDisabled();
+
+    releasers.za1?.();
+    releasers.za2?.();
+
+    await waitFor(() => expect(screen.queryByText("Main hall")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("VIP lounge")).not.toBeInTheDocument());
+
+    // Exactly one DELETE per row — no duplicate fired for za1 while it was
+    // already being removed.
+    expect(deleteCallCounts.za1).toBe(1);
+    expect(deleteCallCounts.za2).toBe(1);
+  });
+
   it("regenerates the code via PATCH with a UUID-shaped code and invalidates both queries", async () => {
     const user = userEvent.setup();
     renderWithProviders(

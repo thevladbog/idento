@@ -209,6 +209,39 @@ function DrawerBody({
     },
   });
 
+  // Per-row pending state for zone-access removal, tracked independently of
+  // the shared `removeZoneAccess` mutation's `.variables` — that field only
+  // ever reflects the MOST RECENTLY fired call, so with multiple chips a
+  // second remove click (on a different row) while the first is still in
+  // flight would silently overwrite it, causing the FIRST chip's remove
+  // button to look "done" (re-enabled) while its DELETE is still pending.
+  // A double-click on that still-in-flight row would then fire a second
+  // DELETE for an already-being-deleted row, which the backend correctly
+  // 404s on (it's not idempotent). This Set is the source of truth for
+  // "is THIS row's removal in flight" instead.
+  const [pendingRemovalIds, setPendingRemovalIds] = React.useState<Set<string>>(new Set());
+
+  function handleRemoveZoneAccess(rowId: string) {
+    setPendingRemovalIds((prev) => new Set(prev).add(rowId));
+    removeZoneAccess.mutate(
+      { params: { path: { id: rowId } } },
+      {
+        // Runs in addition to the hook-level onSuccess above (react-query
+        // calls both) — scoped to just this call's rowId via closure, so
+        // it clears only this row's pending flag regardless of what other
+        // removes are concurrently in flight.
+        onSettled: () => {
+          setPendingRemovalIds((prev) => {
+            if (!prev.has(rowId)) return prev;
+            const next = new Set(prev);
+            next.delete(rowId);
+            return next;
+          });
+        },
+      },
+    );
+  }
+
   // Regenerate code: tier-1 (not typed) destructive confirm. Same
   // session-id-ref cancel guard as DangerZoneCard.tsx/ApiKeysCard.tsx —
   // `regenerateCode.reset()` on close only detaches the mutation observer,
@@ -379,7 +412,7 @@ function DrawerBody({
           ) : (
             allowedZones.map((entry) => {
               const name = resolveZoneName(entry.zone_id);
-              const removing = removeZoneAccess.isPending && removeZoneAccess.variables?.params.path.id === entry.id;
+              const removing = pendingRemovalIds.has(entry.id);
               return (
                 <span
                   key={entry.id}
@@ -391,7 +424,7 @@ function DrawerBody({
                     aria-label={t("drawerRemoveZone", { name })}
                     disabled={removing}
                     className="rounded-full px-1 leading-none text-success/70 hover:text-success disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => removeZoneAccess.mutate({ params: { path: { id: entry.id } } })}
+                    onClick={() => handleRemoveZoneAccess(entry.id)}
                   >
                     ×
                   </button>
