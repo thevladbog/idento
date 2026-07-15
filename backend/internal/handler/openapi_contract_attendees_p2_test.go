@@ -278,7 +278,7 @@ func TestOpenAPIContract_AttendeesP2_InvalidPaginationParams400(t *testing.T) {
 	h := newP2Handler(pager, event)
 	e := echo.New()
 
-	for _, qs := range []string{"per_page=0", "per_page=201", "page=0"} {
+	for _, qs := range []string{"per_page=0", "per_page=201", "page=0", "page=9223372036854775807&per_page=200"} {
 		path := "/api/events/" + event.ID.String() + "/attendees?" + qs
 		c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
 		c.SetPath("/api/events/:event_id/attendees")

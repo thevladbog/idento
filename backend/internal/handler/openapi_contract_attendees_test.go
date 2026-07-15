@@ -85,6 +85,9 @@ func TestContractGetAttendeeDetail(t *testing.T) {
 	if err := h.GetAttendeeDetail(c); err != nil {
 		t.Fatalf("GetAttendeeDetail: %v", err)
 	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
 	validateResponse(t, http.MethodGet, path, rec)
 
 	// 404: attendee does not exist (GetAttendeeByID returns nil, nil).

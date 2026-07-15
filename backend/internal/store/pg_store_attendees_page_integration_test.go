@@ -37,7 +37,11 @@ func TestSeeded5kAttendees_ScaleExitCriterion(t *testing.T) {
 		t.Skip("TEST_DATABASE_URL not set; skipping real-Postgres 5k-attendee scale test (see doc comment for how to run it)")
 	}
 
-	ctx := context.Background()
+	// Bound the whole test (pool setup, migrations, seeding 5,000 rows via
+	// CopyFrom, and every subtest query) so an unreachable/hanging database
+	// fails fast with a clear timeout instead of blocking indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
@@ -69,7 +73,12 @@ func TestSeeded5kAttendees_ScaleExitCriterion(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		// Cascades through events -> attendees/event_zones -> attendee_zone_access.
-		cctx := context.Background()
+		// Uses its own timeout-bound context (not the main test ctx, which
+		// defer cancel() above has already cancelled by the time cleanups
+		// run) — bounded separately so a hung delete still fails fast rather
+		// than blocking test teardown indefinitely.
+		cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer ccancel()
 		if _, err := pool.Exec(cctx, `DELETE FROM tenants WHERE id = $1`, tenantID); err != nil {
 			t.Logf("cleanup: failed to delete tenant %s: %v", tenantID, err)
 		}

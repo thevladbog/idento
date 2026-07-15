@@ -4,6 +4,7 @@ import (
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -142,6 +143,14 @@ func (h *Handler) GetAttendees(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "per_page must be between 1 and 200"})
 		}
 		perPage = pp
+	}
+
+	// Overflow guard: (page-1)*perPage is computed as the SQL OFFSET further
+	// down the stack (store.GetAttendeesPage) — reject a page value large
+	// enough that the multiplication would overflow a signed int, rather than
+	// letting it wrap into a nonsensical (or negative) offset.
+	if page-1 > math.MaxInt/perPage {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "page is too large"})
 	}
 
 	filter := store.AttendeeFilter{

@@ -80,7 +80,10 @@ type Store interface {
 	// plus the total count of attendees matching f (before paging) — used by
 	// GetAttendees' envelope response when page/per_page query params are
 	// present. f.Page/f.PerPage are expected to already be validated/defaulted
-	// by the caller (page >= 1, 1 <= per_page <= 200).
+	// by the caller (page >= 1, 1 <= per_page <= 200) — callers must also
+	// ensure (f.Page-1)*f.PerPage does not overflow a signed int before
+	// calling; the PGStore implementation re-checks this at the store
+	// boundary as defense-in-depth, but does not trust the caller blindly.
 	GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f AttendeeFilter) ([]*models.Attendee, int, error)
 	GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error)
 	GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error)
@@ -195,7 +198,9 @@ type Store interface {
 // GetAttendeesByEventID); ZoneID nil skips the zone-access join; Status nil
 // matches any check-in state (true = checked_in, false = not_checked_in).
 // Page/PerPage are 1-indexed/positive and expected to already be
-// validated/defaulted by the caller.
+// validated/defaulted by the caller — including that (Page-1)*PerPage does
+// not overflow a signed int; GetAttendeesPage computes that product as a SQL
+// OFFSET and assumes it has already been bounds-checked by the caller.
 type AttendeeFilter struct {
 	Code    string
 	Search  string
