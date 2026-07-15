@@ -66,6 +66,19 @@ export function GeneralCard({ event }: GeneralCardProps) {
   const [fieldErrors, setFieldErrors] = React.useState<FieldErrors>({});
   const [saved, setSaved] = React.useState(false);
   const savedTimeoutRef = React.useRef<number | undefined>(undefined);
+  // Monotonically-incrementing edit version, bumped on every `updateField`
+  // call. Captured at mutate-time (via `onMutate`) and compared exactly in
+  // `onSuccess`: `patchEvent.reset()` on every keystroke only clears the
+  // mutation OBSERVER's local state — it does NOT cancel the in-flight PATCH
+  // or stop `onSuccess` from firing when a stale response lands late. Save
+  // being disabled during `isPending` doesn't stop further typing, so a
+  // user can edit again after clicking Save but before the response lands;
+  // without this guard, that later, still-unsaved edit gets silently
+  // clobbered by the earlier PATCH's (now-stale) response. Same
+  // session/version-ref shape as ApiKeysCard's `createSessionRef` — here it
+  // gates whether to overwrite form state rather than whether to reveal a
+  // secret.
+  const editVersionRef = React.useRef(0);
 
   // Cancel the pending fade-out on unmount so a save that succeeds right
   // before the user navigates away doesn't call setSaved on an unmounted
@@ -73,10 +86,16 @@ export function GeneralCard({ event }: GeneralCardProps) {
   React.useEffect(() => () => window.clearTimeout(savedTimeoutRef.current), []);
 
   const patchEvent = $api.useMutation("patch", "/api/events/{id}", {
-    onSuccess: (updated) => {
+    onMutate: () => ({ editVersion: editVersionRef.current }),
+    onSuccess: (updated, _vars, onMutateResult) => {
       void queryClient.invalidateQueries({
         queryKey: ["get", "/api/events/{id}", { params: { path: { id: event.id } } }],
       });
+      // If the user has edited the form again since this save was
+      // submitted, the version captured at mutate-time no longer matches —
+      // applying this (now-stale) response would overwrite their newer,
+      // still-unsaved edit.
+      if (onMutateResult?.editVersion !== editVersionRef.current) return;
       const next = toFormState(updated);
       setBaseline(next);
       setForm(next);
@@ -87,6 +106,7 @@ export function GeneralCard({ event }: GeneralCardProps) {
   });
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    editVersionRef.current += 1;
     setForm((prev) => ({ ...prev, [key]: value }));
     setFieldErrors({});
     setSaved(false);

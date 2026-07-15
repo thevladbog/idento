@@ -145,6 +145,52 @@ describe("GeneralCard", () => {
     expect(screen.queryByText("Clearing a date isn't supported yet.")).not.toBeInTheDocument();
   });
 
+  // Regression test for the Critical stale-PATCH-response race: `reset()` on
+  // every keystroke only clears the mutation observer's local state — it
+  // does NOT cancel the in-flight PATCH or stop `onSuccess` from firing when
+  // a stale response lands late. Save being disabled during `isPending`
+  // doesn't stop further typing, so the user can make a second, newer edit
+  // before the first save's response arrives; that first response must not
+  // silently overwrite the newer, still-unsaved edit.
+  it("does not let a stale PATCH response overwrite a newer, still-unsaved edit made while the first save was pending", async () => {
+    let releaseFirstPatch: (() => void) | undefined;
+    server.use(
+      http.patch("http://api.test/api/events/:id", async ({ request }) => {
+        patchCount += 1;
+        lastPatchBody = await request.json();
+        // Hold this response open until the test explicitly releases it, so
+        // the test controls exactly when the stale PATCH resolves relative
+        // to the second, newer edit below.
+        await new Promise<void>((resolve) => {
+          releaseFirstPatch = resolve;
+        });
+        return HttpResponse.json({ ...BASE_EVENT, ...(lastPatchBody as object) });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<GeneralCard event={BASE_EVENT} />);
+
+    await user.clear(screen.getByLabelText("Location"));
+    await user.type(screen.getByLabelText("Location"), "First edit");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchCount).toBe(1));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    // A legitimate second edit while the first save is still pending.
+    await user.clear(screen.getByLabelText("Location"));
+    await user.type(screen.getByLabelText("Location"), "Second edit");
+
+    // Now let the first (stale) PATCH's response land.
+    releaseFirstPatch?.();
+
+    // Give the stale onSuccess a chance to run (it must not apply), then
+    // assert the newer, still-unsaved edit is untouched.
+    await waitFor(() => expect(screen.queryByText("Saved")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Location")).toHaveValue("Second edit");
+  });
+
   it("surfaces a server error on failed save and clears it once the user edits again", async () => {
     server.use(
       http.patch("http://api.test/api/events/:id", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
