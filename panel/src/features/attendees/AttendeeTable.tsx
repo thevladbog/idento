@@ -110,11 +110,21 @@ export function AttendeeTable({ rows, selected, onToggle, onToggleAll, onRowClic
                   <span className="text-muted-foreground">{t("attendeesStatusNotCheckedIn")}</span>
                 )}
               </span>
-              {/* No onClick of its own: a native click on this button bubbles
-                  to the <li>'s onClick above, which is exactly the board's
-                  "clicking anywhere on the row, including this cell, opens
-                  the drawer" behavior — the row-menu itself is deferred. */}
-              <button type="button" aria-label={t("attendeesRowMenuLabel", { name: fullName })} className="text-muted-foreground">
+              {/* Fix (Codex, PR #65): previously exposed role=button (native
+                  <button> default) plus an aria-label announcing "row menu"
+                  — but with no handler of its own and no stopPropagation, a
+                  keyboard/screen-reader user who activated the ADVERTISED
+                  menu control landed on the drawer instead (via bubbling to
+                  the <li>'s onClick), a different, unexpected action.
+                  tabIndex={-1} + aria-hidden pull it out of the tab order
+                  and accessibility tree entirely — pure decoration, not a
+                  working control — while a native MOUSE click on it still
+                  bubbles to the <li>'s onClick unchanged, preserving "click
+                  anywhere on the row, including this cell, opens the
+                  drawer". Revisit both once a real per-row menu exists
+                  (attendeesRowMenuLabel is kept in en.json/ru.json for
+                  that). */}
+              <button type="button" tabIndex={-1} aria-hidden="true" className="text-muted-foreground">
                 ⋯
               </button>
             </li>

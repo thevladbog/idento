@@ -74,7 +74,7 @@ describe("AttendeeTable row keyboard accessibility", () => {
     expect(onRowClick).toHaveBeenCalledWith("a1");
   });
 
-  it("keeps the checkbox and row-menu button independently focusable, and neither their click nor their keyboard activation also triggers onRowClick", async () => {
+  it("keeps the checkbox independently focusable, and neither its click nor its keyboard activation also triggers onRowClick", async () => {
     const user = userEvent.setup();
     const onRowClick = vi.fn();
     const onToggle = vi.fn();
@@ -92,10 +92,39 @@ describe("AttendeeTable row keyboard accessibility", () => {
     await user.click(checkbox);
     expect(onToggle).toHaveBeenCalledWith("a1");
     expect(onRowClick).not.toHaveBeenCalled();
+  });
 
-    const menuButton = screen.getByRole("button", { name: "More actions for Ada Lovelace" });
-    menuButton.focus();
-    expect(menuButton).toHaveFocus();
+  // Fix (Codex, PR #65): the trailing ellipsis used to be exposed as an
+  // independently focusable button with an aria-label announcing "row
+  // menu" — but it had no handler of its own, so activating that ADVERTISED
+  // control via keyboard/screen-reader silently opened the drawer instead
+  // (a different action than promised). Until a real per-row menu exists it
+  // must be pure decoration: excluded from the tab order and the
+  // accessibility tree, while a plain mouse click on it still opens the
+  // drawer via the same bubble-to-row behavior as clicking any other cell.
+  it("renders the trailing ellipsis as non-interactive decoration, not an independently focusable row-menu control", async () => {
+    const user = userEvent.setup();
+    const onRowClick = vi.fn();
+    render(
+      <AttendeeTable
+        rows={[ADA]}
+        selected={new Set()}
+        onToggle={vi.fn()}
+        onToggleAll={vi.fn()}
+        onRowClick={onRowClick}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "More actions for Ada Lovelace" })).not.toBeInTheDocument();
+
+    const ellipsis = screen.getByText("⋯");
+    expect(ellipsis).toHaveAttribute("aria-hidden", "true");
+    expect(ellipsis).toHaveAttribute("tabindex", "-1");
+
+    // A plain mouse click still opens the drawer, same as clicking anywhere
+    // else on the row.
+    await user.click(ellipsis);
+    expect(onRowClick).toHaveBeenCalledWith("a1");
   });
 
   it("does not trigger onRowClick when Enter/Space is pressed while the checkbox has focus", async () => {
