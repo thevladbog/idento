@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { AttendeeDrawer } from "./AttendeeDrawer";
+import { useAttendeesPage } from "./hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -62,13 +63,30 @@ const ZONE_HISTORY = [
 
 let attendeeResponse: unknown = ADA;
 let attendeeStatus = 200;
-let zoneAccessResponse: unknown = ZONE_ACCESS;
+let attendeeGetHitCount = 0;
+let zoneAccessResponse: (typeof ZONE_ACCESS)[number][] = ZONE_ACCESS;
 let zoneAccessStatus = 200;
 let zoneHistoryResponse: unknown = ZONE_HISTORY;
 let zoneHistoryStatus = 200;
+let listHitCount = 0;
+
+let patchAttendeeCount = 0;
+let lastPatchAttendeeBody: unknown;
+let patchAttendeeStatusOverride: number | null = null;
+
+let deleteAttendeeCount = 0;
+let lastDeletedAttendeeId: string | undefined;
+let deleteAttendeeStatusOverride: number | null = null;
+
+let addZoneAccessCount = 0;
+let lastAddZoneAccessBody: unknown;
+
+let removeZoneAccessCount = 0;
+let lastRemovedZoneAccessId: string | undefined;
 
 const server = startMswServer(
   http.get("http://api.test/api/attendees/:id", () => {
+    attendeeGetHitCount += 1;
     if (attendeeStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: attendeeStatus });
     return HttpResponse.json(attendeeResponse);
   }),
@@ -81,6 +99,49 @@ const server = startMswServer(
     return HttpResponse.json(zoneHistoryResponse);
   }),
   http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(ZONES)),
+  http.get("http://api.test/api/events/:eventId/attendees", () => {
+    listHitCount += 1;
+    return HttpResponse.json({ attendees: [], total: 0, page: 1, per_page: 50 });
+  }),
+  http.patch("http://api.test/api/attendees/:id", async ({ request }) => {
+    patchAttendeeCount += 1;
+    lastPatchAttendeeBody = await request.json();
+    if (patchAttendeeStatusOverride) {
+      return HttpResponse.json({ error: "boom" }, { status: patchAttendeeStatusOverride });
+    }
+    attendeeResponse = { ...(attendeeResponse as object), ...(lastPatchAttendeeBody as object) };
+    return HttpResponse.json(attendeeResponse);
+  }),
+  http.delete("http://api.test/api/attendees/:id", ({ params }) => {
+    deleteAttendeeCount += 1;
+    lastDeletedAttendeeId = params.id as string;
+    if (deleteAttendeeStatusOverride) {
+      return HttpResponse.json({ error: "boom" }, { status: deleteAttendeeStatusOverride });
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post("http://api.test/api/attendees/:attendeeId/zone-access", async ({ request }) => {
+    addZoneAccessCount += 1;
+    const body = (await request.json()) as { zone_id: string; allowed: boolean };
+    lastAddZoneAccessBody = body;
+    const newRow = {
+      id: `za-new-${addZoneAccessCount}`,
+      attendee_id: "a1",
+      zone_id: body.zone_id,
+      allowed: body.allowed,
+      notes: null,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    zoneAccessResponse = [...zoneAccessResponse, newRow];
+    return HttpResponse.json(newRow, { status: 201 });
+  }),
+  http.delete("http://api.test/api/attendee-zone-access/:id", ({ params }) => {
+    removeZoneAccessCount += 1;
+    lastRemovedZoneAccessId = params.id as string;
+    zoneAccessResponse = zoneAccessResponse.filter((row) => row.id !== params.id);
+    return HttpResponse.json({ message: "deleted" });
+  }),
 );
 void server;
 
@@ -88,15 +149,35 @@ function renderWithProviders(ui: ReactNode, queryClient = new QueryClient({ defa
   return { queryClient, ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>) };
 }
 
+// Same ListObserver pattern as DangerZoneCard.test.tsx: keeps the attendees
+// list query actively subscribed so `queryClient.invalidateQueries` on
+// ATTENDEES_LIST_KEY actually triggers an observable refetch.
+function AttendeesListObserver() {
+  useAttendeesPage("evt-1", { page: 1 });
+  return null;
+}
+
 describe("AttendeeDrawer", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
     attendeeResponse = ADA;
     attendeeStatus = 200;
+    attendeeGetHitCount = 0;
     zoneAccessResponse = ZONE_ACCESS;
     zoneAccessStatus = 200;
     zoneHistoryResponse = ZONE_HISTORY;
     zoneHistoryStatus = 200;
+    listHitCount = 0;
+    patchAttendeeCount = 0;
+    lastPatchAttendeeBody = undefined;
+    patchAttendeeStatusOverride = null;
+    deleteAttendeeCount = 0;
+    lastDeletedAttendeeId = undefined;
+    deleteAttendeeStatusOverride = null;
+    addZoneAccessCount = 0;
+    lastAddZoneAccessBody = undefined;
+    removeZoneAccessCount = 0;
+    lastRemovedZoneAccessId = undefined;
   });
 
   it("shows a single whole-body skeleton while the attendee is loading, not the real sections", async () => {
@@ -206,15 +287,17 @@ describe("AttendeeDrawer", () => {
     expect(screen.queryByText(/10:15 — VIP lounge/)).not.toBeInTheDocument();
   });
 
-  it("renders Edit details, Reprint badge, + Zone, Regenerate code…, and Delete… as disabled — Task 9 wires them", async () => {
+  it("renders Edit details, Regenerate code…, and Delete… as enabled controls, and permanently disables Reprint badge (Task 9)", async () => {
     renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
 
     await screen.findByText("Ada Lovelace");
-    expect(screen.getByRole("button", { name: "Edit details" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Edit details" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reprint badge — coming with the badge editor" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Regenerate code…" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Delete…" })).toBeEnabled();
+    // Fixture ZONE_ACCESS already grants both real event zones (z1/z2), so
+    // there's nothing left to add — the affordance stays visible but disabled.
     await waitFor(() => expect(screen.getByRole("button", { name: "+ Zone" })).toBeDisabled());
-    expect(screen.getByRole("button", { name: "Regenerate code…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Delete…" })).toBeDisabled();
   });
 
   it("calls onClose when the built-in Sheet close affordance is used", async () => {
@@ -235,5 +318,259 @@ describe("AttendeeDrawer", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     // sr-only fallback title, present before the real attendee name loads.
     expect(within(screen.getByRole("dialog")).getByText("Attendee details")).toBeInTheDocument();
+  });
+});
+
+describe("AttendeeDrawer — Task 9 mutations", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    attendeeResponse = ADA;
+    attendeeStatus = 200;
+    attendeeGetHitCount = 0;
+    zoneAccessResponse = ZONE_ACCESS;
+    zoneAccessStatus = 200;
+    zoneHistoryResponse = ZONE_HISTORY;
+    zoneHistoryStatus = 200;
+    listHitCount = 0;
+    patchAttendeeCount = 0;
+    lastPatchAttendeeBody = undefined;
+    patchAttendeeStatusOverride = null;
+    deleteAttendeeCount = 0;
+    lastDeletedAttendeeId = undefined;
+    deleteAttendeeStatusOverride = null;
+    addZoneAccessCount = 0;
+    lastAddZoneAccessBody = undefined;
+    removeZoneAccessCount = 0;
+    lastRemovedZoneAccessId = undefined;
+  });
+
+  it("edit details PATCHes only the changed field", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+
+    const positionInput = await screen.findByLabelText("Position");
+    await user.clear(positionInput);
+    await user.type(positionInput, "Senior Engineer");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    expect(lastPatchAttendeeBody).toEqual({ position: "Senior Engineer" });
+
+    // Returns to the read view and invalidates both queries.
+    expect(await screen.findByRole("button", { name: "Edit details" })).toBeInTheDocument();
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(0));
+    await waitFor(() => expect(attendeeGetHitCount).toBeGreaterThan(1));
+  });
+
+  // Regression test for the same stale-PATCH-response race GeneralCard.test.tsx
+  // covers: `patchAttendee.reset()` on every keystroke only clears the
+  // mutation observer's local state, it does NOT cancel the first, still
+  // in-flight PATCH — that response must not overwrite a newer, still-unsaved
+  // edit made while it was pending.
+  it("does not let a stale PATCH response overwrite a newer, still-unsaved edit made while the first save was pending", async () => {
+    let releaseFirstPatch: (() => void) | undefined;
+    server.use(
+      http.patch("http://api.test/api/attendees/:id", async ({ request }) => {
+        patchAttendeeCount += 1;
+        lastPatchAttendeeBody = await request.json();
+        await new Promise<void>((resolve) => {
+          releaseFirstPatch = resolve;
+        });
+        return HttpResponse.json({ ...ADA, ...(lastPatchAttendeeBody as object) });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+
+    const positionInput = await screen.findByLabelText("Position");
+    await user.clear(positionInput);
+    await user.type(positionInput, "First edit");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    // A legitimate second edit while the first save is still pending —
+    // `reset()` (fired by this edit) re-enables Save without cancelling the
+    // in-flight request.
+    await user.clear(positionInput);
+    await user.type(positionInput, "Second edit");
+
+    releaseFirstPatch?.();
+
+    // Give the stale onSuccess a chance to run — it must not apply.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByLabelText("Position")).toHaveValue("Second edit");
+    // Still in edit mode — a stale success must not have returned to the
+    // read view out from under the newer, unsaved edit.
+    expect(screen.queryByRole("button", { name: "Edit details" })).not.toBeInTheDocument();
+  });
+
+  it("+ Zone opens a picker of ungranted zones, POSTs the right body on selection, and refetches zone access", async () => {
+    // Leave VIP lounge (z2) ungranted so there's something to add.
+    zoneAccessResponse = [ZONE_ACCESS[0]];
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(screen.getByRole("button", { name: "+ Zone" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "+ Zone" }));
+    await user.click(await screen.findByRole("menuitem", { name: "VIP lounge" }));
+
+    await waitFor(() => expect(addZoneAccessCount).toBe(1));
+    expect(lastAddZoneAccessBody).toEqual({ zone_id: "z2", allowed: true });
+
+    // Refetch of the zone-access query reflects the newly-granted zone.
+    await waitFor(() => expect(screen.getByText("VIP lounge")).toBeInTheDocument());
+  });
+
+  it("removes a zone chip via DELETE using the zone-access row id (not the zone id), then refetches", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(screen.getByText("Main hall")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Remove Main hall" }));
+
+    await waitFor(() => expect(removeZoneAccessCount).toBe(1));
+    // za1 is the zone-access ROW id for the Main hall (z1) grant — the
+    // component must send that, never the zone id "z1" itself.
+    expect(lastRemovedZoneAccessId).toBe("za1");
+
+    await waitFor(() => expect(screen.queryByText("Main hall")).not.toBeInTheDocument());
+  });
+
+  it("regenerates the code via PATCH with a UUID-shaped code and invalidates both queries", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+
+    await user.click(screen.getByRole("button", { name: "Regenerate code…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Regenerate code" });
+    await user.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    expect(lastPatchAttendeeBody).toMatchObject({
+      code: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    });
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+    await waitFor(() => expect(attendeeGetHitCount).toBeGreaterThan(1));
+    // The confirm dialog itself closes on success — the drawer (also a
+    // `role="dialog"` Sheet) stays open throughout, so this must check the
+    // confirm dialog's own accessible name rather than "no dialog at all".
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Regenerate code" })).not.toBeInTheDocument());
+  });
+
+  // Regression test for the cancel-during-pending race (same class as
+  // DangerZoneCard.test.tsx's equivalent): the PATCH is still in flight when
+  // the user clicks Cancel. The late response must not surface an error or
+  // otherwise react once the dialog session has moved on.
+  it("does not surface an error if the regenerate confirm dialog is cancelled before a pending PATCH resolves", async () => {
+    server.use(
+      http.patch("http://api.test/api/attendees/:id", async ({ request }) => {
+        patchAttendeeCount += 1;
+        lastPatchAttendeeBody = await request.json();
+        await delay(50);
+        return HttpResponse.json({ error: "server error" }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    await user.click(screen.getByRole("button", { name: "Regenerate code…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Regenerate code" });
+    await user.click(within(dialog).getByRole("button", { name: "Regenerate" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Regenerate code" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
+  });
+
+  it("delete: DELETEs the attendee, invalidates the list, and closes the whole drawer", async () => {
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+
+    await user.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteAttendeeCount).toBe(1));
+    expect(lastDeletedAttendeeId).toBe("a1");
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+  });
+
+  it("keeps the delete confirm dialog open with an inline error when the delete fails", async () => {
+    deleteAttendeeStatusOverride = 500;
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />);
+    await screen.findByText("Ada Lovelace");
+
+    await user.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteAttendeeCount).toBe(1));
+    expect(await within(dialog).findByText("Couldn't save changes. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Delete attendee" })).toBe(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // Regression test for the cancel-during-pending race, mirroring
+  // DangerZoneCard.test.tsx's equivalent for event deletion.
+  it("does not close the drawer or surface an error if the delete confirm dialog is cancelled before a pending DELETE resolves", async () => {
+    const onClose = vi.fn();
+    server.use(
+      http.delete("http://api.test/api/attendees/:id", async ({ params }) => {
+        deleteAttendeeCount += 1;
+        lastDeletedAttendeeId = params.id as string;
+        await delay(50);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />);
+    await screen.findByText("Ada Lovelace");
+
+    await user.click(screen.getByRole("button", { name: "Delete…" }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Delete attendee" })).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(deleteAttendeeCount).toBe(1));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
   });
 });

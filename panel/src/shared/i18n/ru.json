@@ -238,5 +238,14 @@
   "drawerRegenerate": "Перегенерировать код…",
   "drawerDelete": "Удалить…",
   "drawerLoadError": "Не удалось загрузить данные участника.",
-  "drawerTitleFallback": "Данные участника"
+  "drawerTitleFallback": "Данные участника",
+  "drawerEditSave": "Сохранить",
+  "drawerRemoveZone": "Убрать {{name}}",
+  "drawerRegenerateTitle": "Перегенерировать код",
+  "drawerRegenerateBody": "Старый код перестанет работать немедленно — перепечатайте все бейджи, использующие его.",
+  "drawerRegenerateConfirm": "Перегенерировать",
+  "drawerDeleteTitle": "Удалить участника",
+  "drawerDeleteBody": "{{name}} и история регистраций исчезнут без возможности восстановления.",
+  "drawerDeleteConfirm": "Удалить",
+  "drawerMutationError": "Не удалось сохранить изменения. Попробуйте ещё раз."
 }

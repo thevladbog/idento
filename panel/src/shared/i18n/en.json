@@ -236,5 +236,14 @@
   "drawerRegenerate": "Regenerate code…",
   "drawerDelete": "Delete…",
   "drawerLoadError": "Couldn't load this attendee.",
-  "drawerTitleFallback": "Attendee details"
+  "drawerTitleFallback": "Attendee details",
+  "drawerEditSave": "Save",
+  "drawerRemoveZone": "Remove {{name}}",
+  "drawerRegenerateTitle": "Regenerate code",
+  "drawerRegenerateBody": "The old code stops working immediately — reprint any badge that used it.",
+  "drawerRegenerateConfirm": "Regenerate",
+  "drawerDeleteTitle": "Delete attendee",
+  "drawerDeleteBody": "{{name}} and their check-in history disappear. This cannot be undone.",
+  "drawerDeleteConfirm": "Delete",
+  "drawerMutationError": "Couldn't save changes. Try again."
 }

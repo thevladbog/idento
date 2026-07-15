@@ -82,11 +82,29 @@ export function useAttendeeDetail(attendeeId: string) {
   return $api.useQuery("get", "/api/attendees/{id}", { params: { path: { id: attendeeId } } });
 }
 
+// Query-key for GET /api/attendees/{id}, matching useAttendeeDetail's exact
+// params shape (same verified [method, path, init] shape ATTENDEES_LIST_KEY
+// documents above). Task 9's edit-details/regenerate-code flows invalidate
+// this alongside ATTENDEES_LIST_KEY so the drawer's own single-attendee
+// query reflects the just-saved fields without waiting for the list to
+// refetch (and without a full drawer remount).
+export function ATTENDEE_DETAIL_KEY(attendeeId: string) {
+  return ["get", "/api/attendees/{id}", { params: { path: { id: attendeeId } } }] as const;
+}
+
 // Individual per-attendee zone-access overrides (only `allowed: true` rows
 // render as chips in the drawer — see AttendeeDrawer.tsx). Also the query
 // Task 9's zone-add/remove mutations will invalidate.
 export function useAttendeeZoneAccess(attendeeId: string) {
   return $api.useQuery("get", "/api/attendees/{attendee_id}/zone-access", { params: { path: { attendee_id: attendeeId } } });
+}
+
+// Query-key for GET /api/attendees/{attendee_id}/zone-access, matching
+// useAttendeeZoneAccess's exact params shape. Task 9's zone add/remove
+// mutations invalidate only this (never ATTENDEE_DETAIL_KEY — a zone-access
+// change doesn't change any field on the Attendee resource itself).
+export function ATTENDEE_ZONE_ACCESS_KEY(attendeeId: string) {
+  return ["get", "/api/attendees/{attendee_id}/zone-access", { params: { path: { attendee_id: attendeeId } } }] as const;
 }
 
 // An attendee's zone movement history, most-recent-first per the API
