@@ -300,6 +300,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/{event_id}/staff/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a staff member from an event. Idempotent — DELETE on a pair that was never assigned still returns 204 (the store's DELETE simply affects zero rows; there is no existence check). */
+        delete: operations["unassignStaffFromEvent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/{event_id}/stations/provisioning-token": {
         parameters: {
             query?: never;
@@ -324,7 +341,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Attendees for an event, optionally filtered by an exact code match (mobile QR/barcode scan lookup) and/or a search substring across name/email/code (mobile attendee search). Omitting both query params returns the full event attendee list. */
+        /**
+         * Attendees for an event, optionally filtered by an exact code match (mobile QR/barcode scan lookup) and/or a search substring across name/email/code (mobile attendee search). Omitting both query params returns the full event attendee list.
+         * @description Response shape is a discriminated-by-param-presence oneOf: when NEITHER `page` nor `per_page` is present, the response is the legacy bare array of Attendee (back-compat for mobile clients, unchanged). When EITHER `page` or `per_page` is present, the response is an AttendeeListPage envelope instead, and `zone` / `status` additionally narrow the result set. `page` defaults to 1 and `per_page` defaults to 50 when only one of the pair is given.
+         */
         get: operations["getAttendees"];
         put?: never;
         /** Create an attendee for an event */
@@ -1034,6 +1054,14 @@ export interface components {
              */
             deleted_at?: string | null;
         };
+        /** @description Envelope returned by GET /api/events/{event_id}/attendees when the `page` or `per_page` query param is present. `total` is the count of attendees matching the active filters (code/search/zone/status) before paging is applied, not the length of `attendees`. */
+        AttendeeListPage: {
+            attendees: components["schemas"]["Attendee"][];
+            /** @description Total matching attendees across all pages. */
+            total: number;
+            page: number;
+            per_page: number;
+        };
         /** @description One row BulkCreateAttendees skipped, keyed by why it was considered a duplicate of an existing attendee. */
         DuplicateInfo: {
             email: string;
@@ -1043,12 +1071,23 @@ export interface components {
             /** @enum {string} */
             reason: "email" | "code";
         };
+        /** @description Per-row error detail from BulkCreateAttendees. Row is 1-based index into the submitted attendees array. Data is display text (first_name+last_name trimmed, fallback to email, may be empty). Problem is a stable string the frontend switches on. */
+        BulkRowError: {
+            /** @description 1-based index in the request attendees array */
+            row: number;
+            /** @description Display text for the row (first+last name, fallback to email) */
+            data: string;
+            /** @enum {string} */
+            problem: "duplicate_email" | "duplicate_code" | "create_failed";
+        };
         BulkImportResponse: {
             message: string;
             created: number;
             skipped: number;
             total: number;
             duplicates?: components["schemas"]["DuplicateInfo"][];
+            /** @description Per-row errors from the import. Includes duplicates and CreateAttendee failures. Each error is tracked by row number, display data, and problem code. */
+            errors?: components["schemas"]["BulkRowError"][];
         };
         /** @description BulkCreateAttendees' own 403 body when importing the whole batch would push attendees_per_event over its plan max — built inline in the handler (calling Store.CheckAttendeeLimit directly with adding=len(req.Attendees)), NOT middleware.CheckAttendeeLimits (which only wraps the single-create route and always checks adding=1). Same fields as LimitExceededError plus "adding" — the batch size being requested — so it cannot reuse that schema (LimitExceededError is additionalProperties: false). */
         BulkLimitExceededError: {
@@ -2513,6 +2552,63 @@ export interface operations {
             };
         };
     };
+    unassignStaffFromEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Staff member removed (or was not assigned to begin with). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description event_id or user_id is not a UUID (echo.NewHTTPError shape). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPError"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership) — note this checks event_id only, not that user_id was ever actually assigned. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or persisting the removal. Both failures emit the standard Error shape. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     createStationProvisioningToken: {
         parameters: {
             query?: never;
@@ -2585,6 +2681,14 @@ export interface operations {
                 code?: string;
                 /** @description Substring match across name/email/code. */
                 search?: string;
+                /** @description 1-indexed page number. Presence of this param (or per_page) switches the response to the AttendeeListPage envelope. Defaults to 1 if only per_page is given. Must be >= 1. */
+                page?: number;
+                /** @description Page size. Presence of this param (or page) switches the response to the AttendeeListPage envelope. Defaults to 50 if only page is given. Must be between 1 and 200 inclusive. */
+                per_page?: number;
+                /** @description Event zone UUID. Only applied in the paginated envelope mode (page or per_page present); narrows to attendees with an explicit attendee_zone_access row for that zone with allowed=true. */
+                zone?: string;
+                /** @description Only applied in the paginated envelope mode (page or per_page present); filters on Attendee.checkin_status. */
+                status?: "checked_in" | "not_checked_in";
             };
             header?: never;
             path: {
@@ -2594,16 +2698,16 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Attendees for the event (all, or filtered by code/search). */
+            /** @description Attendees for the event. A bare array when neither page nor per_page is present (legacy shape, unfiltered by zone/status); an AttendeeListPage envelope otherwise. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Attendee"][];
+                    "application/json": components["schemas"]["Attendee"][] | components["schemas"]["AttendeeListPage"];
                 };
             };
-            /** @description event_id is not a UUID. */
+            /** @description event_id is not a UUID, or (paginated mode only) page < 1, per_page outside 1..200, zone is not a UUID, or status is neither checked_in nor not_checked_in. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2735,7 +2839,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Import summary. Per-row CreateAttendee failures inside the loop are silently counted as skipped, not surfaced as a distinct error status. */
+            /** @description Import summary. Per-row failures (duplicate emails/codes and CreateAttendee errors) are tracked in the errors array with row number, display data, and problem code; they are also counted in the skipped total. */
             201: {
                 headers: {
                     [name: string]: unknown;
