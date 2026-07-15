@@ -4,6 +4,7 @@ import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
+import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
 import type { AttendeesSearch } from "./searchParams";
 import type { components } from "../../shared/api/schema";
@@ -115,6 +116,11 @@ export function AttendeesPage() {
   }
 
   const rows = attendeesQuery.data?.attendees ?? [];
+  // Derived, not a second piece of state: once a selected id's row falls
+  // out of the current page (e.g. after a bulk delete invalidates and
+  // refetches the list), it silently drops out of the bar's count too,
+  // rather than needing an explicit onClear call from BulkBar.
+  const selectedAttendees = rows.filter((row) => selected.has(row.id));
   const total = attendeesQuery.data?.total;
   const totalPages = attendeesQuery.data ? Math.max(1, Math.ceil(attendeesQuery.data.total / attendeesQuery.data.per_page)) : 0;
 
@@ -225,6 +231,9 @@ export function AttendeesPage() {
         </div>
       ) : (
         <>
+          {selectedAttendees.length > 0 ? (
+            <BulkBar selected={selectedAttendees} eventId={eventId} onClear={() => setSelected(new Set())} />
+          ) : null}
           <AttendeeTable rows={rows} selected={selected} onToggle={toggleRow} onToggleAll={toggleAll} onRowClick={openAttendee} />
           <AttendeePager
             page={page}

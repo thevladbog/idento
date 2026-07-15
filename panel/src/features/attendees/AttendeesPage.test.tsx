@@ -260,4 +260,20 @@ describe("AttendeesPage", () => {
     await waitFor(() => expect(router.state.location.search.search).toBeUndefined());
     expect(router.state.location.search.page).toBe(1);
   });
+
+  it("shows the bulk bar when a row is selected, and hides it again once selection clears", async () => {
+    renderAt("/events/evt-1/attendees");
+    await screen.findByText("Ada Lovelace");
+
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+
+    const table = within(screen.getByTestId("attendee-table"));
+    fireEvent.click(table.getByLabelText("Select Ada Lovelace"));
+
+    expect(await screen.findByText("1 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    await waitFor(() => expect(screen.queryByText("1 selected")).not.toBeInTheDocument());
+  });
 });

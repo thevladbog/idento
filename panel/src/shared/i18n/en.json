@@ -200,5 +200,17 @@
   "attendeesRowMenuLabel": "More actions for {{name}}",
   "attendeesPaginationLabel": "Attendees pagination",
   "attendeesPagePrev": "Previous page",
-  "attendeesPageNext": "Next page"
+  "attendeesPageNext": "Next page",
+  "bulkSelected": "{{count}} selected",
+  "bulkAssignZone": "Assign zone",
+  "bulkAssignZoneProgress": "Assigning… {{done}} / {{total}}",
+  "bulkExport": "Export",
+  "bulkDelete": "Delete…",
+  "bulkDeleteConfirmTitle": "Delete {{count}} attendees",
+  "bulkDeleteConfirmBody": "Their check-in history disappears with them. This cannot be undone.",
+  "bulkDeleteConfirmLabel": "Type {{count}} to confirm",
+  "bulkDeleteProgress": "Deleting… {{done}} / {{total}}",
+  "bulkDeleteError": "Some attendees couldn't be deleted. Try again.",
+  "bulkPrintLocked": "Print badges — coming with the badge editor",
+  "bulkClear": "Clear"
 }
