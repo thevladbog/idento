@@ -190,7 +190,7 @@ describe("AttendeesPage", () => {
     await screen.findByText("Ada Lovelace");
     capturedRequests = [];
 
-    const input = screen.getByPlaceholderText("Search name, company, code…");
+    const input = screen.getByPlaceholderText("Search name, email, code…");
     fireEvent.change(input, { target: { value: "ada" } });
 
     // No request fires immediately on keystroke.

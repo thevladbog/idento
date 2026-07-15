@@ -48,13 +48,26 @@ const BASE_COLUMNS: { header: string; get: (attendee: Attendee) => string }[] = 
   { header: "Checked in", get: checkedInLabel },
 ];
 
+// Fix (Codex, PR #65): backend/internal/handler/bulk_import.go stores EVERY
+// incoming field in custom_fields, including ones it also recognized and
+// mapped to a standard column (first_name/email/etc) — so a bulk-imported
+// attendee's custom_fields duplicates the very same values BASE_COLUMNS
+// above already exports. Without this filter, every bulk-imported attendee
+// would export with confusing duplicate "First name"/"first_name"-shaped
+// columns carrying identical values. Case-insensitive to match the
+// backend's own `strings.ToLower(key)` normalization.
+const STANDARD_FIELD_NAMES = new Set(["first_name", "last_name", "email", "company", "position", "code"]);
+
 // Union of every custom_fields key present across the selected rows, in
 // first-seen order — not every row has every key, so a row missing a given
 // key gets an empty cell for that column (never a fabricated value).
 function customFieldKeys(rows: Attendee[]): string[] {
   const keys = new Set<string>();
   for (const row of rows) {
-    for (const key of Object.keys(row.custom_fields ?? {})) keys.add(key);
+    for (const key of Object.keys(row.custom_fields ?? {})) {
+      if (STANDARD_FIELD_NAMES.has(key.trim().toLowerCase())) continue;
+      keys.add(key);
+    }
   }
   return [...keys];
 }

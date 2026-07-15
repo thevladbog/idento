@@ -79,6 +79,23 @@ describe("buildAttendeesCsv", () => {
     expect(row2).toBe("Ada,Lovelace,ada@example.com,Analytical Engines,Engineer,PD-0107,no,,L");
   });
 
+  // Fix (Codex, PR #65): backend/internal/handler/bulk_import.go stores
+  // every incoming field in custom_fields, INCLUDING ones it also mapped to
+  // a standard column — a bulk-imported attendee's custom_fields therefore
+  // duplicates "first_name"/"email"/etc alongside genuine custom keys.
+  // Those duplicates must never become extra CSV columns.
+  it("excludes standard field names (case-insensitively) from the custom-field columns, even when present in custom_fields", () => {
+    const csv = buildAttendeesCsv([
+      makeAttendee({
+        id: "a1",
+        custom_fields: { first_name: "Ada", Email: "ada@example.com", dietary: "vegan" },
+      }),
+    ]);
+    const [header, row] = csv.slice(1).split("\r\n");
+    expect(header).toBe("First name,Last name,Email,Company,Position,Code,Checked in,dietary");
+    expect(row).toBe("Ada,Lovelace,ada@example.com,Analytical Engines,Engineer,PD-0107,no,vegan");
+  });
+
   it("quotes fields containing commas and doubles up internal quotes", () => {
     const csv = buildAttendeesCsv([makeAttendee({ company: 'Acme, Inc. "Rockets"' })]);
     const [, row] = csv.slice(1).split("\r\n");
