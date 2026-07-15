@@ -292,6 +292,56 @@ describe("ImportWizard step 1 — busy-gating & stale-completion guard", () => {
 
     parseSpy.mockRestore();
   });
+
+  // Fix (Codex, PR #65): step1SessionRef only protects against close/reopen
+  // — it does nothing for two encoding clicks made in quick succession
+  // within the SAME open session, where an earlier (slower) reparse could
+  // otherwise resolve after a later (faster) one and silently overwrite the
+  // encoding/preview the operator actually chose last. Disabling both
+  // segments for the duration of a reparse closes this at the UI level: a
+  // second click simply cannot fire (a disabled DOM button doesn't dispatch
+  // click events) until the first reparse has settled, so this test proves
+  // the actually-reachable half of the fix. encodingChangeTokenRef's
+  // ordering guard (see its own doc comment in ImportWizard.tsx) is kept as
+  // defense-in-depth for any future path that calls handleEncodingChange
+  // without going through these disabled buttons.
+  it("disables both encoding segments for the duration of a reparse, and re-enables them with the correct final state once it settles", async () => {
+    const user = userEvent.setup();
+    renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+    await user.upload(screen.getByLabelText("Choose a CSV file"), buildWin1251File());
+    await screen.findByText("Auto-detected");
+    await waitFor(async () => {
+      expect(await previewCellTexts()).toEqual(EXPECTED_CORRECT_CELLS);
+    });
+
+    const gate = createGate();
+    const realParseCsv = parseCsvModule.parseCsv;
+    const parseSpy = vi.spyOn(parseCsvModule, "parseCsv").mockImplementation(async (text, opts) => {
+      if (!opts?.preview) return realParseCsv(text, opts);
+      await gate.promise;
+      return realParseCsv(text, opts);
+    });
+
+    const windows1251Button = screen.getByRole("button", { name: "Windows-1251" });
+    const utf8Button = screen.getByRole("button", { name: "UTF-8" });
+    await user.click(utf8Button);
+
+    // Busy: both segments disabled, including the one just clicked — a
+    // second click on either is a no-op while the reparse is in flight.
+    expect(utf8Button).toBeDisabled();
+    expect(windows1251Button).toBeDisabled();
+    await user.click(windows1251Button);
+    // Still showing the PRE-click (windows-1251) preview — the disabled
+    // click above must not have started a second reparse.
+    expect(await previewCellTexts()).toEqual(EXPECTED_CORRECT_CELLS);
+
+    gate.resolve();
+    await waitFor(() => expect(utf8Button).toHaveAttribute("aria-pressed", "true"));
+    expect(utf8Button).toBeEnabled();
+    expect(windows1251Button).toBeEnabled();
+
+    parseSpy.mockRestore();
+  });
 });
 
 // Fix 3 (CodeRabbit, PR #65): parseCsv's `errors` (PapaParse's own
@@ -855,14 +905,53 @@ describe("ImportWizard step 3 — chunked import", () => {
     await user.click(screen.getByRole("button", { name: "Import 5 rows" }));
 
     expect(await screen.findByText("Upload interrupted — 5 rows not sent yet.")).toBeInTheDocument();
-    // Not settled yet — no Done/Download footer while a retry is pending.
-    expect(screen.queryByRole("button", { name: /Done/ })).not.toBeInTheDocument();
+    // Settled (nothing actively in flight) even before Retry remaining is
+    // clicked — the Done footer is already available here (see the
+    // "stays dismissable ... even when every retry keeps failing" test
+    // below for the case where the operator never retries at all).
+    expect(screen.getByRole("button", { name: "Done — 0 in the list" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Retry remaining" }));
 
     await waitFor(() => screen.getByText("5 of 5 imported"));
     expect(screen.queryByText(/rows not sent yet/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done — 5 in the list" })).toBeInTheDocument();
+  });
+
+  // Fix (Codex, PR #65): a chunk-level failure that NEVER succeeds (e.g. the
+  // backend's attendees_per_event limit rejecting every retry) used to leave
+  // isStep3Busy permanently true and the footer's render condition
+  // permanently false — no Close button, no Done, no way out short of a
+  // page reload. Once the failed attempt has SETTLED (nothing actively in
+  // flight), the dialog must be dismissable and offer Done, even though
+  // chunkFailure itself is still set and "Retry remaining" keeps failing.
+  it("stays dismissable via Done after a chunk-level failure settles, even when every retry keeps failing", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async () => HttpResponse.error()),
+    );
+
+    const { queryClient, onOpenChange } = await continueToStep3Ready(user, buildFixtureCsv(5), "persistent-fail.csv");
+    await user.click(screen.getByRole("button", { name: "Import 5 rows" }));
+
+    expect(await screen.findByText("Upload interrupted — 5 rows not sent yet.")).toBeInTheDocument();
+
+    // Settled (nothing in flight) even though chunkFailure is still set —
+    // the dialog must already be closable and offer Done, without the user
+    // clicking "Retry remaining" at all.
+    const closeButton = await screen.findByRole("button", { name: "Close" });
+    expect(closeButton).toBeEnabled();
+    const doneButton = screen.getByRole("button", { name: "Done — 0 in the list" });
+    expect(doneButton).toBeEnabled();
+    // The chunk-failure banner and its Retry remaining affordance stay
+    // available alongside Done — closing isn't the only option.
+    expect(screen.getByRole("button", { name: "Retry remaining" })).toBeInTheDocument();
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await user.click(doneButton);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   // Fix round 1 (plan line 62's reconciliation decision): step 3 is only

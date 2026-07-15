@@ -90,6 +90,22 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // isStep3Busy/importStartedRef's "don't let async work outlive its
   // session" reasoning, extended to cover step 1.
   const step1SessionRef = React.useRef(0);
+  // Fix (Codex, PR #65): step1SessionRef only changes on dialog close/reopen
+  // — it does NOT protect against two encoding-change clicks made in quick
+  // succession within the SAME open session. If an earlier (slower) parse
+  // resolves after a later (faster) one, its stale setState would win and
+  // silently overwrite the encoding/preview the operator actually chose
+  // last. Both EncodingSegments are now disabled for the duration of a
+  // reparse (isStep1Busy/encodingChanging below), which already closes this
+  // race at the only UI entry point — a disabled DOM button never dispatches
+  // a click, so a genuine double-click can't reach handleEncodingChange a
+  // second time before the first call settles. This token is defense-in-
+  // depth for any future caller of handleEncodingChange that doesn't go
+  // through those disabled buttons: incremented at the START of every call;
+  // only the invocation whose captured value still matches the LATEST one
+  // after its await is allowed to apply state — every earlier, now-stale
+  // call is a no-op.
+  const encodingChangeTokenRef = React.useRef(0);
   // Task 13: true only while a bulk-import chunk POST is actually in
   // flight (not while step 3 is merely showing settled results/errors) —
   // this flag also gates the footer's Download/Done buttons so they can't
@@ -415,6 +431,11 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     if (!state.buffer) return;
     const session = step1SessionRef.current;
     const buffer = state.buffer;
+    // Fix (Codex, PR #65): claim the latest-call token BEFORE the await, so
+    // an earlier call that resolves later (rapid double-click on a large
+    // file) can detect it's been superseded and skip applying its stale
+    // result — see the ref's own doc comment above.
+    const token = (encodingChangeTokenRef.current += 1);
     setIsEncodingChanging(true);
     try {
       // Always re-decode + re-parse (cheap: 3 rows), even if `encoding`
@@ -422,9 +443,12 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
       // explicit user override, whether or not it actually changes the value.
       const { rows, headers } = await loadPreview(buffer, encoding);
       if (step1SessionRef.current !== session) return;
+      if (encodingChangeTokenRef.current !== token) return;
       setState((prev) => ({ ...prev, encoding, encodingOverridden: true, rows, headers }));
     } finally {
-      if (step1SessionRef.current === session) setIsEncodingChanging(false);
+      if (step1SessionRef.current === session && encodingChangeTokenRef.current === token) {
+        setIsEncodingChanging(false);
+      }
     }
   }
 
@@ -533,14 +557,22 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // once all chunks settle" — NOT unconditional for the whole step. Covers
   // every kind of in-flight server work step 3 can have outstanding: the
   // main chunk loop (isImporting), an un-sent-chunk "Retry remaining" POST
-  // (also isImporting, since runChunksFrom sets it), a still-unresolved
-  // chunk-level failure banner (chunkFailure — resolved either by Retry
-  // remaining succeeding, which clears it, or... it only ever clears via a
-  // successful resend, so its mere presence means work is still pending),
-  // and any per-row "Retry" in flight (retryingRows). Once none of these are
-  // true, step 3 becomes closable via X/Escape/outside-click too, not just
-  // the explicit "Done" button.
-  const isStep3Busy = isImporting || Boolean(chunkFailure) || retryingRows.size > 0;
+  // (also isImporting, since runChunksFrom sets it), and any per-row "Retry"
+  // in flight (retryingRows). Once none of these are true, step 3 becomes
+  // closable via X/Escape/outside-click too, not just the explicit "Done"
+  // button.
+  //
+  // Fix (Codex, PR #65): a persistent chunk-level failure (e.g. the backend
+  // rejecting every retry with a 403 attendees_per_event limit) used to be
+  // treated as "busy" indefinitely — chunkFailure only ever clears via a
+  // SUCCESSFUL resend, so a failure that can never succeed left the dialog
+  // permanently undismissable (hideClose, blocked Escape/outside-click, and
+  // — see the footer render condition below — literally no footer at all),
+  // trapping the operator until a page reload. A SETTLED failure (isImporting
+  // false) is not "busy": the operator must be able to close and keep
+  // whatever already succeeded, using "Retry remaining" only while they
+  // choose to.
+  const isStep3Busy = isImporting || retryingRows.size > 0;
 
   // Blocks Escape/outside-click dismissal while EITHER step's busy flag is
   // genuinely set, scoped to the CURRENT step so a busy step-1 op never
@@ -573,6 +605,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
             state={state}
             fileInputRef={fileInputRef}
             parseError={step1ParseError}
+            encodingChanging={isEncodingChanging}
             onFilePick={handleFilePick}
             onEncodingChange={handleEncodingChange}
             onReplaceClick={handleReplaceClick}
@@ -621,11 +654,17 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
                 {t("importRowsCta", { count: totalRowsAfterDedup })}
               </Button>
             </>
-          ) : !isImporting && !chunkFailure ? (
-            // Settled (all chunks either succeeded or every un-sent
-            // remainder was itself retried to completion) — the board's
+          ) : !isImporting ? (
+            // Settled — either every chunk succeeded/was retried to
+            // completion, OR a chunk-level failure remains but nothing is
+            // actively in flight (Fix, Codex PR #65: previously gated on
+            // `!chunkFailure` too, which meant a PERSISTENT failure — one
+            // "Retry remaining" can never fix — hid this whole footer
+            // forever, leaving no way to close the dialog). The board's
             // step-3 footer: left download link (only when errors remain),
-            // right the terminal "Done" CTA. No Cancel is ever offered here.
+            // right the terminal "Done" CTA. No Cancel is ever offered here;
+            // Step3Body's own "Retry remaining" banner (still visible above)
+            // stays available for as long as chunkFailure is set.
             <>
               {(state.rowErrors?.length ?? 0) > 0 ? (
                 <Button type="button" variant="link" className="sm:mr-auto" onClick={handleDownloadErrors}>
@@ -633,8 +672,8 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
                 </Button>
               ) : null}
               {/* Gated on the SAME isStep3Busy the dismiss paths use (fix
-                  round 2), not just the outer !isImporting && !chunkFailure
-                  the footer itself renders on. The chunk-import phase can
+                  round 2), not just the outer !isImporting the footer
+                  itself renders on. The chunk-import phase can
                   settle (footer renders) while a per-row "Retry" is still
                   in flight (retryingRows.size > 0) — without this, clicking
                   Done mid-retry ran handleDone() immediately: it
@@ -695,13 +734,17 @@ interface Step1BodyProps {
   // message and keeps the operator on step 1 instead of silently carrying a
   // malformed file's garbage rows forward.
   parseError: boolean;
+  // Fix (Codex, PR #65): disables both encoding segments while a reparse is
+  // in flight — belt-and-suspenders alongside encodingChangeTokenRef's
+  // ordering guard: fewer rapid double-clicks even get a chance to race.
+  encodingChanging: boolean;
   onFilePick: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onEncodingChange: (encoding: CsvEncoding) => void;
   onReplaceClick: () => void;
 }
 
 function Step1Body({
-  state, fileInputRef, parseError, onFilePick, onEncodingChange, onReplaceClick,
+  state, fileInputRef, parseError, encodingChanging, onFilePick, onEncodingChange, onReplaceClick,
 }: Step1BodyProps) {
   const { t } = useTranslation();
 
@@ -760,11 +803,13 @@ function Step1Body({
               <EncodingSegment
                 pressed={state.encoding === "windows-1251"}
                 label={t("importEncodingWindows1251")}
+                disabled={encodingChanging}
                 onClick={() => onEncodingChange("windows-1251")}
               />
               <EncodingSegment
                 pressed={state.encoding === "utf-8"}
                 label={t("importEncodingUtf8")}
+                disabled={encodingChanging}
                 onClick={() => onEncodingChange("utf-8")}
               />
             </div>
@@ -813,13 +858,16 @@ function Step1Body({
   );
 }
 
-function EncodingSegment({ pressed, label, onClick }: { pressed: boolean; label: string; onClick: () => void }) {
+function EncodingSegment({
+  pressed, label, disabled, onClick,
+}: { pressed: boolean; label: string; disabled: boolean; onClick: () => void }) {
   return (
     <Button
       type="button"
       size="sm"
       variant="outline"
       aria-pressed={pressed}
+      disabled={disabled}
       className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
       onClick={onClick}
     >
