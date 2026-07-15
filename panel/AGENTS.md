@@ -12,7 +12,8 @@ work while this rewrite runs (see root `AGENTS.md`).
   `src/shared/` (api client, session, i18n, theme, cross-cutting ui glue),
   `src/features/` (screen-level slices — one directory per feature, own
   tests colocated). New screens/features get their own `src/features/<name>/`
-  directory, not a growing `src/pages/`.
+  directory, not a growing `src/pages/`. Cross-cutting, feature-agnostic React
+  hooks (e.g. `useScrollSpy`) live in `src/shared/hooks/`.
 - **Routing:** TanStack Router, code-based (`createRootRoute`/`createRoute`/
   `createRouter` in `src/app/router.tsx`) — not file-based. Protected routes
   nest under the pathless `_app` layout route (`beforeLoad: protectedBeforeLoad`)
