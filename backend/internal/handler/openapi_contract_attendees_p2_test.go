@@ -604,6 +604,7 @@ func TestOpenAPIContract_UnassignStaffFromEvent(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("DELETE staff (invalid event_id): want 400, got %d, body=%s", rec.Code, rec.Body.String())
 	}
+	validateResponse(t, http.MethodDelete, "/api/events/not-a-uuid/staff/"+staffUser.ID.String(), rec)
 
 	// Step 6: 400 — invalid user_id (not a UUID)
 	c, rec = newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/not-a-uuid", "", tenantID.String(), "admin")
@@ -616,6 +617,7 @@ func TestOpenAPIContract_UnassignStaffFromEvent(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("DELETE staff (invalid user_id): want 400, got %d, body=%s", rec.Code, rec.Body.String())
 	}
+	validateResponse(t, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/not-a-uuid", rec)
 
 	// Step 7: 404 — foreign/nonexistent event (requires different tenant)
 	c, rec = newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), "", uuid.New().String(), "admin")

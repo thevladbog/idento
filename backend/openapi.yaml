@@ -1548,14 +1548,11 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
-            Store failure resolving event ownership (Error), or persisting
-            the removal (echo.NewHTTPError shape).
+            Store failure resolving event ownership or persisting the removal.
+            Both failures emit the standard Error shape.
           content:
             application/json:
-              schema:
-                oneOf:
-                  - { $ref: "#/components/schemas/Error" }
-                  - { $ref: "#/components/schemas/HTTPError" }
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{event_id}/stations/provisioning-token:
     post:
       operationId: createStationProvisioningToken
