@@ -213,6 +213,32 @@ describe("ApiKeysCard", () => {
     expect(writeText).toHaveBeenCalledWith("idnt_live_newnewnewSECRETVALUE");
   });
 
+  it("does not show 'Copied' when the clipboard write is rejected (e.g. permission blocked)", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValue(new Error("permission denied"));
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    await within(dialog).findByText("idnt_live_newnewnewSECRETVALUE");
+    await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+
+    expect(writeText).toHaveBeenCalledWith("idnt_live_newnewnewSECRETVALUE");
+    // Give the rejected promise's handler a tick to run, then assert the
+    // button never flipped to "Copied" — a failed write must not lie about
+    // success.
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+    expect(within(dialog).queryByRole("button", { name: "Copied" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
+
   it("clears the plain key and resets the create mutation when the dialog is closed in reveal state, so reopening shows a fresh form", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ApiKeysCard eventId="evt-1" />);

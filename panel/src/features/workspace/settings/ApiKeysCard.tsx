@@ -122,10 +122,21 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
 
   function handleCopy() {
     if (!plainKey) return;
-    void navigator.clipboard.writeText(plainKey);
-    setCopied(true);
-    window.clearTimeout(copiedTimeoutRef.current);
-    copiedTimeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+    // Await the write and only claim success once it actually resolves — a
+    // rejected clipboard write (e.g. permission blocked) must not flip the
+    // button to "Copied" and mislead the user into thinking the one-time
+    // secret made it onto their clipboard.
+    navigator.clipboard.writeText(plainKey).then(
+      () => {
+        setCopied(true);
+        window.clearTimeout(copiedTimeoutRef.current);
+        copiedTimeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+      },
+      () => {
+        // Leave `copied` false — no distinct failure-state i18n key exists
+        // for this yet, and adding one is more than this fix warrants.
+      },
+    );
   }
 
   const keys = keysQuery.data ?? [];
