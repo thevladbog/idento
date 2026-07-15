@@ -26,42 +26,60 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
-  // Separate from deleteEvent.isError on purpose: onError below closes the
-  // dialog in the same tick that it sets this flag, and the reset-on-close
-  // effect further down fires right after — if the inline error read
-  // deleteEvent.isError directly, that reset would immediately clear it
-  // before the user ever saw it (same race ApiKeysCard's revokeError avoids
-  // for its own confirm-dialog delete flow).
+  // Whether the last confirmed delete attempt (within the currently open
+  // dialog) failed. Shown inside the ConfirmDialog itself via a dynamic
+  // `description` — the dialog stays open on failure (see below), so unlike
+  // the old auto-close design there's no card-visible-error race to guard
+  // against here.
   const [deleteError, setDeleteError] = React.useState(false);
+  // False while the dialog is open and an in-flight delete is still
+  // relevant to this card; flipped to true the instant the user explicitly
+  // closes the dialog (Cancel/Escape/overlay — routed through
+  // `handleDialogOpenChange` below). Deliberately NOT flipped when the
+  // dialog closes because the delete succeeded (that's a programmatic
+  // `setConfirmOpen(false)` in `onSuccess`, which never touches this ref).
+  // Same race class + fix as ApiKeysCard's `createAbortedRef`: without this,
+  // clicking Cancel while a DELETE is in flight doesn't abort the request,
+  // and the late-arriving response's onSuccess/onError would still
+  // force-navigate or surface an error for a delete the user believed they'd
+  // cancelled (the event is still deleted server-side either way — that
+  // can't be undone from the client — but the UI must not surprise the user
+  // who explicitly backed out).
+  const deleteAbortedRef = React.useRef(false);
 
   const deleteEvent = $api.useMutation("delete", "/api/events/{id}", {
     onSuccess: () => {
+      if (deleteAbortedRef.current) return;
       void queryClient.invalidateQueries({ queryKey: ["get", "/api/events"] });
-      setDeleteError(false);
       setConfirmOpen(false);
       void navigate({ to: "/" });
     },
     onError: () => {
-      // Close the dialog so the inline error below is actually visible (it
-      // lives in the card, behind the modal overlay while open) — same
-      // convention as ApiKeysCard's revoke flow.
+      if (deleteAbortedRef.current) return;
+      // Stay open (Fix: typed-confirmation input must survive a transient
+      // failure) and show the error inside the dialog via `description`
+      // below — not the card, which is hidden behind the modal overlay
+      // while the dialog is open.
       setDeleteError(true);
-      setConfirmOpen(false);
     },
   });
 
-  // Reset the mutation's own pending/error state whenever the dialog
-  // transitions closed (P1.1 mutation-reset-on-close rule, re-confirmed
-  // through Task 6) — this is about the mutation object itself, not the
-  // `deleteError` flag above, which is cleared explicitly when a fresh
-  // attempt opens (see the trigger button below).
-  React.useEffect(() => {
-    if (confirmOpen) return;
-    deleteEvent.reset();
-    // deleteEvent is a fresh mutation object each render; including it in
-    // the deps would reset on every render instead of only on close.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmOpen]);
+  // Routed to as the ConfirmDialog's `onOpenChange` for every user-driven
+  // close path (Cancel button, Escape, overlay click) — a programmatic
+  // close from a successful delete calls `setConfirmOpen(false)` directly in
+  // `onSuccess` and never reaches this function, so reaching here with
+  // `open === false` always means the user explicitly backed out.
+  function handleDialogOpenChange(open: boolean) {
+    if (!open) {
+      deleteAbortedRef.current = true;
+      setDeleteError(false);
+      // Mutation-reset-on-close (P1.1 rule): only on an explicit user close,
+      // not automatically on every close, since a success-driven close never
+      // leaves an error to clear.
+      deleteEvent.reset();
+    }
+    setConfirmOpen(open);
+  }
 
   return (
     <>
@@ -79,6 +97,7 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
               type="button"
               variant="destructive"
               onClick={() => {
+                deleteAbortedRef.current = false;
                 setDeleteError(false);
                 setConfirmOpen(true);
               }}
@@ -86,15 +105,28 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
               {t("settingsDeleteEventAction")}
             </Button>
           </div>
-          {deleteError ? <p className="text-body text-destructive">{t("settingsDeleteError")}</p> : null}
         </CardContent>
       </Card>
 
       <ConfirmDialog
         open={confirmOpen}
-        onOpenChange={setConfirmOpen}
+        onOpenChange={handleDialogOpenChange}
         title={t("settingsDeleteConfirmTitle")}
-        description={t("settingsDeleteConfirmBody")}
+        description={
+          // ConfirmDialog's `description` renders inside Radix's
+          // `DialogDescription`, which is itself a `<p>` — block-level
+          // elements like `<p>`/`<div>` can't nest inside it (invalid HTML,
+          // React DOM-nesting warning), so a second line of text here has to
+          // be a `<span className="block">` instead of a `<p>`.
+          deleteError ? (
+            <>
+              {t("settingsDeleteConfirmBody")}
+              <span className="mt-1 block text-destructive">{t("settingsDeleteError")}</span>
+            </>
+          ) : (
+            t("settingsDeleteConfirmBody")
+          )
+        }
         confirmLabel={t("settingsDeleteEventConfirm")}
         cancelLabel={t("createEventCancel")}
         closeLabel={t("workspaceDialogClose")}
@@ -102,7 +134,10 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
         typedConfirmation={event.name}
         typedConfirmationLabel={t("settingsDeleteConfirmLabel", { name: event.name })}
         confirmDisabled={deleteEvent.isPending}
-        onConfirm={() => deleteEvent.mutate({ params: { path: { id: event.id } } })}
+        onConfirm={() => {
+          setDeleteError(false);
+          deleteEvent.mutate({ params: { path: { id: event.id } } });
+        }}
       />
     </>
   );

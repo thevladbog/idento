@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { DangerZoneCard } from "./DangerZoneCard";
 import { $api } from "../../../shared/api/query";
@@ -33,15 +33,17 @@ let listHitCount = 0;
 let deleteCount = 0;
 let lastDeletedId: string | undefined;
 let deleteStatusOverride: number | null = null;
+let deleteDelayMs = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/events", () => {
     listHitCount += 1;
     return HttpResponse.json([]);
   }),
-  http.delete("http://api.test/api/events/:id", ({ params }) => {
+  http.delete("http://api.test/api/events/:id", async ({ params }) => {
     deleteCount += 1;
     lastDeletedId = params.id as string;
+    if (deleteDelayMs) await delay(deleteDelayMs);
     if (deleteStatusOverride) {
       return HttpResponse.json({ error: "server error" }, { status: deleteStatusOverride });
     }
@@ -78,6 +80,7 @@ describe("DangerZoneCard", () => {
     deleteCount = 0;
     lastDeletedId = undefined;
     deleteStatusOverride = null;
+    deleteDelayMs = 0;
     navigateMock.mockClear();
     window.__ENV__ = { API_URL: "http://api.test" };
   });
@@ -140,36 +143,96 @@ describe("DangerZoneCard", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("shows an inline error in the card when the delete fails, and clears it after closing and reopening", async () => {
+  it("keeps the dialog open with the error shown inside it and the typed name preserved when the delete fails, then a retry from that same dialog succeeds", async () => {
     deleteStatusOverride = 500;
     const user = userEvent.setup();
     renderWithProviders(<DangerZoneCard event={EVENT} />);
 
     await user.click(screen.getByRole("button", { name: "Delete event…" }));
-    let input = screen.getByLabelText("Type Partner Day — Autumn to confirm");
+    const dialog = await screen.findByRole("dialog");
+    const input = screen.getByLabelText("Type Partner Day — Autumn to confirm");
     await user.type(input, "Partner Day — Autumn");
-    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
 
     await waitFor(() => expect(deleteCount).toBe(1));
-    expect(await screen.findByText("Couldn't delete the event. Please try again.")).toBeInTheDocument();
+    // The failure must NOT auto-close the dialog — ConfirmDialog wipes its
+    // typed input on any close, and this is a typed-confirmation flow, so
+    // auto-closing on a transient failure would force a full, exact,
+    // case-sensitive retype for no reason.
+    expect(await within(dialog).findByText("Couldn't delete the event. Please try again.")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBe(dialog);
+    expect(input).toHaveValue("Partner Day — Autumn");
     expect(navigateMock).not.toHaveBeenCalled();
 
-    // Reopen without closing first — the dialog auto-closes on failure (same
-    // convention as ApiKeysCard's revoke flow, so the inline card error
-    // below the modal is actually visible) and the error must persist until
-    // the user starts a fresh attempt.
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-
+    // Retry from the same still-open dialog — no retyping needed.
     deleteStatusOverride = null;
-    await user.click(screen.getByRole("button", { name: "Delete event…" }));
-    expect(screen.queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
-
-    input = screen.getByLabelText("Type Partner Day — Autumn to confirm");
-    await user.type(input, "Partner Day — Autumn");
-    await user.click(screen.getByRole("button", { name: "Delete event" }));
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
 
     await waitFor(() => expect(deleteCount).toBe(2));
+    expect(lastDeletedId).toBe("evt-1");
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: "/" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("clears the error and closes normally when the user explicitly clicks Cancel after a failure", async () => {
+    deleteStatusOverride = 500;
+    const user = userEvent.setup();
+    renderWithProviders(<DangerZoneCard event={EVENT} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete event…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(screen.getByLabelText("Type Partner Day — Autumn to confirm"), "Partner Day — Autumn");
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
+
+    expect(await within(dialog).findByText("Couldn't delete the event. Please try again.")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
+
+    // Reopening starts a genuinely fresh attempt: no stale error, no stale
+    // typed input, confirm disabled until the name is retyped.
+    await user.click(screen.getByRole("button", { name: "Delete event…" }));
+    const reopened = await screen.findByRole("dialog");
+    expect(within(reopened).queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Type Partner Day — Autumn to confirm")).toHaveValue("");
+    expect(within(reopened).getByRole("button", { name: "Delete event" })).toBeDisabled();
+  });
+
+  // Regression test for the cancel-during-pending race (same class as
+  // ApiKeysCard's create-dialog fix): the DELETE is still in flight when the
+  // user clicks Cancel. `deleteEvent.reset()` on close only detaches the
+  // mutation observer — it does not abort the in-flight request or stop
+  // `onSuccess`/`onError` from firing once the response lands late. Pre-fix,
+  // that late `onSuccess` still force-navigated the user to Home and
+  // invalidated the events list for a delete they believed they'd cancelled
+  // (the event is genuinely deleted server-side either way), and a late
+  // `onError` would have surfaced a card-level error the user never expected
+  // to see again.
+  it("does not navigate or surface an error if the confirm dialog is closed (Cancel) before a pending DELETE resolves", async () => {
+    deleteDelayMs = 50;
+    const user = userEvent.setup();
+    renderWithProviders(<DangerZoneCard event={EVENT} />);
+    await waitFor(() => expect(listHitCount).toBe(1));
+
+    await user.click(screen.getByRole("button", { name: "Delete event…" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(screen.getByLabelText("Type Partner Day — Autumn to confirm"), "Partner Day — Autumn");
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
+
+    // Cancel while the delayed DELETE is still in flight (the Cancel button
+    // is never disabled by `confirmDisabled`, unlike the confirm button).
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // Let the delayed response land well after the close.
+    await waitFor(() => expect(deleteCount).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, deleteDelayMs + 100));
+
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(listHitCount).toBe(1);
+    expect(screen.queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("disables the confirm button while the delete is pending, to prevent a double DELETE", async () => {
