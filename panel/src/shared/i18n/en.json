@@ -159,5 +159,16 @@
   "languageSwitcherLabel": "Language",
   "orgSwitcherCount_one": "{{count}} organization",
   "orgSwitcherCount_other": "{{count}} organizations",
-  "onPremVersionTag": "ON-PREM · v{{version}}"
+  "onPremVersionTag": "ON-PREM · v{{version}}",
+  "orgTitle": "Organization",
+  "orgNameLabel": "Organization name",
+  "orgWebsiteLabel": "Website",
+  "orgContactEmailLabel": "Contact email",
+  "orgLogoUrlLabel": "Logo URL",
+  "orgNameRequired": "Give the organization a name.",
+  "orgNameTooLong": "Keep the name under 200 characters.",
+  "orgEmailInvalid": "Enter a valid email address.",
+  "orgLogoUrlInvalid": "Enter a valid URL.",
+  "orgReadOnlyNotice": "Only organization admins can edit these settings.",
+  "orgForbiddenError": "Only organization admins can save changes."
 }

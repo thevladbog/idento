@@ -7,6 +7,7 @@ import { EventWorkspaceLayout } from "../features/workspace/EventWorkspaceLayout
 import { HomePage } from "../features/home/HomePage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
+import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -83,7 +84,7 @@ const equipmentRoute = createRoute({
 const organizationRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/organization",
-  component: () => <PlaceholderPage titleKey="navOrganization" />,
+  component: OrganizationPage,
 });
 
 const eventWorkspaceRoute = createRoute({

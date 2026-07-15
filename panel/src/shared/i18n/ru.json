@@ -161,5 +161,16 @@
   "orgSwitcherCount_few": "{{count}} организации",
   "orgSwitcherCount_many": "{{count}} организаций",
   "orgSwitcherCount_other": "{{count}} организации",
-  "onPremVersionTag": "ON-PREM · v{{version}}"
+  "onPremVersionTag": "ON-PREM · v{{version}}",
+  "orgTitle": "Организация",
+  "orgNameLabel": "Название организации",
+  "orgWebsiteLabel": "Веб-сайт",
+  "orgContactEmailLabel": "Контактный email",
+  "orgLogoUrlLabel": "URL логотипа",
+  "orgNameRequired": "Укажите название организации.",
+  "orgNameTooLong": "Название должно быть короче 200 символов.",
+  "orgEmailInvalid": "Введите корректный email.",
+  "orgLogoUrlInvalid": "Введите корректный URL.",
+  "orgReadOnlyNotice": "Изменять эти настройки могут только администраторы организации.",
+  "orgForbiddenError": "Сохранять изменения могут только администраторы организации."
 }
