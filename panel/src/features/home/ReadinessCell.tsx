@@ -6,7 +6,8 @@ import type { components } from "../../shared/api/schema";
 type EventReadinessResponse = components["schemas"]["EventReadinessResponse"];
 type ReadinessStep = components["schemas"]["ReadinessStep"];
 
-const STEP_LABEL_KEYS: Record<ReadinessStep["key"], string> = {
+// eslint-disable-next-line react-refresh/only-export-components -- Shared step-label lookup belongs with the readiness pipeline it describes; not a real Fast Refresh issue for this pattern.
+export const STEP_LABEL_KEYS: Record<ReadinessStep["key"], string> = {
   attendees: "readinessStepAttendees",
   badge: "readinessStepBadge",
   zones: "readinessStepZones",

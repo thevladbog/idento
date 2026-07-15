@@ -3,8 +3,11 @@ import { LoginScreen } from "../features/auth/LoginScreen";
 import { QrLoginScreen } from "../features/auth/QrLoginScreen";
 import { RegisterScreen } from "../features/auth/RegisterScreen";
 import { ProtectedLayout, protectedBeforeLoad } from "./shell/ProtectedLayout";
-import { EventWorkspaceStub } from "../features/events/EventWorkspaceStub";
+import { EventWorkspaceLayout } from "../features/workspace/EventWorkspaceLayout";
 import { HomePage } from "../features/home/HomePage";
+import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
+import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
+import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -81,17 +84,35 @@ const equipmentRoute = createRoute({
 const organizationRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/organization",
-  component: () => <PlaceholderPage titleKey="navOrganization" />,
+  component: OrganizationPage,
 });
 
-const eventStubRoute = createRoute({
+const eventWorkspaceRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/events/$eventId",
-  component: EventWorkspaceStub,
+  component: EventWorkspaceLayout,
+});
+
+const eventOverviewRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/",
+  component: WorkspaceOverview,
+});
+
+const eventSettingsRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/settings",
+  component: EventSettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
-  protectedLayoutRoute.addChildren([indexRoute, teamRoute, equipmentRoute, organizationRoute, eventStubRoute]),
+  protectedLayoutRoute.addChildren([
+    indexRoute,
+    teamRoute,
+    equipmentRoute,
+    organizationRoute,
+    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute]),
+  ]),
   loginRoute,
   registerRoute,
   qrLoginRoute,

@@ -16,6 +16,10 @@ export type ConfirmDialogProps = {
   closeLabel: string;
   onConfirm: () => void;
   destructive?: boolean;
+  // Caller-driven disable on top of the typed-confirmation check below —
+  // e.g. while the confirm action's mutation is in flight, so a slow
+  // network can't be double-clicked into firing the action twice.
+  confirmDisabled?: boolean;
 } & (
   // Tier 2 (typed confirm) needs a visible label for the input's accessible
   // name — @idento/ui has no i18n fallback text to supply one, so the type
@@ -26,7 +30,7 @@ export type ConfirmDialogProps = {
 
 export function ConfirmDialog({
   open, onOpenChange, title, description, confirmLabel, cancelLabel, closeLabel,
-  onConfirm, destructive = false, typedConfirmation, typedConfirmationLabel,
+  onConfirm, destructive = false, typedConfirmation, typedConfirmationLabel, confirmDisabled = false,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = React.useState("");
   const inputId = React.useId();
@@ -35,7 +39,7 @@ export function ConfirmDialog({
     if (!open) setTyped("");
   }, [open]);
 
-  const confirmDisabled = typedConfirmation !== undefined && typed !== typedConfirmation;
+  const disabled = confirmDisabled || (typedConfirmation !== undefined && typed !== typedConfirmation);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -62,7 +66,7 @@ export function ConfirmDialog({
           </Button>
           <Button
             variant={destructive ? "destructive" : "default"}
-            disabled={confirmDisabled}
+            disabled={disabled}
             onClick={onConfirm}
           >
             {confirmLabel}
