@@ -44,10 +44,15 @@ function buildRouter(initialPath: string) {
     path: "/zones",
     component: () => <div>zones content</div>,
   });
+  const staffRoute = createRoute({
+    getParentRoute: () => workspaceRoute,
+    path: "/staff",
+    component: () => <div>staff content</div>,
+  });
   const routeTree = rootRoute.addChildren([
     appLayoutRoute.addChildren([
       homeRoute,
-      workspaceRoute.addChildren([overviewRoute, settingsRoute, attendeesRoute, zonesRoute]),
+      workspaceRoute.addChildren([overviewRoute, settingsRoute, attendeesRoute, zonesRoute, staffRoute]),
     ]),
   ]);
   return createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [initialPath] }) });
@@ -133,6 +138,18 @@ describe("EventWorkspaceLayout", () => {
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("zones content")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Zones/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks the rail's Staff row active and renders the staff child route's outlet content", async () => {
+    // READY_FALSE's fixture only has an "attendees" step — add a "staff"
+    // step so WorkspaceRail actually renders a Staff row to assert against.
+    readinessResponse = { ready: false, steps: [{ key: "attendees", status: "not_done" }, { key: "staff", status: "not_done" }] };
+    renderAt("/events/evt-1/staff");
+
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
+    expect(screen.getByText("staff content")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Staff/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
