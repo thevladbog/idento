@@ -63,15 +63,23 @@ const ZONE_HISTORY = [
 let attendeeResponse: unknown = ADA;
 let attendeeStatus = 200;
 let zoneAccessResponse: unknown = ZONE_ACCESS;
+let zoneAccessStatus = 200;
 let zoneHistoryResponse: unknown = ZONE_HISTORY;
+let zoneHistoryStatus = 200;
 
 const server = startMswServer(
   http.get("http://api.test/api/attendees/:id", () => {
     if (attendeeStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: attendeeStatus });
     return HttpResponse.json(attendeeResponse);
   }),
-  http.get("http://api.test/api/attendees/:attendeeId/zone-access", () => HttpResponse.json(zoneAccessResponse)),
-  http.get("http://api.test/api/attendees/:attendeeId/zone-history", () => HttpResponse.json(zoneHistoryResponse)),
+  http.get("http://api.test/api/attendees/:attendeeId/zone-access", () => {
+    if (zoneAccessStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: zoneAccessStatus });
+    return HttpResponse.json(zoneAccessResponse);
+  }),
+  http.get("http://api.test/api/attendees/:attendeeId/zone-history", () => {
+    if (zoneHistoryStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: zoneHistoryStatus });
+    return HttpResponse.json(zoneHistoryResponse);
+  }),
   http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(ZONES)),
 );
 void server;
@@ -86,7 +94,9 @@ describe("AttendeeDrawer", () => {
     attendeeResponse = ADA;
     attendeeStatus = 200;
     zoneAccessResponse = ZONE_ACCESS;
+    zoneAccessStatus = 200;
     zoneHistoryResponse = ZONE_HISTORY;
+    zoneHistoryStatus = 200;
   });
 
   it("shows a single whole-body skeleton while the attendee is loading, not the real sections", async () => {
@@ -170,6 +180,30 @@ describe("AttendeeDrawer", () => {
     await screen.findByText("Ada Lovelace");
     expect(await screen.findByText("+ Zone")).toBeInTheDocument();
     expect(screen.queryByText("Main hall")).not.toBeInTheDocument();
+  });
+
+  it("shows a distinct i18n'd error message (not the empty state) when the zone-access fetch fails, and hides '+ Zone'", async () => {
+    zoneAccessStatus = 500;
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+
+    await screen.findByText("Ada Lovelace");
+    expect(await screen.findByText("Couldn't load zone access.")).toBeInTheDocument();
+    // Must not be mistaken for "no zone access" or for a still-resolvable state.
+    expect(screen.queryByText("Main hall")).not.toBeInTheDocument();
+    expect(screen.queryByText("VIP lounge")).not.toBeInTheDocument();
+    // Offering to add MORE zones while we don't know current access is confusing — hidden on error.
+    expect(screen.queryByRole("button", { name: "+ Zone" })).not.toBeInTheDocument();
+  });
+
+  it("shows a distinct i18n'd error message (not the empty state) when the zone-history fetch fails", async () => {
+    zoneHistoryStatus = 500;
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+
+    await screen.findByText("Ada Lovelace");
+    expect(await screen.findByText("Couldn't load activity.")).toBeInTheDocument();
+    // Must not be mistaken for "no activity yet".
+    expect(screen.queryByText("No activity yet")).not.toBeInTheDocument();
+    expect(screen.queryByText(/10:15 — VIP lounge/)).not.toBeInTheDocument();
   });
 
   it("renders Edit details, Reprint badge, + Zone, Regenerate code…, and Delete… as disabled — Task 9 wires them", async () => {

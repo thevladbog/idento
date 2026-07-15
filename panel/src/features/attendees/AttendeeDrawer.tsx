@@ -84,8 +84,10 @@ export function AttendeeDrawer({ eventId, attendeeId, onClose }: AttendeeDrawerP
             attendee={attendeeQuery.data}
             zoneAccess={zoneAccessQuery.data}
             zoneAccessLoading={zoneAccessQuery.isLoading}
+            zoneAccessError={zoneAccessQuery.isError}
             zoneHistory={zoneHistoryQuery.data}
             zoneHistoryLoading={zoneHistoryQuery.isLoading}
+            zoneHistoryError={zoneHistoryQuery.isError}
             zones={zonesQuery.data}
             zonesLoading={zonesQuery.isLoading}
           />
@@ -127,14 +129,17 @@ interface DrawerBodyProps {
   attendee: Attendee;
   zoneAccess: AttendeeZoneAccess[] | undefined;
   zoneAccessLoading: boolean;
+  zoneAccessError: boolean;
   zoneHistory: MovementHistoryEntry[] | undefined;
   zoneHistoryLoading: boolean;
+  zoneHistoryError: boolean;
   zones: (EventZone | EventZoneWithStats)[] | undefined;
   zonesLoading: boolean;
 }
 
 function DrawerBody({
-  attendee, zoneAccess, zoneAccessLoading, zoneHistory, zoneHistoryLoading, zones, zonesLoading,
+  attendee, zoneAccess, zoneAccessLoading, zoneAccessError, zoneHistory, zoneHistoryLoading, zoneHistoryError,
+  zones, zonesLoading,
 }: DrawerBodyProps) {
   const { t } = useTranslation();
   const fullName = `${attendee.first_name} ${attendee.last_name}`.trim();
@@ -198,7 +203,12 @@ function DrawerBody({
       </div>
 
       {/* 4. Zone access — success chips for allowed=true rows, resolved to
-          zone names; dashed "+ Zone" add-chip (Task 9 wires it). */}
+          zone names; dashed "+ Zone" add-chip (Task 9 wires it). A failed
+          zone-access fetch gets its own honest error message rather than
+          silently rendering identically to "no zone access" — this is a
+          check-in-adjacent tool, so an operator glancing at the drawer
+          during a transient failure must not be able to mistake "we don't
+          know" for "this attendee genuinely has none". */}
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         <span className="text-caption font-medium uppercase text-muted-foreground">{t("drawerZoneAccess")}</span>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -207,6 +217,8 @@ function DrawerBody({
               <Skeleton className="h-6 w-16 rounded-full" />
               <Skeleton className="h-6 w-16 rounded-full" />
             </>
+          ) : zoneAccessError ? (
+            <p className="text-caption text-destructive">{t("drawerZoneAccessLoadError")}</p>
           ) : (
             allowedZones.map((entry) => (
               <span
@@ -217,15 +229,22 @@ function DrawerBody({
               </span>
             ))
           )}
-          {/* Task 9 wires this (zone chip picker). */}
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed"
-          >
-            {t("drawerAddZone")}
-          </button>
+          {/* Task 9 wires this (zone chip picker). Hidden while the
+              zone-access fetch is errored: offering to add MORE zones when
+              we don't actually know the attendee's current zone access is
+              confusing UI, so we show nothing here rather than an
+              affordance that could contradict reality once the fetch
+              eventually succeeds. */}
+          {zoneAccessError ? null : (
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed"
+            >
+              {t("drawerAddZone")}
+            </button>
+          )}
         </div>
       </div>
 
@@ -242,6 +261,8 @@ function DrawerBody({
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
           </div>
+        ) : zoneHistoryError ? (
+          <p className="text-caption text-destructive">{t("drawerActivityLoadError")}</p>
         ) : recentActivity.length === 0 ? (
           <p className="text-caption text-muted-foreground">{t("drawerNoActivity")}</p>
         ) : (
