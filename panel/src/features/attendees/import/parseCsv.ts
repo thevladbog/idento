@@ -1,4 +1,4 @@
-import Papa, { type ParseError, type ParseResult } from "papaparse";
+import Papa, { type ParseResult } from "papaparse";
 
 export interface ParseCsvOptions {
   /** If set, only that many rows are parsed (used for the wizard's live preview). */
@@ -15,13 +15,6 @@ export interface ParseCsvOptions {
 export interface ParseCsvResult {
   rows: Record<string, string>[];
   headers: string[];
-  // Fix 3 (CodeRabbit, PR #65): PapaParse's own per-row diagnostics
-  // (inconsistent column counts, quote-parsing failures, etc.) — previously
-  // read off `results.errors` and then discarded, meaning a genuinely
-  // malformed CSV could silently produce garbage `rows` with zero warning.
-  // Always populated (empty for a well-formed CSV), never thrown — matching
-  // the "resolve either way" contract described below.
-  errors: ParseError[];
 }
 
 // Thin Promise wrapper around Papa.parse for string input. Note: PapaParse's
@@ -34,7 +27,7 @@ export interface ParseCsvResult {
 export function parseCsv(text: string, opts: ParseCsvOptions = {}): Promise<ParseCsvResult> {
   return new Promise((resolve) => {
     const complete = (results: ParseResult<Record<string, string>>) => {
-      resolve({ rows: results.data, headers: results.meta.fields ?? [], errors: results.errors });
+      resolve({ rows: results.data, headers: results.meta.fields ?? [] });
     };
     // Papa.parse's overloads discriminate on the literal type of `worker`
     // (`true` vs `false`), so a plain `boolean` option value has to be

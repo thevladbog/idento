@@ -151,11 +151,18 @@ export function EditAttendeeForm({ attendee, eventId, onCancel, onSaved }: EditA
       company?: string;
       position?: string;
     } = {};
-    if (trimmedFirstName !== baseline.firstName) body.first_name = trimmedFirstName;
-    if (trimmedLastName !== baseline.lastName) body.last_name = trimmedLastName;
-    if (trimmedEmail !== baseline.email) body.email = trimmedEmail;
-    if (trimmedCompany !== baseline.company) body.company = trimmedCompany;
-    if (trimmedPosition !== baseline.position) body.position = trimmedPosition;
+    // Compare the RAW form value against the RAW baseline (matching
+    // `isDirty`'s logic above) — not the trimmed value against the raw
+    // baseline. A baseline with odd whitespace (e.g. imported from a messy
+    // CSV) must not make an untouched field look "dirty" just because
+    // trimming it happens to differ from the untrimmed baseline; the SENT
+    // value is still the trimmed one for whichever fields the user actually
+    // changed.
+    if (form.firstName !== baseline.firstName) body.first_name = trimmedFirstName;
+    if (form.lastName !== baseline.lastName) body.last_name = trimmedLastName;
+    if (form.email !== baseline.email) body.email = trimmedEmail;
+    if (form.company !== baseline.company) body.company = trimmedCompany;
+    if (form.position !== baseline.position) body.position = trimmedPosition;
 
     if (Object.keys(body).length === 0) {
       // Trimming made a whitespace-only edit a no-op (e.g. typed then
