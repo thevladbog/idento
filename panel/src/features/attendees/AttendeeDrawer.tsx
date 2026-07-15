@@ -64,11 +64,29 @@ export function AttendeeDrawer({ eventId, attendeeId, onClose }: AttendeeDrawerP
   const zoneAccessQuery = useAttendeeZoneAccess(attendeeId);
   const zoneHistoryQuery = useAttendeeZoneHistory(attendeeId);
   const zonesQuery = useEventZones(eventId);
+  // Bridges EditAttendeeForm's PATCH-pending state (surfaced via DrawerBody's
+  // `onEditBusyChange` prop) up to this Sheet's `onOpenChange` without
+  // needing a re-render here: the flag is only ever CONSULTED at the moment
+  // the user tries to dismiss the Sheet (Escape/outside-click), never
+  // rendered, so a ref bridge is enough — DrawerBody is a plain function
+  // component (not a context provider), and lifting this into real state
+  // would force it to re-render on every keystroke's pending-state churn for
+  // no visible benefit.
+  const isEditBusyRef = React.useRef(false);
+  const handleEditBusyChange = React.useCallback((busy: boolean) => {
+    isEditBusyRef.current = busy;
+  }, []);
 
   return (
     <Sheet
       open
       onOpenChange={(open) => {
+        // While EditAttendeeForm's PATCH is genuinely in flight, Escape/
+        // outside-click must not unmount the whole drawer out from under it
+        // — the regenerate/delete ConfirmDialogs don't need this guard since
+        // Radix's nested dialog stacking already intercepts Escape/
+        // outside-click before it reaches this outer Sheet.
+        if (!open && isEditBusyRef.current) return;
         if (!open) onClose();
       }}
     >
@@ -106,6 +124,7 @@ export function AttendeeDrawer({ eventId, attendeeId, onClose }: AttendeeDrawerP
             zones={zonesQuery.data}
             zonesLoading={zonesQuery.isLoading}
             onClose={onClose}
+            onEditBusyChange={handleEditBusyChange}
           />
         )}
       </SheetContent>
@@ -153,11 +172,12 @@ interface DrawerBodyProps {
   zones: (EventZone | EventZoneWithStats)[] | undefined;
   zonesLoading: boolean;
   onClose: () => void;
+  onEditBusyChange: (busy: boolean) => void;
 }
 
 function DrawerBody({
   eventId, attendee, zoneAccess, zoneAccessLoading, zoneAccessError, zoneHistory, zoneHistoryLoading,
-  zoneHistoryError, zones, zonesLoading, onClose,
+  zoneHistoryError, zones, zonesLoading, onClose, onEditBusyChange,
 }: DrawerBodyProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -187,6 +207,22 @@ function DrawerBody({
   const grantedZoneIds = new Set(allowedZones.map((entry) => entry.zone_id));
   const availableZones = (zones ?? []).map(zoneIdentity).filter((z) => !grantedZoneIds.has(z.id));
   const recentActivity = (zoneHistory ?? []).slice(0, RECENT_ACTIVITY_LIMIT);
+
+  // Shared disabled placeholder for the "+ Zone" add-affordance — rendered
+  // both while zone-access/zones are still loading (we don't yet know
+  // whether there's anything to add) and once loaded when there's genuinely
+  // nothing left to grant. Extracted so those two cases render byte-for-byte
+  // the same element instead of two independently-maintained copies.
+  const addZonePlaceholder = (
+    <button
+      type="button"
+      disabled
+      aria-disabled="true"
+      className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed"
+    >
+      {t("drawerAddZone")}
+    </button>
+  );
 
   const checkedInParts = [t("drawerCheckedIn")];
   if (attendee.checked_in_at) checkedInParts.push(formatUtcHHMM(attendee.checked_in_at));
@@ -336,6 +372,7 @@ function DrawerBody({
           attendee={attendee}
           eventId={eventId}
           onCancel={() => setMode("view")}
+          onBusyChange={onEditBusyChange}
           onSaved={() => {
             setMode("view");
             setJustSaved(true);
@@ -434,8 +471,16 @@ function DrawerBody({
           )}
           {/* Hidden while the zone-access fetch is errored: offering to add
               MORE zones when we don't actually know the attendee's current
-              zone access is confusing UI. */}
-          {zoneAccessError ? null : availableZones.length > 0 ? (
+              zone access is confusing UI. Explicitly gated on the loading
+              states too (not just `availableZones.length > 0`) — while
+              zone-access/zones are still loading, `availableZones` happens
+              to compute as an empty array (both queries are `undefined` →
+              `?? []`), so the disabled placeholder rendering during loading
+              must be an explicit "we don't know yet" case, not a coincidence
+              of "genuinely zero zones available" sharing the same branch. */}
+          {zoneAccessError ? null : zoneAccessLoading || zonesLoading ? (
+            addZonePlaceholder
+          ) : availableZones.length > 0 ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -463,14 +508,7 @@ function DrawerBody({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <button
-              type="button"
-              disabled
-              aria-disabled="true"
-              className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed"
-            >
-              {t("drawerAddZone")}
-            </button>
+            addZonePlaceholder
           )}
         </div>
       </div>

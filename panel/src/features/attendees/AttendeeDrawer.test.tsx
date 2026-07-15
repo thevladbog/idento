@@ -157,6 +157,20 @@ function AttendeesListObserver() {
   return null;
 }
 
+// Same shape as ImportWizard.test.tsx's `createGate()`: a deterministic,
+// manually-released promise for a delayed MSW handler to await, so a test
+// can synchronize on the handler having settled (via the returned
+// non-optional `resolve`, always called and always followed by a `waitFor`)
+// instead of a fixed-duration sleep "long enough" for it to probably have
+// finished.
+function createGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe("AttendeeDrawer", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
@@ -261,6 +275,36 @@ describe("AttendeeDrawer", () => {
     await screen.findByText("Ada Lovelace");
     expect(await screen.findByText("+ Zone")).toBeInTheDocument();
     expect(screen.queryByText("Main hall")).not.toBeInTheDocument();
+  });
+
+  // Regression test: the disabled "+ Zone" placeholder must render for an
+  // EXPLICIT "we don't know yet" reason while zone-access/zones are still
+  // loading — not by coincidence of `availableZones` computing empty because
+  // both queries are `undefined` at that point. Proven by gating only the
+  // zones fetch while leaving a genuinely available (ungranted) zone once it
+  // resolves — if the disabled state were solely an artifact of an empty
+  // `availableZones` array, the button would flip to the interactive
+  // dropdown as soon as zone-access alone finished loading, before zones
+  // themselves ever arrive.
+  it("keeps the '+ Zone' add-affordance disabled while zones are still loading, not just when zero zones are truly available", async () => {
+    const zonesGate = createGate();
+    server.use(
+      http.get("http://api.test/api/events/:eventId/zones", async () => {
+        await zonesGate.promise;
+        return HttpResponse.json(ZONES);
+      }),
+    );
+    // Leaves VIP lounge (z2) ungranted, so once zones finish loading there
+    // genuinely IS a zone available to add.
+    zoneAccessResponse = [ZONE_ACCESS[0]];
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+
+    await screen.findByText("Ada Lovelace");
+    const addZoneButton = await screen.findByRole("button", { name: "+ Zone" });
+    expect(addZoneButton).toBeDisabled();
+
+    zonesGate.resolve();
+    await waitFor(() => expect(screen.getByRole("button", { name: "+ Zone" })).toBeEnabled());
   });
 
   it("shows a distinct i18n'd error message (not the empty state) when the zone-access fetch fails, and hides '+ Zone'", async () => {
@@ -402,14 +446,17 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
   // in-flight PATCH — that response must not overwrite a newer, still-unsaved
   // edit made while it was pending.
   it("does not let a stale PATCH response overwrite a newer, still-unsaved edit made while the first save was pending", async () => {
-    let releaseFirstPatch: (() => void) | undefined;
+    // Same `createGate()` shape as ImportWizard.test.tsx's chunk gates: a
+    // non-optional releaser (definite-assignment, not `| undefined`) that
+    // the test MUST call and await settling via `waitFor`, rather than a
+    // fixed-duration sleep "long enough" for the response to have probably
+    // landed.
+    const firstPatchGate = createGate();
     server.use(
       http.patch("http://api.test/api/attendees/:id", async ({ request }) => {
         patchAttendeeCount += 1;
         lastPatchAttendeeBody = await request.json();
-        await new Promise<void>((resolve) => {
-          releaseFirstPatch = resolve;
-        });
+        await firstPatchGate.promise;
         return HttpResponse.json({ ...ADA, ...(lastPatchAttendeeBody as object) });
       }),
     );
@@ -433,14 +480,71 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await user.clear(positionInput);
     await user.type(positionInput, "Second edit");
 
-    releaseFirstPatch?.();
+    const attendeeGetHitCountBeforeRelease = attendeeGetHitCount;
+    firstPatchGate.resolve();
 
-    // Give the stale onSuccess a chance to run — it must not apply.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The stale onSuccess still runs its unconditional cache invalidation
+    // (see EditAttendeeForm.tsx's comment on that) even though the version
+    // guard skips applying the response — waiting for that invalidation's
+    // refetch to land against the always-subscribed attendee-detail query is
+    // a deterministic signal that the stale onSuccess has fully executed,
+    // rather than a fixed-duration sleep hoping it "probably" has.
+    await waitFor(() => expect(attendeeGetHitCount).toBeGreaterThan(attendeeGetHitCountBeforeRelease));
+
     expect(screen.getByLabelText("Position")).toHaveValue("Second edit");
     // Still in edit mode — a stale success must not have returned to the
     // read view out from under the newer, unsaved edit.
     expect(screen.queryByRole("button", { name: "Edit details" })).not.toBeInTheDocument();
+  });
+
+  // Regression test: the outer Sheet must refuse to close (Escape/outside-
+  // click) while EditAttendeeForm's PATCH is genuinely in flight — otherwise
+  // the whole drawer unmounts mid-save and the user has no way to know
+  // whether their edit actually persisted.
+  it("does not let Escape close the drawer while an edit-mode save is pending, but allows it again once the save resolves", async () => {
+    const editPatchGate = createGate();
+    server.use(
+      http.patch("http://api.test/api/attendees/:id", async ({ request }) => {
+        patchAttendeeCount += 1;
+        lastPatchAttendeeBody = await request.json();
+        await editPatchGate.promise;
+        return HttpResponse.json({ ...ADA, ...(lastPatchAttendeeBody as object) });
+      }),
+    );
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    // `open` is hardcoded `true` on AttendeeDrawer's own Sheet — in the real
+    // app it's the PARENT unmounting AttendeeDrawer on `onClose` that
+    // actually makes the dialog disappear (see AttendeesPage.tsx's
+    // `?attendee=` handling). Rendered standalone here, so "did Escape close
+    // it" is asserted via `onClose` call counts, not dialog presence.
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />);
+    await screen.findByText("Ada Lovelace");
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+
+    const positionInput = await screen.findByLabelText("Position");
+    await user.clear(positionInput);
+    await user.type(positionInput, "Senior Engineer");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    // Cancel is disabled too while the save is pending.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    await user.keyboard("{Escape}");
+    // onClose must not have been called — Escape was a no-op while the save
+    // is genuinely in flight, and the edit form must still be showing.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Position")).toHaveValue("Senior Engineer");
+
+    editPatchGate.resolve();
+    // Save resolved — back to the read view.
+    expect(await screen.findByRole("button", { name: "Edit details" })).toBeInTheDocument();
+
+    // Now that nothing is busy, Escape dismisses the drawer normally.
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it("+ Zone opens a picker of ungranted zones, POSTs the right body on selection, and refetches zone access", async () => {

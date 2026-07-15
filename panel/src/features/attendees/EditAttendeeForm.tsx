@@ -62,6 +62,12 @@ export interface EditAttendeeFormProps {
   eventId: string;
   onCancel: () => void;
   onSaved: () => void;
+  // Notifies the parent (AttendeeDrawer) whenever this form's PATCH pending
+  // state changes, so the drawer's outer Sheet can refuse to close (Escape/
+  // outside-click) while a save is genuinely in flight — see
+  // AttendeeDrawer.tsx's `isEditBusyRef` for how this is consumed. Optional
+  // so this form stays usable without a busy-tracking parent.
+  onBusyChange?: (busy: boolean) => void;
 }
 
 // Task 9's edit-details form — AttendeeDrawer.tsx swaps this in for the
@@ -75,7 +81,7 @@ export interface EditAttendeeFormProps {
 // clobber a newer, still-unsaved edit made while that earlier save was
 // pending. See GeneralCard.tsx's `editVersionRef` comment for the full
 // account of that (found-and-fixed) race.
-export function EditAttendeeForm({ attendee, eventId, onCancel, onSaved }: EditAttendeeFormProps) {
+export function EditAttendeeForm({ attendee, eventId, onCancel, onSaved, onBusyChange }: EditAttendeeFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [baseline, setBaseline] = React.useState<FormState>(() => toFormState(attendee));
@@ -100,6 +106,18 @@ export function EditAttendeeForm({ attendee, eventId, onCancel, onSaved }: EditA
       onSaved();
     },
   });
+
+  // Mirrors the pending state out to the parent on every change (and clears
+  // it on unmount, e.g. when a successful save swaps this form back out for
+  // the read view in the same commit that `isPending` flips to false) so
+  // AttendeeDrawer's outer Sheet can refuse to close while a save is
+  // genuinely in flight. A ref-backed callback rather than lifted state:
+  // the parent only ever needs to CONSULT this at the moment the user tries
+  // to dismiss the Sheet, never render it.
+  React.useEffect(() => {
+    onBusyChange?.(patchAttendee.isPending);
+    return () => onBusyChange?.(false);
+  }, [patchAttendee.isPending, onBusyChange]);
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
     editVersionRef.current += 1;
@@ -221,7 +239,7 @@ export function EditAttendeeForm({ attendee, eventId, onCancel, onSaved }: EditA
       </div>
       {patchAttendee.isError ? <p className="text-body text-destructive">{t("drawerMutationError")}</p> : null}
       <div className="mt-auto flex items-center gap-3 border-t border-border pt-3">
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={patchAttendee.isPending}>
           {t("createEventCancel")}
         </Button>
         <Button type="submit" disabled={!isDirty || patchAttendee.isPending}>
