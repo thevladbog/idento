@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"idento/backend/internal/models"
+
 	"github.com/google/uuid"
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 )
@@ -170,6 +172,49 @@ func TestGetAttendeesByEventID_NoFiltersReturnsEveryone(t *testing.T) {
 	}
 	if len(attendees) != 2 {
 		t.Fatalf("len(attendees) = %d, want 2 (unfiltered)", len(attendees))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// UpdateAttendee's UPDATE statement previously omitted the `code` column
+// entirely — the "regenerate code" feature (AttendeeDrawer.tsx) sets
+// attendee.Code in memory and calls this method, but the write silently
+// never reached Postgres, so the UI reported success while the attendee's
+// actual scan code never changed. Every existing test/handler path stubs
+// the store, so nothing caught this until a pgxmock test asserted the real
+// SQL text. This pins the fix: the query must include `code = ` and the
+// bound Code value must be present in the exec args.
+func TestUpdateAttendee_PersistsCode(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	attendeeID := uuid.New()
+	attendee := &models.Attendee{
+		ID:        attendeeID,
+		FirstName: "Jane",
+		LastName:  "Doe",
+		Email:     "jane@example.com",
+		Company:   "Acme",
+		Position:  "Eng",
+		Code:      "NEW-CODE-123",
+	}
+
+	mock.ExpectExec(`UPDATE attendees SET[\s\S]*code = \$6`).
+		WithArgs(
+			attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
+			attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
+			attendee.BlockReason, []byte(nil), attendee.DeletedAt, attendee.ID,
+		).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+	s := &PGStore{db: mock}
+	if err := s.UpdateAttendee(context.Background(), attendee); err != nil {
+		t.Fatalf("UpdateAttendee: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
