@@ -11,12 +11,24 @@ import { useEffect, useState } from "react";
  * the WINDOW scrolls instead — so this port passes `root: null`, the
  * IntersectionObserver default meaning "the browser viewport".
  */
+// Bound on how many rAF retries `trySetup` will schedule while waiting for
+// `sectionIds` to appear in the DOM. ~150 attempts at ~60fps is roughly
+// 2.5s — comfortably longer than any real data-loading scenario in this
+// codebase (sections appear promptly once a query resolves, or the caller
+// renders a permanent error state instead). A full MutationObserver rewrite
+// would handle unbounded/async DOM mutation, but that's not this call site's
+// pattern (EventSettingsPage.tsx either resolves its query or shows an error
+// page), so it's YAGNI here — a bounded retry counter is enough to cap the
+// busy-loop if the caller stays stuck in a loading state indefinitely.
+const MAX_SETUP_RETRIES = 150;
+
 export function useScrollSpy(sectionIds: string[]): string {
   const [activeId, setActiveId] = useState(sectionIds[0] ?? "");
 
   useEffect(() => {
     let observer: IntersectionObserver | null = null;
     let rafId: number | null = null;
+    let retries = 0;
 
     function trySetup() {
       const elements = sectionIds
@@ -26,7 +38,12 @@ export function useScrollSpy(sectionIds: string[]): string {
       if (elements.length === 0) {
         // Sections may not be in the DOM yet (e.g. still behind an async
         // loading gate in the caller). Keep polling via rAF until they
-        // appear, rather than giving up after the first mount pass.
+        // appear, up to MAX_SETUP_RETRIES — past that, stop rescheduling and
+        // leave activeId at its last value (typically sectionIds[0]) with no
+        // observer attached; an acceptable degraded state since the caller
+        // isn't rendering real content in that scenario anyway.
+        retries += 1;
+        if (retries >= MAX_SETUP_RETRIES) return;
         rafId = requestAnimationFrame(trySetup);
         return;
       }

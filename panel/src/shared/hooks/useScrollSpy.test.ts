@@ -91,6 +91,34 @@ describe("useScrollSpy - sections mounted after an async loading gate", () => {
     vi.unstubAllGlobals();
   });
 
+  it("stops rescheduling rAF retries once the retry cap is exhausted if sections never appear", () => {
+    const rafSpy = vi.mocked(requestAnimationFrame);
+    renderHook(() => useScrollSpy(["summary", "lifecycle"]));
+
+    // Sections never get added to the DOM. Flush the captured rAF callback
+    // repeatedly, standing in for real frames — each flush re-schedules
+    // itself (capturing a new rafCallback) until the retry cap is hit, at
+    // which point it stops rescheduling and requestAnimationFrame stops
+    // being called again.
+    const callsBeforeCap = rafSpy.mock.calls.length;
+    for (let i = 0; i < 200; i += 1) {
+      const cb = rafCallback;
+      if (cb === null) break;
+      rafCallback = null;
+      act(() => {
+        cb(0);
+      });
+    }
+
+    // The observer must never have been attached (no sections ever existed),
+    // and the retry loop must have stopped well short of 200 (the bounded
+    // cap is on the order of 100-150) instead of running forever.
+    expect(observerInstance).toBeUndefined();
+    expect(rafCallback).toBeNull();
+    expect(rafSpy.mock.calls.length - callsBeforeCap).toBeLessThan(200);
+    expect(rafSpy.mock.calls.length - callsBeforeCap).toBeGreaterThanOrEqual(100);
+  });
+
   it("attaches the observer once sections appear post-mount and reflects intersection", () => {
     const { result } = renderHook(() => useScrollSpy(["summary", "lifecycle"]));
 
