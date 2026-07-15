@@ -462,6 +462,45 @@ describe("ZonesPage", () => {
       expect(screen.getByRole("button", { name: "More actions for Main Hall" })).toBeEnabled();
     });
 
+    it("deleting the currently-expanded, dirty zone resets the editor state so other zones' editors stay openable", async () => {
+      rulesResponses = {
+        z1: [{
+          id: "r1", zone_id: "z1", category: "vip", allowed: true, time_from: null, time_to: null, created_at: "2026-01-01T00:00:00Z",
+        }],
+        z2: [],
+      };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      // Expand z1's editor and make it dirty.
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+      await user.type(await screen.findByLabelText("Category value 1"), "-extra");
+
+      // Delete z1 through its own row menu (mere dirtiness does not disable
+      // the menu — only a pending save does).
+      await user.click(screen.getByRole("button", { name: "More actions for Main Hall" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete zone…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.type(within(dialog).getByLabelText("Type Main Hall to confirm"), "Main Hall");
+      // The post-delete ZONES_KEY refetch must return a list without z1.
+      zonesResponse = [zoneWithStats({ id: "z2", name: "VIP Lounge", access_rules_count: 2 })];
+      await user.click(within(dialog).getByRole("button", { name: "Delete zone" }));
+
+      await waitFor(() => expect(screen.queryByText("Main Hall")).not.toBeInTheDocument());
+
+      // The stale dirty state must not leak: no orphaned hint anywhere, and
+      // another zone's editor must open on the first click.
+      expect(
+        screen.queryByText("Save or cancel your changes before editing another zone's rules."),
+      ).not.toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "By rule · 2" }));
+      expect(await screen.findByTestId("zone-row-expanded-z2")).toBeInTheDocument();
+      expect(
+        screen.queryByText("Save or cancel your changes before editing another zone's rules."),
+      ).not.toBeInTheDocument();
+    });
+
     it("a rules-fetch error renders error copy with no editable surface, reachable from either entry point", async () => {
       rulesStatusOverride = { z1: 500 };
       const user = userEvent.setup();

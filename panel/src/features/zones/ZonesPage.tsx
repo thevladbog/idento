@@ -83,6 +83,29 @@ export function ZonesPage() {
     if (!rulesDirty) setShowUnsavedHint(false);
   }, [rulesDirty]);
 
+  // Reconciles the expanded-editor state against the CURRENT zones list —
+  // if the expanded zone is no longer in it, every piece of lifted editor
+  // state is reset. Without this, deleting the currently-expanded, dirty
+  // zone (its `⋯` menu is NOT disabled by mere dirtiness — only by a
+  // pending save) soft-locks the whole feature: the editor unmounts with
+  // `rulesDirty` still true and `expandedZoneId` pointing at the deleted
+  // id, so every later requestExpand is blocked by the dirty-guard while
+  // the hint that explains the block only renders inside the expanded row —
+  // which no longer exists. Also covers zones deleted externally (another
+  // tab/operator) surfacing via any ZONES_KEY refetch. Gated on isSuccess,
+  // not on the `zones` fallback array — while the list is loading or
+  // errored, `data` is undefined and the `?? []` fallback would falsely
+  // read as "the zone is gone".
+  React.useEffect(() => {
+    if (expandedZoneId === null || !zonesQuery.isSuccess) return;
+    const stillExists = (zonesQuery.data ?? []).some((entry) => zoneIdentity(entry).id === expandedZoneId);
+    if (stillExists) return;
+    setExpandedZoneId(null);
+    setRulesDirty(false);
+    setRulesBusy(false);
+    setShowUnsavedHint(false);
+  }, [expandedZoneId, zonesQuery.isSuccess, zonesQuery.data]);
+
   function requestExpand(zoneId: string) {
     if (expandedZoneId === zoneId) {
       if (rulesBusy) return;
