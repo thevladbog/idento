@@ -48,3 +48,23 @@ export function useEventZonesWithStats(eventId: string) {
 export function ZONES_KEY(eventId: string) {
   return ["get", "/api/events/{event_id}/zones", { params: { path: { event_id: eventId } } }] as const;
 }
+
+// A single zone's access-rule set (Task 4, the inline OR-rule builder).
+// GET /api/zones/{zone_id}/access-rules returns the FULL rule list — both
+// the "simple" allow-rules the sentence UI can edit and the "complex" ones
+// (allowed: false, or either time bound set) it can only pass through
+// read-only. ZoneRuleEditor.tsx does that simple/complex split; this hook
+// just fetches the raw array.
+export function useZoneAccessRules(zoneId: string) {
+  return $api.useQuery("get", "/api/zones/{zone_id}/access-rules", { params: { path: { zone_id: zoneId } } });
+}
+
+// Query-key for a single zone's access-rules GET, scoped to that zone only
+// (unlike ZONES_KEY above, there's no cross-shape variant to prefix-match
+// here — one path, one query key). Save must invalidate this AND
+// ZONES_KEY(eventId) together: the PUT's `{message}`-only response can't
+// patch either cache directly, and the zones list's access-type text reads
+// `access_rules_count`, which only a ZONES_KEY refetch will pick up.
+export function ZONE_RULES_KEY(zoneId: string) {
+  return ["get", "/api/zones/{zone_id}/access-rules", { params: { path: { zone_id: zoneId } } }] as const;
+}

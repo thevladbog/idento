@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
-import { ZONES_KEY, useEventZonesWithStats } from "./hooks";
+import {
+  ZONES_KEY, ZONE_RULES_KEY, useEventZonesWithStats, useZoneAccessRules,
+} from "./hooks";
 import { useEventZones } from "../attendees/hooks";
 import { startMswServer } from "../../test/msw";
 
@@ -13,6 +15,8 @@ interface CapturedRequest {
 
 let capturedRequests: CapturedRequest[] = [];
 let zonesFetchCount = 0;
+let rulesFetchCount = 0;
+let rulesFetchedZoneIds: string[] = [];
 
 function zoneWithStats(id: string, name: string) {
   return {
@@ -36,6 +40,21 @@ function zoneWithStats(id: string, name: string) {
 }
 
 const server = startMswServer(
+  http.get("http://api.test/api/zones/:zoneId/access-rules", ({ params }) => {
+    rulesFetchCount += 1;
+    rulesFetchedZoneIds.push(params.zoneId as string);
+    return HttpResponse.json([
+      {
+        id: "r1",
+        zone_id: params.zoneId as string,
+        category: "vip",
+        allowed: true,
+        time_from: null,
+        time_to: null,
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+  }),
   http.get("http://api.test/api/events/:eventId/zones", ({ request, params }) => {
     zonesFetchCount += 1;
     const url = new URL(request.url);
@@ -84,6 +103,8 @@ describe("zones hooks", () => {
   beforeEach(() => {
     capturedRequests = [];
     zonesFetchCount = 0;
+    rulesFetchCount = 0;
+    rulesFetchedZoneIds = [];
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
@@ -130,6 +151,36 @@ describe("zones hooks", () => {
       await waitFor(() => expect(zonesFetchCount).toBe(3));
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(zonesFetchCount).toBe(3);
+    });
+  });
+
+  describe("useZoneAccessRules", () => {
+    it("fetches the given zone's access rules", async () => {
+      const { result } = renderHook(() => useZoneAccessRules("z1"), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(rulesFetchedZoneIds).toEqual(["z1"]);
+      expect(result.current.data).toHaveLength(1);
+      expect(result.current.data?.[0]?.category).toBe("vip");
+    });
+  });
+
+  describe("ZONE_RULES_KEY", () => {
+    it("invalidating one zone's key refetches only that zone's rules query", async () => {
+      const { qc, Wrapper } = makeWrapper();
+
+      const { result: z1 } = renderHook(() => useZoneAccessRules("z1"), { wrapper: Wrapper });
+      const { result: z2 } = renderHook(() => useZoneAccessRules("z2"), { wrapper: Wrapper });
+
+      await waitFor(() => expect(z1.current.isSuccess).toBe(true));
+      await waitFor(() => expect(z2.current.isSuccess).toBe(true));
+      expect(rulesFetchCount).toBe(2);
+
+      await qc.invalidateQueries({ queryKey: ZONE_RULES_KEY("z1") });
+
+      await waitFor(() => expect(rulesFetchCount).toBe(3));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(rulesFetchCount).toBe(3);
     });
   });
 });

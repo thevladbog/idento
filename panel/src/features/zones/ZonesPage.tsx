@@ -9,6 +9,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { ZONES_KEY, useEventZonesWithStats } from "./hooks";
 import { ZoneFormDialog } from "./ZoneFormDialog";
+import { ZoneRuleEditor } from "./ZoneRuleEditor";
 import { ZONE_COLOR_CLASSES, zoneColorKey } from "./zoneColors";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
@@ -57,6 +58,45 @@ export function ZonesPage() {
   // a late onSuccess/onError from firing for a session the user has already
   // backed out of.
   const deleteSessionRef = React.useRef(0);
+
+  // Task 4 — the inline OR-rule builder. Only one zone's editor is ever
+  // expanded at a time: `expandedZoneId` gates which row renders
+  // `ZoneRuleEditor`, and `rulesDirty`/`rulesBusy` are lifted from that
+  // single mounted editor (via its onDirtyChange/onBusyChange props) so
+  // this page can (a) block opening a DIFFERENT zone's editor while the
+  // current one has unsaved edits (`requestExpand` below, surfaced as the
+  // `zonesRulesUnsavedHint` caption) and (b) gate the open row's OWN
+  // collapse toggle and `⋯` menu while its save is genuinely in flight —
+  // the busy-gating audit this task's brief calls out as P2.1's hardest
+  // lesson, covering every dismiss path for that row, not just Save/Cancel
+  // (which ZoneRuleEditor itself already gates internally).
+  const [expandedZoneId, setExpandedZoneId] = React.useState<string | null>(null);
+  const [rulesDirty, setRulesDirty] = React.useState(false);
+  const [rulesBusy, setRulesBusy] = React.useState(false);
+  const [showUnsavedHint, setShowUnsavedHint] = React.useState(false);
+
+  // The hint is only ever a reaction to a blocked attempt — once the open
+  // editor stops being dirty (Cancel, or a successful Save unmounting it
+  // entirely), any stale hint from an earlier blocked attempt no longer
+  // applies.
+  React.useEffect(() => {
+    if (!rulesDirty) setShowUnsavedHint(false);
+  }, [rulesDirty]);
+
+  function requestExpand(zoneId: string) {
+    if (expandedZoneId === zoneId) {
+      if (rulesBusy) return;
+      setExpandedZoneId(null);
+      setShowUnsavedHint(false);
+      return;
+    }
+    if (expandedZoneId !== null && (rulesDirty || rulesBusy)) {
+      setShowUnsavedHint(true);
+      return;
+    }
+    setExpandedZoneId(zoneId);
+    setShowUnsavedHint(false);
+  }
 
   const deleteZone = $api.useMutation("delete", "/api/zones/{id}", {
     onMutate: () => ({ sessionId: deleteSessionRef.current }),
@@ -130,17 +170,57 @@ export function ZonesPage() {
         />
       ) : (
         <div className="flex flex-col rounded-lg border border-border">
-          {zones.map((entry) => (
-            <ZoneRow
-              key={zoneIdentity(entry).id}
-              entry={entry}
-              onEdit={(zone) => setFormDialog({ mode: "edit", zone })}
-              onDelete={(zone) => {
-                setDeleteErrorMessage(null);
-                setDeletingZone(zone);
-              }}
-            />
-          ))}
+          {zones.map((entry, index) => {
+            const id = zoneIdentity(entry).id;
+            const isExpanded = expandedZoneId === id;
+            const isLast = index === zones.length - 1;
+            return (
+              <div
+                key={id}
+                className={cn(
+                  !isLast && "border-b border-border",
+                  // Board styling for the expanded row: success-tinted bg +
+                  // 3px left accent, token classes only.
+                  isExpanded && "border-l-[3px] border-l-success bg-success/5",
+                )}
+                data-testid={isExpanded ? `zone-row-expanded-${id}` : undefined}
+              >
+                <ZoneRow
+                  entry={entry}
+                  onEdit={(zone) => setFormDialog({ mode: "edit", zone })}
+                  onDelete={(zone) => {
+                    setDeleteErrorMessage(null);
+                    setDeletingZone(zone);
+                  }}
+                  expanded={isExpanded}
+                  // Busy only ever applies to the CURRENTLY expanded row —
+                  // there's exactly one mounted ZoneRuleEditor, so no other
+                  // row's controls need gating.
+                  rowBusy={isExpanded && rulesBusy}
+                  onToggleRules={() => requestExpand(id)}
+                />
+                {isExpanded ? (
+                  <div className="px-4 pb-4">
+                    {showUnsavedHint ? (
+                      <p className="mb-2 text-caption text-muted-foreground">{t("zonesRulesUnsavedHint")}</p>
+                    ) : null}
+                    <ZoneRuleEditor
+                      eventId={eventId}
+                      zoneId={id}
+                      onSaved={() => {
+                        setExpandedZoneId(null);
+                        setRulesDirty(false);
+                        setRulesBusy(false);
+                        setShowUnsavedHint(false);
+                      }}
+                      onDirtyChange={setRulesDirty}
+                      onBusyChange={setRulesBusy}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -188,16 +268,25 @@ interface ZoneRowProps {
   entry: EventZoneWithStats;
   onEdit: (zone: EventZone) => void;
   onDelete: (zone: EventZone) => void;
+  expanded: boolean;
+  // True only while THIS row's rule-editor save is pending — disables both
+  // the access-type text's collapse toggle and the whole `⋯` menu trigger,
+  // so neither dismiss path can fire mid-save (busy-gating audit, Task 4
+  // brief).
+  rowBusy: boolean;
+  onToggleRules: () => void;
 }
 
-function ZoneRow({ entry, onEdit, onDelete }: ZoneRowProps) {
+function ZoneRow({
+  entry, onEdit, onDelete, expanded, rowBusy, onToggleRules,
+}: ZoneRowProps) {
   const { t } = useTranslation();
   const { zone } = entry;
   const identity = zoneIdentity(entry);
   const colorKey = zoneColorKey(zone);
 
   return (
-    <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
+    <div className="flex items-center gap-3 px-4 py-3">
       <span aria-hidden className={cn("size-2.5 shrink-0 rounded-[3px]", ZONE_COLOR_CLASSES[colorKey])} />
       <div className="flex flex-1 flex-col">
         <span className="flex items-center gap-1.5">
@@ -215,23 +304,32 @@ function ZoneRow({ entry, onEdit, onDelete }: ZoneRowProps) {
       {/* Reconciliation #3: rules default-allow when none exist, so
           access_rules_count === 0 reads as "All attendees"; > 0 as "By
           rule" (real rule count, never a fabricated people/match count —
-          reconciliation #4 bans those everywhere on this page). */}
-      <span className="text-body text-muted-foreground">
+          reconciliation #4 bans those everywhere on this page). Task 4:
+          this is now also an entry point into the inline rule builder — a
+          real <button>, not a static span, so it's keyboard-reachable. */}
+      <button
+        type="button"
+        onClick={onToggleRules}
+        disabled={rowBusy}
+        aria-expanded={expanded}
+        className="rounded-sm text-body text-muted-foreground underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:no-underline"
+      >
         {entry.access_rules_count === 0 ? t("zonesAccessAll") : t("zonesAccessByRule", { count: entry.access_rules_count })}
-      </span>
+      </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
+            disabled={rowBusy}
             aria-label={t("zonesRowMenuLabel", { name: identity.name })}
-            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
           >
             ⋯
           </button>
         </DropdownMenuTrigger>
-        {/* Task 4 adds a third item (zonesMenuRules) below Edit/Delete. */}
         <DropdownMenuContent align="end">
           <DropdownMenuItem onSelect={() => onEdit(zone)}>{t("zonesMenuEdit")}</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onToggleRules}>{t("zonesMenuRules")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => onDelete(zone)}>{t("zonesMenuDelete")}</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

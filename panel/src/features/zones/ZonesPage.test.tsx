@@ -85,8 +85,30 @@ let deleteCount = 0;
 let lastDeletedId: string | undefined;
 let deleteStatusOverride: number | null = null;
 let deleteDelayMs = 0;
+let rulesResponses: Record<string, unknown[]> = {};
+let rulesStatusOverride: Record<string, number> = {};
+let putBodies: { zoneId: string; body: unknown }[] = [];
+let putStatus = 200;
+let putDelayMs = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/zones/:zoneId/access-rules", ({ params }) => {
+    const zoneId = params.zoneId as string;
+    const statusOverride = rulesStatusOverride[zoneId];
+    if (statusOverride) {
+      return HttpResponse.json({ error: "boom" }, { status: statusOverride });
+    }
+    return HttpResponse.json(rulesResponses[zoneId] ?? []);
+  }),
+  http.put("http://api.test/api/zones/:zoneId/access-rules", async ({ request, params }) => {
+    const body = await request.json();
+    putBodies.push({ zoneId: params.zoneId as string, body });
+    if (putDelayMs) await delay(putDelayMs);
+    if (putStatus !== 200) {
+      return HttpResponse.json({ error: "boom" }, { status: putStatus });
+    }
+    return HttpResponse.json({ message: "updated" });
+  }),
   http.get("http://api.test/api/events/:eventId/zones", () => {
     if (zonesStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: zonesStatus });
@@ -145,6 +167,11 @@ describe("ZonesPage", () => {
     lastDeletedId = undefined;
     deleteStatusOverride = null;
     deleteDelayMs = 0;
+    rulesResponses = {};
+    rulesStatusOverride = {};
+    putBodies = [];
+    putStatus = 200;
+    putDelayMs = 0;
   });
 
   it("renders the header (h2 + mono count) and the caption", async () => {
@@ -342,6 +369,110 @@ describe("ZonesPage", () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.queryByText("Zone is still referenced by attendees")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("access-rule builder wiring (Task 4)", () => {
+    it("clicking the access-type text expands that zone's rule editor with the success-accent styling", async () => {
+      rulesResponses = { z1: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+
+      expect(await screen.findByRole("button", { name: "+ or condition" })).toBeInTheDocument();
+      const expandedBlock = screen.getByTestId("zone-row-expanded-z1");
+      expect(expandedBlock.className).toContain("border-l-success");
+      expect(expandedBlock.className).toContain("bg-success/5");
+    });
+
+    it("the row's '⋯' menu 'Access rules' item expands the same editor", async () => {
+      rulesResponses = { z2: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Access rules" }));
+
+      expect(await screen.findByTestId("zone-row-expanded-z2")).toBeInTheDocument();
+    });
+
+    it("clicking the access-type text again collapses an already-open editor", async () => {
+      rulesResponses = { z1: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+      await screen.findByTestId("zone-row-expanded-z1");
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+
+      expect(screen.queryByTestId("zone-row-expanded-z1")).not.toBeInTheDocument();
+    });
+
+    it("opening a different zone's editor is blocked while the current one is dirty, and shows the unsaved hint", async () => {
+      rulesResponses = {
+        z1: [{
+          id: "r1", zone_id: "z1", category: "vip", allowed: true, time_from: null, time_to: null, created_at: "2026-01-01T00:00:00Z",
+        }],
+        z2: [],
+      };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+      const valueInput = await screen.findByLabelText("Category value 1");
+      await user.type(valueInput, "-extra");
+
+      await user.click(screen.getByRole("button", { name: "By rule · 2" }));
+
+      expect(screen.queryByTestId("zone-row-expanded-z2")).not.toBeInTheDocument();
+      expect(screen.getByTestId("zone-row-expanded-z1")).toBeInTheDocument();
+      expect(
+        await screen.findByText("Save or cancel your changes before editing another zone's rules."),
+      ).toBeInTheDocument();
+
+      // Cancelling clears the dirty flag, so the previously blocked zone
+      // can now be opened.
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await user.click(screen.getByRole("button", { name: "By rule · 2" }));
+
+      expect(await screen.findByTestId("zone-row-expanded-z2")).toBeInTheDocument();
+      expect(screen.queryByTestId("zone-row-expanded-z1")).not.toBeInTheDocument();
+    });
+
+    it("while a save is pending for the open row, that row's collapse toggle and '⋯' menu are inert; both re-enable once it settles", async () => {
+      rulesResponses = { z1: [] };
+      putDelayMs = 50;
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+      await screen.findByTestId("zone-row-expanded-z1");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(screen.getByRole("button", { name: "All attendees" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "More actions for Main Hall" })).toBeDisabled();
+
+      await waitFor(() => expect(screen.queryByTestId("zone-row-expanded-z1")).not.toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "More actions for Main Hall" })).toBeEnabled();
+    });
+
+    it("a rules-fetch error renders error copy with no editable surface, reachable from either entry point", async () => {
+      rulesStatusOverride = { z1: 500 };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "All attendees" }));
+
+      expect(await screen.findByText("Couldn't load access rules.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "+ or condition" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     });
   });
 });
