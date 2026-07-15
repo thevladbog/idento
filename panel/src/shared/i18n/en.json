@@ -260,5 +260,18 @@
   "importWorkerNote": "{{size}} · parsed in a worker, the UI never freezes",
   "importPreviewLabel": "Preview — first 3 rows",
   "importEncodingHint": "Wrong encoding shows instantly as mojibake — switch above and the preview re-renders.",
-  "importContinueColumns": "Continue → Columns"
+  "importContinueColumns": "Continue → Columns",
+  "importParsingFull": "Parsing…",
+  "importCsvColumn": "CSV column",
+  "importIdentoField": "Idento field",
+  "importSample": "Sample",
+  "importDontImport": "Don't import",
+  "importFieldCode": "Code",
+  "importCustomField": "Custom field",
+  "importCustomFieldNameLabel": "Custom field name",
+  "importUnmappedWarning": "Column unmapped — pick a field or confirm skipping it",
+  "importRowsCaption": "{{rows}} rows",
+  "importDuplicatesMerged": "{{rows}} rows · {{count}} duplicates merged by email",
+  "importRowsCta": "Import {{count}} rows",
+  "importBack": "← Back"
 }

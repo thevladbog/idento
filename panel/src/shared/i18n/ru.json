@@ -262,5 +262,18 @@
   "importWorkerNote": "{{size}} · разобран в фоновом потоке, интерфейс не зависает",
   "importPreviewLabel": "Предпросмотр — первые 3 строки",
   "importEncodingHint": "Неверная кодировка сразу видна как «кракозябры» — переключите её выше, и предпросмотр перестроится.",
-  "importContinueColumns": "Далее → Столбцы"
+  "importContinueColumns": "Далее → Столбцы",
+  "importParsingFull": "Разбор…",
+  "importCsvColumn": "Столбец CSV",
+  "importIdentoField": "Поле Idento",
+  "importSample": "Пример",
+  "importDontImport": "Не импортировать",
+  "importFieldCode": "Код",
+  "importCustomField": "Своё поле",
+  "importCustomFieldNameLabel": "Название своего поля",
+  "importUnmappedWarning": "Столбец не сопоставлен — выберите поле или подтвердите пропуск",
+  "importRowsCaption": "{{rows}} строк",
+  "importDuplicatesMerged": "{{rows}} строк · {{count}} дублей объединено по email",
+  "importRowsCta": "Импортировать {{count}} строк",
+  "importBack": "← Назад"
 }

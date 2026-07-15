@@ -1,12 +1,32 @@
 import {
-  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input,
 } from "@idento/ui";
-import { Check } from "lucide-react";
+import { ArrowRight, Check, Loader2 } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { decodeBuffer, detectEncoding, type CsvEncoding } from "./encoding";
 import { parseCsv } from "./parseCsv";
-import { createInitialWizardState, type ImportWizardState } from "./wizardState";
+import {
+  buildBulkPayload, computeDefaultMapping,
+  createInitialWizardState, type ImportWizardState, type MappingTarget, type StandardField,
+} from "./wizardState";
+
+// The 6 standard fields a CSV column can map to (Task 12's brief, verbatim
+// order). Labels are NOT new i18n keys — first_name/last_name/email/
+// company/position reuse the exact same addAttendee* keys AddAttendeeDialog
+// and EditAttendeeForm already use for these field names, so the mapping
+// dropdown's options say the same thing an operator sees everywhere else in
+// the app. "code" has no addAttendee* precedent (attendee codes are
+// server-generated, never a manual-entry field), so it gets its own key.
+const STANDARD_FIELD_LABEL_KEYS: Record<StandardField, string> = {
+  first_name: "addAttendeeFirstName",
+  last_name: "addAttendeeLastName",
+  email: "addAttendeeEmail",
+  company: "addAttendeeCompany",
+  position: "addAttendeePosition",
+  code: "importFieldCode",
+};
+const STANDARD_FIELDS: StandardField[] = ["first_name", "last_name", "email", "company", "position", "code"];
 
 export interface ImportWizardProps {
   eventId: string;
@@ -27,14 +47,16 @@ function formatSize(bytes: number): string {
 }
 
 // Board 3a/3b/3c — the CSV import wizard's modal chrome (title + numbered
-// step indicator) plus step 1's body (file pick, encoding auto-detect with
-// override, 3-row live preview). Steps 2-3 (Tasks 12-13) are reachable via
-// Continue but only render a placeholder body here — this task's job is the
-// shell + step 1 + provably-wired step navigation, not the later screens.
+// step indicator) plus step 1 (file pick, encoding auto-detect with
+// override, 3-row live preview) and step 2 (full-file parse + column
+// mapping grid, Task 12). Step 3 (Task 13) is reachable via "Import N rows"
+// but only renders a placeholder body here — this task's job stops short of
+// the actual chunked-import submission flow.
 export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps) {
   void eventId; // Not read yet — wired once Task 13 actually submits the import.
   const { t } = useTranslation();
   const [state, setState] = React.useState<ImportWizardState>(createInitialWizardState);
+  const [isFullParsing, setIsFullParsing] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Reset to a fresh step-1 state whenever the dialog transitions closed —
@@ -92,15 +114,72 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     fileInputRef.current?.click();
   }
 
-  function handleContinue() {
-    setState((prev) => ({ ...prev, step: 2 }));
+  // The step 1->2 transition trigger. Task 11 deliberately only parsed a
+  // 3-row PREVIEW of the file (avoiding a wasteful double-parse just for
+  // the preview) and deferred the full parse. This is where it happens: the
+  // WHOLE file is re-decoded and re-parsed (no `preview` limit) before
+  // `state.step` ever flips to 2, so step 2 always renders with real full
+  // data (real total row count, real per-column samples) from its very
+  // first render — never the leftover 3-row preview. `isFullParsing` gates
+  // the Continue button (disabled + a spinner label) for the gap while a
+  // large file is being re-parsed; small files resolve fast enough that the
+  // gap is imperceptible, but nothing about this depends on file size.
+  async function handleContinue() {
+    if (!state.buffer) return;
+    setIsFullParsing(true);
+    try {
+      const text = decodeBuffer(state.buffer, state.encoding);
+      const { rows, headers } = await parseCsv(text, { worker: true });
+      setState((prev) => ({
+        ...prev,
+        rows,
+        headers,
+        mapping: computeDefaultMapping(headers),
+        step: 2,
+      }));
+    } finally {
+      setIsFullParsing(false);
+    }
+  }
+
+  function handleMappingChange(header: string, target: MappingTarget) {
+    setState((prev) => ({ ...prev, mapping: { ...prev.mapping, [header]: target } }));
+  }
+
+  // Preserves file/buffer/encoding/rows/headers/mapping — only `step`
+  // changes — so the operator never has to re-pick the file after a Back.
+  function handleBack() {
+    setState((prev) => ({ ...prev, step: 1 }));
+  }
+
+  // This task's job stops at advancing to step 3 with a stub body, mirroring
+  // Task 11's own step-2-stub precedent — Task 13 builds the real submission
+  // flow (chunked import against the API) behind this step.
+  function handleImportRows() {
+    setState((prev) => ({ ...prev, step: 3 }));
   }
 
   const canContinue = Boolean(state.file) && state.rows.length > 0;
 
+  // Recomputed on every mapping/full-parse change — dedup depends on
+  // WHICHEVER column is currently mapped to email, so it has to be live,
+  // not computed once when step 2 mounts.
+  const bulkPayload = React.useMemo(
+    () => buildBulkPayload(state.rows, state.mapping),
+    [state.rows, state.mapping],
+  );
+  const totalRowsAfterDedup = bulkPayload.attendees.length;
+  const hasUnsetColumn = state.headers.some(
+    (header) => (state.mapping[header] ?? { kind: "unset" as const }).kind === "unset",
+  );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={t("workspaceDialogClose")} className="max-w-[760px]">
+      {/* Board widths: 3a (step 1) = 760px, 3b (step 2) = 860px card. */}
+      <DialogContent
+        closeLabel={t("workspaceDialogClose")}
+        className={cn("max-w-[760px]", state.step === 2 && "max-w-[860px]")}
+      >
         <DialogHeader>
           <DialogTitle>{t("importTitle")}</DialogTitle>
           <StepIndicator currentStep={state.step} />
@@ -114,19 +193,48 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
             onEncodingChange={handleEncodingChange}
             onReplaceClick={handleReplaceClick}
           />
+        ) : state.step === 2 ? (
+          <Step2Body state={state} onMappingChange={handleMappingChange} />
         ) : (
           <p className="text-body text-muted-foreground">{t("placeholderComingSoon")}</p>
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            {t("createEventCancel")}
-          </Button>
           {state.step === 1 ? (
-            <Button type="button" disabled={!canContinue} onClick={handleContinue}>
-              {t("importContinueColumns")}
+            <>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {t("createEventCancel")}
+              </Button>
+              <Button type="button" disabled={!canContinue || isFullParsing} onClick={handleContinue}>
+                {isFullParsing ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 aria-hidden className="size-3.5 animate-spin" />
+                    {t("importParsingFull")}
+                  </span>
+                ) : (
+                  t("importContinueColumns")
+                )}
+              </Button>
+            </>
+          ) : state.step === 2 ? (
+            <>
+              <p className="text-caption text-muted-foreground sm:mr-auto">
+                {bulkPayload.mergedDuplicates > 0
+                  ? t("importDuplicatesMerged", { rows: totalRowsAfterDedup, count: bulkPayload.mergedDuplicates })
+                  : t("importRowsCaption", { rows: totalRowsAfterDedup })}
+              </p>
+              <Button type="button" variant="outline" onClick={handleBack}>
+                {t("importBack")}
+              </Button>
+              <Button type="button" disabled={hasUnsetColumn} onClick={handleImportRows}>
+                {t("importRowsCta", { count: totalRowsAfterDedup })}
+              </Button>
+            </>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              {t("createEventCancel")}
             </Button>
-          ) : null}
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -253,7 +361,12 @@ function Step1Body({
                   </tr>
                 </thead>
                 <tbody>
-                  {state.rows.map((row, idx) => (
+                  {/* Always sliced to 3, even though `state.rows` holds the
+                      FULL parsed file once the operator has visited step 2
+                      and come Back — this label says "first 3 rows" and
+                      must stay honest regardless of how much data is
+                      actually sitting in state. */}
+                  {state.rows.slice(0, 3).map((row, idx) => (
                     // Static 3-row preview (no reordering/removal), so an
                     // index key is safe here.
                     <tr key={idx}>
@@ -287,5 +400,141 @@ function EncodingSegment({ pressed, label, onClick }: { pressed: boolean; label:
     >
       {label}
     </Button>
+  );
+}
+
+// Up to 2 real, non-blank sample values for a column, scanning the full
+// (post-full-parse) row set rather than just the first couple of rows —
+// some columns are sparsely filled (e.g. board 3b's "Категория"/notes-style
+// columns), so limiting the scan to row[0]/row[1] would show blanks for a
+// column that does have real data further down the file.
+function sampleValues(rows: Record<string, string>[], header: string): string[] {
+  const values: string[] = [];
+  for (const row of rows) {
+    const value = row[header];
+    if (value) values.push(value);
+    if (values.length === 2) break;
+  }
+  return values;
+}
+
+interface Step2BodyProps {
+  state: ImportWizardState;
+  onMappingChange: (header: string, target: MappingTarget) => void;
+}
+
+// Board 3b — the column-mapping grid: CSV column (mono chip) -> arrow ->
+// Idento field (select, + custom-name input when "Custom field" is picked)
+// -> sample values. `state.mapping` is expected to already be fully
+// populated (one entry per header) by the time this mounts, since
+// `handleContinue` runs `computeDefaultMapping` in the same state update
+// that sets `step: 2` — but a `?? unset` fallback keeps a header without an
+// explicit entry from crashing the lookup rather than silently misbehaving.
+function Step2Body({ state, onMappingChange }: Step2BodyProps) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="flex max-h-[420px] flex-col gap-3 overflow-y-auto">
+      <div className="grid grid-cols-[minmax(0,160px)_20px_minmax(0,240px)_minmax(0,1fr)] items-start gap-x-3 gap-y-3">
+        <span className="text-caption font-medium text-muted-foreground">{t("importCsvColumn")}</span>
+        <span aria-hidden />
+        <span className="text-caption font-medium text-muted-foreground">{t("importIdentoField")}</span>
+        <span className="text-caption font-medium text-muted-foreground">{t("importSample")}</span>
+        {state.headers.map((header) => (
+          <MappingRow
+            key={header}
+            header={header}
+            target={state.mapping[header] ?? { kind: "unset" }}
+            samples={sampleValues(state.rows, header)}
+            onChange={(target) => onMappingChange(header, target)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface MappingRowProps {
+  header: string;
+  target: MappingTarget;
+  samples: string[];
+  onChange: (target: MappingTarget) => void;
+}
+
+// Renders as a React.Fragment of 4 grid cells (chip / arrow / field-select
+// [+ custom-name input] / sample) so it slots directly into Step2Body's
+// grid alongside its header row.
+function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
+  const { t } = useTranslation();
+  const isUnset = target.kind === "unset";
+  const isCustom = target.kind === "custom";
+  const selectValue =
+    target.kind === "standard" ? target.field : target.kind === "custom" ? "custom" : target.kind === "skip" ? "skip" : "unset";
+
+  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value;
+    if (value === "skip") {
+      onChange({ kind: "skip" });
+    } else if (value === "custom") {
+      // Pre-filled with the CSV column's own header, per the brief — the
+      // operator can rename it via the text input that appears below.
+      onChange({ kind: "custom", name: header });
+    } else {
+      onChange({ kind: "standard", field: value as StandardField });
+    }
+  }
+
+  return (
+    <>
+      <span
+        className={cn(
+          "inline-flex w-fit items-center rounded-md border px-2 py-1 font-mono text-caption",
+          isUnset ? "border-warning/30 bg-warning/10 text-warning" : "border-border bg-muted text-foreground",
+        )}
+      >
+        {header}
+      </span>
+      <ArrowRight aria-hidden className="mt-1.5 size-3.5 shrink-0 text-muted-foreground" />
+      <div className="flex flex-col gap-1.5">
+        <select
+          aria-label={header}
+          value={selectValue}
+          onChange={handleSelectChange}
+          className={cn(
+            "h-9 rounded-md border bg-card px-2 text-body text-foreground",
+            isUnset ? "border-dashed border-warning/40 text-warning" : "border-input",
+          )}
+        >
+          {/* Placeholder-only option: visually reads as "Don't import" (per
+              board 3b's unmapped-column treatment) while the column is
+              still `unset`, but it's a DISTINCT value from the real `skip`
+              option below — picking nothing yet is not the same decision as
+              explicitly confirming a skip, and only the latter clears the
+              must-acknowledge gate on the footer's Import button. */}
+          {isUnset ? (
+            <option value="unset" disabled hidden>
+              {t("importDontImport")}
+            </option>
+          ) : null}
+          {STANDARD_FIELDS.map((field) => (
+            <option key={field} value={field}>
+              {t(STANDARD_FIELD_LABEL_KEYS[field])}
+            </option>
+          ))}
+          <option value="custom">{t("importCustomField")}</option>
+          <option value="skip">{t("importDontImport")}</option>
+        </select>
+        {isCustom ? (
+          <Input
+            aria-label={`${t("importCustomFieldNameLabel")}: ${header}`}
+            value={target.name}
+            onChange={(e) => onChange({ kind: "custom", name: e.target.value })}
+          />
+        ) : null}
+      </div>
+      <div className={cn("text-caption", isUnset ? "text-warning" : "text-muted-foreground")}>
+        {isUnset ? t("importUnmappedWarning") : samples.length > 0 ? samples.join(", ") : "—"}
+      </div>
+    </>
   );
 }
