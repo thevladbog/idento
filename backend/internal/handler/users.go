@@ -270,13 +270,13 @@ func (h *Handler) UnassignStaffFromEvent(c echo.Context) error {
 	eventID := c.Param("event_id")
 	eventUUID, err := uuid.Parse(eventID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Invalid event ID")
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid event ID"})
 	}
 
 	userID := c.Param("user_id")
 	userUUID, err := uuid.Parse(userID)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "Invalid user ID")
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid user ID"})
 	}
 
 	// Verify event belongs to the active tenant (scoped lookup, 404 on foreign).
@@ -286,7 +286,7 @@ func (h *Handler) UnassignStaffFromEvent(c echo.Context) error {
 
 	// Remove the staff assignment (idempotent — no error if already not assigned)
 	if err := h.Store.RemoveStaffFromEvent(c.Request().Context(), eventUUID, userUUID); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to remove staff")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to remove staff"})
 	}
 
 	return c.NoContent(http.StatusNoContent)
