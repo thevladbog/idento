@@ -369,6 +369,33 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await waitFor(() => expect(attendeeGetHitCount).toBeGreaterThan(1));
   });
 
+  // Regression test: the PATCH-body dirty-check must compare the RAW form
+  // value against the RAW baseline (matching `isDirty`'s own logic), not the
+  // TRIMMED value against the raw baseline. A baseline imported with messy
+  // whitespace (e.g. from a bad CSV) must not make an untouched field look
+  // "changed" just because trimming it happens to differ from the untrimmed
+  // baseline — only the field the user actually edited should appear in the
+  // PATCH body.
+  it("does not include an untouched field in the PATCH body even when its baseline has leading/trailing whitespace", async () => {
+    attendeeResponse = { ...ADA, company: "  Acme Corp" };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+
+    // Only touch Position — Company is left exactly as loaded.
+    const positionInput = await screen.findByLabelText("Position");
+    await user.clear(positionInput);
+    await user.type(positionInput, "Senior Engineer");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(patchAttendeeCount).toBe(1));
+    // Company must be entirely absent from the body — not present with its
+    // silently-trimmed value — since the user never touched it.
+    expect(lastPatchAttendeeBody).toEqual({ position: "Senior Engineer" });
+    expect(lastPatchAttendeeBody).not.toHaveProperty("company");
+  });
+
   // Regression test for the same stale-PATCH-response race GeneralCard.test.tsx
   // covers: `patchAttendee.reset()` on every keystroke only clears the
   // mutation observer's local state, it does NOT cancel the first, still
