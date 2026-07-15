@@ -115,6 +115,7 @@
   "settingsFontRemoveTitle": "Remove font",
   "settingsFontRemoveBody": "\"{{name}}\" disappears from the editor's font picker. Badges already printed are unaffected.",
   "settingsFontRemoveConfirm": "Remove",
+  "settingsFontRemoveError": "Couldn't remove the font. Try again.",
   "settingsFontDropHint": "Drop a .ttf / .otf / .woff file here or",
   "settingsFontBrowse": "Browse…",
   "settingsFontUploading": "Uploading…",

@@ -115,6 +115,7 @@
   "settingsFontRemoveTitle": "Удалить шрифт",
   "settingsFontRemoveBody": "\"{{name}}\" исчезнет из выбора шрифтов редактора. Уже напечатанные бейджи не пострадают.",
   "settingsFontRemoveConfirm": "Удалить",
+  "settingsFontRemoveError": "Не удалось удалить шрифт. Попробуйте ещё раз.",
   "settingsFontDropHint": "Перетащите файл .ttf / .otf / .woff сюда или",
   "settingsFontBrowse": "Обзор…",
   "settingsFontUploading": "Загрузка…",

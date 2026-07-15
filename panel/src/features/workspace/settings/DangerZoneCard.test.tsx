@@ -204,12 +204,17 @@ describe("DangerZoneCard", () => {
   // user clicks Cancel. `deleteEvent.reset()` on close only detaches the
   // mutation observer — it does not abort the in-flight request or stop
   // `onSuccess`/`onError` from firing once the response lands late. Pre-fix,
-  // that late `onSuccess` still force-navigated the user to Home and
-  // invalidated the events list for a delete they believed they'd cancelled
-  // (the event is genuinely deleted server-side either way), and a late
-  // `onError` would have surfaced a card-level error the user never expected
-  // to see again.
-  it("does not navigate or surface an error if the confirm dialog is closed (Cancel) before a pending DELETE resolves", async () => {
+  // that late `onSuccess` still force-navigated the user to Home for a
+  // delete they believed they'd cancelled, and a late `onError` would have
+  // surfaced a card-level error the user never expected to see again — the
+  // abort guard correctly suppresses both of those UI-visible reactions.
+  // Cache invalidation is a different matter: the event is genuinely deleted
+  // server-side either way (that can't be un-cancelled from the client), so
+  // the events-list query must still be invalidated even though the dialog
+  // was aborted — otherwise the list would keep showing a phantom deleted
+  // event. See DangerZoneCard.tsx's onSuccess for why invalidation runs
+  // unconditionally, before the abort-ref check.
+  it("still invalidates the events list, but does not navigate or surface an error, if the confirm dialog is closed (Cancel) before a pending DELETE resolves", async () => {
     deleteDelayMs = 50;
     const user = userEvent.setup();
     renderWithProviders(<DangerZoneCard event={EVENT} />);
@@ -227,10 +232,9 @@ describe("DangerZoneCard", () => {
 
     // Let the delayed response land well after the close.
     await waitFor(() => expect(deleteCount).toBe(1));
-    await new Promise((resolve) => setTimeout(resolve, deleteDelayMs + 100));
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
 
     expect(navigateMock).not.toHaveBeenCalled();
-    expect(listHitCount).toBe(1);
     expect(screen.queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

@@ -49,8 +49,13 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
 
   const deleteEvent = $api.useMutation("delete", "/api/events/{id}", {
     onSuccess: () => {
-      if (deleteAbortedRef.current) return;
+      // Invalidation is cache-correctness, not UI reaction: the delete
+      // already happened server-side regardless of whether the user
+      // "cancelled" the dialog, so this must run unconditionally — only the
+      // user-visible reactions below (closing the dialog, navigating) are
+      // gated on the abort ref.
       void queryClient.invalidateQueries({ queryKey: ["get", "/api/events"] });
+      if (deleteAbortedRef.current) return;
       setConfirmOpen(false);
       void navigate({ to: "/" });
     },

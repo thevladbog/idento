@@ -61,6 +61,8 @@ let fonts: FontListItem[] = [ACME, VEKTOR];
 let listHitCount = 0;
 let deleteCount = 0;
 let lastDeletedFontId: string | undefined;
+let deleteStatusOverride: number | null = null;
+let deleteDelayMs = 0;
 let uploadCount = 0;
 let lastUploadFields: Record<string, string | undefined> | undefined;
 let uploadStatusOverride: number | null = null;
@@ -97,9 +99,13 @@ const server = startMswServer(
     fonts = [...fonts, created];
     return HttpResponse.json(created, { status: 201 });
   }),
-  http.delete("http://api.test/api/events/:eventId/fonts/:fontId", ({ params }) => {
+  http.delete("http://api.test/api/events/:eventId/fonts/:fontId", async ({ params }) => {
     deleteCount += 1;
     lastDeletedFontId = params.fontId as string;
+    if (deleteDelayMs) await delay(deleteDelayMs);
+    if (deleteStatusOverride) {
+      return HttpResponse.json({ error: "server error" }, { status: deleteStatusOverride });
+    }
     fonts = fonts.filter((f) => f.id !== params.fontId);
     return HttpResponse.json({ status: "deleted" });
   }),
@@ -122,6 +128,8 @@ describe("FontsCard", () => {
     listHitCount = 0;
     deleteCount = 0;
     lastDeletedFontId = undefined;
+    deleteStatusOverride = null;
+    deleteDelayMs = 0;
     uploadCount = 0;
     lastUploadFields = undefined;
     uploadStatusOverride = null;
@@ -223,6 +231,55 @@ describe("FontsCard", () => {
     await user.upload(input, file);
 
     expect(await screen.findByText("Couldn't upload the font.")).toBeInTheDocument();
+  });
+
+  it("shows an inline error when removing a font fails, and clears it on a subsequent successful remove", async () => {
+    deleteStatusOverride = 500;
+    const user = userEvent.setup();
+    renderWithProviders(<FontsCard eventId="evt-1" />);
+
+    await screen.findByText("Acme Grotesk");
+
+    let removeButtons = screen.getAllByRole("button", { name: "Remove…" });
+    await user.click(removeButtons[0]);
+
+    let dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(deleteCount).toBe(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(await screen.findByText("Couldn't remove the font. Try again.")).toBeInTheDocument();
+    // The font is still listed — the failed DELETE must not be reflected as
+    // if it succeeded.
+    expect(screen.getByText("Acme Grotesk")).toBeInTheDocument();
+
+    // A subsequent successful remove clears the stale error.
+    deleteStatusOverride = null;
+    removeButtons = screen.getAllByRole("button", { name: "Remove…" });
+    await user.click(removeButtons[0]);
+    dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(deleteCount).toBe(2));
+    await waitFor(() => expect(screen.queryByText("Couldn't remove the font. Try again.")).not.toBeInTheDocument());
+  });
+
+  it("disables the ConfirmDialog's confirm button while the remove request is pending, to prevent a double DELETE", async () => {
+    deleteDelayMs = 50;
+    const user = userEvent.setup();
+    renderWithProviders(<FontsCard eventId="evt-1" />);
+
+    await screen.findByText("Acme Grotesk");
+
+    const removeButtons = screen.getAllByRole("button", { name: "Remove…" });
+    await user.click(removeButtons[0]);
+
+    const dialog = await screen.findByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "Remove" });
+    await user.click(confirmButton);
+
+    expect(confirmButton).toBeDisabled();
+    await waitFor(() => expect(deleteCount).toBe(1));
   });
 
   it("always shows the license disclaimer box near the upload affordance", async () => {

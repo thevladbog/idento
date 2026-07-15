@@ -45,6 +45,7 @@ export function FontsCard({ eventId }: FontsCardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [removeTarget, setRemoveTarget] = React.useState<FontListItem | null>(null);
+  const [deleteError, setDeleteError] = React.useState(false);
   const [uploadError, setUploadError] = React.useState(false);
 
   const listQueryKey = ["get", "/api/events/{event_id}/fonts", { params: { path: { event_id: eventId } } }] as const;
@@ -56,6 +57,15 @@ export function FontsCard({ eventId }: FontsCardProps) {
   const deleteFont = $api.useMutation("delete", "/api/events/{event_id}/fonts/{font_id}", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: listQueryKey });
+      setDeleteError(false);
+      setRemoveTarget(null);
+    },
+    onError: () => {
+      // Close the dialog so the inline error below is actually visible (it
+      // lives in the card, behind the modal overlay while open), and leave
+      // removeTarget's font un-deleted in the list — same shape as
+      // ApiKeysCard's revokeKey.onError.
+      setDeleteError(true);
       setRemoveTarget(null);
     },
   });
@@ -158,7 +168,10 @@ export function FontsCard({ eventId }: FontsCardProps) {
                     type="button"
                     variant="link"
                     className="text-destructive"
-                    onClick={() => setRemoveTarget(font)}
+                    onClick={() => {
+                      setDeleteError(false);
+                      setRemoveTarget(font);
+                    }}
                   >
                     {t("settingsFontRemove")}
                   </Button>
@@ -168,6 +181,8 @@ export function FontsCard({ eventId }: FontsCardProps) {
           ) : (
             <p className="text-body text-muted-foreground">{t("settingsFontsEmpty")}</p>
           )}
+
+          {deleteError ? <p className="text-body text-destructive">{t("settingsFontRemoveError")}</p> : null}
 
           <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-caption text-warning">
             {t("settingsFontLicense")}
@@ -217,6 +232,7 @@ export function FontsCard({ eventId }: FontsCardProps) {
           cancelLabel={t("createEventCancel")}
           closeLabel={t("workspaceDialogClose")}
           destructive
+          confirmDisabled={deleteFont.isPending}
           onConfirm={() =>
             deleteFont.mutate({
               params: { path: { event_id: eventId, font_id: removeTarget.id } },
