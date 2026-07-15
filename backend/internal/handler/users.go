@@ -267,6 +267,16 @@ func (h *Handler) GetEventStaff(c echo.Context) error {
 
 // UnassignStaffFromEvent removes a staff member from an event
 func (h *Handler) UnassignStaffFromEvent(c echo.Context) error {
+	user, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	// Only admin and manager can unassign staff
+	if user.Role != "admin" && user.Role != "manager" {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	}
+
 	eventID := c.Param("event_id")
 	eventUUID, err := uuid.Parse(eventID)
 	if err != nil {

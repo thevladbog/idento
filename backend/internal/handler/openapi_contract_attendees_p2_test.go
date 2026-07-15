@@ -632,3 +632,51 @@ func TestOpenAPIContract_UnassignStaffFromEvent(t *testing.T) {
 	}
 	validateResponse(t, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), rec)
 }
+
+// TestOpenAPIContract_UnassignStaffFromEvent_Forbidden verifies that a
+// non-admin/non-manager tenant member (e.g. plain "staff") cannot remove
+// another staff member's event assignment — mirrors
+// TestContractAssignStaffToEvent's role gate on the sibling endpoint.
+// Like AssignStaffToEvent's own role check, the 403 is returned as an
+// *echo.HTTPError rather than written via c.JSON, so — consistent with
+// TestGenerateQRTokenNonMemberIs404's style for the same reason — this
+// asserts on the returned error directly instead of rec.Code/validateResponse
+// (calling the handler function directly here bypasses echo's central error
+// handler, which is what would normally serialize the HTTPError onto the
+// response in production).
+func TestOpenAPIContract_UnassignStaffFromEvent_Forbidden(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	staffUser := &models.User{
+		ID:       uuid.New(),
+		Email:    "staff@example.com",
+		Role:     "staff",
+		TenantID: tenantID,
+	}
+
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		removeStaffFromEvent: func(eventID, userID uuid.UUID) error {
+			t.Fatalf("RemoveStaffFromEvent should not be called when the caller lacks admin/manager role")
+			return nil
+		},
+	})
+
+	e := echo.New()
+	c, _ := newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), "", tenantID.String(), "staff")
+	c.SetPath("/api/events/:event_id/staff/:user_id")
+	c.SetParamNames("event_id", "user_id")
+	c.SetParamValues(event.ID.String(), staffUser.ID.String())
+
+	err := h.UnassignStaffFromEvent(c)
+	httpErr, ok := err.(*echo.HTTPError)
+	if !ok {
+		t.Fatalf("expected *echo.HTTPError, got %v", err)
+	}
+	if httpErr.Code != http.StatusForbidden {
+		t.Fatalf("code = %d, want 403 (non-admin/manager caller)", httpErr.Code)
+	}
+	if httpErr.Message != "Access denied" {
+		t.Fatalf("message = %v, want %q (matches AssignStaffToEvent)", httpErr.Message, "Access denied")
+	}
+}
