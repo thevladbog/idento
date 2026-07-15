@@ -114,22 +114,31 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   const totalRowsAfterDedup = bulkPayload.attendees.length;
 
   // Runs chunks [startIndex, chunks.length) sequentially — awaiting each
-  // mutateAsync before starting the next, never Promise.all — accumulating
-  // `created` into importProgress.done and mapping each chunk's
-  // chunk-relative error rows to absolute file rows via
-  // mapChunkRowToAbsolute. Shared by both the initial step-3 entry (Task
-  // 13's brief) and "Retry remaining" after a chunk-level network failure,
-  // which resumes from the same chunk index rather than restarting from 0.
-  async function runChunksFrom(
-    chunks: Record<string, unknown>[][],
-    startIndex: number,
-    initialDone: number,
-    initialErrors: RowError[],
-  ) {
+  // mutateAsync before starting the next, never Promise.all — and merging
+  // each chunk's OWN contribution (its `created` count and its
+  // newly-mapped errors, both read straight off that one chunk's HTTP
+  // response) onto whatever importProgress/rowErrors are CURRENT in state
+  // via a functional `setState` updater keyed off `prev`. This is
+  // deliberate, not incidental: step 3's error table isn't gated by
+  // isImporting, so a user can Skip/Retry an earlier chunk's error row
+  // (each of those is already a correct functional update against `prev`)
+  // WHILE a later chunk is still in flight. Fix round 4: this loop used to
+  // accumulate `doneCount`/`errors` in closure-local variables across
+  // iterations and write them out wholesale on each chunk's resolution —
+  // which meant a later chunk's setState would silently overwrite/revert
+  // whatever a concurrent Skip/Retry had just done, since that closure
+  // snapshot didn't know about it. Every setState call below reads
+  // `prev.importProgress`/`prev.rowErrors` instead, so it merges onto
+  // whichever state is actually current at the moment it runs. Because of
+  // that, this no longer needs to be told where `done`/`rowErrors` stood
+  // when it started — `prev` already reflects whatever the last completed
+  // chunk (or user action) left behind — so it's shared as-is by both the
+  // initial step-3 entry (Task 13's brief) and "Retry remaining" after a
+  // chunk-level network failure, which resumes from the same chunk index
+  // rather than restarting from 0.
+  async function runChunksFrom(chunks: Record<string, unknown>[][], startIndex: number) {
     setIsImporting(true);
     setChunkFailure(null);
-    let doneCount = initialDone;
-    let errors = initialErrors;
     const total = totalRowsAfterDedup;
     for (let chunkIndex = startIndex; chunkIndex < chunks.length; chunkIndex++) {
       try {
@@ -139,14 +148,20 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
           params: { path: { event_id: eventId } },
           body: { attendees: chunks[chunkIndex], field_schema: bulkPayload.field_schema },
         });
-        doneCount += response.created;
-        const mappedErrors: RowError[] = (response.errors ?? []).map((err) => ({
+        // This chunk's own contribution ONLY — read directly off its own
+        // HTTP response, never an accumulated running total — is what's
+        // safe to close over here; see the function doc comment above.
+        const chunkCreated = response.created;
+        const chunkErrors: RowError[] = (response.errors ?? []).map((err) => ({
           row: mapChunkRowToAbsolute(chunkIndex, IMPORT_CHUNK_SIZE, err.row),
           data: err.data,
           problem: err.problem,
         }));
-        errors = [...errors, ...mappedErrors];
-        setState((prev) => ({ ...prev, importProgress: { done: doneCount, total }, rowErrors: errors }));
+        setState((prev) => ({
+          ...prev,
+          importProgress: { done: (prev.importProgress?.done ?? 0) + chunkCreated, total },
+          rowErrors: [...(prev.rowErrors ?? []), ...chunkErrors],
+        }));
       } catch {
         // Chunk-level network failure (the mutation itself rejected — not a
         // per-row error in a successful response): everything from this
@@ -173,7 +188,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     if (importStartedRef.current) return;
     importStartedRef.current = true;
     const chunks = chunkArray(bulkPayload.attendees, IMPORT_CHUNK_SIZE);
-    void runChunksFrom(chunks, 0, 0, []);
+    void runChunksFrom(chunks, 0);
     // bulkImport/bulkPayload/eventId/totalRowsAfterDedup are stable for the
     // duration of step 3 (rows/mapping don't change once past step 2); this
     // effect is only meant to fire on the step 1/2 -> 3 transition itself.
@@ -183,7 +198,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   function handleRetryRemaining() {
     if (!chunkFailure) return;
     const chunks = chunkArray(bulkPayload.attendees, IMPORT_CHUNK_SIZE);
-    void runChunksFrom(chunks, chunkFailure.nextChunkIndex, state.importProgress?.done ?? 0, state.rowErrors ?? []);
+    void runChunksFrom(chunks, chunkFailure.nextChunkIndex);
   }
 
   // duplicate_email/duplicate_code "Skip": the row was never created (the

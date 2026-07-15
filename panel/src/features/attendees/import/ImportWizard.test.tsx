@@ -716,4 +716,96 @@ describe("ImportWizard step 3 — chunked import", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  // Fix round 3: `runChunksFrom`'s periodic setState accumulated `done`/
+  // `errors` in closure-local variables across the chunk loop's iterations
+  // and wrote them out wholesale after each chunk resolved — NOT a
+  // functional update genuinely derived from `prev`. Step 3's error table
+  // isn't gated by isImporting, so a row from an earlier chunk can be
+  // Skipped/Retried by the user WHILE a later chunk is still in flight; a
+  // successful Retry in that window correctly applies a prev-based update
+  // (row removed, `done` incremented). But when the still-in-flight later
+  // chunk then resolved, its setState overwrote importProgress/rowErrors
+  // with its own stale closure snapshot — silently reverting the retry:
+  // the fixed row reappeared with an enabled Retry (inviting a duplicate
+  // submission) and the progress count regressed below what had already
+  // been achieved. This test reproduces that exact interleaving and
+  // asserts it no longer happens.
+  it(
+    "does not revert a Retry applied to an earlier chunk's error row while a later chunk is still in flight",
+    async () => {
+      const user = userEvent.setup();
+      const receivedBodies: Array<{ attendees: Record<string, unknown>[] }> = [];
+      const firstChunkGate = createGate();
+      const secondChunkGate = createGate();
+      server.use(
+        http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+          const body = (await request.json()) as { attendees: Record<string, unknown>[] };
+          receivedBodies.push(body);
+          if (body.attendees.length === 1) {
+            // The per-row Retry re-POST for chunk 1's row 3 — deliberately
+            // NOT gated, so it resolves well before chunk 2 does.
+            return HttpResponse.json({ message: "ok", created: 1, skipped: 0, total: 1 }, { status: 201 });
+          }
+          if (body.attendees.length === 500) {
+            // Chunk 1 — resolves with a single create_failed error at row 3
+            // once gated open.
+            await firstChunkGate.promise;
+            return HttpResponse.json(
+              {
+                message: "ok",
+                created: 499,
+                skipped: 1,
+                total: 500,
+                errors: [{ row: 3, data: "Person 3", problem: "create_failed" }],
+              },
+              { status: 201 },
+            );
+          }
+          // Chunk 2 (the 20-row remainder) — stays gated until after the
+          // chunk-1 error row has already been retried to success.
+          await secondChunkGate.promise;
+          return HttpResponse.json({ message: "ok", created: 20, skipped: 0, total: 20 }, { status: 201 });
+        }),
+      );
+
+      await continueToStep3Ready(user, buildFixtureCsv(520), "race.csv");
+      await user.click(screen.getByRole("button", { name: "Import 520 rows" }));
+
+      await waitFor(() => expect(receivedBodies).toHaveLength(1));
+      expect(receivedBodies[0].attendees).toHaveLength(500);
+
+      firstChunkGate.resolve();
+
+      // Chunk 1 has settled (progress reflects it, row 3's error is live)
+      // while chunk 2 is now in flight but still gated shut.
+      await waitFor(() => screen.getByText("499 of 520 imported"));
+      await waitFor(() => expect(receivedBodies).toHaveLength(2));
+      expect(receivedBodies[1].attendees).toHaveLength(20);
+      const row3 = screen.getByText("Person 3").closest("tr")!;
+      const retryRow3 = within(row3).getByRole("button", { name: "Retry" });
+
+      // Retry row 3 WHILE chunk 2 is still in flight, and let it resolve
+      // fully (its own, ungated response) before chunk 2 does.
+      await user.click(retryRow3);
+      await waitFor(() => expect(receivedBodies).toHaveLength(3));
+      expect(receivedBodies[2].attendees).toEqual([{ first_name: "Person 3", email: "person3@example.com" }]);
+      await waitFor(() => expect(screen.queryByText("Person 3")).not.toBeInTheDocument());
+      await waitFor(() => screen.getByText("500 of 520 imported"));
+      expect(screen.queryByText(/rows need attention/)).not.toBeInTheDocument();
+
+      // NOW let chunk 2 resolve — its setState must merge its own +20 onto
+      // whatever is CURRENT (500, from the retry), not overwrite with a
+      // stale closure snapshot that still thinks row 3 is unresolved and
+      // done is only 499.
+      secondChunkGate.resolve();
+
+      await waitFor(() => screen.getByText("520 of 520 imported"));
+      // The retried row must not reappear, and the progress count must not
+      // regress at any point after chunk 2 settles.
+      expect(screen.queryByText("Person 3")).not.toBeInTheDocument();
+      expect(screen.queryByText(/rows need attention/)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Done — 520 in the list" })).toBeInTheDocument();
+    },
+  );
 });
