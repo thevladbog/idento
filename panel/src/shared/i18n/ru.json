@@ -214,5 +214,15 @@
   "bulkDeleteProgress": "Удаление… {{done}} / {{total}}",
   "bulkDeleteError": "Не удалось удалить некоторых участников. Попробуйте снова.",
   "bulkPrintLocked": "Печать бейджей — появится вместе с редактором бейджей",
-  "bulkClear": "Очистить"
+  "bulkClear": "Очистить",
+  "addAttendeeTitle": "Новый участник",
+  "addAttendeeFirstName": "Имя",
+  "addAttendeeLastName": "Фамилия",
+  "addAttendeeEmail": "Email",
+  "addAttendeeCompany": "Компания",
+  "addAttendeePosition": "Должность",
+  "addAttendeeSubmit": "Добавить участника",
+  "addAttendeeNameRequired": "Укажите хотя бы имя или фамилию.",
+  "addAttendeeEmailInvalid": "Введите корректный email.",
+  "addAttendeeServerError": "Не удалось добавить участника. Попробуйте ещё раз."
 }

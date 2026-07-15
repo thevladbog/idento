@@ -3,6 +3,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { AddAttendeeDialog } from "./AddAttendeeDialog";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
@@ -48,6 +49,7 @@ export function AttendeesPage() {
   // doesn't fire a request per keystroke.
   const [searchInput, setSearchInput] = React.useState(search.search ?? "");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [addAttendeeOpen, setAddAttendeeOpen] = React.useState(false);
 
   // Keep the local input in sync when the URL's `search` param changes from
   // outside this input (e.g. the "clear filters" link, or back/forward nav).
@@ -174,19 +176,18 @@ export function AttendeesPage() {
         </select>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Both actions render disabled — Import CSV is wired by Task 13,
-              + Add attendee by Task 7. The "coming soon" reason stays part
-              of each button's accessible name (sr-only span), not a
-              standalone aria-label override, so the visible label text is
-              never dropped from the accessible name (same pattern as
-              EventWorkspaceLayout's locked Launch check-in button). */}
+          {/* Import CSV still renders disabled — it's wired by Task 13.
+              The "coming soon" reason stays part of its accessible name
+              (sr-only span), not a standalone aria-label override, so the
+              visible label text is never dropped from the accessible name
+              (same pattern as EventWorkspaceLayout's locked Launch check-in
+              button). + Add attendee is wired by this task (Task 7). */}
           <Button type="button" variant="outline" disabled aria-disabled="true">
             {t("attendeesImportCsv")}
             <span className="sr-only">{t("workspaceStepComingSoon")}</span>
           </Button>
-          <Button type="button" disabled aria-disabled="true">
+          <Button type="button" onClick={() => setAddAttendeeOpen(true)}>
             {t("attendeesAdd")}
-            <span className="sr-only">{t("workspaceStepComingSoon")}</span>
           </Button>
         </div>
       </div>
@@ -211,9 +212,8 @@ export function AttendeesPage() {
                 {t("attendeesEmptyImportAction")}
                 <span className="sr-only">{t("workspaceStepComingSoon")}</span>
               </Button>
-              <Button type="button" variant="outline" disabled aria-disabled="true">
+              <Button type="button" variant="outline" onClick={() => setAddAttendeeOpen(true)}>
                 {t("attendeesEmptyAddAction")}
-                <span className="sr-only">{t("workspaceStepComingSoon")}</span>
               </Button>
             </>
           }
@@ -244,6 +244,8 @@ export function AttendeesPage() {
           />
         </>
       )}
+
+      <AddAttendeeDialog eventId={eventId} open={addAttendeeOpen} onOpenChange={setAddAttendeeOpen} />
     </div>
   );
 }

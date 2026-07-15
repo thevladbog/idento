@@ -212,5 +212,15 @@
   "bulkDeleteProgress": "Deleting… {{done}} / {{total}}",
   "bulkDeleteError": "Some attendees couldn't be deleted. Try again.",
   "bulkPrintLocked": "Print badges — coming with the badge editor",
-  "bulkClear": "Clear"
+  "bulkClear": "Clear",
+  "addAttendeeTitle": "New attendee",
+  "addAttendeeFirstName": "First name",
+  "addAttendeeLastName": "Last name",
+  "addAttendeeEmail": "Email",
+  "addAttendeeCompany": "Company",
+  "addAttendeePosition": "Position",
+  "addAttendeeSubmit": "Add attendee",
+  "addAttendeeNameRequired": "Enter at least a first or last name.",
+  "addAttendeeEmailInvalid": "Enter a valid email address.",
+  "addAttendeeServerError": "Couldn't add the attendee. Try again."
 }
