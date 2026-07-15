@@ -189,12 +189,12 @@ describe("WorkspaceOverview", () => {
 
     const tiles = await screen.findByTestId("workspace-stat-tiles");
     expect(await within(tiles).findByText("120")).toBeInTheDocument();
-    expect(within(tiles).findByText("/ 200")).toBeTruthy();
+    expect(await within(tiles).findByText("/ 200")).toBeInTheDocument();
     // Zones tile's count still comes from readiness (independent of the
     // failed zones-list query) — only its caption falls back to the
     // unavailable placeholder instead of a fabricated/missing zone-name list.
     expect(within(tiles).getByText("2")).toBeInTheDocument();
-    await within(tiles).findByText("—");
+    expect(await within(tiles).findByText("—")).toBeInTheDocument();
     expect(within(tiles).queryByText(/Main hall/)).not.toBeInTheDocument();
   });
 
