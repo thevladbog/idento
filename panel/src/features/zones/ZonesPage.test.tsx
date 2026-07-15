@@ -2,8 +2,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
+import {
+  render, screen, waitFor, within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { delay, http, HttpResponse } from "msw";
 import { ZonesPage } from "./ZonesPage";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -75,6 +78,13 @@ function zoneWithStats(fixture: ZoneFixture) {
 
 let zonesResponse: unknown = [];
 let zonesStatus = 200;
+let createCount = 0;
+let updateCount = 0;
+let lastUpdateBody: unknown;
+let deleteCount = 0;
+let lastDeletedId: string | undefined;
+let deleteStatusOverride: number | null = null;
+let deleteDelayMs = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/zones", () => {
@@ -82,6 +92,40 @@ const server = startMswServer(
       return HttpResponse.json({ error: "boom" }, { status: zonesStatus });
     }
     return HttpResponse.json(zonesResponse);
+  }),
+  http.post("http://api.test/api/events/:eventId/zones", async ({ request }) => {
+    createCount += 1;
+    const body = (await request.json()) as { name: string };
+    return HttpResponse.json(
+      {
+        id: "z-new",
+        event_id: "evt-1",
+        name: body.name,
+        zone_type: "general",
+        order_index: 2,
+        is_registration_zone: false,
+        requires_registration: false,
+        is_active: true,
+        settings: {},
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      { status: 201 },
+    );
+  }),
+  http.put("http://api.test/api/zones/:id", async ({ request, params }) => {
+    updateCount += 1;
+    lastUpdateBody = await request.json();
+    return HttpResponse.json({ id: params.id as string, event_id: "evt-1", ...(lastUpdateBody as object) });
+  }),
+  http.delete("http://api.test/api/zones/:id", async ({ params }) => {
+    deleteCount += 1;
+    lastDeletedId = params.id as string;
+    if (deleteDelayMs) await delay(deleteDelayMs);
+    if (deleteStatusOverride) {
+      return HttpResponse.json({ error: "Zone is still referenced by attendees" }, { status: deleteStatusOverride });
+    }
+    return HttpResponse.json({ message: "deleted" });
   }),
 );
 void server;
@@ -94,6 +138,13 @@ describe("ZonesPage", () => {
       zoneWithStats({ id: "z1", name: "Main Hall", is_registration_zone: true, access_rules_count: 0 }),
       zoneWithStats({ id: "z2", name: "VIP Lounge", access_rules_count: 2 }),
     ];
+    createCount = 0;
+    updateCount = 0;
+    lastUpdateBody = undefined;
+    deleteCount = 0;
+    lastDeletedId = undefined;
+    deleteStatusOverride = null;
+    deleteDelayMs = 0;
   });
 
   it("renders the header (h2 + mono count) and the caption", async () => {
@@ -154,5 +205,143 @@ describe("ZonesPage", () => {
 
     expect(await screen.findByText("No zones yet")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load zones.")).not.toBeInTheDocument();
+  });
+
+  describe("create/edit/delete wiring", () => {
+    it("the header '+ New zone' button opens the create dialog", async () => {
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      // With zones present, only the header button exists — no EmptyState.
+      await user.click(screen.getByRole("button", { name: "+ New zone" }));
+
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "New zone" })).toBeInTheDocument();
+    });
+
+    it("shows '+ New zone' twice when the list is empty (header + EmptyState action), and both open the create dialog", async () => {
+      zonesResponse = [];
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("No zones yet");
+
+      const buttons = screen.getAllByRole("button", { name: "+ New zone" });
+      expect(buttons).toHaveLength(2);
+
+      await user.click(buttons[0]);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+      await user.click(buttons[1]);
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("submitting the create dialog from the header button actually creates the zone", async () => {
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("Main Hall");
+
+      await user.click(screen.getByRole("button", { name: "+ New zone" }));
+      await user.type(await screen.findByLabelText("Name"), "Backstage");
+      await user.click(screen.getByRole("button", { name: "Create zone" }));
+
+      await waitFor(() => expect(createCount).toBe(1));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("submitting the edit dialog actually updates the zone", async () => {
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit zone" }));
+      const nameInput = await screen.findByLabelText("Name");
+      await user.clear(nameInput);
+      await user.type(nameInput, "VIP Lounge (renamed)");
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+      await waitFor(() => expect(updateCount).toBe(1));
+      expect((lastUpdateBody as { name: string }).name).toBe("VIP Lounge (renamed)");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("row menu 'Edit zone' opens the edit dialog prefilled with that zone's name", async () => {
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit zone" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByRole("heading", { name: "Edit zone" })).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Name")).toHaveValue("VIP Lounge");
+    });
+
+    it("row menu 'Delete zone…' opens a typed-confirm dialog gated on the zone's exact name, and a successful delete invalidates the list", async () => {
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete zone…" }));
+
+      const dialog = await screen.findByRole("dialog");
+      const confirmButton = within(dialog).getByRole("button", { name: "Delete zone" });
+      expect(confirmButton).toBeDisabled();
+
+      const input = within(dialog).getByLabelText("Type VIP Lounge to confirm");
+      await user.type(input, "VIP Lounge");
+      expect(confirmButton).toBeEnabled();
+
+      await user.click(confirmButton);
+
+      await waitFor(() => expect(deleteCount).toBe(1));
+      expect(lastDeletedId).toBe("z2");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    it("keeps the delete dialog open and shows the server error message on a 4xx/5xx failure", async () => {
+      deleteStatusOverride = 409;
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete zone…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.type(within(dialog).getByLabelText("Type VIP Lounge to confirm"), "VIP Lounge");
+      await user.click(within(dialog).getByRole("button", { name: "Delete zone" }));
+
+      await waitFor(() => expect(deleteCount).toBe(1));
+      expect(await within(dialog).findByText("Zone is still referenced by attendees")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBe(dialog);
+    });
+
+    it("still invalidates the zones list, but does not surface an error, if the delete dialog is cancelled before a pending DELETE resolves", async () => {
+      deleteDelayMs = 50;
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/zones");
+      await screen.findByText("VIP Lounge");
+
+      await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete zone…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.type(within(dialog).getByLabelText("Type VIP Lounge to confirm"), "VIP Lounge");
+      await user.click(within(dialog).getByRole("button", { name: "Delete zone" }));
+
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+      await waitFor(() => expect(deleteCount).toBe(1));
+      // Give the delayed response time to land after the close — it must
+      // not resurrect the dialog or an error.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.queryByText("Zone is still referenced by attendees")).not.toBeInTheDocument();
+    });
   });
 });
