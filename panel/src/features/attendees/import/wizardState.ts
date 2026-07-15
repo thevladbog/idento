@@ -88,20 +88,31 @@ export function computeDefaultMapping(headers: string[]): Record<string, Mapping
 // duplicate flagging shown at step 3 (Task 13). Comparison is
 // case-insensitive and blank/whitespace-only email values are never treated
 // as duplicates of each other (every blank-email row is kept).
+//
+// Fix 4 (CodeRabbit, PR #65): removing rows re-indexes the survivors, so a
+// post-dedup position no longer matches the row's actual position in the
+// operator's source file the moment any EARLIER row was dropped. `originalIndices[i]`
+// is `deduped[i]`'s 1-based position in the ORIGINAL (pre-dedup) `rows`
+// array — parallel to `deduped`, threaded through `buildBulkPayload` below
+// so error rows can be reported/looked-up by the file position the operator
+// actually sees when they open their CSV, not an internal post-dedup index.
 export function dedupeByEmail(
   rows: Record<string, string>[],
   emailColumnHeader: string | undefined,
-): { deduped: Record<string, string>[]; mergedCount: number } {
+): { deduped: Record<string, string>[]; mergedCount: number; originalIndices: number[] } {
   if (!emailColumnHeader) {
-    return { deduped: rows, mergedCount: 0 };
+    return { deduped: rows, mergedCount: 0, originalIndices: rows.map((_, i) => i + 1) };
   }
   const seen = new Set<string>();
   const deduped: Record<string, string>[] = [];
+  const originalIndices: number[] = [];
   let mergedCount = 0;
-  for (const row of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const email = (row[emailColumnHeader] ?? "").trim().toLowerCase();
     if (email === "") {
       deduped.push(row);
+      originalIndices.push(i + 1);
       continue;
     }
     if (seen.has(email)) {
@@ -110,8 +121,55 @@ export function dedupeByEmail(
     }
     seen.add(email);
     deduped.push(row);
+    originalIndices.push(i + 1);
   }
-  return { deduped, mergedCount };
+  return { deduped, mergedCount, originalIndices };
+}
+
+// Fix 1 (CodeRabbit, PR #65): `buildBulkPayload`'s row-building loop
+// (`attendee[entry.key] = value`) silently lets the LAST header processed
+// for a given target key win when two headers collide — no error, no
+// indication, just quiet data loss for every earlier-processed column. This
+// is the guard: it returns the PROBLEM HEADER NAMES (not localized
+// messages — the UI layer localizes) that must be fixed BEFORE
+// `buildBulkPayload`'s output can be trusted, so the caller (ImportWizard's
+// Step2Body) can block the "Import N rows" action instead of silently
+// losing data. `buildBulkPayload` itself stays a "trust the input is
+// valid" pure function — its existing last-write-wins behavior for
+// already-invalid input is unchanged (see the dedicated test in
+// wizardState.test.ts documenting that assumption).
+//
+// A header is flagged when EITHER:
+//   (a) it's a `custom` target whose `name` is blank/whitespace-only, or
+//   (b) its target key (the standard field name, or the trimmed custom
+//       name) collides with ANOTHER header's target key.
+// `skip`/`unset` targets never participate — they contribute no key to
+// `buildBulkPayload`'s output, so they can't collide with anything.
+export function validateMapping(mapping: Record<string, MappingTarget>): string[] {
+  const headers = Object.keys(mapping);
+  const problemHeaders = new Set<string>();
+  const headersByKey = new Map<string, string[]>();
+
+  for (const header of headers) {
+    const target = mapping[header];
+    if (target.kind === "custom" && target.name.trim() === "") {
+      problemHeaders.add(header);
+      continue;
+    }
+    const key = target.kind === "standard" ? target.field : target.kind === "custom" ? target.name.trim() : null;
+    if (key === null) continue;
+    const headersForKey = headersByKey.get(key) ?? [];
+    headersForKey.push(header);
+    headersByKey.set(key, headersForKey);
+  }
+
+  for (const headersForKey of headersByKey.values()) {
+    if (headersForKey.length > 1) {
+      for (const header of headersForKey) problemHeaders.add(header);
+    }
+  }
+
+  return headers.filter((header) => problemHeaders.has(header));
 }
 
 export interface BulkPayload {
@@ -126,6 +184,14 @@ export interface BulkPayload {
   // number) rather than `attendees`, since `attendees` no longer resembles
   // the source file once columns have been renamed/dropped.
   dedupedRows: Record<string, string>[];
+  // Fix 4 (CodeRabbit, PR #65): parallel to `attendees`/`dedupedRows` —
+  // `originalRowIndices[i]` is that row's 1-based position in the operator's
+  // ORIGINAL source file, threaded straight from `dedupeByEmail`. Consumers
+  // translate a post-dedup position (what `mapChunkRowToAbsolute` computes)
+  // into the file row an operator would actually recognize, and build the
+  // reverse lookup (original row -> post-dedup index) needed to index back
+  // into `attendees`/`dedupedRows` for retry/download.
+  originalRowIndices: number[];
 }
 
 // Builds the bulk-import payload Task 13 will submit: one attendee object
@@ -153,7 +219,7 @@ export function buildBulkPayload(
     const target = mapping[header];
     return target.kind === "standard" && target.field === "email";
   });
-  const { deduped, mergedCount } = dedupeByEmail(rows, emailHeader);
+  const { deduped, mergedCount, originalIndices } = dedupeByEmail(rows, emailHeader);
 
   const fieldSchema: string[] = [];
   const seenKeys = new Set<string>();
@@ -172,7 +238,13 @@ export function buildBulkPayload(
     return attendee;
   });
 
-  return { attendees, field_schema: fieldSchema, mergedDuplicates: mergedCount, dedupedRows: deduped };
+  return {
+    attendees,
+    field_schema: fieldSchema,
+    mergedDuplicates: mergedCount,
+    dedupedRows: deduped,
+    originalRowIndices: originalIndices,
+  };
 }
 
 // Task 13 — chunked import submission.

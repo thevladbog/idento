@@ -1,6 +1,6 @@
 import {
   buildBulkPayload, buildFailedRowsCsv, chunkArray, computeDefaultMapping, createInitialWizardState,
-  dedupeByEmail, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, type MappingTarget,
+  dedupeByEmail, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, validateMapping, type MappingTarget,
 } from "./wizardState";
 
 describe("createInitialWizardState", () => {
@@ -99,6 +99,89 @@ describe("dedupeByEmail", () => {
     const result = dedupeByEmail(rowsWithBlanks, "email");
     expect(result.deduped).toEqual(rowsWithBlanks);
     expect(result.mergedCount).toBe(0);
+  });
+
+  // Fix 4 (CodeRabbit, PR #65): once a duplicate is dropped, a post-dedup
+  // array position no longer equals that row's position in the operator's
+  // original file — `originalIndices[i]` must stay the ORIGINAL 1-based row
+  // number for `deduped[i]`, not `i + 1`.
+  it("returns originalIndices as each surviving row's 1-based position in the ORIGINAL rows array", () => {
+    const result = dedupeByEmail(rows, "email");
+    // rows[3] ("Anna Dup") is dropped as a duplicate of rows[0], so
+    // deduped[2] ("Maria") is originally rows[2], i.e. original row 3 — NOT
+    // post-dedup position 3.
+    expect(result.originalIndices).toEqual([1, 2, 3]);
+  });
+
+  it("returns originalIndices as 1..n unchanged when no column is mapped to email", () => {
+    const result = dedupeByEmail(rows, undefined);
+    expect(result.originalIndices).toEqual([1, 2, 3, 4]);
+  });
+
+  it("keeps every blank-email row's own original index (never collapsed together)", () => {
+    const rowsWithBlanks = [
+      { name: "A", email: "" },
+      { name: "B", email: "" },
+      { name: "C", email: "c@example.com" },
+    ];
+    const result = dedupeByEmail(rowsWithBlanks, "email");
+    expect(result.originalIndices).toEqual([1, 2, 3]);
+  });
+});
+
+describe("validateMapping", () => {
+  it("returns an empty array for a fully valid mapping (no false positives)", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Имя: { kind: "standard", field: "first_name" },
+      Email: { kind: "standard", field: "email" },
+      Категория: { kind: "custom", name: "Категория" },
+      Прочее: { kind: "skip" },
+      Заметка: { kind: "unset" },
+    };
+    expect(validateMapping(mapping)).toEqual([]);
+  });
+
+  it("flags both headers when two columns are mapped to the same standard field", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Email1: { kind: "standard", field: "email" },
+      Email2: { kind: "standard", field: "email" },
+      Имя: { kind: "standard", field: "first_name" },
+    };
+    expect(validateMapping(mapping)).toEqual(["Email1", "Email2"]);
+  });
+
+  it("flags a custom field whose name is blank after trimming", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Категория: { kind: "custom", name: "   " },
+      Имя: { kind: "standard", field: "first_name" },
+    };
+    expect(validateMapping(mapping)).toEqual(["Категория"]);
+  });
+
+  it("flags both headers when two custom fields share the same (trimmed) name", () => {
+    const mapping: Record<string, MappingTarget> = {
+      ColA: { kind: "custom", name: "Notes" },
+      ColB: { kind: "custom", name: " Notes " },
+    };
+    expect(validateMapping(mapping)).toEqual(["ColA", "ColB"]);
+  });
+
+  it("flags both headers when a custom field's name collides with a standard field key used elsewhere", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Email: { kind: "standard", field: "email" },
+      CustomEmail: { kind: "custom", name: "email" },
+    };
+    expect(validateMapping(mapping)).toEqual(["Email", "CustomEmail"]);
+  });
+
+  it("never flags skip or unset columns, even when several share the same kind", () => {
+    const mapping: Record<string, MappingTarget> = {
+      A: { kind: "skip" },
+      B: { kind: "skip" },
+      C: { kind: "unset" },
+      D: { kind: "unset" },
+    };
+    expect(validateMapping(mapping)).toEqual([]);
   });
 });
 
@@ -205,6 +288,56 @@ describe("buildBulkPayload", () => {
     };
     const result = buildBulkPayload(rows, mapping);
     expect(result.dedupedRows).toEqual(rows);
+  });
+
+  // Fix 4 (CodeRabbit, PR #65): originalRowIndices must be threaded straight
+  // through from dedupeByEmail so it stays parallel (same order/length) with
+  // attendees/dedupedRows — this is what step 3's row-error reporting and
+  // retry/download-by-original-row-number rely on.
+  it("returns originalRowIndices parallel to attendees/dedupedRows, using each surviving row's ORIGINAL 1-based position", () => {
+    const rows = [
+      { Имя: "Анна", Email: "a@example.com" },
+      { Имя: "Анна Dup", Email: "A@Example.com" },
+      { Имя: "Олег", Email: "o@example.com" },
+    ];
+    const mapping: Record<string, MappingTarget> = {
+      Имя: { kind: "standard", field: "first_name" },
+      Email: { kind: "standard", field: "email" },
+    };
+    const result = buildBulkPayload(rows, mapping);
+    // Row 2 ("Анна Dup") is dropped as a duplicate, so "Олег" survives at
+    // post-dedup position 2 but its ORIGINAL file row is 3.
+    expect(result.originalRowIndices).toEqual([1, 3]);
+    expect(result.originalRowIndices).toHaveLength(result.attendees.length);
+    expect(result.originalRowIndices).toHaveLength(result.dedupedRows.length);
+  });
+
+  it("returns originalRowIndices as 1..n unchanged when no column is mapped to email", () => {
+    const rows = [{ Имя: "Анна" }, { Имя: "Олег" }];
+    const mapping: Record<string, MappingTarget> = {
+      Имя: { kind: "standard", field: "first_name" },
+    };
+    const result = buildBulkPayload(rows, mapping);
+    expect(result.originalRowIndices).toEqual([1, 2]);
+  });
+
+  // Documents buildBulkPayload's deliberate contract: it trusts its input is
+  // pre-validated by validateMapping (Fix 1) and does NOT itself guard
+  // against duplicate/blank mapping targets — the existing last-write-wins
+  // behavior for an (invalid, unvalidated) duplicate-key mapping is
+  // unchanged on purpose, since validateMapping is the actual guard the UI
+  // calls before ever trusting this function's output.
+  it("documents last-write-wins as the EXPECTED behavior for a duplicate-key mapping that bypassed validateMapping", () => {
+    const rows = [{ ColA: "first", ColB: "second" }];
+    const mapping: Record<string, MappingTarget> = {
+      ColA: { kind: "standard", field: "email" },
+      ColB: { kind: "standard", field: "email" },
+    };
+    const result = buildBulkPayload(rows, mapping);
+    // ColB is processed after ColA (header/mapping insertion order), so its
+    // value silently wins — buildBulkPayload itself does not error or warn.
+    expect(result.attendees).toEqual([{ email: "second" }]);
+    expect(result.field_schema).toEqual(["email"]);
   });
 });
 

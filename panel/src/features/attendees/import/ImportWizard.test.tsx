@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 import { ImportWizard } from "./ImportWizard";
 import { decodeBuffer } from "./encoding";
 import { parseCsv } from "./parseCsv";
+import * as parseCsvModule from "./parseCsv";
 import { ATTENDEES_LIST_KEY } from "../hooks";
 import { startMswServer } from "../../../test/msw";
 import "../../../shared/i18n";
@@ -27,6 +28,19 @@ function renderWizard(ui: ReactElement) {
 beforeEach(() => {
   window.__ENV__ = { API_URL: "http://api.test" };
 });
+
+// Moved up from its original spot (right before the step-3 chunked-import
+// tests) so the Fix 2 busy-gating tests below can share it too — a
+// resolve()-able gate for deterministically controlling when a mocked async
+// operation (a fetch mock, or here a File.prototype.arrayBuffer override)
+// settles.
+function createGate() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 // Same windows-1251 byte mapping as encoding.test.ts (Task 10), verified
 // against the WHATWG windows-1251 index and cross-checked below by
@@ -177,6 +191,159 @@ describe("ImportWizard", () => {
   });
 });
 
+// Fix 2 (CodeRabbit, PR #65): step 1's file pick / encoding change / full
+// parse previously had no busy-gate or stale-completion guard — a
+// still-in-flight operation could resolve AFTER the dialog was closed
+// (resetting `state`) and reopened, silently repopulating the "fresh"
+// wizard with the previous session's data. These tests gate a real File's
+// `arrayBuffer()` (used by handleFilePick, the step that matters most since
+// it's the entry point) and parseCsv's full parse (handleContinue) behind a
+// controllable promise to make that race deterministically reproducible.
+describe("ImportWizard step 1 — busy-gating & stale-completion guard", () => {
+  it("does not repopulate a freshly reset wizard when a stale file pick resolves after close+reopen", async () => {
+    const user = userEvent.setup();
+    const gate = createGate();
+    const originalArrayBuffer = File.prototype.arrayBuffer;
+    const arrayBufferSpy = vi.spyOn(File.prototype, "arrayBuffer").mockImplementation(function (this: File) {
+      return gate.promise.then(() => originalArrayBuffer.call(this));
+    });
+
+    const { rerender } = renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+    await user.upload(screen.getByLabelText("Choose a CSV file"), buildWin1251File());
+
+    // The pick is gated mid-flight (arrayBuffer() hasn't resolved yet) —
+    // close the dialog before it does, then reopen for a genuinely fresh
+    // import.
+    rerender(<ImportWizard eventId="evt-1" open={false} onOpenChange={vi.fn()} />);
+    rerender(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+
+    expect(screen.getByLabelText("Choose a CSV file")).toBeInTheDocument();
+    expect(screen.queryByText("участники.csv")).not.toBeInTheDocument();
+
+    // Now let the stale pick's promise chain resolve, well after the dialog
+    // moved on to a fresh session.
+    gate.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Still fresh — the stale resolution must NOT have repopulated it with
+    // the previous session's file/preview.
+    expect(screen.queryByText("участники.csv")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Choose a CSV file")).toBeInTheDocument();
+    expect(screen.getByTestId("import-step-1")).toHaveAttribute("data-step-status", "current");
+
+    arrayBufferSpy.mockRestore();
+  });
+
+  it("blocks dialog dismissal (✕/Escape) and disables Cancel while a step-1 file pick is in flight, and allows both once it settles", async () => {
+    const user = userEvent.setup();
+    const gate = createGate();
+    const originalArrayBuffer = File.prototype.arrayBuffer;
+    const arrayBufferSpy = vi.spyOn(File.prototype, "arrayBuffer").mockImplementation(function (this: File) {
+      return gate.promise.then(() => originalArrayBuffer.call(this));
+    });
+    const onOpenChange = vi.fn();
+    renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={onOpenChange} />);
+    await user.upload(screen.getByLabelText("Choose a CSV file"), buildWin1251File());
+
+    // Busy: no ✕ in the DOM at all (hideClose), Cancel disabled, Escape
+    // doesn't dismiss.
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    gate.resolve();
+    await screen.findByText("участники.csv");
+
+    // Settled: closable again.
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+
+    arrayBufferSpy.mockRestore();
+  });
+
+  it("blocks dialog dismissal while the step 1->2 full parse is in flight, and allows it once settled", async () => {
+    const user = userEvent.setup();
+    renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+    await user.upload(screen.getByLabelText("Choose a CSV file"), buildWin1251File());
+    await screen.findByText("Auto-detected");
+
+    const gate = createGate();
+    const realParseCsv = parseCsvModule.parseCsv;
+    const parseSpy = vi.spyOn(parseCsvModule, "parseCsv").mockImplementation(async (text, opts) => {
+      // Only the FULL parse (no `preview` option) is gated — the 3-row
+      // preview parses used by file pick / encoding change stay real so the
+      // file chip renders normally above.
+      if (opts?.preview) return realParseCsv(text, opts);
+      await gate.promise;
+      return realParseCsv(text, opts);
+    });
+
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
+
+    // Busy: no ✕, Cancel disabled.
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    gate.resolve();
+    await screen.findByTestId("import-step-2");
+
+    parseSpy.mockRestore();
+  });
+});
+
+// Fix 3 (CodeRabbit, PR #65): parseCsv's `errors` (PapaParse's own
+// malformed-row diagnostics, e.g. a row with fewer fields than the header)
+// were previously read and discarded — a genuinely malformed CSV could
+// silently carry garbage rows into step 2 with zero warning. The FULL parse
+// (the step 1->2 transition, handleContinue) is the one that matters and
+// gets blocked; the 3-row preview parse doesn't need this treatment.
+describe("ImportWizard step 1 — malformed CSV validation", () => {
+  it("does not advance to step 2 and shows a validation message when the full parse reports row-count-mismatch errors", async () => {
+    const user = userEvent.setup();
+    // Row 2 has one fewer field than the 3-column header — PapaParse's own
+    // parser flags this via results.errors (verified directly against
+    // papaparse in parseCsv.test.ts).
+    const malformedCsv = "Name,Email,Company\nPerson 1,person1@example.com,Acme\nPerson 2,person2@example.com\n";
+    const file = new File([malformedCsv], "malformed.csv", { type: "text/csv" });
+    renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+
+    await user.upload(screen.getByLabelText("Choose a CSV file"), file);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue → Columns" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
+
+    expect(
+      await screen.findByText("This file has rows that don't match the header row's column count — fix the CSV and try again."),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("import-step-1")).toHaveAttribute("data-step-status", "current");
+    expect(screen.getByTestId("import-step-2")).toHaveAttribute("data-step-status", "future");
+  });
+
+  it("clears the validation message and advances normally once a well-formed file replaces the malformed one", async () => {
+    const user = userEvent.setup();
+    const malformedCsv = "Name,Email,Company\nPerson 1,person1@example.com,Acme\nPerson 2,person2@example.com\n";
+    renderWizard(<ImportWizard eventId="evt-1" open onOpenChange={vi.fn()} />);
+    await user.upload(screen.getByLabelText("Choose a CSV file"), new File([malformedCsv], "malformed.csv", { type: "text/csv" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue → Columns" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
+    await screen.findByText("This file has rows that don't match the header row's column count — fix the CSV and try again.");
+
+    await user.click(screen.getByRole("button", { name: "Replace" }));
+    await user.upload(screen.getByLabelText("Choose a CSV file"), buildWin1251File());
+    await screen.findByText("Auto-detected");
+
+    await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
+
+    expect(await screen.findByTestId("import-step-2")).toHaveAttribute("data-step-status", "current");
+    expect(
+      screen.queryByText("This file has rows that don't match the header row's column count — fix the CSV and try again."),
+    ).not.toBeInTheDocument();
+  });
+});
+
 // Distinct fixture from the step-1 tests above: 4 columns (one of which,
 // "Примечание", has no default-mapping heuristic match) and 5 DATA rows —
 // deliberately more than the 3-row preview Task 11's file-pick step shows,
@@ -297,6 +464,91 @@ describe("ImportWizard step 2 — column mapping", () => {
   });
 });
 
+// Fix 1 (CodeRabbit, PR #65): buildBulkPayload's row-building loop silently
+// lets the LAST column processed for a colliding target key win — no error,
+// no indication, just quiet last-write-wins data loss. validateMapping is
+// the guard; these tests exercise it wired into the UI: the mapping grid's
+// amber highlighting, the summary warning, and the "Import N rows" button's
+// disabled state.
+describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)", () => {
+  it("(a) flags two columns mapped to the same standard field, disables Import, and shows the mapping warning", async () => {
+    const user = userEvent.setup();
+    await continueToStep2(user);
+
+    // Примечание defaults to unset; mapping it to the SAME standard field
+    // ("email") that the Email column already uses creates a collision.
+    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "email");
+
+    const importButton = screen.getByRole("button", { name: /Import \d+ rows/ });
+    expect(importButton).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Some columns map to the same field or have a blank custom field name — fix the highlighted columns before importing.",
+      ),
+    ).toBeInTheDocument();
+    // Both offending columns' sample cells show the per-row marker.
+    expect(screen.getAllByText("Duplicate or blank field name")).toHaveLength(2);
+  });
+
+  it("(b) flags a custom field whose name is blank, disables Import, and shows the mapping warning", async () => {
+    const user = userEvent.setup();
+    await continueToStep2(user);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "custom");
+    const nameInput = screen.getByRole("textbox", { name: "Custom field name: Примечание" });
+    await user.clear(nameInput);
+
+    const importButton = screen.getByRole("button", { name: /Import \d+ rows/ });
+    expect(importButton).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Some columns map to the same field or have a blank custom field name — fix the highlighted columns before importing.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Duplicate or blank field name")).toHaveLength(1);
+  });
+
+  it("(c) flags a custom field name colliding with a standard field key used elsewhere, disables Import, and shows the mapping warning", async () => {
+    const user = userEvent.setup();
+    await continueToStep2(user);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "custom");
+    const nameInput = screen.getByRole("textbox", { name: "Custom field name: Примечание" });
+    await user.clear(nameInput);
+    // Collides with the standard "email" key the Email column already uses.
+    await user.type(nameInput, "email");
+
+    const importButton = screen.getByRole("button", { name: /Import \d+ rows/ });
+    expect(importButton).toBeDisabled();
+    expect(
+      screen.getByText(
+        "Some columns map to the same field or have a blank custom field name — fix the highlighted columns before importing.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Duplicate or blank field name")).toHaveLength(2);
+  });
+
+  it("(d) clears the warning and re-enables Import once the colliding mapping is fixed", async () => {
+    const user = userEvent.setup();
+    await continueToStep2(user);
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "email");
+    expect(screen.getByRole("button", { name: /Import \d+ rows/ })).toBeDisabled();
+
+    // Fix it: send Примечание to skip instead (no longer collides, and no
+    // longer unset either).
+    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "skip");
+
+    expect(screen.getByRole("button", { name: /Import \d+ rows/ })).toBeEnabled();
+    expect(
+      screen.queryByText(
+        "Some columns map to the same field or have a blank custom field name — fix the highlighted columns before importing.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Duplicate or blank field name")).not.toBeInTheDocument();
+  });
+});
+
 // Task 13 — step 3: chunked import submission, progress, per-row errors.
 // No shared default handler here: each test registers exactly the
 // `server.use()` handler its own fixture needs, so a test's assertions
@@ -330,14 +582,6 @@ function buildFixtureCsv(rowCount: number): string {
     lines.push(`Person ${i},person${i}@example.com`);
   }
   return lines.join("\n");
-}
-
-function createGate() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
 }
 
 async function continueToStep3Ready(user: ReturnType<typeof userEvent.setup>, csv: string, filename = "fixture.csv") {
@@ -526,6 +770,68 @@ describe("ImportWizard step 3 — chunked import", () => {
     // The ORIGINAL source row (raw "Name"/"Email" header-keyed values), not
     // the transformed {first_name, email} attendee object.
     expect(text.slice(1).split("\r\n")).toEqual(["Name,Email", "Person 2,person2@example.com"]);
+
+    vi.restoreAllMocks();
+  });
+
+  // Fix 4 (CodeRabbit, PR #65): dedupeByEmail drops duplicate rows, which
+  // re-indexes everything after them — mapChunkRowToAbsolute's return value
+  // is a POST-DEDUP position, not the row's actual position in the source
+  // file. Source row 2 here is an in-file duplicate of row 1's email and
+  // gets removed BEFORE row 3 (which later errors), so the post-dedup
+  // position of row 3 is 2 — this proves the UI shows the TRUE original
+  // file row (3), not the post-dedup position (2), and that the CSV
+  // download still retrieves row 3's actual source data.
+  it("shows the TRUE original file row number (not the post-dedup position) when an earlier in-file duplicate was removed, and downloads the correct source row", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+        const body = (await request.json()) as { attendees: unknown[] };
+        // Post-dedup, only 2 attendees are ever submitted (PersonA, PersonC)
+        // — the second (chunk-relative row 2) errors.
+        return HttpResponse.json(
+          {
+            message: "ok",
+            created: body.attendees.length - 1,
+            skipped: 0,
+            total: body.attendees.length,
+            errors: [{ row: 2, data: "PersonC", problem: "create_failed" }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const dupCsv = [
+      "Name,Email",
+      "PersonA,a@example.com", // source row 1
+      "PersonADup,a@example.com", // source row 2 — dropped as a duplicate of row 1
+      "PersonC,c@example.com", // source row 3 — this one errors
+    ].join("\n");
+
+    await continueToStep3Ready(user, dupCsv, "dup-then-error.csv");
+    // Post-dedup total is 2 rows (1 merged duplicate).
+    await user.click(screen.getByRole("button", { name: "Import 2 rows" }));
+    await screen.findByText("1 of 2 imported");
+
+    // The error row must read "3" (the TRUE source-file row for PersonC),
+    // never "2" (PersonC's post-dedup position).
+    const errorRow = screen.getByText("PersonC").closest("tr")!;
+    expect(within(errorRow).getByText("3")).toBeInTheDocument();
+    expect(within(errorRow).queryByText("2")).not.toBeInTheDocument();
+
+    const createObjectURLSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-url");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+
+    await user.click(screen.getByRole("button", { name: "Download 1 rows as CSV" }));
+
+    const blobArg = createObjectURLSpy.mock.calls[0]?.[0] as Blob;
+    const text = await readBlobAsText(blobArg);
+    // The CSV download must still retrieve PersonC's actual source row,
+    // despite the row-number/array-index divergence caused by the dropped
+    // duplicate.
+    expect(text.slice(1).split("\r\n")).toEqual(["Name,Email", "PersonC,c@example.com"]);
 
     vi.restoreAllMocks();
   });

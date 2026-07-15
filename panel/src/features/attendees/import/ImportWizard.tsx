@@ -9,7 +9,7 @@ import { decodeBuffer, detectEncoding, type CsvEncoding } from "./encoding";
 import { parseCsv } from "./parseCsv";
 import {
   buildBulkPayload, buildFailedRowsCsv, chunkArray, computeDefaultMapping,
-  createInitialWizardState, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute,
+  createInitialWizardState, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, validateMapping,
   type ImportWizardState, type MappingTarget, type RowError, type StandardField,
 } from "./wizardState";
 import { downloadCsv } from "../exportCsv";
@@ -66,6 +66,30 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   const bulkImport = $api.useMutation("post", "/api/events/{event_id}/attendees/bulk");
   const [state, setState] = React.useState<ImportWizardState>(createInitialWizardState);
   const [isFullParsing, setIsFullParsing] = React.useState(false);
+  // Fix 2 (CodeRabbit, PR #65): step 1's own busy flags, tracking a file
+  // pick's `arrayBuffer()`+preview-parse and an encoding change's re-parse
+  // in flight, respectively. Named to mirror step 3's isImporting/
+  // isStep3Busy convention. `isFullParsing` above already covers the third
+  // step-1 async op (the step 1->2 full parse) and is reused as-is.
+  const [isFilePicking, setIsFilePicking] = React.useState(false);
+  const [isEncodingChanging, setIsEncodingChanging] = React.useState(false);
+  // Fix 3 (CodeRabbit, PR #65): set when the FULL (step 1->2) parse comes
+  // back with non-empty PapaParse diagnostics (parseCsv's `errors`) — blocks
+  // the step 1->2 transition and shows a validation message instead of
+  // silently carrying a malformed file's garbage rows into step 2.
+  const [step1ParseError, setStep1ParseError] = React.useState(false);
+  // Fix 2 (CodeRabbit, PR #65): incremented every time the dialog transitions
+  // closed (in the SAME `open`-driven reset effect below that already resets
+  // other step-1/step-3 state). Each of handleFilePick/handleEncodingChange/
+  // handleContinue captures this ref's value at the start of the function
+  // (before its first await) and re-checks it after every await, before
+  // every setState call — if the value has moved on, the dialog was closed
+  // (and its state already reset) while that operation was still in flight,
+  // so the operation abandons itself silently rather than writing stale
+  // data into a session that's no longer the one it started in. Mirrors
+  // isStep3Busy/importStartedRef's "don't let async work outlive its
+  // session" reasoning, extended to cover step 1.
+  const step1SessionRef = React.useRef(0);
   // Task 13: true only while a bulk-import chunk POST is actually in
   // flight (not while step 3 is merely showing settled results/errors) —
   // this flag also gates the footer's Download/Done buttons so they can't
@@ -100,6 +124,18 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     setChunkFailure(null);
     setRetryingRows(new Set());
     importStartedRef.current = false;
+    // Fix 2: bump the session id so any step-1 async op still in flight from
+    // before this close (file pick / encoding change / full parse) detects
+    // the mismatch on its next check and abandons itself instead of
+    // resolving into this freshly-reset state. Also reset the busy flags
+    // directly — a NEW step-1 operation started after reopening will set its
+    // own flag true again; the abandoned old operation is barred (by the
+    // session check) from ever touching these itself.
+    setIsFilePicking(false);
+    setIsEncodingChanging(false);
+    setIsFullParsing(false);
+    setStep1ParseError(false);
+    step1SessionRef.current += 1;
   }, [open]);
 
   // Recomputed on every mapping/full-parse change — dedup depends on
@@ -152,11 +188,23 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
         // HTTP response, never an accumulated running total — is what's
         // safe to close over here; see the function doc comment above.
         const chunkCreated = response.created;
-        const chunkErrors: RowError[] = (response.errors ?? []).map((err) => ({
-          row: mapChunkRowToAbsolute(chunkIndex, IMPORT_CHUNK_SIZE, err.row),
-          data: err.data,
-          problem: err.problem,
-        }));
+        // Fix 4 (CodeRabbit, PR #65): mapChunkRowToAbsolute's result is a
+        // POST-DEDUP position, not the row's position in the operator's
+        // actual source file — those diverge as soon as an EARLIER
+        // duplicate has been removed. Translate through
+        // bulkPayload.originalRowIndices (parallel to attendees/
+        // dedupedRows) before it ever becomes a user-visible RowError.row.
+        // The `?? postDedupPosition` fallback is defensive only — every
+        // post-dedup position 1..attendees.length has a corresponding
+        // entry, so it should never actually be hit.
+        const chunkErrors: RowError[] = (response.errors ?? []).map((err) => {
+          const postDedupPosition = mapChunkRowToAbsolute(chunkIndex, IMPORT_CHUNK_SIZE, err.row);
+          return {
+            row: bulkPayload.originalRowIndices[postDedupPosition - 1] ?? postDedupPosition,
+            data: err.data,
+            problem: err.problem,
+          };
+        });
         setState((prev) => ({
           ...prev,
           importProgress: { done: (prev.importProgress?.done ?? 0) + chunkCreated, total },
@@ -214,8 +262,14 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // `done`; failure (still an error in the response, or the request itself
   // rejects) leaves it in the list untouched — the brief is explicit this
   // must not auto-loop, just let the user click Retry again.
+  //
+  // Fix 4 (CodeRabbit, PR #65): `row` is the ORIGINAL source-file row number
+  // (what RowError.row now stores) — it must be translated back through
+  // postDedupIndexByOriginalRow to index into bulkPayload.attendees, which
+  // is still ordered/indexed by POST-DEDUP position.
   async function handleRetryRow(row: number) {
-    const attendee = bulkPayload.attendees[row - 1];
+    const postDedupIndex = postDedupIndexByOriginalRow.get(row);
+    const attendee = postDedupIndex !== undefined ? bulkPayload.attendees[postDedupIndex] : undefined;
     if (!attendee) return;
     setRetryingRows((prev) => new Set(prev).add(row));
     try {
@@ -252,11 +306,19 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // Downloads the ORIGINAL source rows (dedupedRows, header-keyed — NOT the
   // field_schema-keyed `attendees` objects) for every row still in the error
   // list, so an operator can fix them offline and re-import just those.
+  //
+  // Fix 4 (CodeRabbit, PR #65): `error.row` is now the ORIGINAL source-file
+  // row number, not a post-dedup position — translate it back through
+  // postDedupIndexByOriginalRow to index into dedupedRows, which is still
+  // ordered/indexed by POST-DEDUP position.
   function handleDownloadErrors() {
     const errors = state.rowErrors ?? [];
     if (errors.length === 0) return;
     const rows = errors
-      .map((error) => bulkPayload.dedupedRows[error.row - 1])
+      .map((error) => {
+        const postDedupIndex = postDedupIndexByOriginalRow.get(error.row);
+        return postDedupIndex !== undefined ? bulkPayload.dedupedRows[postDedupIndex] : undefined;
+      })
       .filter((row): row is Record<string, string> => row !== undefined);
     const csv = buildFailedRowsCsv(state.headers, rows);
     downloadCsv(csv, "import-errors.csv");
@@ -312,32 +374,58 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     return parseCsv(text, { preview: 3, worker: true });
   }
 
+  // Fix 2 (CodeRabbit, PR #65): `session` is captured BEFORE the first
+  // `await`, then re-checked after every subsequent `await` and before every
+  // `setState` — if the dialog was closed (and reset) while this was in
+  // flight, `step1SessionRef.current` has moved on and this bails out
+  // silently rather than repopulating a "fresh" wizard with a previous
+  // session's file/preview. `isFilePicking` is only ever cleared here when
+  // the session still matches; an abandoned run leaves it alone (the reset
+  // effect already cleared it on close, and a new pick sets/clears its own).
   async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     // Reset the input so picking the same filename again still fires onChange.
     e.target.value = "";
     if (!file) return;
-    const buffer = await file.arrayBuffer();
-    const encoding = detectEncoding(buffer);
-    const { rows, headers } = await loadPreview(buffer, encoding);
-    setState((prev) => ({
-      ...prev,
-      file,
-      buffer,
-      encoding,
-      encodingOverridden: false,
-      rows,
-      headers,
-    }));
+    const session = step1SessionRef.current;
+    setIsFilePicking(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      if (step1SessionRef.current !== session) return;
+      const encoding = detectEncoding(buffer);
+      const { rows, headers } = await loadPreview(buffer, encoding);
+      if (step1SessionRef.current !== session) return;
+      setState((prev) => ({
+        ...prev,
+        file,
+        buffer,
+        encoding,
+        encodingOverridden: false,
+        rows,
+        headers,
+      }));
+      setStep1ParseError(false);
+    } finally {
+      if (step1SessionRef.current === session) setIsFilePicking(false);
+    }
   }
 
+  // Same session-guard pattern as handleFilePick above.
   async function handleEncodingChange(encoding: CsvEncoding) {
     if (!state.buffer) return;
-    // Always re-decode + re-parse (cheap: 3 rows), even if `encoding`
-    // already matches — clicking a segment always marks the choice as an
-    // explicit user override, whether or not it actually changes the value.
-    const { rows, headers } = await loadPreview(state.buffer, encoding);
-    setState((prev) => ({ ...prev, encoding, encodingOverridden: true, rows, headers }));
+    const session = step1SessionRef.current;
+    const buffer = state.buffer;
+    setIsEncodingChanging(true);
+    try {
+      // Always re-decode + re-parse (cheap: 3 rows), even if `encoding`
+      // already matches — clicking a segment always marks the choice as an
+      // explicit user override, whether or not it actually changes the value.
+      const { rows, headers } = await loadPreview(buffer, encoding);
+      if (step1SessionRef.current !== session) return;
+      setState((prev) => ({ ...prev, encoding, encodingOverridden: true, rows, headers }));
+    } finally {
+      if (step1SessionRef.current === session) setIsEncodingChanging(false);
+    }
   }
 
   function handleReplaceClick() {
@@ -354,12 +442,26 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // the Continue button (disabled + a spinner label) for the gap while a
   // large file is being re-parsed; small files resolve fast enough that the
   // gap is imperceptible, but nothing about this depends on file size.
+  // Fix 2: same session-guard pattern as handleFilePick/handleEncodingChange.
+  // Fix 3: a non-empty `errors` from the FULL parse (malformed rows PapaParse
+  // itself flagged — inconsistent column counts, quote failures, etc.) means
+  // `rows` may contain garbage; blocks the step 1->2 transition and surfaces
+  // `step1ParseError` instead of silently carrying that into step 2. The
+  // 3-row preview parse (loadPreview) deliberately doesn't get this
+  // treatment — it's just a preview, not the data that gets imported.
   async function handleContinue() {
     if (!state.buffer) return;
+    const session = step1SessionRef.current;
     setIsFullParsing(true);
     try {
       const text = decodeBuffer(state.buffer, state.encoding);
-      const { rows, headers } = await parseCsv(text, { worker: true });
+      const { rows, headers, errors } = await parseCsv(text, { worker: true });
+      if (step1SessionRef.current !== session) return;
+      if (errors.length > 0) {
+        setStep1ParseError(true);
+        return;
+      }
+      setStep1ParseError(false);
       setState((prev) => ({
         ...prev,
         rows,
@@ -368,7 +470,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
         step: 2,
       }));
     } finally {
-      setIsFullParsing(false);
+      if (step1SessionRef.current === session) setIsFullParsing(false);
     }
   }
 
@@ -396,6 +498,36 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     (header) => (state.mapping[header] ?? { kind: "unset" as const }).kind === "unset",
   );
 
+  // Fix 1 (CodeRabbit, PR #65): recomputed on every mapping change — the
+  // problem-header list (blank custom names / duplicate target keys) that
+  // would otherwise let buildBulkPayload silently drop data via
+  // last-write-wins. Gates the "Import N rows" button alongside
+  // hasUnsetColumn and drives the mapping grid's amber highlighting for the
+  // offending columns.
+  const mappingProblems = React.useMemo(() => validateMapping(state.mapping), [state.mapping]);
+  const hasMappingProblems = mappingProblems.length > 0;
+
+  // Fix 4 (CodeRabbit, PR #65): reverse lookup from a row's ORIGINAL
+  // 1-based source-file position (what RowError.row now stores, for
+  // display) back to its position in the post-dedup attendees/dedupedRows
+  // arrays (what's actually needed to index into them). Built once per
+  // bulkPayload change, reused by both the per-row Retry handler and the
+  // failed-rows CSV download.
+  const postDedupIndexByOriginalRow = React.useMemo(() => {
+    const map = new Map<number, number>();
+    bulkPayload.originalRowIndices.forEach((originalRow, index) => {
+      map.set(originalRow, index);
+    });
+    return map;
+  }, [bulkPayload]);
+
+  // Fix 2 (CodeRabbit, PR #65): genuine "still busy" for step 1, mirroring
+  // isStep3Busy's naming/reasoning below — covers every in-flight step-1
+  // async op (file pick, encoding-change re-parse, full parse) so the
+  // dialog's dismiss paths and the step-1 footer's Cancel button can be
+  // gated the same way step 3 already gates its own busy window.
+  const isStep1Busy = isFilePicking || isEncodingChanging || isFullParsing;
+
   // Genuine "still busy" for step 3, per the plan's explicit reconciliation
   // decision (line 62): "not dismissable mid-import ... becomes closable
   // once all chunks settle" — NOT unconditional for the whole step. Covers
@@ -410,11 +542,13 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // the explicit "Done" button.
   const isStep3Busy = isImporting || Boolean(chunkFailure) || retryingRows.size > 0;
 
-  // Blocks Escape/outside-click dismissal only while isStep3Busy — once step
-  // 3 has genuinely settled, these are allowed through to
-  // handleDialogOpenChange below (which invalidates the list on the way out,
-  // matching handleDone).
+  // Blocks Escape/outside-click dismissal while EITHER step's busy flag is
+  // genuinely set, scoped to the CURRENT step so a busy step-1 op never
+  // blocks a step-3 dismissal (impossible anyway, since they're different
+  // steps) and vice versa. Extends the step-3-only precedent (Fix 2) to
+  // cover step 1 the same way, rather than hardcoding step 3.
   function preventDialogDismiss(e: Event) {
+    if (state.step === 1 && isStep1Busy) e.preventDefault();
     if (state.step === 3 && isStep3Busy) e.preventDefault();
   }
 
@@ -423,7 +557,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
       {/* Board widths: 3a (step 1) = 760px, 3b/3c (steps 2-3) = 860px card. */}
       <DialogContent
         closeLabel={t("workspaceDialogClose")}
-        hideClose={state.step === 3 && isStep3Busy}
+        hideClose={(state.step === 1 && isStep1Busy) || (state.step === 3 && isStep3Busy)}
         onEscapeKeyDown={preventDialogDismiss}
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
@@ -438,12 +572,13 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
           <Step1Body
             state={state}
             fileInputRef={fileInputRef}
+            parseError={step1ParseError}
             onFilePick={handleFilePick}
             onEncodingChange={handleEncodingChange}
             onReplaceClick={handleReplaceClick}
           />
         ) : state.step === 2 ? (
-          <Step2Body state={state} onMappingChange={handleMappingChange} />
+          <Step2Body state={state} mappingProblems={mappingProblems} onMappingChange={handleMappingChange} />
         ) : (
           <Step3Body
             state={state}
@@ -458,10 +593,10 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
         <DialogFooter>
           {state.step === 1 ? (
             <>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" disabled={isStep1Busy} onClick={() => onOpenChange(false)}>
                 {t("createEventCancel")}
               </Button>
-              <Button type="button" disabled={!canContinue || isFullParsing} onClick={handleContinue}>
+              <Button type="button" disabled={!canContinue || isStep1Busy} onClick={handleContinue}>
                 {isFullParsing ? (
                   <span className="inline-flex items-center gap-1.5">
                     <Loader2 aria-hidden className="size-3.5 animate-spin" />
@@ -482,7 +617,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
               <Button type="button" variant="outline" onClick={handleBack}>
                 {t("importBack")}
               </Button>
-              <Button type="button" disabled={hasUnsetColumn} onClick={handleImportRows}>
+              <Button type="button" disabled={hasUnsetColumn || hasMappingProblems} onClick={handleImportRows}>
                 {t("importRowsCta", { count: totalRowsAfterDedup })}
               </Button>
             </>
@@ -555,13 +690,18 @@ function StepIndicator({ currentStep }: { currentStep: 1 | 2 | 3 }) {
 interface Step1BodyProps {
   state: ImportWizardState;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  // Fix 3 (CodeRabbit, PR #65): true once the full (step 1->2) parse has
+  // come back with non-empty PapaParse diagnostics — renders a validation
+  // message and keeps the operator on step 1 instead of silently carrying a
+  // malformed file's garbage rows forward.
+  parseError: boolean;
   onFilePick: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onEncodingChange: (encoding: CsvEncoding) => void;
   onReplaceClick: () => void;
 }
 
 function Step1Body({
-  state, fileInputRef, onFilePick, onEncodingChange, onReplaceClick,
+  state, fileInputRef, parseError, onFilePick, onEncodingChange, onReplaceClick,
 }: Step1BodyProps) {
   const { t } = useTranslation();
 
@@ -665,6 +805,8 @@ function Step1Body({
             </div>
             <p className="text-caption text-muted-foreground">{t("importEncodingHint")}</p>
           </div>
+
+          {parseError ? <p className="text-caption text-destructive">{t("importParseErrorWarning")}</p> : null}
         </>
       ) : null}
     </div>
@@ -703,6 +845,11 @@ function sampleValues(rows: Record<string, string>[], header: string): string[] 
 
 interface Step2BodyProps {
   state: ImportWizardState;
+  // Fix 1 (CodeRabbit, PR #65): header names flagged by validateMapping
+  // (blank custom name, or a target key colliding with another header's) —
+  // drives both the summary warning below and each offending row's amber
+  // highlighting.
+  mappingProblems: string[];
   onMappingChange: (header: string, target: MappingTarget) => void;
 }
 
@@ -713,11 +860,19 @@ interface Step2BodyProps {
 // `handleContinue` runs `computeDefaultMapping` in the same state update
 // that sets `step: 2` — but a `?? unset` fallback keeps a header without an
 // explicit entry from crashing the lookup rather than silently misbehaving.
-function Step2Body({ state, onMappingChange }: Step2BodyProps) {
+function Step2Body({ state, mappingProblems, onMappingChange }: Step2BodyProps) {
   const { t } = useTranslation();
+  const mappingProblemSet = React.useMemo(() => new Set(mappingProblems), [mappingProblems]);
 
   return (
     <div className="flex max-h-[420px] flex-col gap-3 overflow-y-auto">
+      {/* Fix 1: summary warning shown whenever ANY column has a blank
+          custom name or collides with another column's target key — the
+          per-row amber highlighting below (reusing the unset-column
+          treatment) identifies exactly which ones. */}
+      {mappingProblemSet.size > 0 ? (
+        <p className="text-caption font-medium text-warning">{t("importDuplicateMappingWarning")}</p>
+      ) : null}
       <div className="grid grid-cols-[minmax(0,160px)_20px_minmax(0,240px)_minmax(0,1fr)] items-start gap-x-3 gap-y-3">
         <span className="text-caption font-medium text-muted-foreground">{t("importCsvColumn")}</span>
         <span aria-hidden />
@@ -729,6 +884,7 @@ function Step2Body({ state, onMappingChange }: Step2BodyProps) {
             header={header}
             target={state.mapping[header] ?? { kind: "unset" }}
             samples={sampleValues(state.rows, header)}
+            isInvalid={mappingProblemSet.has(header)}
             onChange={(target) => onMappingChange(header, target)}
           />
         ))}
@@ -741,16 +897,22 @@ interface MappingRowProps {
   header: string;
   target: MappingTarget;
   samples: string[];
+  // Fix 1 (CodeRabbit, PR #65): true when this header's mapping is flagged
+  // by validateMapping — reuses the same amber warning treatment `isUnset`
+  // already gets, since both are "this column needs the operator's
+  // attention before Import" states.
+  isInvalid: boolean;
   onChange: (target: MappingTarget) => void;
 }
 
 // Renders as a React.Fragment of 4 grid cells (chip / arrow / field-select
 // [+ custom-name input] / sample) so it slots directly into Step2Body's
 // grid alongside its header row.
-function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
+function MappingRow({ header, target, samples, isInvalid, onChange }: MappingRowProps) {
   const { t } = useTranslation();
   const isUnset = target.kind === "unset";
   const isCustom = target.kind === "custom";
+  const hasWarning = isUnset || isInvalid;
   const selectValue =
     target.kind === "standard" ? target.field : target.kind === "custom" ? "custom" : target.kind === "skip" ? "skip" : "unset";
 
@@ -772,7 +934,7 @@ function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
       <span
         className={cn(
           "inline-flex w-fit items-center rounded-md border px-2 py-1 font-mono text-caption",
-          isUnset ? "border-warning/30 bg-warning/10 text-warning" : "border-border bg-muted text-foreground",
+          hasWarning ? "border-warning/30 bg-warning/10 text-warning" : "border-border bg-muted text-foreground",
         )}
       >
         {header}
@@ -785,7 +947,7 @@ function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
           onChange={handleSelectChange}
           className={cn(
             "h-9 rounded-md border bg-card px-2 text-body text-foreground",
-            isUnset ? "border-dashed border-warning/40 text-warning" : "border-input",
+            hasWarning ? "border-dashed border-warning/40 text-warning" : "border-input",
           )}
         >
           {/* Placeholder-only option: visually reads as "Don't import" (per
@@ -815,8 +977,14 @@ function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
           />
         ) : null}
       </div>
-      <div className={cn("text-caption", isUnset ? "text-warning" : "text-muted-foreground")}>
-        {isUnset ? t("importUnmappedWarning") : samples.length > 0 ? samples.join(", ") : "—"}
+      <div className={cn("text-caption", hasWarning ? "text-warning" : "text-muted-foreground")}>
+        {isUnset
+          ? t("importUnmappedWarning")
+          : isInvalid
+            ? t("importDuplicateOrBlankMapping")
+            : samples.length > 0
+              ? samples.join(", ")
+              : "—"}
       </div>
     </>
   );
