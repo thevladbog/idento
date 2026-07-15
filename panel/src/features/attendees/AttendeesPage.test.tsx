@@ -108,6 +108,15 @@ const server = startMswServer(
       },
     ]),
   ),
+  // Task 8's drawer — fetched only when a row is clicked / the `attendee`
+  // search param is set, but registered unconditionally here (matches
+  // AddAttendeeDialog.test.tsx's convention of always-on handlers for
+  // secondary requests a subset of tests trigger).
+  http.get("http://api.test/api/attendees/:id", ({ params }) =>
+    HttpResponse.json(params.id === "a1" ? ADA : BOB),
+  ),
+  http.get("http://api.test/api/attendees/:attendeeId/zone-access", () => HttpResponse.json([])),
+  http.get("http://api.test/api/attendees/:attendeeId/zone-history", () => HttpResponse.json([])),
 );
 void server;
 
@@ -275,5 +284,35 @@ describe("AttendeesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     await waitFor(() => expect(screen.queryByText("1 selected")).not.toBeInTheDocument());
+  });
+
+  it("opens the attendee drawer (sets ?attendee=) when a row is clicked, and closes it (clearing only that param) via the drawer's close affordance", async () => {
+    const router = renderAt("/events/evt-1/attendees?page=2&search=ada");
+    await screen.findByText("Ada Lovelace");
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const table = within(screen.getByTestId("attendee-table"));
+    fireEvent.click(table.getByText("Ada Lovelace"));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.search.attendee).toBe("a1"));
+    // Row click must not disturb the page/search params already in the URL.
+    expect(router.state.location.search.page).toBe(2);
+    expect(router.state.location.search.search).toBe("ada");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(router.state.location.search.attendee).toBeUndefined();
+    expect(router.state.location.search.page).toBe(2);
+    expect(router.state.location.search.search).toBe("ada");
+  });
+
+  it("renders the drawer on a fresh mount when ?attendee=<id> is already in the URL (deep link, not a simulated click)", async () => {
+    renderAt("/events/evt-1/attendees?attendee=a2");
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(await within(screen.getByRole("dialog")).findByText("Bob Noll")).toBeInTheDocument();
   });
 });

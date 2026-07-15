@@ -430,7 +430,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Fetch a single attendee by id. Used by the panel's attendee drawer to support deep-linking (?attendee=<id> must render correctly on a fresh page load, not just after a client-side row click where the data might already be cached). */
+        get: operations["getAttendeeDetail"];
         /** Check-in status update (kept for backward compatibility — PATCH on this same path is the full profile update). Auto-fills checked_in_at and checked_in_by/checked_in_by_email on the first transition to checked-in, and clears all three on uncheck. */
         put: operations["updateAttendeeHandler"];
         post?: never;
@@ -3056,6 +3057,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"] | components["schemas"]["HTTPError"];
+                };
+            };
+        };
+    };
+    getAttendeeDetail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The attendee. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Attendee"];
+                };
+            };
+            /** @description id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Attendee does not exist, or belongs to a different tenant (requireAttendeeOwnership masks "foreign" as "missing"). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving attendee ownership ("Internal error"). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

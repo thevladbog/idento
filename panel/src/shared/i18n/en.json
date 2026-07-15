@@ -222,5 +222,17 @@
   "addAttendeeSubmit": "Add attendee",
   "addAttendeeNameRequired": "Enter at least a first or last name.",
   "addAttendeeEmailInvalid": "Enter a valid email address.",
-  "addAttendeeServerError": "Couldn't add the attendee. Try again."
+  "addAttendeeServerError": "Couldn't add the attendee. Try again.",
+  "drawerCheckedIn": "Checked in",
+  "drawerNotCheckedIn": "Not checked in",
+  "drawerEdit": "Edit details",
+  "drawerReprintLocked": "Reprint badge — coming with the badge editor",
+  "drawerZoneAccess": "Zone access",
+  "drawerAddZone": "+ Zone",
+  "drawerActivity": "Recent activity",
+  "drawerNoActivity": "No activity yet",
+  "drawerRegenerate": "Regenerate code…",
+  "drawerDelete": "Delete…",
+  "drawerLoadError": "Couldn't load this attendee.",
+  "drawerTitleFallback": "Attendee details"
 }

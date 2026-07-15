@@ -224,5 +224,17 @@
   "addAttendeeSubmit": "Добавить участника",
   "addAttendeeNameRequired": "Укажите хотя бы имя или фамилию.",
   "addAttendeeEmailInvalid": "Введите корректный email.",
-  "addAttendeeServerError": "Не удалось добавить участника. Попробуйте ещё раз."
+  "addAttendeeServerError": "Не удалось добавить участника. Попробуйте ещё раз.",
+  "drawerCheckedIn": "Зарегистрирован",
+  "drawerNotCheckedIn": "Не зарегистрирован",
+  "drawerEdit": "Редактировать",
+  "drawerReprintLocked": "Перепечатать бейдж — появится вместе с редактором бейджей",
+  "drawerZoneAccess": "Доступ к зонам",
+  "drawerAddZone": "+ Зона",
+  "drawerActivity": "Недавняя активность",
+  "drawerNoActivity": "Пока нет активности",
+  "drawerRegenerate": "Перегенерировать код…",
+  "drawerDelete": "Удалить…",
+  "drawerLoadError": "Не удалось загрузить данные участника.",
+  "drawerTitleFallback": "Данные участника"
 }

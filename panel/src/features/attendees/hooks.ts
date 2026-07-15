@@ -71,3 +71,26 @@ export function ATTENDEES_LIST_KEY(eventId: string) {
 export function useEventZones(eventId: string) {
   return $api.useQuery("get", "/api/events/{event_id}/zones", { params: { path: { event_id: eventId } } });
 }
+
+// A single attendee's full profile — added specifically for Task 8's drawer
+// (which needs name/company/code/checkin_status for an id that may not be
+// on the currently-loaded list page, e.g. a fresh ?attendee=<id> deep
+// link). GET /api/attendees/{id} did not exist before this task's
+// prerequisite (commit 9e8c227) — see task-8-report.md for why the table's
+// already-fetched row data can't stand in for this.
+export function useAttendeeDetail(attendeeId: string) {
+  return $api.useQuery("get", "/api/attendees/{id}", { params: { path: { id: attendeeId } } });
+}
+
+// Individual per-attendee zone-access overrides (only `allowed: true` rows
+// render as chips in the drawer — see AttendeeDrawer.tsx). Also the query
+// Task 9's zone-add/remove mutations will invalidate.
+export function useAttendeeZoneAccess(attendeeId: string) {
+  return $api.useQuery("get", "/api/attendees/{attendee_id}/zone-access", { params: { path: { attendee_id: attendeeId } } });
+}
+
+// An attendee's zone movement history, most-recent-first per the API
+// contract — the drawer trusts that ordering rather than re-sorting.
+export function useAttendeeZoneHistory(attendeeId: string) {
+  return $api.useQuery("get", "/api/attendees/{attendee_id}/zone-history", { params: { path: { attendee_id: attendeeId } } });
+}

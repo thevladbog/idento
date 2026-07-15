@@ -4,6 +4,7 @@ import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
+import { AttendeeDrawer } from "./AttendeeDrawer";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
@@ -115,6 +116,16 @@ export function AttendeesPage() {
 
   function openAttendee(id: string) {
     void navigate({ search: (prev) => ({ ...prev, attendee: id }) });
+  }
+
+  // Task 8's drawer close affordance: same "spread prev, set the one key to
+  // undefined" pattern as clearFilters/updateFilter above, so closing the
+  // drawer clears only `attendee` and leaves page/search/zone/status
+  // untouched — TanStack Router's default search serializer drops
+  // `undefined` keys from the URL, so this doesn't leave a stray
+  // `?attendee=` behind.
+  function closeAttendee() {
+    void navigate({ search: (prev) => ({ ...prev, attendee: undefined }) });
   }
 
   const rows = attendeesQuery.data?.attendees ?? [];
@@ -246,6 +257,14 @@ export function AttendeesPage() {
       )}
 
       <AddAttendeeDialog eventId={eventId} open={addAttendeeOpen} onOpenChange={setAddAttendeeOpen} />
+
+      {/* Task 8: mounted (not just shown/hidden) whenever `attendee` is set,
+          so a fresh page load with ?attendee=<id> already in the URL
+          renders it too (deep-link support) — not only after a row click
+          during the current session. */}
+      {search.attendee ? (
+        <AttendeeDrawer eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+      ) : null}
     </div>
   );
 }
