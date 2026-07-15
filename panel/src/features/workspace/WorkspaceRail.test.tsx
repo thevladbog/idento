@@ -134,12 +134,11 @@ describe("WorkspaceRail", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
-  it("renders the still-locked step rows (badge/zones/staff/equipment) and the Check-in row as non-links, always locked", () => {
+  it("renders the still-locked step rows (badge/staff/equipment) and the Check-in row as non-links, always locked", () => {
     renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
 
     const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
     expect(linkNames.some((name) => name?.includes("Badge"))).toBe(false);
-    expect(linkNames.some((name) => name?.includes("Zones"))).toBe(false);
     expect(linkNames.some((name) => name?.includes("Staff"))).toBe(false);
     expect(linkNames.some((name) => name?.includes("Equipment"))).toBe(false);
     expect(linkNames.some((name) => name?.includes("Check-in"))).toBe(false);
@@ -161,5 +160,20 @@ describe("WorkspaceRail", () => {
 
     const attendeesLink = screen.getByRole("link", { name: /Attendees/ });
     expect(attendeesLink).not.toHaveAttribute("aria-current");
+  });
+
+  it("renders the zones step row as a real Link (Task 2 unlock) and marks it active on the zones route", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="zones" />);
+
+    const zonesLink = screen.getByRole("link", { name: /Zones/ });
+    expect(zonesLink).toHaveAttribute("href", "/events/evt-1/zones");
+    expect(zonesLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("does not mark the zones link active when a different rail tab is active", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
+
+    const zonesLink = screen.getByRole("link", { name: /Zones/ });
+    expect(zonesLink).not.toHaveAttribute("aria-current");
   });
 });

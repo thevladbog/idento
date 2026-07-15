@@ -294,5 +294,16 @@
   "importDownloadErrors": "Download {{count}} rows as CSV",
   "importDone": "Done — {{count}} in the list",
   "importChunkFailed": "Upload interrupted — {{count}} rows not sent yet.",
-  "importRetryRemaining": "Retry remaining"
+  "importRetryRemaining": "Retry remaining",
+  "zonesTitle": "Zones",
+  "zonesCaption": "Optional — attendees always get the entrance zone.",
+  "zonesNewZone": "+ New zone",
+  "zonesEntranceSubtitle": "Entrance zone",
+  "zonesAccessAll": "All attendees",
+  "zonesAccessByRule": "By rule · {{count}}",
+  "zonesInactive": "Inactive",
+  "zonesEmptyTitle": "No zones yet",
+  "zonesEmptyBody": "Zones are optional — every attendee already gets the entrance zone. Add one to control access to VIP areas, workshops, or restricted spaces.",
+  "zonesLoadError": "Couldn't load zones.",
+  "zonesRowMenuLabel": "More actions for {{name}}"
 }

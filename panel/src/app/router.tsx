@@ -7,6 +7,7 @@ import { EventWorkspaceLayout } from "../features/workspace/EventWorkspaceLayout
 import { AttendeesPage } from "../features/attendees/AttendeesPage";
 import { validateAttendeesSearch } from "../features/attendees/searchParams";
 import { HomePage } from "../features/home/HomePage";
+import { ZonesPage } from "../features/zones/ZonesPage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
@@ -114,13 +115,19 @@ const eventAttendeesRoute = createRoute({
   component: AttendeesPage,
 });
 
+const eventZonesRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/zones",
+  component: ZonesPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
     teamRoute,
     equipmentRoute,
     organizationRoute,
-    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute]),
+    eventWorkspaceRoute.addChildren([eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute]),
   ]),
   loginRoute,
   registerRoute,

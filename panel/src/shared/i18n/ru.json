@@ -296,5 +296,16 @@
   "importDownloadErrors": "Скачать {{count}} строк в CSV",
   "importDone": "Готово — {{count}} в списке",
   "importChunkFailed": "Загрузка прервана — {{count}} строк ещё не отправлено.",
-  "importRetryRemaining": "Повторить оставшиеся"
+  "importRetryRemaining": "Повторить оставшиеся",
+  "zonesTitle": "Зоны",
+  "zonesCaption": "Необязательно — участники всегда получают входную зону.",
+  "zonesNewZone": "+ Новая зона",
+  "zonesEntranceSubtitle": "Входная зона",
+  "zonesAccessAll": "Все участники",
+  "zonesAccessByRule": "По правилу · {{count}}",
+  "zonesInactive": "Неактивна",
+  "zonesEmptyTitle": "Пока нет зон",
+  "zonesEmptyBody": "Зоны необязательны — каждый участник уже получает входную зону. Добавьте зону, чтобы ограничить доступ к VIP-зонам, мастер-классам или служебным помещениям.",
+  "zonesLoadError": "Не удалось загрузить зоны.",
+  "zonesRowMenuLabel": "Ещё действия для {{name}}"
 }
