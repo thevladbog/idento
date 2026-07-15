@@ -68,11 +68,11 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   const [isFullParsing, setIsFullParsing] = React.useState(false);
   // Task 13: true only while a bulk-import chunk POST is actually in
   // flight (not while step 3 is merely showing settled results/errors) —
-  // gates the dialog's close affordance per the board's "nothing freezes /
-  // can't be interrupted" framing (see the DialogContent hideClose prop
-  // below, which is unconditional for the whole of step 3 anyway; this flag
-  // additionally gates the footer's Download/Done buttons so they can't
-  // appear mid-upload).
+  // this flag also gates the footer's Download/Done buttons so they can't
+  // appear mid-upload, and (combined with chunkFailure/retryingRows below
+  // into isStep3Busy) gates the dialog's close affordance per the
+  // implementation plan's explicit reconciliation decision (line 62: "not
+  // dismissable mid-import ... becomes closable once all chunks settle").
   const [isImporting, setIsImporting] = React.useState(false);
   // Set only when a chunk POST itself rejects (network-level failure, not a
   // per-row error in a successful response) — tracks how many rows across
@@ -247,12 +247,39 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     downloadCsv(csv, "import-errors.csv");
   }
 
-  // The wizard's only way out of step 3 (per the board: no ✕, no Cancel —
-  // "closing mid-flight is impossible by design"). Invalidates the
-  // attendees list so the table reflects the just-imported rows.
-  function handleDone() {
+  // Shared by handleDone (the explicit terminal CTA) and
+  // handleDialogOpenChange below (X/Escape/outside-click once step 3 is
+  // genuinely closable) so the invalidation only lives in one place —
+  // fixing a bug where only the "Done" button ever triggered it.
+  function invalidateAttendeesList() {
     void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+  }
+
+  // The wizard's explicit terminal CTA once step 3 has settled. Invalidates
+  // the attendees list so the table reflects the just-imported rows.
+  function handleDone() {
+    invalidateAttendeesList();
     onOpenChange(false);
+  }
+
+  // Wraps the raw `onOpenChange` prop that <Dialog> hands to Radix's own
+  // X/Escape/outside-click dismiss paths (DialogContent's close button, and
+  // onEscapeKeyDown/onPointerDownOutside/onInteractOutside below all call
+  // through to this same prop when not prevented). Those paths bypass
+  // handleDone entirely, so without this wrapper a user who dismisses step 3
+  // via X/Escape/outside-click instead of clicking "Done" would close the
+  // wizard WITHOUT ever invalidating the list — violating the plan's "close
+  // after success invalidates the list". isStep3Busy (below) already blocks
+  // these dismiss paths while genuinely busy, so in practice this only ever
+  // fires once settled — but invalidating unconditionally on any step-3
+  // close is still correct even for an edge case where step 3 was somehow
+  // reached with nothing sent yet (an unchanged list just means one harmless
+  // extra refetch).
+  function handleDialogOpenChange(nextOpen: boolean) {
+    if (!nextOpen && state.step === 3) {
+      invalidateAttendeesList();
+    }
+    onOpenChange(nextOpen);
   }
 
   // Decodes `buffer` with `encoding` and re-parses just the first 3 rows for
@@ -354,23 +381,34 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     (header) => (state.mapping[header] ?? { kind: "unset" as const }).kind === "unset",
   );
 
-  // Step 3 never has a ✕ (board 3c: "step 3's header omits the close ✕ ...
-  // consistent with 'nothing freezes / can't be interrupted'") — unlike the
-  // in-flight-only framing in the task brief's prose, the board's actual
-  // step-3 mockup shows this holds for the WHOLE step, including the
-  // settled/results view, so hideClose is unconditional for step 3 rather
-  // than toggling on isImporting. Escape/outside-click are blocked the same
-  // way for the same reason: step 3's only exit is the explicit Done button.
+  // Genuine "still busy" for step 3, per the plan's explicit reconciliation
+  // decision (line 62): "not dismissable mid-import ... becomes closable
+  // once all chunks settle" — NOT unconditional for the whole step. Covers
+  // every kind of in-flight server work step 3 can have outstanding: the
+  // main chunk loop (isImporting), an un-sent-chunk "Retry remaining" POST
+  // (also isImporting, since runChunksFrom sets it), a still-unresolved
+  // chunk-level failure banner (chunkFailure — resolved either by Retry
+  // remaining succeeding, which clears it, or... it only ever clears via a
+  // successful resend, so its mere presence means work is still pending),
+  // and any per-row "Retry" in flight (retryingRows). Once none of these are
+  // true, step 3 becomes closable via X/Escape/outside-click too, not just
+  // the explicit "Done" button.
+  const isStep3Busy = isImporting || Boolean(chunkFailure) || retryingRows.size > 0;
+
+  // Blocks Escape/outside-click dismissal only while isStep3Busy — once step
+  // 3 has genuinely settled, these are allowed through to
+  // handleDialogOpenChange below (which invalidates the list on the way out,
+  // matching handleDone).
   function preventDialogDismiss(e: Event) {
-    if (state.step === 3) e.preventDefault();
+    if (state.step === 3 && isStep3Busy) e.preventDefault();
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       {/* Board widths: 3a (step 1) = 760px, 3b/3c (steps 2-3) = 860px card. */}
       <DialogContent
         closeLabel={t("workspaceDialogClose")}
-        hideClose={state.step === 3}
+        hideClose={state.step === 3 && isStep3Busy}
         onEscapeKeyDown={preventDialogDismiss}
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}

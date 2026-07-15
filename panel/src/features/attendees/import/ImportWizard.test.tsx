@@ -558,4 +558,88 @@ describe("ImportWizard step 3 — chunked import", () => {
     expect(screen.queryByText(/rows not sent yet/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Done — 5 in the list" })).toBeInTheDocument();
   });
+
+  // Fix round 1 (plan line 62's reconciliation decision): step 3 is only
+  // non-dismissable while genuinely busy — once every chunk has settled, the
+  // X/Escape/outside-click paths must work too, AND must invalidate the
+  // attendees list exactly like clicking "Done" does (Radix wires X/Escape/
+  // outside-click straight to the raw onOpenChange prop, bypassing
+  // handleDone's invalidateQueries call unless that prop itself invalidates).
+  it("becomes closable via the X once step 3 has settled, and closing that way invalidates the attendees list same as Done", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+        const body = (await request.json()) as { attendees: unknown[] };
+        return HttpResponse.json(
+          { message: "ok", created: body.attendees.length, skipped: 0, total: body.attendees.length },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const { queryClient, onOpenChange } = await continueToStep3Ready(user, buildFixtureCsv(3), "closeable.csv");
+    await user.click(screen.getByRole("button", { name: "Import 3 rows" }));
+    await screen.findByText("3 of 3 imported");
+
+    // Settled: hideClose removes the X from the DOM entirely while busy, so
+    // its mere presence here proves the dialog is genuinely closable now.
+    const closeButton = screen.getByRole("button", { name: "Close" });
+
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    await user.click(closeButton);
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the dialog non-closable while a per-row Retry is in flight, even though the chunk-import phase already settled", async () => {
+    const user = userEvent.setup();
+    const retryGate = createGate();
+    let retryRequested = false;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+        const body = (await request.json()) as { attendees: Record<string, unknown>[] };
+        if (body.attendees.length === 1) {
+          // The per-row Retry re-POST — gated so the test can attempt to
+          // close the dialog while it's genuinely still in flight.
+          retryRequested = true;
+          await retryGate.promise;
+          return HttpResponse.json({ message: "ok", created: 1, skipped: 0, total: 1 }, { status: 201 });
+        }
+        return HttpResponse.json(
+          {
+            message: "ok",
+            created: body.attendees.length - 1,
+            skipped: 1,
+            total: body.attendees.length,
+            errors: [{ row: 2, data: "Person 2", problem: "create_failed" }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const { onOpenChange } = await continueToStep3Ready(user, buildFixtureCsv(3), "retry-inflight.csv");
+    await user.click(screen.getByRole("button", { name: "Import 3 rows" }));
+    await screen.findByText("2 of 3 imported");
+
+    // The main chunk-import phase has fully settled (no chunk in flight, no
+    // chunkFailure) — the dialog is closable right now.
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(retryRequested).toBe(true));
+
+    // Mid single-row-retry: non-closable again, even though the chunk-import
+    // phase settled long before this retry started.
+    expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    retryGate.resolve();
+
+    await waitFor(() => screen.getByText("3 of 3 imported"));
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
 });
