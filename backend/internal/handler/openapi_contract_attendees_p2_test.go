@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -328,9 +329,12 @@ func TestOpenAPIContract_AttendeesP2_FiltersCompose(t *testing.T) {
 }
 
 // (h) BulkCreateAttendees with per-row errors: row 2 duplicates an existing
-// email, row 3 duplicates an existing code, all others are valid. Assert
-// 201, correct created count, errors array with row/problem/data, legacy
-// duplicates still populated.
+// email, row 3 duplicates an existing code, row 4 (Frank Miller) is made to
+// fail Store.CreateAttendee itself (exercising the "create_failed" problem
+// code, which otherwise has zero test coverage — the stub used to always
+// succeed), all others are valid. Assert 201, correct created count, errors
+// array with row/problem/data for every failure mode, legacy duplicates
+// still populated.
 func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Conference")
@@ -363,8 +367,12 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 			return true, 2, 1000, nil // allowed, 2 current, 1000 max
 		},
 		createAttendee: func(a *models.Attendee) error {
-			// Only fail for the specific row we want to test failure on
-			// (in this test, we're only testing duplicates, so create succeeds for non-duplicates)
+			// Fail for exactly one targeted row (Frank, by email) to exercise
+			// the create_failed path; every other row — including the two
+			// duplicates, which never reach CreateAttendee — succeeds.
+			if a.Email == "frank@example.com" {
+				return errors.New("simulated store failure")
+			}
 			return nil
 		},
 		updateEvent: func(*models.Event) error { return nil },
@@ -437,18 +445,19 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	// Expect: 3 created (rows 1, 4, 5), 2 skipped (rows 2, 3), 5 total
-	if got.Created != 3 || got.Skipped != 2 || got.Total != 5 {
-		t.Fatalf("got created=%d skipped=%d total=%d, want 3/2/5", got.Created, got.Skipped, got.Total)
+	// Expect: 2 created (rows 1, 5), 3 skipped (rows 2, 3 duplicates + row 4
+	// create_failed), 5 total.
+	if got.Created != 2 || got.Skipped != 3 || got.Total != 5 {
+		t.Fatalf("got created=%d skipped=%d total=%d, want 2/3/5", got.Created, got.Skipped, got.Total)
 	}
 
-	// Check errors array: should have exactly 2 entries for rows 2 and 3
-	if len(got.Errors) != 2 {
-		t.Fatalf("got %d errors, want 2. errors=%+v", len(got.Errors), got.Errors)
+	// Check errors array: should have exactly 3 entries for rows 2, 3, and 4
+	if len(got.Errors) != 3 {
+		t.Fatalf("got %d errors, want 3. errors=%+v", len(got.Errors), got.Errors)
 	}
 
 	// Find error for row 2 (email duplicate)
-	var row2Found, row3Found bool
+	var row2Found, row3Found, row4Found bool
 	for i := range got.Errors {
 		switch got.Errors[i].Row {
 		case 2:
@@ -467,6 +476,14 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 			if got.Errors[i].Data != "Eve Davis" {
 				t.Fatalf("row 3: got data=%q, want 'Eve Davis'", got.Errors[i].Data)
 			}
+		case 4:
+			row4Found = true
+			if got.Errors[i].Problem != "create_failed" {
+				t.Fatalf("row 4: got problem=%q, want create_failed", got.Errors[i].Problem)
+			}
+			if got.Errors[i].Data != "Frank Miller" {
+				t.Fatalf("row 4: got data=%q, want 'Frank Miller'", got.Errors[i].Data)
+			}
 		}
 	}
 
@@ -475,6 +492,9 @@ func TestOpenAPIContract_BulkCreateAttendees_PerRowErrors(t *testing.T) {
 	}
 	if !row3Found {
 		t.Fatalf("missing error for row 3")
+	}
+	if !row4Found {
+		t.Fatalf("missing error for row 4 (create_failed)")
 	}
 
 	// Check legacy duplicates field is still populated
