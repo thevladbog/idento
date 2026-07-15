@@ -306,6 +306,22 @@ components:
           created_at,
           updated_at,
         ]
+    AttendeeListPage:
+      type: object
+      description: >
+        Envelope returned by GET /api/events/{event_id}/attendees when the
+        `page` or `per_page` query param is present. `total` is the count of
+        attendees matching the active filters (code/search/zone/status)
+        before paging is applied, not the length of `attendees`.
+      properties:
+        attendees:
+          type: array
+          items: { $ref: "#/components/schemas/Attendee" }
+        total: { type: integer, description: Total matching attendees across all pages. }
+        page: { type: integer }
+        per_page: { type: integer }
+      required: [attendees, total, page, per_page]
+      additionalProperties: false
     DuplicateInfo:
       type: object
       description: One row BulkCreateAttendees skipped, keyed by why it was considered a duplicate of an existing attendee.
@@ -1538,6 +1554,14 @@ paths:
         (mobile QR/barcode scan lookup) and/or a search substring across
         name/email/code (mobile attendee search). Omitting both query
         params returns the full event attendee list.
+      description: >
+        Response shape is a discriminated-by-param-presence oneOf: when
+        NEITHER `page` nor `per_page` is present, the response is the
+        legacy bare array of Attendee (back-compat for mobile clients,
+        unchanged). When EITHER `page` or `per_page` is present, the
+        response is an AttendeeListPage envelope instead, and `zone` /
+        `status` additionally narrow the result set. `page` defaults to 1
+        and `per_page` defaults to 50 when only one of the pair is given.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: event_id
@@ -1552,16 +1576,52 @@ paths:
           in: query
           schema: { type: string }
           description: Substring match across name/email/code.
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+          description: >
+            1-indexed page number. Presence of this param (or per_page)
+            switches the response to the AttendeeListPage envelope.
+            Defaults to 1 if only per_page is given. Must be >= 1.
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+          description: >
+            Page size. Presence of this param (or page) switches the
+            response to the AttendeeListPage envelope. Defaults to 50 if
+            only page is given. Must be between 1 and 200 inclusive.
+        - name: zone
+          in: query
+          schema: { type: string, format: uuid }
+          description: >
+            Event zone UUID. Only applied in the paginated envelope mode
+            (page or per_page present); narrows to attendees with an
+            explicit attendee_zone_access row for that zone with
+            allowed=true.
+        - name: status
+          in: query
+          schema: { type: string, enum: [checked_in, not_checked_in] }
+          description: >
+            Only applied in the paginated envelope mode (page or per_page
+            present); filters on Attendee.checkin_status.
       responses:
         "200":
-          description: Attendees for the event (all, or filtered by code/search).
+          description: >
+            Attendees for the event. A bare array when neither page nor
+            per_page is present (legacy shape, unfiltered by zone/status);
+            an AttendeeListPage envelope otherwise.
           content:
             application/json:
               schema:
-                type: array
-                items: { $ref: "#/components/schemas/Attendee" }
+                oneOf:
+                  - type: array
+                    items: { $ref: "#/components/schemas/Attendee" }
+                  - { $ref: "#/components/schemas/AttendeeListPage" }
         "400":
-          description: event_id is not a UUID.
+          description: >
+            event_id is not a UUID, or (paginated mode only) page < 1,
+            per_page outside 1..200, zone is not a UUID, or status is
+            neither checked_in nor not_checked_in.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

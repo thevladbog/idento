@@ -58,6 +58,7 @@ type fakeStore struct {
 	updateAttendee            func(attendee *models.Attendee) error
 	getAttendeesByEventID     func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
 	countAttendeesByEventID   func(eventID uuid.UUID) (int, error)
+	getAttendeesPage          func(eventID uuid.UUID, f store.AttendeeFilter) ([]*models.Attendee, int, error)
 	getAttendeeZoneCheckins   func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
@@ -248,6 +249,9 @@ func (f *fakeStore) GetAttendeesByEventID(_ context.Context, eventID uuid.UUID, 
 }
 func (f *fakeStore) CountAttendeesByEventID(_ context.Context, eventID uuid.UUID) (int, error) {
 	return f.countAttendeesByEventID(eventID)
+}
+func (f *fakeStore) GetAttendeesPage(_ context.Context, eventID uuid.UUID, filter store.AttendeeFilter) ([]*models.Attendee, int, error) {
+	return f.getAttendeesPage(eventID, filter)
 }
 func (f *fakeStore) GetAttendeeZoneCheckins(_ context.Context, attendeeID uuid.UUID) ([]*models.ZoneCheckin, error) {
 	return f.getAttendeeZoneCheckins(attendeeID)

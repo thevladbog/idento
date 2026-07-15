@@ -76,6 +76,12 @@ type Store interface {
 	// CountAttendeesByEventID counts non-deleted attendees for an event; kept
 	// in lockstep with GetAttendeesByEventID's WHERE clause.
 	CountAttendeesByEventID(ctx context.Context, eventID uuid.UUID) (int, error)
+	// GetAttendeesPage returns one page of attendees for an event matching f,
+	// plus the total count of attendees matching f (before paging) — used by
+	// GetAttendees' envelope response when page/per_page query params are
+	// present. f.Page/f.PerPage are expected to already be validated/defaulted
+	// by the caller (page >= 1, 1 <= per_page <= 200).
+	GetAttendeesPage(ctx context.Context, eventID uuid.UUID, f AttendeeFilter) ([]*models.Attendee, int, error)
 	GetAttendeeByCode(ctx context.Context, eventID uuid.UUID, code string) (*models.Attendee, error)
 	GetAttendeeByID(ctx context.Context, id uuid.UUID) (*models.Attendee, error)
 	// GetAttendeeByIDForTenant scopes the attendee through its event's tenant.
@@ -182,4 +188,19 @@ type Store interface {
 
 	// Event Stats (KPI counters for mobile status bar)
 	GetEventStats(ctx context.Context, eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
+}
+
+// AttendeeFilter narrows GetAttendeesPage's result set. Every field is
+// optional: Code/Search "" skip that filter (same convention as
+// GetAttendeesByEventID); ZoneID nil skips the zone-access join; Status nil
+// matches any check-in state (true = checked_in, false = not_checked_in).
+// Page/PerPage are 1-indexed/positive and expected to already be
+// validated/defaulted by the caller.
+type AttendeeFilter struct {
+	Code    string
+	Search  string
+	ZoneID  *uuid.UUID
+	Status  *bool
+	Page    int
+	PerPage int
 }
