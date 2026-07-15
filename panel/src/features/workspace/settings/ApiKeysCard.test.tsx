@@ -291,6 +291,76 @@ describe("ApiKeysCard", () => {
     expect(within(dialog).getByRole("button", { name: "+ Create key" })).toBeInTheDocument();
   });
 
+  // Regression test for the SECOND cancel-then-reopen race: a plain boolean
+  // ref reset to false on every reopen can't tell "a response from THIS
+  // session" apart from "a response from a PREVIOUSLY-closed session" once
+  // the dialog has been reopened at least once — the second, still-pending
+  // create's stale sibling from the first (already-cancelled) attempt can
+  // land after the reopen and slip past a re-armed boolean guard. A
+  // monotonically-incrementing session id (bumped on every close) closes
+  // that gap: the first request's captured session id can never match the
+  // current one again, no matter how many times the dialog reopens.
+  it("never shows a stale plain_key from a FIRST cancelled create, even after a second create is submitted following a reopen", async () => {
+    // Distinguish the two requests' responses by name-derived secret, and
+    // have the FIRST (already-cancelled) request resolve well AFTER the
+    // second (current) one — the exact race this fix targets: a stale
+    // response from a previously-closed session landing after a reopen and
+    // a fresh submit.
+    let callIndex = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/api-keys", async ({ request }) => {
+        callIndex += 1;
+        const index = callIndex;
+        const body = (await request.json()) as { name?: string };
+        createCount += 1;
+        lastCreateBody = body;
+        await delay(index === 1 ? 150 : 20);
+        const secret = index === 1 ? "SECRET_FIRST_ABORTED" : "SECRET_SECOND_CURRENT";
+        const created: APIKey = {
+          id: `key-${index}`,
+          event_id: "evt-1",
+          name: body.name ?? "",
+          key_preview: "idnt_live_xxxx...",
+          created_at: "2026-06-20T00:00:00.000Z",
+        };
+        keys = [...keys, created];
+        return HttpResponse.json({ api_key: created, plain_key: secret }, { status: 201 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ApiKeysCard eventId="evt-1" />);
+
+    await screen.findByText("CRM sync");
+
+    // First attempt: open, submit, cancel while still pending.
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "First (aborted)");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // Reopen and submit a second, current create — before the first
+    // request's delayed response has landed.
+    await user.click(screen.getByRole("button", { name: "+ Create key" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Name"), "Second (current)");
+    await user.click(within(dialog).getByRole("button", { name: "+ Create key" }));
+
+    // The second (current) request resolves first — its secret must appear.
+    expect(await within(dialog).findByText("SECRET_SECOND_CURRENT")).toBeInTheDocument();
+
+    // Now let the first (already-cancelled) request's late response land too.
+    await waitFor(() => expect(createCount).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    // The stale first response must never surface — the dialog must still
+    // show only the second (current) request's secret.
+    expect(within(dialog).queryByText("SECRET_FIRST_ABORTED")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("SECRET_SECOND_CURRENT")).toBeInTheDocument();
+  });
+
   it("shows an inline error when revoking fails, and clears it on a subsequent successful revoke", async () => {
     deleteStatusOverride = 500;
     const user = userEvent.setup();

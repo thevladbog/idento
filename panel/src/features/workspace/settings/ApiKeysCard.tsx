@@ -41,15 +41,19 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   const [plainKey, setPlainKey] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const copiedTimeoutRef = React.useRef<number | undefined>(undefined);
-  // Set false whenever the create dialog is open (i.e. the in-flight
-  // create's response is still relevant) and true the moment it closes for
-  // any reason (Cancel/X/Escape/overlay). `createKey.reset()` on close only
-  // detaches the mutation observer — it does NOT cancel the in-flight
-  // request or stop `onSuccess` from firing when the response lands late.
-  // Without this guard, a close-before-response race would let a stray
-  // `plain_key` sneak into `plainKey` state and resurface unlabeled the
-  // next time the dialog is opened.
-  const createAbortedRef = React.useRef(false);
+  // Monotonically-incrementing session id, bumped every time the create
+  // dialog closes for any reason (Cancel/X/Escape/overlay).
+  // `createKey.reset()` on close only detaches the mutation observer — it
+  // does NOT cancel the in-flight request or stop `onSuccess` from firing
+  // when the response lands late. A plain boolean re-armed on every reopen
+  // isn't enough: a SECOND cancel-then-reopen cycle can let a stale response
+  // from the FIRST (already-abandoned) request pass the guard again once
+  // it's reset to false on reopen. An incrementing id captured at
+  // mutate-time (via `onMutate`) and compared exactly in `onSuccess` means a
+  // reopen never "un-stales" a response tied to a previously-closed session
+  // — every close permanently invalidates all in-flight responses from
+  // before it.
+  const createSessionRef = React.useRef(0);
 
   React.useEffect(() => () => window.clearTimeout(copiedTimeoutRef.current), []);
 
@@ -75,11 +79,14 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   });
 
   const createKey = $api.useMutation("post", "/api/events/{event_id}/api-keys", {
-    onSuccess: (created) => {
+    onMutate: () => ({ sessionId: createSessionRef.current }),
+    onSuccess: (created, _vars, onMutateResult) => {
       void queryClient.invalidateQueries({ queryKey: listQueryKey });
-      // See createAbortedRef above: if the dialog was closed before this
-      // response arrived, the secret must never be shown.
-      if (createAbortedRef.current) return;
+      // See createSessionRef above: if the dialog was closed (and possibly
+      // reopened) since this particular request was submitted, its session
+      // id no longer matches the current one, and the secret must never be
+      // shown.
+      if (onMutateResult?.sessionId !== createSessionRef.current) return;
       setPlainKey(created.plain_key);
     },
   });
@@ -89,11 +96,11 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
   // re-confirmed for Task 4/5's dialogs), and reopening must show a fresh
   // form rather than a stale error or the previous reveal.
   React.useEffect(() => {
-    if (createOpen) {
-      createAbortedRef.current = false;
-      return;
-    }
-    createAbortedRef.current = true;
+    if (createOpen) return;
+    // Any response still in flight from the closed session is now
+    // permanently stale — a later reopen gets a new session id, so it can
+    // never match again.
+    createSessionRef.current += 1;
     setName("");
     setPlainKey(null);
     setCopied(false);

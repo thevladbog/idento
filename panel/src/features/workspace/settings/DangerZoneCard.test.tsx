@@ -239,6 +239,65 @@ describe("DangerZoneCard", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  // Regression test for the SECOND cancel-then-reopen race (same class as
+  // ApiKeysCard's equivalent create-session test): a plain boolean ref reset
+  // on every reopen can't distinguish "a response from THIS session" from "a
+  // response from a PREVIOUSLY-cancelled session" once the dialog has been
+  // reopened at least once. The first (already-cancelled) delete's late
+  // response must never navigate or surface an error, even after a second
+  // delete is submitted from a reopened dialog.
+  it("never navigates or surfaces an error from a FIRST cancelled delete, even after a second delete is submitted following a reopen", async () => {
+    let callIndex = 0;
+    server.use(
+      http.delete("http://api.test/api/events/:id", async ({ params }) => {
+        callIndex += 1;
+        const index = callIndex;
+        deleteCount += 1;
+        lastDeletedId = params.id as string;
+        // First (already-cancelled) delete resolves well AFTER the second.
+        await delay(index === 1 ? 150 : 20);
+        if (index === 1) {
+          // Simulate the aborted attempt's response landing late as an
+          // error — this must not surface after the reopen either.
+          return HttpResponse.json({ error: "server error" }, { status: 500 });
+        }
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<DangerZoneCard event={EVENT} />);
+    await waitFor(() => expect(listHitCount).toBe(1));
+
+    // First attempt: open, type, confirm, then cancel while still pending.
+    await user.click(screen.getByRole("button", { name: "Delete event…" }));
+    let dialog = await screen.findByRole("dialog");
+    await user.type(screen.getByLabelText("Type Partner Day — Autumn to confirm"), "Partner Day — Autumn");
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // Reopen and submit a second, current delete — before the first
+    // request's delayed response has landed.
+    await user.click(screen.getByRole("button", { name: "Delete event…" }));
+    dialog = await screen.findByRole("dialog");
+    await user.type(screen.getByLabelText("Type Partner Day — Autumn to confirm"), "Partner Day — Autumn");
+    await user.click(within(dialog).getByRole("button", { name: "Delete event" }));
+
+    // The second (current) delete resolves first and navigates home.
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith({ to: "/" }));
+
+    // Now let the first (already-cancelled) delete's late error response
+    // land too — it must not surface anywhere, since the user is already
+    // gone from this screen in a real app (simulated here by the card still
+    // being mounted).
+    await waitFor(() => expect(deleteCount).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(navigateMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Couldn't delete the event. Please try again.")).not.toBeInTheDocument();
+  });
+
   it("disables the confirm button while the delete is pending, to prevent a double DELETE", async () => {
     const user = userEvent.setup();
     server.use(

@@ -32,35 +32,39 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
   // the old auto-close design there's no card-visible-error race to guard
   // against here.
   const [deleteError, setDeleteError] = React.useState(false);
-  // False while the dialog is open and an in-flight delete is still
-  // relevant to this card; flipped to true the instant the user explicitly
-  // closes the dialog (Cancel/Escape/overlay — routed through
-  // `handleDialogOpenChange` below). Deliberately NOT flipped when the
-  // dialog closes because the delete succeeded (that's a programmatic
+  // Monotonically-incrementing session id, bumped every time the user
+  // explicitly closes the confirm dialog (Cancel/Escape/overlay — routed
+  // through `handleDialogOpenChange` below). Deliberately NOT bumped when
+  // the dialog closes because the delete succeeded (that's a programmatic
   // `setConfirmOpen(false)` in `onSuccess`, which never touches this ref).
-  // Same race class + fix as ApiKeysCard's `createAbortedRef`: without this,
+  // Same race class + fix as ApiKeysCard's `createSessionRef`: without this,
   // clicking Cancel while a DELETE is in flight doesn't abort the request,
   // and the late-arriving response's onSuccess/onError would still
   // force-navigate or surface an error for a delete the user believed they'd
   // cancelled (the event is still deleted server-side either way — that
   // can't be undone from the client — but the UI must not surprise the user
-  // who explicitly backed out).
-  const deleteAbortedRef = React.useRef(false);
+  // who explicitly backed out). A plain boolean re-armed on every reopen
+  // isn't enough to survive a SECOND cancel-then-reopen cycle — see
+  // ApiKeysCard's createSessionRef comment for the full failure mode — so
+  // this uses the same incrementing-id shape, captured at mutate-time via
+  // `onMutate` and compared exactly in `onSuccess`/`onError`.
+  const deleteSessionRef = React.useRef(0);
 
   const deleteEvent = $api.useMutation("delete", "/api/events/{id}", {
-    onSuccess: () => {
+    onMutate: () => ({ sessionId: deleteSessionRef.current }),
+    onSuccess: (_data, _vars, onMutateResult) => {
       // Invalidation is cache-correctness, not UI reaction: the delete
       // already happened server-side regardless of whether the user
       // "cancelled" the dialog, so this must run unconditionally — only the
       // user-visible reactions below (closing the dialog, navigating) are
-      // gated on the abort ref.
+      // gated on the session check.
       void queryClient.invalidateQueries({ queryKey: ["get", "/api/events"] });
-      if (deleteAbortedRef.current) return;
+      if (onMutateResult?.sessionId !== deleteSessionRef.current) return;
       setConfirmOpen(false);
       void navigate({ to: "/" });
     },
-    onError: () => {
-      if (deleteAbortedRef.current) return;
+    onError: (_error, _vars, onMutateResult) => {
+      if (onMutateResult?.sessionId !== deleteSessionRef.current) return;
       // Stay open (Fix: typed-confirmation input must survive a transient
       // failure) and show the error inside the dialog via `description`
       // below — not the card, which is hidden behind the modal overlay
@@ -76,7 +80,10 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
   // `open === false` always means the user explicitly backed out.
   function handleDialogOpenChange(open: boolean) {
     if (!open) {
-      deleteAbortedRef.current = true;
+      // Any response still in flight from this session is now permanently
+      // stale — a later reopen gets a new session id, so it can never match
+      // again, even across a second cancel-then-reopen cycle.
+      deleteSessionRef.current += 1;
       setDeleteError(false);
       // Mutation-reset-on-close (P1.1 rule): only on an explicit user close,
       // not automatically on every close, since a success-driven close never
@@ -102,7 +109,6 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
               type="button"
               variant="destructive"
               onClick={() => {
-                deleteAbortedRef.current = false;
                 setDeleteError(false);
                 setConfirmOpen(true);
               }}
