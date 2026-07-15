@@ -232,16 +232,25 @@ function DrawerBody({
   // BulkBar's sequential per-attendee mutations), so there's no "cancel
   // while pending" dialog session to guard against — a click either fires
   // or it doesn't, and there's no local UI state here that a late response
-  // could corrupt. Both invalidate ONLY the zone-access query: a zone-access
-  // override doesn't change any field on the Attendee resource itself.
+  // could corrupt.
+  //
+  // Fix (Codex, PR #65): both also invalidate ATTENDEES_LIST_KEY now, not
+  // just the zone-access query. A zone-access change doesn't touch any
+  // field on the Attendee resource itself, but when the attendees table is
+  // viewed with a `zone` filter active, that filter is evaluated server-side
+  // against attendee_zone_access rows — so adding/removing a zone override
+  // can change whether this attendee still belongs in that filtered page.
+  // Without this, the table stays stale until an unrelated refetch.
   const addZoneAccess = $api.useMutation("post", "/api/attendees/{attendee_id}/zone-access", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ATTENDEE_ZONE_ACCESS_KEY(attendee.id) });
+      void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
     },
   });
   const removeZoneAccess = $api.useMutation("delete", "/api/attendee-zone-access/{id}", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ATTENDEE_ZONE_ACCESS_KEY(attendee.id) });
+      void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
     },
   });
 
@@ -511,6 +520,15 @@ function DrawerBody({
             addZonePlaceholder
           )}
         </div>
+        {/* Fix (Codex, PR #65): addZoneAccess previously had no onError
+            handling at all — a failed POST left the dropdown just closing
+            with no explanation, indistinguishable from the operator having
+            changed their mind. isError already resets to false the moment a
+            NEW mutate() call starts (react-query's normal per-call status
+            lifecycle), so this needs no extra reset wiring of its own. */}
+        {addZoneAccess.isError ? (
+          <p className="text-caption text-destructive">{t("drawerAddZoneError")}</p>
+        ) : null}
       </div>
 
       {/* 5. Recent activity — up to 3 rows, API order trusted verbatim

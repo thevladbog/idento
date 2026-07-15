@@ -581,6 +581,81 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await waitFor(() => expect(screen.queryByText("Main hall")).not.toBeInTheDocument());
   });
 
+  // Fix (Codex, PR #65): a zone-access change can affect whether this
+  // attendee still matches an active `zone` filter on the attendees table,
+  // so both add and remove must also invalidate the attendees list query —
+  // not just the drawer's own zone-access query.
+  it("invalidates the attendees list (not just zone access) when a zone is added", async () => {
+    zoneAccessResponse = [ZONE_ACCESS[0]];
+    listHitCount = 0;
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+    await waitFor(() => expect(screen.getByRole("button", { name: "+ Zone" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "+ Zone" }));
+    await user.click(await screen.findByRole("menuitem", { name: "VIP lounge" }));
+
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+  });
+
+  it("invalidates the attendees list (not just zone access) when a zone is removed", async () => {
+    listHitCount = 0;
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+    await waitFor(() => expect(screen.getByText("Main hall")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Remove Main hall" }));
+
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+  });
+
+  // Fix (Codex, PR #65): addZoneAccess previously had no onError handling —
+  // a failed POST just closed the dropdown with no explanation.
+  it("shows an inline error when adding a zone fails, and clears it once a retry succeeds", async () => {
+    zoneAccessResponse = [ZONE_ACCESS[0]];
+    let shouldFail = true;
+    server.use(
+      http.post("http://api.test/api/attendees/:attendeeId/zone-access", async ({ request }) => {
+        if (shouldFail) {
+          return HttpResponse.json({ error: "boom" }, { status: 500 });
+        }
+        addZoneAccessCount += 1;
+        lastAddZoneAccessBody = await request.json();
+        return HttpResponse.json({ id: "za2", attendee_id: "a1", zone_id: "z2", allowed: true }, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(screen.getByRole("button", { name: "+ Zone" })).toBeEnabled());
+
+    await user.click(screen.getByRole("button", { name: "+ Zone" }));
+    await user.click(await screen.findByRole("menuitem", { name: "VIP lounge" }));
+
+    expect(await screen.findByText("Couldn't add that zone. Try again.")).toBeInTheDocument();
+
+    shouldFail = false;
+    await user.click(screen.getByRole("button", { name: "+ Zone" }));
+    await user.click(await screen.findByRole("menuitem", { name: "VIP lounge" }));
+
+    await waitFor(() => expect(addZoneAccessCount).toBe(1));
+    await waitFor(() => expect(screen.queryByText("Couldn't add that zone. Try again.")).not.toBeInTheDocument());
+  });
+
   // Regression test: `removeZoneAccess` is a SINGLE mutation instance shared
   // by every zone chip's remove button. Before this fix, each chip derived
   // its own "removing" state from that shared mutation's `.variables` —
