@@ -174,6 +174,30 @@ describe("validateMapping", () => {
     expect(validateMapping(mapping)).toEqual(["Email", "CustomEmail"]);
   });
 
+  // Fix (Codex, PR #65): backend/internal/handler/bulk_import.go lowercases
+  // every incoming key before matching it against its standardFields set —
+  // a custom name that only differs from a standard field by casing (e.g.
+  // "Email" vs "email") is misrouted there just as much as an exact-case
+  // match would be.
+  it("flags both headers when a custom field's name collides CASE-INSENSITIVELY with a standard field key used elsewhere", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Email: { kind: "standard", field: "email" },
+      CustomEmail: { kind: "custom", name: "Email" },
+    };
+    expect(validateMapping(mapping)).toEqual(["Email", "CustomEmail"]);
+  });
+
+  // A LONE custom field named like a standard field is wrong on its own —
+  // the backend treats it as that standard field regardless of whether any
+  // OTHER header is also explicitly mapped to it.
+  it("flags a solo custom field whose name matches a standard field name, even with no other header colliding", () => {
+    const mapping: Record<string, MappingTarget> = {
+      Имя: { kind: "standard", field: "first_name" },
+      CustomCompany: { kind: "custom", name: "Company" },
+    };
+    expect(validateMapping(mapping)).toEqual(["CustomCompany"]);
+  });
+
   it("never flags skip or unset columns, even when several share the same kind", () => {
     const mapping: Record<string, MappingTarget> = {
       A: { kind: "skip" },

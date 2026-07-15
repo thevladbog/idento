@@ -139,9 +139,23 @@ export function dedupeByEmail(
 // already-invalid input is unchanged (see the dedicated test in
 // wizardState.test.ts documenting that assumption).
 //
-// A header is flagged when EITHER:
-//   (a) it's a `custom` target whose `name` is blank/whitespace-only, or
-//   (b) its target key (the standard field name, or the trimmed custom
+// Fix (Codex, PR #65): `BulkCreateAttendees` (backend/internal/handler/
+// bulk_import.go) lowercases every incoming key before deciding whether it
+// is one of these standard fields — so a custom field named e.g. "Email" or
+// "Company" is NOT stored under that name in custom_fields, it silently
+// overwrites the real standard field instead. Mirrored here so a mapping
+// that would trip that backend behavior is caught before import rather than
+// discovered as corrupted data afterward.
+const STANDARD_FIELD_NAMES = new Set(["first_name", "last_name", "email", "company", "position", "code"]);
+
+// A header is flagged when ANY of:
+//   (a) it's a `custom` target whose `name` is blank/whitespace-only,
+//   (b) it's a `custom` target whose (trimmed, lowercased) `name` matches a
+//       standard field name — the backend misroutes this into that
+//       standard field REGARDLESS of whether any other header is also
+//       explicitly mapped to it, so this is always wrong on its own, not
+//       just when it collides with a second header, or
+//   (c) its target key (the standard field name, or the trimmed custom
 //       name) collides with ANOTHER header's target key.
 // `skip`/`unset` targets never participate — they contribute no key to
 // `buildBulkPayload`'s output, so they can't collide with anything.
@@ -156,7 +170,18 @@ export function validateMapping(mapping: Record<string, MappingTarget>): string[
       problemHeaders.add(header);
       continue;
     }
-    const key = target.kind === "standard" ? target.field : target.kind === "custom" ? target.name.trim() : null;
+    const normalizedCustomName = target.kind === "custom" ? target.name.trim().toLowerCase() : null;
+    if (normalizedCustomName !== null && STANDARD_FIELD_NAMES.has(normalizedCustomName)) {
+      problemHeaders.add(header);
+    }
+    const key =
+      target.kind === "standard"
+        ? target.field
+        : target.kind === "custom"
+          ? normalizedCustomName !== null && STANDARD_FIELD_NAMES.has(normalizedCustomName)
+            ? normalizedCustomName
+            : target.name.trim()
+          : null;
     if (key === null) continue;
     const headersForKey = headersByKey.get(key) ?? [];
     headersForKey.push(header);
