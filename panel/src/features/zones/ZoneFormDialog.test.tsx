@@ -59,10 +59,14 @@ let updateCount = 0;
 let lastUpdateBody: unknown;
 let lastUpdateId: string | undefined;
 let zonesFetchCount = 0;
+let zonesGetStatus = 200;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/zones", () => {
     zonesFetchCount += 1;
+    if (zonesGetStatus !== 200) {
+      return HttpResponse.json({ error: "boom" }, { status: zonesGetStatus });
+    }
     return HttpResponse.json(existingZones);
   }),
   http.post("http://api.test/api/events/:eventId/zones", async ({ request }) => {
@@ -96,6 +100,7 @@ describe("ZoneFormDialog", () => {
     lastUpdateBody = undefined;
     lastUpdateId = undefined;
     zonesFetchCount = 0;
+    zonesGetStatus = 200;
   });
 
   describe("create mode", () => {
@@ -205,6 +210,24 @@ describe("ZoneFormDialog", () => {
       await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     });
 
+    it("blocks submit (no POST) and shows the load error when the zones list fetch fails — never fabricates order_index/color from the empty fallback", async () => {
+      zonesGetStatus = 500;
+      const user = userEvent.setup();
+      renderWithProviders(<ZoneFormDialog eventId="evt-1" open onOpenChange={vi.fn()} />);
+
+      // Let the zones GET settle to ERROR (isLoading is false from here on,
+      // which is exactly the state that must still block submission).
+      await waitFor(() => expect(zonesFetchCount).toBeGreaterThan(0));
+      expect(await screen.findByText("Couldn't load zones.")).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText("Name"), "Backstage");
+      const submitButton = screen.getByRole("button", { name: "Create zone" });
+      expect(submitButton).toBeDisabled();
+
+      await user.click(submitButton);
+      expect(createCount).toBe(0);
+    });
+
     it("does not let a stale success close or reset a dialog session that was already closed and reopened", async () => {
       createDelayMs = 80;
       const user = userEvent.setup();
@@ -278,6 +301,19 @@ describe("ZoneFormDialog", () => {
         is_active: true,
         settings: { color: "amber", external_id: "crm-42" },
       });
+    });
+
+    it("is not blocked by a failed zones list fetch — the edit body is built from the zone prop, never the list", async () => {
+      zonesGetStatus = 500;
+      const user = userEvent.setup();
+      renderWithProviders(<ZoneFormDialog eventId="evt-1" open onOpenChange={vi.fn()} zone={FULL_ZONE} />);
+
+      await waitFor(() => expect(zonesFetchCount).toBeGreaterThan(0));
+      const submitButton = screen.getByRole("button", { name: "Save changes" });
+      expect(submitButton).toBeEnabled();
+
+      await user.click(submitButton);
+      await waitFor(() => expect(updateCount).toBe(1));
     });
 
     it("closes the dialog and invalidates ZONES_KEY on a successful edit", async () => {

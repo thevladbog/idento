@@ -101,11 +101,15 @@ export function ZoneFormDialog({
       initializedRef.current = true;
       return;
     }
-    // Create mode's default color depends on the (possibly still in-flight)
-    // zones list — wait for it to resolve rather than momentarily defaulting
-    // to the "green" fallback a moment before the real list of used colors
-    // arrives and turns out to disagree.
-    if (zonesQuery.isLoading) return;
+    // Create mode's default color depends on the zones list — wait for it to
+    // SUCCEED rather than momentarily defaulting from the `[]` fallback.
+    // `isSuccess`, not `!isLoading`: under TanStack Query v5, isLoading is
+    // `isPending && isFetching`, so a fetch that settles to ERROR leaves
+    // isLoading false while `data` is still undefined — deriving (and
+    // locking, via initializedRef) defaults from the fallback there would
+    // fabricate order_index 0 / color "green" regardless of what actually
+    // exists server-side.
+    if (!zonesQuery.isSuccess) return;
     setName("");
     const zones = zonesQuery.data ?? [];
     const usedColors = new Set(zones.map((entry) => zoneColorKey(entry.zone)));
@@ -114,7 +118,7 @@ export function ZoneFormDialog({
     setColor(ZONE_COLOR_KEYS.find((key) => !usedColors.has(key)) ?? ZONE_COLOR_KEYS[0]);
     setNameError(undefined);
     initializedRef.current = true;
-  }, [open, zone, zonesQuery.data, zonesQuery.isLoading]);
+  }, [open, zone, zonesQuery.data, zonesQuery.isSuccess]);
 
   // Reset both mutations whenever the dialog transitions closed, so a failed
   // attempt never leaks a stale server-error banner into the next open —
@@ -232,13 +236,15 @@ export function ZoneFormDialog({
   }
 
   const colorLabelId = React.useId();
-  // Create mode's default order_index/color both depend on zonesQuery — if
-  // the user somehow submits before that first resolves (a narrow race: the
-  // list hasn't loaded yet when the dialog opens), the fallback `[]` could
-  // compute an order_index/color that collides with a zone the fetch just
-  // hasn't returned yet. Not a risk in edit mode, which never reads
-  // zonesQuery for its body.
-  const submitDisabled = mutation.isPending || (!isEdit && zonesQuery.isLoading);
+  // Create mode's default order_index/color both depend on zonesQuery — a
+  // submit before the list has SUCCESSFULLY loaded (still in flight, or
+  // settled to error — ZonesPage's header "+ New zone" button renders even
+  // in the list's error state) would compute the body from the `[]`
+  // fallback, silently violating the `<max existing + 1>` order_index
+  // invariant. `isSuccess`, not `!isLoading` — see the derivation effect
+  // above for why an errored fetch slips past an isLoading gate. Not a risk
+  // in edit mode, which never reads zonesQuery for its body.
+  const submitDisabled = mutation.isPending || (!isEdit && !zonesQuery.isSuccess);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -295,6 +301,13 @@ export function ZoneFormDialog({
               })}
             </div>
           </div>
+          {/* Why submit is disabled in create mode when the zones list fetch
+              failed (reuses the page's existing zonesLoadError copy) — the
+              defaults derive from that list, so submitting without it would
+              fabricate order_index/color. Edit mode never reads the list. */}
+          {!isEdit && zonesQuery.isError ? (
+            <p className="text-body text-destructive">{t("zonesLoadError")}</p>
+          ) : null}
           {mutation.isError ? <p className="text-body text-destructive">{t("zonesFormServerError")}</p> : null}
           <DialogFooter>
             <Button
