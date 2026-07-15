@@ -657,7 +657,7 @@ func attendeeFilterClause(eventID uuid.UUID, code, search string, zoneID *uuid.U
 	if status != nil {
 		where += fmt.Sprintf(" AND a.checkin_status = $%d", argCount)
 		args = append(args, *status)
-		argCount++
+		argCount++ //nolint:ineffassign // kept for consistency — a future clause added after this one needs the incremented value
 	}
 
 	return join, where, args
