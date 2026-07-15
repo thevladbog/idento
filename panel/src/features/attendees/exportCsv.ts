@@ -4,7 +4,9 @@ type Attendee = components["schemas"]["Attendee"];
 
 // UTF-8 BOM — without it Excel guesses the wrong codepage for a
 // pure-UTF-8-encoded CSV and mangles Cyrillic (and other non-ASCII) text.
-const BOM = "﻿";
+// Exported so other CSV builders in this feature (e.g. the import wizard's
+// failed-rows download, Task 13) prefix the same BOM without redefining it.
+export const BOM = "﻿";
 
 // Mirrors the backend's formula-injection guard (sanitizeCSVField, see the
 // P2.1 plan's Verified facts): any value starting with =, +, -, @, a tab,
@@ -76,14 +78,13 @@ export function buildAttendeesCsv(rows: Attendee[]): string {
   return BOM + [headerRow, ...dataRows].join("\r\n");
 }
 
-// Client-side-only export (no network call): builds the CSV from the
-// already-in-memory selected rows and triggers a download via
-// Blob + URL.createObjectURL + a temporary anchor click — the standard
-// browser download pattern. Deliberately never navigates the page or uses
-// window.open, either of which would either replace the SPA or get blocked
-// as an unsolicited popup.
-export function exportAttendeesCsv(rows: Attendee[], filename = "attendees.csv"): void {
-  const csv = buildAttendeesCsv(rows);
+// The Blob + URL.createObjectURL + temporary-anchor-click download side
+// effect, extracted so it's shared verbatim by exportAttendeesCsv below and
+// the import wizard's failed-rows download (Task 13) rather than
+// reimplemented a second time. Deliberately never navigates the page or
+// uses window.open, either of which would either replace the SPA or get
+// blocked as an unsolicited popup.
+export function downloadCsv(csv: string, filename: string): void {
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -93,4 +94,10 @@ export function exportAttendeesCsv(rows: Attendee[], filename = "attendees.csv")
   anchor.click();
   document.body.removeChild(anchor);
   URL.revokeObjectURL(url);
+}
+
+// Client-side-only export (no network call): builds the CSV from the
+// already-in-memory selected rows and triggers a download via downloadCsv.
+export function exportAttendeesCsv(rows: Attendee[], filename = "attendees.csv"): void {
+  downloadCsv(buildAttendeesCsv(rows), filename);
 }

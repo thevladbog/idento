@@ -1,3 +1,4 @@
+import { BOM, sanitizeCsvField } from "../exportCsv";
 import type { CsvEncoding } from "./encoding";
 
 // Full contract for the 3-step CSV import wizard (Tasks 11-13). Task 11
@@ -11,6 +12,19 @@ export type MappingTarget =
   | { kind: "skip" }
   | { kind: "unset" };
 
+// Task 13: `row` is the ABSOLUTE 1-based file row (already mapped from the
+// backend's chunk-relative row via mapChunkRowToAbsolute below — never the
+// raw chunk-relative number). `problem` is BulkRowError's stable enum
+// string ("duplicate_email" | "duplicate_code" | "create_failed"), kept as
+// `string` here (not the literal union) so a future backend problem code
+// this frontend doesn't yet know about degrades to an unrecognized-but-not-
+// crashing row rather than a type error.
+export interface RowError {
+  row: number;
+  data: string;
+  problem: string;
+}
+
 export interface ImportWizardState {
   step: 1 | 2 | 3;
   file?: File;
@@ -21,7 +35,7 @@ export interface ImportWizardState {
   headers: string[];
   mapping: Record<string, MappingTarget>;
   importProgress?: { done: number; total: number };
-  rowErrors?: Array<{ row: number; data: string; problem: string }>;
+  rowErrors?: RowError[];
 }
 
 // Fresh state for a newly (re)opened wizard — always starts at step 1 with
@@ -104,6 +118,14 @@ export interface BulkPayload {
   attendees: Record<string, unknown>[];
   field_schema: string[];
   mergedDuplicates: number;
+  // Task 13: the raw (header-keyed, pre-transform) source row behind each
+  // entry in `attendees`, same order/length — `attendees[i]` and
+  // `dedupedRows[i]` are the SAME row, one mapped to field_schema keys, one
+  // still in its original CSV-header shape. Step 3's "download failed rows
+  // as CSV" indexes into this (by the backend's 1-based absolute row
+  // number) rather than `attendees`, since `attendees` no longer resembles
+  // the source file once columns have been renamed/dropped.
+  dedupedRows: Record<string, string>[];
 }
 
 // Builds the bulk-import payload Task 13 will submit: one attendee object
@@ -150,5 +172,48 @@ export function buildBulkPayload(
     return attendee;
   });
 
-  return { attendees, field_schema: fieldSchema, mergedDuplicates: mergedCount };
+  return { attendees, field_schema: fieldSchema, mergedDuplicates: mergedCount, dedupedRows: deduped };
+}
+
+// Task 13 — chunked import submission.
+
+// Board 3c / the task brief's exact chunk size: each bulk-import POST
+// carries at most this many rows.
+export const IMPORT_CHUNK_SIZE = 500;
+
+// Pure array chunker — no chunk is ever empty, and an input whose length is
+// an exact multiple of `size` produces no trailing empty chunk (a plain
+// `Array.from({length: Math.ceil(n/size)})` loop, not a slice-until-empty
+// loop, would get this subtly wrong for exact multiples).
+export function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// Maps a chunk-relative, 1-based row number (as returned by
+// BulkImportResponse.errors[].row, which is "1-based index into the
+// submitted attendees array" — i.e. into that ONE chunk's request body) back
+// to the row's 1-based position in the full post-dedup attendee list.
+// chunkIndex is 0-based. Written and unit-tested as a standalone pure
+// function per the task brief, rather than inlined at the call site, since
+// an off-by-one here would silently mislabel which source row an error
+// belongs to.
+export function mapChunkRowToAbsolute(chunkIndex: number, chunkSize: number, chunkRelativeRow: number): number {
+  return chunkIndex * chunkSize + chunkRelativeRow;
+}
+
+// Builds a CSV of arbitrary header-keyed rows (the wizard's raw parsed CSV
+// row shape), reusing exportCsv.ts's BOM + sanitizeCsvField escaping (same
+// formula-injection guard, same quoting rules) rather than reimplementing
+// CSV escaping a second time in this codebase. Distinct from
+// exportCsv.ts's buildAttendeesCsv, which is hard-coded to the Attendee
+// schema's fixed column set — this one takes an arbitrary header list
+// because the wizard's source CSV can have any columns.
+export function buildFailedRowsCsv(headers: string[], rows: Record<string, string>[]): string {
+  const headerRow = headers.map(sanitizeCsvField).join(",");
+  const dataRows = rows.map((row) => headers.map((header) => sanitizeCsvField(row[header] ?? "")).join(","));
+  return BOM + [headerRow, ...dataRows].join("\r\n");
 }

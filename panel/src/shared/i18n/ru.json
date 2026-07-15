@@ -275,5 +275,20 @@
   "importRowsCaption": "{{rows}} строк",
   "importDuplicatesMerged": "{{rows}} строк · {{count}} дублей объединено по email",
   "importRowsCta": "Импортировать {{count}} строк",
-  "importBack": "← Назад"
+  "importBack": "← Назад",
+  "importProgress": "{{done}} из {{total}} импортировано",
+  "importNeedsAttention": "{{count}} строк требуют внимания.",
+  "importValidCommitted": "Корректные строки уже в списке — исправьте их здесь или скачайте в CSV.",
+  "importColRow": "Строка",
+  "importColData": "Данные",
+  "importColProblem": "Проблема",
+  "importProblemDuplicateEmail": "Дубликат — такой email уже есть у другого участника",
+  "importProblemDuplicateCode": "Дубликат — такой код уже есть у другого участника",
+  "importProblemCreateFailed": "Не удалось сохранить",
+  "importSkipRow": "Пропустить",
+  "importRetryRow": "Повторить",
+  "importDownloadErrors": "Скачать {{count}} строк в CSV",
+  "importDone": "Готово — {{count}} в списке",
+  "importChunkFailed": "Загрузка прервана — {{count}} строк ещё не отправлено.",
+  "importRetryRemaining": "Повторить оставшиеся"
 }

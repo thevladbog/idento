@@ -1,15 +1,20 @@
 import {
-  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input,
+  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Progress,
 } from "@idento/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { decodeBuffer, detectEncoding, type CsvEncoding } from "./encoding";
 import { parseCsv } from "./parseCsv";
 import {
-  buildBulkPayload, computeDefaultMapping,
-  createInitialWizardState, type ImportWizardState, type MappingTarget, type StandardField,
+  buildBulkPayload, buildFailedRowsCsv, chunkArray, computeDefaultMapping,
+  createInitialWizardState, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute,
+  type ImportWizardState, type MappingTarget, type RowError, type StandardField,
 } from "./wizardState";
+import { downloadCsv } from "../exportCsv";
+import { ATTENDEES_LIST_KEY } from "../hooks";
+import { $api } from "../../../shared/api/query";
 
 // The 6 standard fields a CSV column can map to (Task 12's brief, verbatim
 // order). Labels are NOT new i18n keys — first_name/last_name/email/
@@ -48,16 +53,42 @@ function formatSize(bytes: number): string {
 
 // Board 3a/3b/3c — the CSV import wizard's modal chrome (title + numbered
 // step indicator) plus step 1 (file pick, encoding auto-detect with
-// override, 3-row live preview) and step 2 (full-file parse + column
-// mapping grid, Task 12). Step 3 (Task 13) is reachable via "Import N rows"
-// but only renders a placeholder body here — this task's job stops short of
-// the actual chunked-import submission flow.
+// override, 3-row live preview), step 2 (full-file parse + column mapping
+// grid, Task 12), and step 3 (chunked bulk-import submission, progress, and
+// per-row error report, Task 13). Board 3c's "Fix inline" per-error action
+// is deliberately descoped here to Retry/Skip/download-as-CSV — an inline
+// edit-grid for a failed row's cells is a lot of surface area for marginal
+// value when the CSV download already covers offline fixing (v1 honest
+// scope, noted per the task brief).
 export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps) {
-  void eventId; // Not read yet — wired once Task 13 actually submits the import.
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const bulkImport = $api.useMutation("post", "/api/events/{event_id}/attendees/bulk");
   const [state, setState] = React.useState<ImportWizardState>(createInitialWizardState);
   const [isFullParsing, setIsFullParsing] = React.useState(false);
+  // Task 13: true only while a bulk-import chunk POST is actually in
+  // flight (not while step 3 is merely showing settled results/errors) —
+  // gates the dialog's close affordance per the board's "nothing freezes /
+  // can't be interrupted" framing (see the DialogContent hideClose prop
+  // below, which is unconditional for the whole of step 3 anyway; this flag
+  // additionally gates the footer's Download/Done buttons so they can't
+  // appear mid-upload).
+  const [isImporting, setIsImporting] = React.useState(false);
+  // Set only when a chunk POST itself rejects (network-level failure, not a
+  // per-row error in a successful response) — tracks how many rows across
+  // the not-yet-successfully-sent chunks (starting at the failed one) still
+  // need sending, so "Retry remaining" can resume from exactly there.
+  const [chunkFailure, setChunkFailure] = React.useState<{ nextChunkIndex: number; remainingRowCount: number } | null>(null);
+  // Rows currently mid-retry (Step3Body's per-row "Retry" button) — disables
+  // just that row's button rather than the whole footer while its
+  // single-row re-POST is in flight.
+  const [retryingRows, setRetryingRows] = React.useState<ReadonlySet<number>>(new Set());
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  // Guards the step-3 auto-start effect below against running twice (e.g.
+  // React StrictMode's double-invoke of effects in dev) — the ref check
+  // happens synchronously before any await, so only the first invocation
+  // per step-3 entry ever calls runChunksFrom.
+  const importStartedRef = React.useRef(false);
 
   // Reset to a fresh step-1 state whenever the dialog transitions closed —
   // same reset-on-close convention as AddAttendeeDialog/CreateEventDialog —
@@ -65,7 +96,164 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   React.useEffect(() => {
     if (open) return;
     setState(createInitialWizardState());
+    setIsImporting(false);
+    setChunkFailure(null);
+    setRetryingRows(new Set());
+    importStartedRef.current = false;
   }, [open]);
+
+  // Recomputed on every mapping/full-parse change — dedup depends on
+  // WHICHEVER column is currently mapped to email, so it has to be live,
+  // not computed once when step 2 mounts. Stable (unchanged) for the whole
+  // of step 3, since state.rows/state.mapping never change once past step 2
+  // — step 3's chunking logic below relies on that stability.
+  const bulkPayload = React.useMemo(
+    () => buildBulkPayload(state.rows, state.mapping),
+    [state.rows, state.mapping],
+  );
+  const totalRowsAfterDedup = bulkPayload.attendees.length;
+
+  // Runs chunks [startIndex, chunks.length) sequentially — awaiting each
+  // mutateAsync before starting the next, never Promise.all — accumulating
+  // `created` into importProgress.done and mapping each chunk's
+  // chunk-relative error rows to absolute file rows via
+  // mapChunkRowToAbsolute. Shared by both the initial step-3 entry (Task
+  // 13's brief) and "Retry remaining" after a chunk-level network failure,
+  // which resumes from the same chunk index rather than restarting from 0.
+  async function runChunksFrom(
+    chunks: Record<string, unknown>[][],
+    startIndex: number,
+    initialDone: number,
+    initialErrors: RowError[],
+  ) {
+    setIsImporting(true);
+    setChunkFailure(null);
+    let doneCount = initialDone;
+    let errors = initialErrors;
+    const total = totalRowsAfterDedup;
+    for (let chunkIndex = startIndex; chunkIndex < chunks.length; chunkIndex++) {
+      try {
+        // Awaited inside the loop deliberately — sequential submission
+        // (never Promise.all) is the whole point per the task brief.
+        const response = await bulkImport.mutateAsync({
+          params: { path: { event_id: eventId } },
+          body: { attendees: chunks[chunkIndex], field_schema: bulkPayload.field_schema },
+        });
+        doneCount += response.created;
+        const mappedErrors: RowError[] = (response.errors ?? []).map((err) => ({
+          row: mapChunkRowToAbsolute(chunkIndex, IMPORT_CHUNK_SIZE, err.row),
+          data: err.data,
+          problem: err.problem,
+        }));
+        errors = [...errors, ...mappedErrors];
+        setState((prev) => ({ ...prev, importProgress: { done: doneCount, total }, rowErrors: errors }));
+      } catch {
+        // Chunk-level network failure (the mutation itself rejected — not a
+        // per-row error in a successful response): everything from this
+        // chunk onward is un-sent. Surface it with a count and a resumable
+        // "Retry remaining" affordance rather than silently losing rows.
+        const remainingRowCount = chunks.slice(chunkIndex).reduce((sum, chunk) => sum + chunk.length, 0);
+        setChunkFailure({ nextChunkIndex: chunkIndex, remainingRowCount });
+        setIsImporting(false);
+        return;
+      }
+    }
+    setIsImporting(false);
+  }
+
+  // Auto-starts the chunked submission the moment step 3 mounts (the brief:
+  // "on entering step 3 ... split payload into chunks ... POST
+  // sequentially"). Guarded by importStartedRef so it only actually runs
+  // once per step-3 entry (see the ref's declaration comment above).
+  React.useEffect(() => {
+    if (state.step !== 3) {
+      importStartedRef.current = false;
+      return;
+    }
+    if (importStartedRef.current) return;
+    importStartedRef.current = true;
+    const chunks = chunkArray(bulkPayload.attendees, IMPORT_CHUNK_SIZE);
+    void runChunksFrom(chunks, 0, 0, []);
+    // bulkImport/bulkPayload/eventId/totalRowsAfterDedup are stable for the
+    // duration of step 3 (rows/mapping don't change once past step 2); this
+    // effect is only meant to fire on the step 1/2 -> 3 transition itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.step]);
+
+  function handleRetryRemaining() {
+    if (!chunkFailure) return;
+    const chunks = chunkArray(bulkPayload.attendees, IMPORT_CHUNK_SIZE);
+    void runChunksFrom(chunks, chunkFailure.nextChunkIndex, state.importProgress?.done ?? 0, state.rowErrors ?? []);
+  }
+
+  // duplicate_email/duplicate_code "Skip": the row was never created (the
+  // backend rejected it as a duplicate), so this only acknowledges/dismisses
+  // it from the error list — no network call, and no change to `done`
+  // (re-trying a duplicate would just duplicate-error again, per the brief).
+  function handleSkipRow(row: number) {
+    setState((prev) => ({ ...prev, rowErrors: (prev.rowErrors ?? []).filter((error) => error.row !== row) }));
+  }
+
+  // create_failed "Retry": re-POSTs just that one row as a batch of 1
+  // (same endpoint). Success removes it from the error list and increments
+  // `done`; failure (still an error in the response, or the request itself
+  // rejects) leaves it in the list untouched — the brief is explicit this
+  // must not auto-loop, just let the user click Retry again.
+  async function handleRetryRow(row: number) {
+    const attendee = bulkPayload.attendees[row - 1];
+    if (!attendee) return;
+    setRetryingRows((prev) => new Set(prev).add(row));
+    try {
+      const response = await bulkImport.mutateAsync({
+        params: { path: { event_id: eventId } },
+        body: { attendees: [attendee], field_schema: bulkPayload.field_schema },
+      });
+      if (response.errors && response.errors.length > 0) {
+        const problem = response.errors[0].problem;
+        setState((prev) => ({
+          ...prev,
+          rowErrors: (prev.rowErrors ?? []).map((error) => (error.row === row ? { ...error, problem } : error)),
+        }));
+        return;
+      }
+      setState((prev) => ({
+        ...prev,
+        importProgress: prev.importProgress
+          ? { done: prev.importProgress.done + response.created, total: prev.importProgress.total }
+          : prev.importProgress,
+        rowErrors: (prev.rowErrors ?? []).filter((error) => error.row !== row),
+      }));
+    } catch {
+      // Network failure on a single-row retry — leave the row in the list.
+    } finally {
+      setRetryingRows((prev) => {
+        const next = new Set(prev);
+        next.delete(row);
+        return next;
+      });
+    }
+  }
+
+  // Downloads the ORIGINAL source rows (dedupedRows, header-keyed — NOT the
+  // field_schema-keyed `attendees` objects) for every row still in the error
+  // list, so an operator can fix them offline and re-import just those.
+  function handleDownloadErrors() {
+    const errors = state.rowErrors ?? [];
+    if (errors.length === 0) return;
+    const rows = errors
+      .map((error) => bulkPayload.dedupedRows[error.row - 1])
+      .filter((row): row is Record<string, string> => row !== undefined);
+    const csv = buildFailedRowsCsv(state.headers, rows);
+    downloadCsv(csv, "import-errors.csv");
+  }
+
+  // The wizard's only way out of step 3 (per the board: no ✕, no Cancel —
+  // "closing mid-flight is impossible by design"). Invalidates the
+  // attendees list so the table reflects the just-imported rows.
+  function handleDone() {
+    void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+    onOpenChange(false);
+  }
 
   // Decodes `buffer` with `encoding` and re-parses just the first 3 rows for
   // the live preview. `worker: true` is the real production request (Task
@@ -152,33 +340,41 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
     setState((prev) => ({ ...prev, step: 1 }));
   }
 
-  // This task's job stops at advancing to step 3 with a stub body, mirroring
-  // Task 11's own step-2-stub precedent — Task 13 builds the real submission
-  // flow (chunked import against the API) behind this step.
+  // The step 2->3 transition trigger. Sets importProgress to "0 of N" and
+  // clears rowErrors synchronously with the step flip, so step 3's first
+  // render already shows a real (not undefined) progress bar — the actual
+  // chunked submission then starts via the step-3 auto-start effect above.
   function handleImportRows() {
-    setState((prev) => ({ ...prev, step: 3 }));
+    setState((prev) => ({ ...prev, step: 3, importProgress: { done: 0, total: totalRowsAfterDedup }, rowErrors: [] }));
   }
 
   const canContinue = Boolean(state.file) && state.rows.length > 0;
 
-  // Recomputed on every mapping/full-parse change — dedup depends on
-  // WHICHEVER column is currently mapped to email, so it has to be live,
-  // not computed once when step 2 mounts.
-  const bulkPayload = React.useMemo(
-    () => buildBulkPayload(state.rows, state.mapping),
-    [state.rows, state.mapping],
-  );
-  const totalRowsAfterDedup = bulkPayload.attendees.length;
   const hasUnsetColumn = state.headers.some(
     (header) => (state.mapping[header] ?? { kind: "unset" as const }).kind === "unset",
   );
 
+  // Step 3 never has a ✕ (board 3c: "step 3's header omits the close ✕ ...
+  // consistent with 'nothing freezes / can't be interrupted'") — unlike the
+  // in-flight-only framing in the task brief's prose, the board's actual
+  // step-3 mockup shows this holds for the WHOLE step, including the
+  // settled/results view, so hideClose is unconditional for step 3 rather
+  // than toggling on isImporting. Escape/outside-click are blocked the same
+  // way for the same reason: step 3's only exit is the explicit Done button.
+  function preventDialogDismiss(e: Event) {
+    if (state.step === 3) e.preventDefault();
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Board widths: 3a (step 1) = 760px, 3b (step 2) = 860px card. */}
+      {/* Board widths: 3a (step 1) = 760px, 3b/3c (steps 2-3) = 860px card. */}
       <DialogContent
         closeLabel={t("workspaceDialogClose")}
-        className={cn("max-w-[760px]", state.step === 2 && "max-w-[860px]")}
+        hideClose={state.step === 3}
+        onEscapeKeyDown={preventDialogDismiss}
+        onPointerDownOutside={preventDialogDismiss}
+        onInteractOutside={preventDialogDismiss}
+        className={cn("max-w-[760px]", state.step !== 1 && "max-w-[860px]")}
       >
         <DialogHeader>
           <DialogTitle>{t("importTitle")}</DialogTitle>
@@ -196,7 +392,14 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
         ) : state.step === 2 ? (
           <Step2Body state={state} onMappingChange={handleMappingChange} />
         ) : (
-          <p className="text-body text-muted-foreground">{t("placeholderComingSoon")}</p>
+          <Step3Body
+            state={state}
+            chunkFailure={chunkFailure}
+            retryingRows={retryingRows}
+            onRetryRemaining={handleRetryRemaining}
+            onSkipRow={handleSkipRow}
+            onRetryRow={handleRetryRow}
+          />
         )}
 
         <DialogFooter>
@@ -230,11 +433,22 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
                 {t("importRowsCta", { count: totalRowsAfterDedup })}
               </Button>
             </>
-          ) : (
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              {t("createEventCancel")}
-            </Button>
-          )}
+          ) : !isImporting && !chunkFailure ? (
+            // Settled (all chunks either succeeded or every un-sent
+            // remainder was itself retried to completion) — the board's
+            // step-3 footer: left download link (only when errors remain),
+            // right the terminal "Done" CTA. No Cancel is ever offered here.
+            <>
+              {(state.rowErrors?.length ?? 0) > 0 ? (
+                <Button type="button" variant="link" className="sm:mr-auto" onClick={handleDownloadErrors}>
+                  {t("importDownloadErrors", { count: state.rowErrors?.length ?? 0 })}
+                </Button>
+              ) : null}
+              <Button type="button" onClick={handleDone}>
+                {t("importDone", { count: state.importProgress?.done ?? 0 })}
+              </Button>
+            </>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -536,5 +750,133 @@ function MappingRow({ header, target, samples, onChange }: MappingRowProps) {
         {isUnset ? t("importUnmappedWarning") : samples.length > 0 ? samples.join(", ") : "—"}
       </div>
     </>
+  );
+}
+
+// Switches BulkRowError's stable problem code to its localized description
+// (board 3c's per-row error text). Falls back to the raw code for a problem
+// string this frontend doesn't recognize yet, rather than crashing — see
+// RowError's own doc comment in wizardState.ts.
+const PROBLEM_LABEL_KEYS: Record<string, string> = {
+  duplicate_email: "importProblemDuplicateEmail",
+  duplicate_code: "importProblemDuplicateCode",
+  create_failed: "importProblemCreateFailed",
+};
+
+// duplicate_* rows get "Skip" (acknowledge, no retry — re-sending a
+// duplicate just duplicate-errors again); create_failed gets "Retry"
+// (re-POST that one row — a transient/server-side failure may well succeed
+// the second time).
+function isDuplicateProblem(problem: string): boolean {
+  return problem === "duplicate_email" || problem === "duplicate_code";
+}
+
+interface Step3BodyProps {
+  state: ImportWizardState;
+  chunkFailure: { nextChunkIndex: number; remainingRowCount: number } | null;
+  retryingRows: ReadonlySet<number>;
+  onRetryRemaining: () => void;
+  onSkipRow: (row: number) => void;
+  onRetryRow: (row: number) => void;
+}
+
+// Board 3c — progress bar, amber "needs attention" banner, per-row error
+// table. `state.importProgress`/`state.rowErrors` are set synchronously with
+// the step 2->3 transition (see handleImportRows above), so they're never
+// undefined by the time this actually renders, but the `?? ` fallbacks below
+// keep the component defensively correct if that invariant ever changes.
+function Step3Body({ state, chunkFailure, retryingRows, onRetryRemaining, onSkipRow, onRetryRow }: Step3BodyProps) {
+  const { t } = useTranslation();
+  const done = state.importProgress?.done ?? 0;
+  const total = state.importProgress?.total ?? 0;
+  const errors = state.rowErrors ?? [];
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+  return (
+    <div className="flex max-h-[420px] flex-col gap-4 overflow-y-auto">
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-body font-bold text-foreground">{t("importProgress", { done, total })}</span>
+          <span className="font-mono text-caption text-muted-foreground">{pct}%</span>
+        </div>
+        <Progress value={done} max={total} />
+      </div>
+
+      {chunkFailure ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warning/30 bg-warning/10 p-3">
+          <p className="text-caption text-warning">
+            {t("importChunkFailed", { count: chunkFailure.remainingRowCount })}
+          </p>
+          <Button type="button" size="sm" variant="outline" onClick={onRetryRemaining}>
+            {t("importRetryRemaining")}
+          </Button>
+        </div>
+      ) : null}
+
+      {errors.length > 0 ? (
+        <>
+          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
+            <p className="text-caption font-bold text-warning">{t("importNeedsAttention", { count: errors.length })}</p>
+            <p className="text-caption text-warning">{t("importValidCommitted")}</p>
+          </div>
+
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full text-caption">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="border-b border-border px-2 py-1 text-left font-medium">{t("importColRow")}</th>
+                  <th className="border-b border-border px-2 py-1 text-left font-medium">{t("importColData")}</th>
+                  <th className="border-b border-border px-2 py-1 text-left font-medium">{t("importColProblem")}</th>
+                  <th className="border-b border-border px-2 py-1 text-left font-medium" aria-hidden />
+                </tr>
+              </thead>
+              <tbody>
+                {errors.map((error) => (
+                  <ErrorRow
+                    key={error.row}
+                    error={error}
+                    retrying={retryingRows.has(error.row)}
+                    onSkip={onSkipRow}
+                    onRetry={onRetryRow}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ErrorRow({
+  error, retrying, onSkip, onRetry,
+}: {
+  error: RowError;
+  retrying: boolean;
+  onSkip: (row: number) => void;
+  onRetry: (row: number) => void;
+}) {
+  const { t } = useTranslation();
+  const problemLabelKey = PROBLEM_LABEL_KEYS[error.problem];
+  return (
+    <tr>
+      <td className="border-b border-border px-2 py-1 font-mono text-foreground">{error.row}</td>
+      <td className="border-b border-border px-2 py-1 text-foreground">{error.data || "—"}</td>
+      <td className="border-b border-border px-2 py-1 text-destructive">
+        {problemLabelKey ? t(problemLabelKey) : error.problem}
+      </td>
+      <td className="border-b border-border px-2 py-1 text-right">
+        {isDuplicateProblem(error.problem) ? (
+          <Button type="button" variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onSkip(error.row)}>
+            {t("importSkipRow")}
+          </Button>
+        ) : (
+          <Button type="button" variant="ghost" size="sm" disabled={retrying} onClick={() => onRetry(error.row)}>
+            {t("importRetryRow")}
+          </Button>
+        )}
+      </td>
+    </tr>
   );
 }

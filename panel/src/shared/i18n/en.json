@@ -273,5 +273,20 @@
   "importRowsCaption": "{{rows}} rows",
   "importDuplicatesMerged": "{{rows}} rows · {{count}} duplicates merged by email",
   "importRowsCta": "Import {{count}} rows",
-  "importBack": "← Back"
+  "importBack": "← Back",
+  "importProgress": "{{done}} of {{total}} imported",
+  "importNeedsAttention": "{{count}} rows need attention.",
+  "importValidCommitted": "Valid rows are already in the list — fix these here or download them as CSV.",
+  "importColRow": "Row",
+  "importColData": "Data",
+  "importColProblem": "Problem",
+  "importProblemDuplicateEmail": "Duplicate — same email as an existing attendee",
+  "importProblemDuplicateCode": "Duplicate — same code as an existing attendee",
+  "importProblemCreateFailed": "Couldn't be saved",
+  "importSkipRow": "Skip",
+  "importRetryRow": "Retry",
+  "importDownloadErrors": "Download {{count}} rows as CSV",
+  "importDone": "Done — {{count}} in the list",
+  "importChunkFailed": "Upload interrupted — {{count}} rows not sent yet.",
+  "importRetryRemaining": "Retry remaining"
 }
