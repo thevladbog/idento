@@ -8,6 +8,7 @@ import { AttendeeDrawer } from "./AttendeeDrawer";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
+import { ImportWizard } from "./import/ImportWizard";
 import type { AttendeesSearch } from "./searchParams";
 import type { components } from "../../shared/api/schema";
 
@@ -51,6 +52,7 @@ export function AttendeesPage() {
   const [searchInput, setSearchInput] = React.useState(search.search ?? "");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [addAttendeeOpen, setAddAttendeeOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
 
   // Keep the local input in sync when the URL's `search` param changes from
   // outside this input (e.g. the "clear filters" link, or back/forward nav).
@@ -187,15 +189,11 @@ export function AttendeesPage() {
         </select>
 
         <div className="ml-auto flex items-center gap-2">
-          {/* Import CSV still renders disabled — it's wired by Task 13.
-              The "coming soon" reason stays part of its accessible name
-              (sr-only span), not a standalone aria-label override, so the
-              visible label text is never dropped from the accessible name
-              (same pattern as EventWorkspaceLayout's locked Launch check-in
-              button). + Add attendee is wired by this task (Task 7). */}
-          <Button type="button" variant="outline" disabled aria-disabled="true">
+          {/* Import CSV opens the wizard to step 1 (Task 11); the wizard's
+              own steps 2-3 (column mapping, chunked import) land in Tasks
+              12-13. + Add attendee is wired by Task 7. */}
+          <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
             {t("attendeesImportCsv")}
-            <span className="sr-only">{t("workspaceStepComingSoon")}</span>
           </Button>
           <Button type="button" onClick={() => setAddAttendeeOpen(true)}>
             {t("attendeesAdd")}
@@ -219,9 +217,8 @@ export function AttendeesPage() {
           description={t("attendeesEmptyBody")}
           actions={
             <>
-              <Button type="button" disabled aria-disabled="true">
+              <Button type="button" onClick={() => setImportOpen(true)}>
                 {t("attendeesEmptyImportAction")}
-                <span className="sr-only">{t("workspaceStepComingSoon")}</span>
               </Button>
               <Button type="button" variant="outline" onClick={() => setAddAttendeeOpen(true)}>
                 {t("attendeesEmptyAddAction")}
@@ -257,6 +254,7 @@ export function AttendeesPage() {
       )}
 
       <AddAttendeeDialog eventId={eventId} open={addAttendeeOpen} onOpenChange={setAddAttendeeOpen} />
+      <ImportWizard eventId={eventId} open={importOpen} onOpenChange={setImportOpen} />
 
       {/* Task 8: mounted (not just shown/hidden) whenever `attendee` is set,
           so a fresh page load with ?attendee=<id> already in the URL

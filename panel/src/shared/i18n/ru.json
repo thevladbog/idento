@@ -247,5 +247,20 @@
   "drawerDeleteTitle": "Удалить участника",
   "drawerDeleteBody": "{{name}} и история регистраций исчезнут без возможности восстановления.",
   "drawerDeleteConfirm": "Удалить",
-  "drawerMutationError": "Не удалось сохранить изменения. Попробуйте ещё раз."
+  "drawerMutationError": "Не удалось сохранить изменения. Попробуйте ещё раз.",
+  "importTitle": "Импорт участников",
+  "importStep1": "Файл",
+  "importStep2": "Столбцы",
+  "importStep3": "Импорт",
+  "importChooseFile": "Выберите файл CSV",
+  "importChooseBrowse": "Обзор…",
+  "importReplace": "Заменить",
+  "importEncodingLabel": "Кодировка",
+  "importAutoDetected": "Определено автоматически",
+  "importEncodingWindows1251": "Windows-1251",
+  "importEncodingUtf8": "UTF-8",
+  "importWorkerNote": "{{size}} · разобран в фоновом потоке, интерфейс не зависает",
+  "importPreviewLabel": "Предпросмотр — первые 3 строки",
+  "importEncodingHint": "Неверная кодировка сразу видна как «кракозябры» — переключите её выше, и предпросмотр перестроится.",
+  "importContinueColumns": "Далее → Столбцы"
 }

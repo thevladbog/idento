@@ -245,5 +245,20 @@
   "drawerDeleteTitle": "Delete attendee",
   "drawerDeleteBody": "{{name}} and their check-in history disappear. This cannot be undone.",
   "drawerDeleteConfirm": "Delete",
-  "drawerMutationError": "Couldn't save changes. Try again."
+  "drawerMutationError": "Couldn't save changes. Try again.",
+  "importTitle": "Import attendees",
+  "importStep1": "File",
+  "importStep2": "Columns",
+  "importStep3": "Import",
+  "importChooseFile": "Choose a CSV file",
+  "importChooseBrowse": "Browse…",
+  "importReplace": "Replace",
+  "importEncodingLabel": "Encoding",
+  "importAutoDetected": "Auto-detected",
+  "importEncodingWindows1251": "Windows-1251",
+  "importEncodingUtf8": "UTF-8",
+  "importWorkerNote": "{{size}} · parsed in a worker, the UI never freezes",
+  "importPreviewLabel": "Preview — first 3 rows",
+  "importEncodingHint": "Wrong encoding shows instantly as mojibake — switch above and the preview re-renders.",
+  "importContinueColumns": "Continue → Columns"
 }
