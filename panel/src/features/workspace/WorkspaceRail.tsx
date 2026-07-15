@@ -11,7 +11,7 @@ type ReadinessStep = components["schemas"]["ReadinessStep"];
 export interface WorkspaceRailProps {
   eventId: string;
   readiness: EventReadinessResponse | undefined;
-  active: "overview" | "settings";
+  active: "overview" | "settings" | "attendees";
 }
 
 // Board 1f — the left-rail readiness pipeline for the event workspace. Pure,
@@ -78,7 +78,9 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
 
       <div className="flex flex-col gap-0.5">
         {steps
-          ? steps.map((step, index) => <StepRow key={step.key} step={step} index={index + 1} />)
+          ? steps.map((step, index) => (
+              <StepRow key={step.key} step={step} index={index + 1} eventId={eventId} active={active} />
+            ))
           : Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-7 w-full" />)}
       </div>
 
@@ -124,7 +126,17 @@ const STEP_STATUS_ICON: Record<ReadinessStep["status"], { icon: typeof CheckCirc
   skipped: { icon: MinusCircle, className: "text-muted-foreground" },
 };
 
-function StepRow({ step, index }: { step: ReadinessStep; index: number }) {
+function StepRow({
+  step,
+  index,
+  eventId,
+  active,
+}: {
+  step: ReadinessStep;
+  index: number;
+  eventId: string;
+  active: WorkspaceRailProps["active"];
+}) {
   const { t } = useTranslation();
   const { icon: Icon, className: iconClassName } = STEP_STATUS_ICON[step.status];
   // Icon + color alone can't convey status to assistive tech (WCAG 1.4.1) —
@@ -133,8 +145,8 @@ function StepRow({ step, index }: { step: ReadinessStep; index: number }) {
   const statusText =
     step.status === "done" ? t("readinessStatusDone") : step.status === "skipped" ? t("readinessSkipped") : t("readinessStatusNotDone");
 
-  return (
-    <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body">
+  const content = (
+    <>
       <Icon aria-hidden className={cn("size-3.5 shrink-0", iconClassName)} />
       <span className="flex-1">
         {index} · {t(STEP_LABEL_KEYS[step.key])}
@@ -144,6 +156,29 @@ function StepRow({ step, index }: { step: ReadinessStep; index: number }) {
       </span>
       <span className="sr-only">{statusText}</span>
       {step.count !== undefined ? <span className="font-mono text-caption">{step.count}</span> : null}
-    </div>
+    </>
   );
+
+  // Attendees is the only readiness step with a real screen behind it so
+  // far (Task 5) — it becomes a live Link while badge/zones/staff/equipment
+  // stay exactly as they were (plain, always-locked rows) until their own
+  // screens land in later tasks.
+  if (step.key === "attendees") {
+    const isActive = active === "attendees";
+    return (
+      <Link
+        to="/events/$eventId/attendees"
+        params={{ eventId }}
+        aria-current={isActive ? "page" : undefined}
+        className={cn(
+          "flex items-center gap-2 rounded-md px-2 py-1.5 text-body hover:bg-muted",
+          isActive && "bg-success/10 text-success",
+        )}
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body">{content}</div>;
 }
