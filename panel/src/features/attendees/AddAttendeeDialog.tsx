@@ -6,6 +6,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { ATTENDEES_LIST_KEY } from "./hooks";
+import { READINESS_KEY } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 
 // Same message-KEY convention as CreateEventDialog.tsx: zod stores KEYS
@@ -163,8 +164,14 @@ export function AddAttendeeDialog({ eventId, open, onOpenChange }: AddAttendeeDi
           // Cache correctness: the attendee WAS created server-side
           // regardless of whether the user has since backed out of this
           // dialog session, so invalidation runs unconditionally — only the
-          // close below is gated on the session check.
+          // close below is gated on the session check. Readiness is
+          // invalidated alongside the list: the backend recomputes the
+          // attendees readiness step from the live attendee count, and the
+          // workspace rail / "Launch check-in" gate render from that query
+          // in the always-mounted EventWorkspaceLayout — nothing else
+          // refetches it.
           void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+          void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
           if (onMutateResult?.sessionId !== createSessionRef.current) return;
           onOpenChange(false);
         },

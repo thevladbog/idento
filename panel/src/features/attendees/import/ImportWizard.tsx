@@ -14,6 +14,7 @@ import {
 } from "./wizardState";
 import { downloadCsv } from "../exportCsv";
 import { ATTENDEES_LIST_KEY } from "../hooks";
+import { READINESS_KEY } from "../../events/hooks";
 import { $api } from "../../../shared/api/query";
 
 // The 6 standard fields a CSV column can map to (Task 12's brief, verbatim
@@ -346,8 +347,12 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // handleDialogOpenChange below (X/Escape/outside-click once step 3 is
   // genuinely closable) so the invalidation only lives in one place —
   // fixing a bug where only the "Done" button ever triggered it.
+  // Readiness is invalidated alongside the list: the imported rows change
+  // the live attendee count the backend recomputes the rail's attendees
+  // step from, and nothing else refetches that query.
   function invalidateAttendeesList() {
     void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+    void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
   }
 
   // The wizard's explicit terminal CTA once step 3 has settled. Invalidates

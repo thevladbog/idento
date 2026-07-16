@@ -11,6 +11,7 @@ import {
   ATTENDEES_LIST_KEY, ATTENDEE_DETAIL_KEY, ATTENDEE_ZONE_ACCESS_KEY, useAttendeeDetail, useAttendeeZoneAccess,
   useAttendeeZoneHistory, useEventZones,
 } from "./hooks";
+import { READINESS_KEY } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { zoneIdentity, type ZoneListEntry } from "../../shared/lib/zoneIdentity";
@@ -333,7 +334,12 @@ function DrawerBody({
   const deleteAttendee = $api.useMutation("delete", "/api/attendees/{id}", {
     onMutate: () => ({ sessionId: deleteSessionRef.current }),
     onSuccess: (_data, _vars, onMutateResult) => {
+      // Readiness too: the deletion changes the live attendee count the
+      // backend recomputes the rail's attendees step from — unconditional,
+      // same as the list invalidation (the delete really happened
+      // server-side even if the user backed out of the dialog session).
       void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
       if (onMutateResult?.sessionId !== deleteSessionRef.current) return;
       setDeleteOpen(false);
       onClose();

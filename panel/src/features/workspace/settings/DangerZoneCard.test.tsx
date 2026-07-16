@@ -5,6 +5,7 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { DangerZoneCard } from "./DangerZoneCard";
 import { useAttendeesPage } from "../../attendees/hooks";
+import { useEventReadiness } from "../../events/hooks";
 import { $api } from "../../../shared/api/query";
 import { startMswServer } from "../../../test/msw";
 import "../../../shared/i18n";
@@ -42,8 +43,13 @@ let lastGenerateCodesEventId: string | undefined;
 let generateCodesStatusOverride: number | null = null;
 let generateCodesUpdatedCount = 3;
 let generateCodesDelayMs = 0;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/events", () => {
     listHitCount += 1;
     return HttpResponse.json([]);
@@ -102,12 +108,23 @@ function AttendeesListObserver() {
   return null;
 }
 
+// Same pattern once more for GET /api/events/:id/readiness (the
+// ReadinessObserver idiom from AddStaffDialog.test.tsx/ZonesPage.test.tsx):
+// a genuinely subscribed useQuery consumer so READINESS_KEY invalidation
+// produces an OBSERVABLE refetch (readinessHitCount above), not just an
+// asserted invalidate call.
+function ReadinessObserver() {
+  useEventReadiness(EVENT.id);
+  return null;
+}
+
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <ListObserver />
       <AttendeesListObserver />
+      <ReadinessObserver />
       {ui}
     </QueryClientProvider>,
   );
@@ -126,6 +143,7 @@ describe("DangerZoneCard", () => {
     generateCodesStatusOverride = null;
     generateCodesUpdatedCount = 3;
     generateCodesDelayMs = 0;
+    readinessHitCount = 0;
     navigateMock.mockClear();
     window.__ENV__ = { API_URL: "http://api.test" };
   });
@@ -192,16 +210,20 @@ describe("DangerZoneCard", () => {
       await waitFor(() => expect(generateButton).toBeEnabled());
     });
 
-    it("shows the updated_count from the response and invalidates the attendees list on success", async () => {
+    it("shows the updated_count from the response and invalidates the attendees list AND readiness on success", async () => {
       generateCodesUpdatedCount = 7;
       const user = userEvent.setup();
       renderWithProviders(<DangerZoneCard event={EVENT} />);
       await waitFor(() => expect(attendeesListHitCount).toBe(1));
+      await waitFor(() => expect(readinessHitCount).toBe(1));
 
       await user.click(screen.getByRole("button", { name: "Generate missing codes" }));
 
       expect(await screen.findByText("7 codes generated")).toBeInTheDocument();
       await waitFor(() => expect(attendeesListHitCount).toBeGreaterThan(1));
+      // The genuinely subscribed readiness observer actually refetches —
+      // not just an invalidateQueries call asserted in isolation.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("renders a zero count honestly, with no fake success embellishment", async () => {
@@ -224,9 +246,10 @@ describe("DangerZoneCard", () => {
 
       expect(await screen.findByText("Couldn't generate codes. Please try again.")).toBeInTheDocument();
       expect(screen.queryByText(/codes generated/)).not.toBeInTheDocument();
-      // A failed backfill invalidates nothing — the attendees list query
-      // must not have been asked to refetch.
+      // A failed backfill invalidates nothing — neither the attendees list
+      // nor the readiness query must have been asked to refetch.
       expect(attendeesListHitCount).toBe(1);
+      expect(readinessHitCount).toBe(1);
     });
 
     it("replaces the previous result line on a re-run, rather than stacking both", async () => {

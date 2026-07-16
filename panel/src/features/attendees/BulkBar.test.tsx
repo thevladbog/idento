@@ -5,9 +5,21 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { BulkBar } from "./BulkBar";
 import { ATTENDEES_LIST_KEY } from "./hooks";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 import type { components } from "../../shared/api/schema";
+
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// ReadinessObserver pattern as AddAttendeeDialog.test.tsx: mounting a real
+// useQuery consumer alongside the component under test makes
+// `invalidateQueries` for READINESS_KEY produce an OBSERVABLE refetch (via
+// `readinessHitCount`), rather than merely asserting the invalidate call was
+// made.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
 
 type Attendee = components["schemas"]["Attendee"];
 
@@ -50,8 +62,13 @@ let deleteCalls: string[] = [];
 let deleteStatusOverride: number | null = null;
 let deleteDelayMs = 0;
 let deleteFailFor: Set<string> = new Set();
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/events/:eventId/zones", () =>
     HttpResponse.json([
       {
@@ -125,6 +142,7 @@ describe("BulkBar", () => {
     deleteStatusOverride = null;
     deleteDelayMs = 0;
     deleteFailFor = new Set();
+    readinessHitCount = 0;
   });
 
   it("shows the selected count and a divider before the action list", async () => {
@@ -295,9 +313,15 @@ describe("BulkBar", () => {
       expect(confirmButton).toBeEnabled();
     });
 
-    it("fires sequential DELETEs with live progress and invalidates the list on completion", async () => {
+    it("fires sequential DELETEs with live progress and invalidates the list AND readiness on completion (the deletions change the rail's attendees count)", async () => {
       const user = userEvent.setup();
-      const queryClient = renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+      const queryClient = renderWithProviders(
+        <>
+          <ReadinessObserver eventId="evt-1" />
+          <BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />
+        </>,
+      );
+      await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
       await user.click(screen.getByRole("button", { name: "Delete…" }));
@@ -311,6 +335,9 @@ describe("BulkBar", () => {
       await waitFor(() =>
         expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ATTENDEES_LIST_KEY("evt-1") })),
       );
+      // The genuinely subscribed readiness observer actually refetches —
+      // not just an invalidateQueries call asserted in isolation.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
       // Dialog closes automatically once the whole batch succeeds.
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     });

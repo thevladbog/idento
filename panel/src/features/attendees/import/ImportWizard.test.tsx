@@ -8,6 +8,7 @@ import { decodeBuffer } from "./encoding";
 import { parseCsv } from "./parseCsv";
 import * as parseCsvModule from "./parseCsv";
 import { ATTENDEES_LIST_KEY } from "../hooks";
+import { useEventReadiness } from "../../events/hooks";
 import { startMswServer } from "../../../test/msw";
 import "../../../shared/i18n";
 
@@ -606,6 +607,19 @@ describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)",
 // catch-all mock.
 const server = startMswServer();
 
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// ReadinessObserver pattern as AddAttendeeDialog.test.tsx: mounting a real
+// useQuery consumer alongside the wizard makes `invalidateQueries` for
+// READINESS_KEY produce an OBSERVABLE refetch (via `readinessHitCount`),
+// rather than merely asserting the invalidate call was made. Only the test
+// that mounts this registers the readiness GET handler (per the
+// no-shared-default-handler rule above).
+let readinessHitCount = 0;
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
+
 // jsdom's Blob doesn't implement `.text()`/`.arrayBuffer()` — same
 // FileReader-based workaround as exportCsv.test.ts.
 function readBlobAsText(blob: Blob): Promise<string> {
@@ -783,6 +797,47 @@ describe("ImportWizard step 3 — chunked import", () => {
       expect(onOpenChange).toHaveBeenCalledWith(false);
     },
   );
+
+  it("Done invalidates the readiness aggregate too (observable refetch) — the imported rows change the rail's attendees count", async () => {
+    readinessHitCount = 0;
+    const user = userEvent.setup();
+    server.use(
+      http.get("http://api.test/api/events/:id/readiness", () => {
+        readinessHitCount += 1;
+        return HttpResponse.json({ ready: false, steps: [] });
+      }),
+      http.post("http://api.test/api/events/:eventId/attendees/bulk", async ({ request }) => {
+        const body = (await request.json()) as { attendees: unknown[] };
+        return HttpResponse.json(
+          { message: "ok", created: body.attendees.length, skipped: 0, total: body.attendees.length },
+          { status: 201 },
+        );
+      }),
+    );
+
+    const onOpenChange = vi.fn();
+    renderWizard(
+      <>
+        <ReadinessObserver eventId="evt-1" />
+        <ImportWizard eventId="evt-1" open onOpenChange={onOpenChange} />
+      </>,
+    );
+    await waitFor(() => expect(readinessHitCount).toBe(1));
+
+    const file = new File([buildFixtureCsv(3)], "fixture.csv", { type: "text/csv" });
+    await user.upload(screen.getByLabelText("Choose a CSV file"), file);
+    await screen.findByText("Auto-detected");
+    await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
+    await screen.findByTestId("import-step-2");
+    await user.click(screen.getByRole("button", { name: "Import 3 rows" }));
+
+    await user.click(await screen.findByRole("button", { name: "Done — 3 in the list" }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    // The genuinely subscribed readiness observer actually refetches —
+    // not just an invalidateQueries call asserted in isolation.
+    await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
+  });
 
   it("downloads a CSV of the original source rows for exactly the rows still in the error list", async () => {
     const user = userEvent.setup();
