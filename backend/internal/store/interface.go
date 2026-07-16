@@ -4,6 +4,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"idento/backend/internal/models"
 	"time"
 
@@ -66,6 +67,25 @@ type Store interface {
 	// SoftDeleteEvent marks an event deleted (deleted_at = now()); listings
 	// and direct fetches already exclude soft-deleted rows.
 	SoftDeleteEvent(ctx context.Context, id uuid.UUID) error
+
+	// GetEventBadgeTemplate reads the dedicated badge_template/
+	// badge_template_version column pair (P3.1) — never the legacy
+	// custom_fields["badgeTemplate"] key. Returns (nil, 0, nil) when the
+	// column is NULL (no template saved yet) or when no matching,
+	// non-deleted event exists — it never fabricates a template. Callers
+	// needing to distinguish "no template" from "no such event" must check
+	// existence themselves (e.g. GetEventByIDForTenant).
+	GetEventBadgeTemplate(ctx context.Context, eventID uuid.UUID) (json.RawMessage, int, error)
+	// UpdateEventBadgeTemplate persists template verbatim under an optimistic
+	// concurrency guard: the UPDATE only matches a row whose current
+	// badge_template_version equals expectedVersion, and bumps the version by
+	// one. On success it returns the new (bumped) version. When the guard
+	// misses (0 rows updated) it returns ErrVersionConflict. Contract: the
+	// caller (the badge-template handler, via requireEventOwnership) must
+	// already have confirmed the event exists and is not soft-deleted —
+	// this method does not re-check event existence, so a 0-row result is
+	// always reported as a version conflict, never as "not found".
+	UpdateEventBadgeTemplate(ctx context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
 
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are

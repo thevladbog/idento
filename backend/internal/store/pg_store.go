@@ -590,6 +590,68 @@ func (s *PGStore) SoftDeleteEvent(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+// ErrVersionConflict is returned by UpdateEventBadgeTemplate when the
+// guarded UPDATE affects 0 rows because expectedVersion no longer matches
+// the row's current badge_template_version. By contract the caller has
+// already confirmed the event exists (e.g. via requireEventOwnership)
+// before calling, so this method treats every 0-row result as a version
+// conflict rather than trying to disambiguate "stale version" from
+// "no such event".
+var ErrVersionConflict = errors.New("badge template version conflict")
+
+// GetEventBadgeTemplate reads the dedicated badge_template/
+// badge_template_version columns (P3.1) directly — it never looks at the
+// legacy custom_fields["badgeTemplate"] key. Both "column is NULL" (no
+// template saved yet) and "no matching, non-deleted event" collapse to the
+// same (nil, 0, nil) zero value: this method never fabricates a template,
+// and never reports pgx.ErrNoRows to the caller (mirrors GetEventByID's
+// not-found idiom). Callers that need to distinguish a missing event from a
+// missing template must check existence themselves.
+func (s *PGStore) GetEventBadgeTemplate(ctx context.Context, eventID uuid.UUID) (json.RawMessage, int, error) {
+	var templateJSON []byte
+	var version int
+	query := `SELECT badge_template, badge_template_version FROM events WHERE id = $1 AND deleted_at IS NULL`
+	err := s.db.QueryRow(ctx, query, eventID).Scan(&templateJSON, &version)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	if len(templateJSON) == 0 || string(templateJSON) == "null" {
+		return nil, 0, nil
+	}
+	return json.RawMessage(templateJSON), version, nil
+}
+
+// UpdateEventBadgeTemplate persists template verbatim (raw bytes, no
+// re-encoding) under an optimistic-concurrency guard: the UPDATE only
+// matches the row whose current badge_template_version equals
+// expectedVersion, and bumps the version by one in the same statement. On
+// success it returns the new (bumped) version via RETURNING. When the guard
+// misses — expectedVersion is stale — the UPDATE affects 0 rows, which
+// QueryRow surfaces as pgx.ErrNoRows; this method maps that to
+// ErrVersionConflict. Contract: the caller must already have confirmed the
+// event exists and is not soft-deleted (e.g. via requireEventOwnership)
+// before calling — this method does not re-check event existence, so a
+// 0-row result is always reported as a version conflict, never as
+// "not found".
+func (s *PGStore) UpdateEventBadgeTemplate(ctx context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
+	var newVersion int
+	query := `UPDATE events
+			  SET badge_template = $1, badge_template_version = badge_template_version + 1, updated_at = NOW()
+			  WHERE id = $2 AND badge_template_version = $3
+			  RETURNING badge_template_version`
+	err := s.db.QueryRow(ctx, query, []byte(template), eventID, expectedVersion).Scan(&newVersion)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, ErrVersionConflict
+		}
+		return 0, err
+	}
+	return newVersion, nil
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

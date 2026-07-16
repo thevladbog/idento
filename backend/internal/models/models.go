@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,9 +67,17 @@ type Event struct {
 	Location     string                 `json:"location,omitempty"`
 	FieldSchema  []string               `json:"field_schema,omitempty"`  // Список доступных полей из CSV
 	CustomFields map[string]interface{} `json:"custom_fields,omitempty"` // Для хранения настроек, шаблонов и т.д.
-	CreatedAt    time.Time              `json:"created_at"`
-	UpdatedAt    time.Time              `json:"updated_at"`
-	DeletedAt    *time.Time             `json:"deleted_at,omitempty"`
+	// BadgeTemplate/BadgeTemplateVersion (P3.1) are excluded from generic
+	// event JSON (json:"-") — the dedicated GET/PUT
+	// /api/events/{id}/badge-template endpoint is the only read/write
+	// surface, mirroring the custom_fields PATCH-exclusion precedent at
+	// handler/events.go:128. Populate via store.GetEventBadgeTemplate /
+	// store.UpdateEventBadgeTemplate, not via the general Event CRUD paths.
+	BadgeTemplate        json.RawMessage `json:"-"`
+	BadgeTemplateVersion int             `json:"-"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	DeletedAt            *time.Time      `json:"deleted_at,omitempty"`
 }
 
 type Attendee struct {
