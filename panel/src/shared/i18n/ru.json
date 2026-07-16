@@ -355,6 +355,7 @@
   "zonesRulesAddClause": "+ условие «или»",
   "zonesRulesNoConditions": "Пока нет условий — доступ есть у всех, пока вы не добавите условие и не сохраните.",
   "zonesRulesValidationHint": "Заполните каждое условие и уберите дубликаты перед сохранением.",
+  "zonesRulesDuplicateAdvanced": "Уже ограничено расширенным правилом",
   "zonesRulesAdvancedHeading": "Также применяется (только просмотр)",
   "zonesRulesAdvanced": "{{category}} — {{detail}}",
   "zonesRulesAdvancedDenied": "запрещено",

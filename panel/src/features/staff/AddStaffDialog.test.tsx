@@ -6,8 +6,20 @@ import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { AddStaffDialog } from "./AddStaffDialog";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
+
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// pattern as DangerZoneCard.test.tsx's ListObserver/AttendeesListObserver:
+// mounting a real useQuery consumer alongside the component under test makes
+// `invalidateQueries` for READINESS_KEY produce an OBSERVABLE refetch (via
+// `readinessHitCount`), rather than merely asserting the invalidate call was
+// made.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
 
 let usersResponse: unknown[] = [];
 let usersStatus = 200;
@@ -23,8 +35,13 @@ let createStatus = 200;
 let createDelayMs = 0;
 let createResponseBody: Record<string, unknown> | null = null;
 let limitBody: Record<string, unknown> | null = null;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/users", () => {
     usersCallCount += 1;
     if (usersStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: usersStatus });
@@ -104,6 +121,7 @@ describe("AddStaffDialog", () => {
     createDelayMs = 0;
     createResponseBody = null;
     limitBody = null;
+    readinessHitCount = 0;
   });
 
   describe("existing-mode candidate list", () => {
@@ -131,10 +149,16 @@ describe("AddStaffDialog", () => {
       expect(await screen.findByText("Every tenant user is already assigned to this event.")).toBeInTheDocument();
     });
 
-    it("assigns the selected candidate, invalidates the staff list, and closes on success", async () => {
+    it("assigns the selected candidate, invalidates the staff list AND readiness (P1 fix — the backend recomputes the staff step from the live list), and closes on success", async () => {
       const user = userEvent.setup();
       const onOpenChange = vi.fn();
-      const { queryClient } = renderWithProviders(<AddStaffDialog eventId="evt-1" open onOpenChange={onOpenChange} isAdmin />);
+      const { queryClient } = renderWithProviders(
+        <>
+          <ReadinessObserver eventId="evt-1" />
+          <AddStaffDialog eventId="evt-1" open onOpenChange={onOpenChange} isAdmin />
+        </>,
+      );
+      await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
       await user.click(await screen.findByText("bob@example.com"));
@@ -150,6 +174,9 @@ describe("AddStaffDialog", () => {
           }),
         ),
       );
+      // The genuinely subscribed readiness observer actually refetches —
+      // not just an invalidateQueries call asserted in isolation.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("keeps the dialog open and shows an error when the assign POST fails", async () => {
@@ -240,10 +267,16 @@ describe("AddStaffDialog", () => {
       expect(createCount).toBe(0);
     });
 
-    it("creates the user with role restricted to staff|manager, then chains the assign POST, invalidates, and closes on success", async () => {
+    it("creates the user with role restricted to staff|manager, then chains the assign POST, invalidates staff AND readiness, and closes on success", async () => {
       const user = userEvent.setup();
       const onOpenChange = vi.fn();
-      const { queryClient } = renderWithProviders(<AddStaffDialog eventId="evt-1" open onOpenChange={onOpenChange} isAdmin />);
+      const { queryClient } = renderWithProviders(
+        <>
+          <ReadinessObserver eventId="evt-1" />
+          <AddStaffDialog eventId="evt-1" open onOpenChange={onOpenChange} isAdmin />
+        </>,
+      );
+      await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
       createResponseBody = {
         id: "u-new", tenant_id: "t1", email: "new@example.com", role: "manager", is_super_admin: false, has_qr_token: false, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
@@ -267,6 +300,7 @@ describe("AddStaffDialog", () => {
           }),
         ),
       );
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("surfaces the LimitExceededError message verbatim on a 403 from the plan-limits middleware", async () => {

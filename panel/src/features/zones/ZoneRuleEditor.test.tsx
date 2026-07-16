@@ -155,6 +155,59 @@ describe("ZoneRuleEditor", () => {
     expect(screen.getByText("Fill in every condition and remove duplicates before saving.")).toBeInTheDocument();
   });
 
+  // PR #66 review (P2): backend/migrations/000010_event_zones.up.sql:40 has
+  // a UNIQUE index on zone_access_rules(zone_id, category) — the PUT is
+  // delete-and-replace of the WHOLE rule set, so a simple clause whose
+  // trimmed category exactly matches a read-only advanced rule's category
+  // would make the entire save fail wholesale server-side. The editor must
+  // block it client-side with a dedicated message, not let the user hit an
+  // opaque 500.
+  describe("simple clause colliding with an advanced rule's category", () => {
+    it("disables Save and shows the dedicated per-clause message when a simple clause duplicates an advanced rule's category (trimmed, case-sensitive)", async () => {
+      rulesResponse = [
+        simpleRule("r1", "vip"),
+        complexRule("r2", "staff", false, null, null),
+      ];
+      renderEditor();
+      await screen.findByLabelText("Category value 1");
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "+ or condition" }));
+      await user.type(screen.getByLabelText("Category value 2"), "  staff  ");
+
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(screen.getByText("Already constrained by an advanced rule")).toBeInTheDocument();
+
+      // No PUT may ever fire from this state.
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      expect(putBodies).toHaveLength(0);
+    });
+
+    it("a case-different category is NOT a collision (the unique index is on the raw value) and saves normally", async () => {
+      rulesResponse = [
+        simpleRule("r1", "vip"),
+        complexRule("r2", "staff", false, null, null),
+      ];
+      renderEditor();
+      await screen.findByLabelText("Category value 1");
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "+ or condition" }));
+      await user.type(screen.getByLabelText("Category value 2"), "Staff");
+
+      expect(screen.queryByText("Already constrained by an advanced rule")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(putBodies).toHaveLength(1));
+      expect(putBodies[0]).toEqual([
+        { category: "vip", allowed: true },
+        { category: "Staff", allowed: true },
+        { category: "staff", allowed: false, time_from: null, time_to: null },
+      ]);
+    });
+  });
+
   it("Save success collapses the editor (onSaved) and invalidates ZONE_RULES_KEY and ZONES_KEY, never setQueryData", async () => {
     const { queryClient, onSaved } = renderEditor();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");

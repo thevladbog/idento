@@ -6,9 +6,17 @@ import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { ZoneFormDialog } from "./ZoneFormDialog";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 import type { components } from "../../shared/api/schema";
+
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// pattern as DangerZoneCard.test.tsx's ListObserver.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
 
 type EventZone = components["schemas"]["EventZone"];
 type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
@@ -60,8 +68,13 @@ let lastUpdateBody: unknown;
 let lastUpdateId: string | undefined;
 let zonesFetchCount = 0;
 let zonesGetStatus = 200;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/events/:eventId/zones", () => {
     zonesFetchCount += 1;
     if (zonesGetStatus !== 200) {
@@ -101,6 +114,7 @@ describe("ZoneFormDialog", () => {
     lastUpdateId = undefined;
     zonesFetchCount = 0;
     zonesGetStatus = 200;
+    readinessHitCount = 0;
   });
 
   describe("create mode", () => {
@@ -168,10 +182,16 @@ describe("ZoneFormDialog", () => {
       });
     });
 
-    it("closes the dialog and invalidates ZONES_KEY on a successful create", async () => {
+    it("closes the dialog and invalidates ZONES_KEY AND readiness (P2 fix — creating a zone changes the zones-readiness step) on a successful create", async () => {
       const user = userEvent.setup();
       const onOpenChange = vi.fn();
-      const { queryClient } = renderWithProviders(<ZoneFormDialog eventId="evt-1" open onOpenChange={onOpenChange} />);
+      const { queryClient } = renderWithProviders(
+        <>
+          <ReadinessObserver eventId="evt-1" />
+          <ZoneFormDialog eventId="evt-1" open onOpenChange={onOpenChange} />
+        </>,
+      );
+      await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
       await user.type(screen.getByLabelText("Name"), "Backstage");
@@ -186,6 +206,8 @@ describe("ZoneFormDialog", () => {
           }),
         ),
       );
+      // The genuinely subscribed readiness observer actually refetches.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("blocks Cancel/Escape/outside-click dismissal while the create request is in flight", async () => {
@@ -334,6 +356,27 @@ describe("ZoneFormDialog", () => {
             queryKey: ["get", "/api/events/{event_id}/zones", { params: { path: { event_id: "evt-1" } } }],
           }),
         ),
+      );
+    });
+
+    // P2 fix scope: a zone EDIT never changes any readiness step's count
+    // (only create/delete do), so unlike create mode above, a successful
+    // edit must not invalidate READINESS_KEY.
+    it("does NOT invalidate readiness on a successful edit — editing a zone changes no counts", async () => {
+      const user = userEvent.setup();
+      const onOpenChange = vi.fn();
+      const { queryClient } = renderWithProviders(
+        <ZoneFormDialog eventId="evt-1" open onOpenChange={onOpenChange} zone={FULL_ZONE} />,
+      );
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      await user.click(await screen.findByRole("button", { name: "Save changes" }));
+
+      await waitFor(() => expect(updateCount).toBe(1));
+      expect(invalidateSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: ["get", "/api/events/{id}/readiness", { params: { path: { id: "evt-1" } } }],
+        }),
       );
     });
   });

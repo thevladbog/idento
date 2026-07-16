@@ -82,6 +82,7 @@ let tenantUsersResponse: unknown[] = [];
 let staffStatus = 200;
 let staffDelayMs = 0;
 let zonesResponse: unknown[] = [];
+let zonesStatus = 200;
 let userZoneAssignments: Record<string, unknown[]> = {};
 let userZoneStatusOverride: Record<string, number> = {};
 let userZoneDelayMs: Record<string, number> = {};
@@ -107,7 +108,12 @@ const server = startMswServer(
     }
     return HttpResponse.json(staffResponse);
   }),
-  http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(zonesResponse)),
+  http.get("http://api.test/api/events/:eventId/zones", () => {
+    if (zonesStatus !== 200) {
+      return HttpResponse.json({ error: "boom" }, { status: zonesStatus });
+    }
+    return HttpResponse.json(zonesResponse);
+  }),
   http.get("http://api.test/api/users/:userId/zones", async ({ params }) => {
     const userId = params.userId as string;
     const delayMs = userZoneDelayMs[userId];
@@ -190,6 +196,7 @@ describe("StaffPage", () => {
       { id: "z1", event_id: "evt-1", name: "Main hall", zone_type: "general", order_index: 0, is_registration_zone: true, requires_registration: false, is_active: true, created_at: "2026-01-01T00:00:00Z" },
       { id: "z2", event_id: "evt-1", name: "VIP", zone_type: "general", order_index: 1, is_registration_zone: false, requires_registration: false, is_active: true, created_at: "2026-01-01T00:00:00Z" },
     ];
+    zonesStatus = 200;
     userZoneAssignments = {};
     userZoneStatusOverride = {};
     userZoneDelayMs = {};
@@ -457,6 +464,34 @@ describe("StaffPage", () => {
 
     afterEach(() => {
       vi.restoreAllMocks();
+    });
+
+    // PR #66 review (P2): "Print all" builds every card's zones caption from
+    // zoneNameById (derived from zonesQuery.data ?? []) — starting the batch
+    // while the zones query is errored/loading would bake a false "No zones
+    // assigned" onto every printed card, and starting it while staff hasn't
+    // verifiably loaded would confirm a 0-member batch. The button must only
+    // be actionable once BOTH queries have genuinely succeeded and there is
+    // at least one member to print.
+    it("is disabled while the zones query is errored, even for an admin with staff loaded", async () => {
+      zonesStatus = 500;
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+      await waitFor(() => expect(tenantFetchCount).toBeGreaterThan(0));
+
+      // Give the (errored) zones query time to settle, then assert the
+      // button never became actionable.
+      await waitFor(() => expect(screen.getByRole("button", { name: "Print all QR cards" })).toBeDisabled());
+    });
+
+    it("is disabled when the staff list is verifiably empty", async () => {
+      staffResponse = [];
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("No staff yet");
+      await waitFor(() => expect(tenantFetchCount).toBeGreaterThan(0));
+
+      expect(screen.getByRole("button", { name: "Print all QR cards" })).toBeDisabled();
     });
 
     it("opens a tier-1 confirm dialog stating the staff count", async () => {

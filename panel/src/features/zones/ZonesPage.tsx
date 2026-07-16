@@ -11,6 +11,7 @@ import { ZONES_KEY, useEventZonesWithStats } from "./hooks";
 import { ZoneFormDialog } from "./ZoneFormDialog";
 import { ZoneRuleEditor } from "./ZoneRuleEditor";
 import { ZONE_COLOR_CLASSES, zoneColorKey } from "./zoneColors";
+import { READINESS_KEY } from "../events/hooks";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
@@ -127,7 +128,12 @@ export function ZonesPage() {
       // The zone is genuinely gone server-side regardless of whether the
       // user has since cancelled this dialog session, so invalidation runs
       // unconditionally — only the dialog-closing reaction below is gated.
+      // Readiness too (PR #66 review, P2): the backend recomputes the zones
+      // readiness step from the live zone list, so deleting the last zone
+      // must un-done the workspace rail's zones step instead of leaving a
+      // stale "done".
       void queryClient.invalidateQueries({ queryKey: ZONES_KEY(eventId) });
+      void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
       if (onMutateResult?.sessionId !== deleteSessionRef.current) return;
       setDeletingZone(null);
     },

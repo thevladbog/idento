@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { ZonesPage } from "./ZonesPage";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -31,11 +32,21 @@ function buildRouter(initialPath: string) {
   return createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [initialPath] }) });
 }
 
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// pattern as DangerZoneCard.test.tsx's ListObserver: mounting a real
+// useQuery consumer makes READINESS_KEY invalidation produce an OBSERVABLE
+// refetch (readinessHitCount below), not just an asserted invalidate call.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
+
 function renderAt(path: string) {
   const router = buildRouter(path);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
+      <ReadinessObserver eventId="evt-1" />
       {/* Cast, not @ts-expect-error — same rationale as AttendeesPage.test.tsx:
           this test router's route shape differs from the app's registered
           singleton. */}
@@ -90,8 +101,13 @@ let rulesStatusOverride: Record<string, number> = {};
 let putBodies: { zoneId: string; body: unknown }[] = [];
 let putStatus = 200;
 let putDelayMs = 0;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/zones/:zoneId/access-rules", ({ params }) => {
     const zoneId = params.zoneId as string;
     const statusOverride = rulesStatusOverride[zoneId];
@@ -172,6 +188,7 @@ describe("ZonesPage", () => {
     putBodies = [];
     putStatus = 200;
     putDelayMs = 0;
+    readinessHitCount = 0;
   });
 
   it("renders the header (h2 + mono count) and the caption", async () => {
@@ -308,10 +325,11 @@ describe("ZonesPage", () => {
       expect(within(dialog).getByLabelText("Name")).toHaveValue("VIP Lounge");
     });
 
-    it("row menu 'Delete zone…' opens a typed-confirm dialog gated on the zone's exact name, and a successful delete invalidates the list", async () => {
+    it("row menu 'Delete zone…' opens a typed-confirm dialog gated on the zone's exact name, and a successful delete invalidates the list AND readiness (P2 fix — deleting the last zone must un-done the zones step)", async () => {
       const user = userEvent.setup();
       renderAt("/events/evt-1/zones");
       await screen.findByText("VIP Lounge");
+      await waitFor(() => expect(readinessHitCount).toBe(1));
 
       await user.click(screen.getByRole("button", { name: "More actions for VIP Lounge" }));
       await user.click(await screen.findByRole("menuitem", { name: "Delete zone…" }));
@@ -329,6 +347,8 @@ describe("ZonesPage", () => {
       await waitFor(() => expect(deleteCount).toBe(1));
       expect(lastDeletedId).toBe("z2");
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      // The genuinely subscribed readiness observer actually refetches.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("keeps the delete dialog open and shows the server error message on a 4xx/5xx failure", async () => {

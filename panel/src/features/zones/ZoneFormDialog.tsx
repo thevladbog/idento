@@ -10,6 +10,7 @@ import { useEventZonesWithStats, ZONES_KEY } from "./hooks";
 import {
   ZONE_COLOR_CLASSES, ZONE_COLOR_KEYS, zoneColorKey, type ZoneColorKey,
 } from "./zoneColors";
+import { READINESS_KEY } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 
@@ -228,6 +229,12 @@ export function ZoneFormDialog({
       {
         onSuccess: (_data, _vars, onMutateResult) => {
           void queryClient.invalidateQueries({ queryKey: ZONES_KEY(eventId) });
+          // PR #66 review (P2): the backend recomputes the zones readiness
+          // step from the live zone list, so creating a zone must refresh
+          // the workspace rail's zones step too. CREATE only — the edit
+          // path above deliberately doesn't touch readiness (renaming or
+          // recoloring a zone changes no counts).
+          void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
           if (onMutateResult?.sessionId !== sessionRef.current) return;
           onOpenChange(false);
         },

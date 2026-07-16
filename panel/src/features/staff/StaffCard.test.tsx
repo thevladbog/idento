@@ -7,8 +7,16 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { StaffCard, type StaffCardProps } from "./StaffCard";
 import type { StaffUser } from "./hooks";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
+
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// pattern as DangerZoneCard.test.tsx's ListObserver.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
 
 let qrTokenCallCount = 0;
 let qrTokenCallIds: string[] = [];
@@ -20,8 +28,13 @@ let userZonesResponse: unknown[] = [];
 let revokeCalls: { eventId: string; userId: string }[] = [];
 let revokeStatus = 200;
 let revokeDelayMs = 0;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.post("http://api.test/api/users/:id/qr-token", async ({ params }) => {
     qrTokenCallCount += 1;
     qrTokenCallIds.push(params.id as string);
@@ -95,6 +108,7 @@ describe("StaffCard — QR area + print flow", () => {
     revokeCalls = [];
     revokeStatus = 200;
     revokeDelayMs = 0;
+    readinessHitCount = 0;
   });
 
   describe("QR area states (admin)", () => {
@@ -371,6 +385,35 @@ describe("StaffCard — QR area + print flow", () => {
     });
   });
 
+  // PR #66 review (P2): Print/Generate already disable themselves while a
+  // token is being issued, but Zones and Revoke… did not — an admin could
+  // revoke a member mid-generation, and the generate's unconditional
+  // onSuccess would still cache a token (and could open the print sheet)
+  // for a just-revoked user. The whole action row must be inert for the
+  // pending window.
+  describe("row busy gating while a QR token is being issued", () => {
+    it("disables Zones and Revoke… while the (confirm-less) generate is pending, and re-enables both once it settles", async () => {
+      qrTokenDelayMs = 60;
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ id: "u6", has_qr_token: false }) });
+
+      const zonesButton = screen.getByRole("button", { name: "Zones" });
+      const revokeButton = screen.getByRole("button", { name: "Revoke…" });
+      expect(zonesButton).toBeEnabled();
+      expect(revokeButton).toBeEnabled();
+
+      // Confirm-less path: never-issued -> the dashed box's own Generate.
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      await waitFor(() => expect(qrTokenCallCount).toBe(1));
+      expect(zonesButton).toBeDisabled();
+      expect(revokeButton).toBeDisabled();
+
+      await waitFor(() => expect(zonesButton).toBeEnabled());
+      expect(revokeButton).toBeEnabled();
+    });
+  });
+
   describe("Zones action", () => {
     it("Zones is enabled for canManage (admin or manager) and opens the StaffZonesDialog for this exact user", async () => {
       zonesResponse = [
@@ -403,11 +446,26 @@ describe("StaffCard — QR area + print flow", () => {
       expect(revokeCalls).toHaveLength(0);
     });
 
-    it("confirming DELETEs /api/events/{event_id}/staff/{user_id} and invalidates STAFF_KEY(eventId) on success", async () => {
+    it("confirming DELETEs /api/events/{event_id}/staff/{user_id} and invalidates STAFF_KEY(eventId) AND readiness (P1 fix) on success", async () => {
       const user = userEvent.setup();
-      const { queryClient } = renderCard({
-        user: staffUser({ id: "u7", email: "bob@example.com" }), eventId: "evt-9",
-      });
+      const props: StaffCardProps = {
+        user: staffUser({ id: "u7", email: "bob@example.com" }),
+        zoneNames: [],
+        eventId: "evt-9",
+        isAdmin: true,
+        canManage: true,
+        cachedToken: undefined,
+        onTokenCached: vi.fn(),
+        onOpenPrintSheet: vi.fn(),
+        disabled: false,
+      };
+      const { queryClient } = renderWithProviders(
+        <>
+          <ReadinessObserver eventId="evt-9" />
+          <StaffCard {...props} />
+        </>,
+      );
+      await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
       await user.click(screen.getByRole("button", { name: "Revoke…" }));
@@ -429,6 +487,8 @@ describe("StaffCard — QR area + print flow", () => {
           queryKey: ["get", "/api/users/{user_id}/zones", { params: { path: { user_id: "u7" } } }],
         }),
       );
+      // The genuinely subscribed readiness observer actually refetches.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
     });
 
     it("keeps the confirm dialog open and shows an inline error on failure", async () => {

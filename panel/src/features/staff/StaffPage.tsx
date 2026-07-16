@@ -266,11 +266,18 @@ export function StaffPage() {
           {/* Reconciliation #15: "Print all" mirrors the per-card "Print
               card" restriction (admin-only) — always rendered, but disabled
               with a discoverable reason for anyone who will never be
-              allowed to use it. */}
+              allowed to use it. PR #66 review (P2): also gated on BOTH
+              queries having genuinely SUCCEEDED and the staff list being
+              non-empty — the batch loop builds every card's zones caption
+              from zoneNameById (zonesQuery.data ?? []), so starting it while
+              zones are loading/errored would bake a false "No zones
+              assigned" onto printed cards, and an unverified staff list
+              would let a 0-member batch be confirmed. The title hint stays
+              admin-only (the transient states need no permanent tooltip). */}
           <Button
             type="button"
             variant="outline"
-            disabled={!isAdmin || printAllBusy}
+            disabled={!isAdmin || printAllBusy || !staffQuery.isSuccess || !zonesQuery.isSuccess || staff.length === 0}
             title={!isAdmin ? t("staffPrintAllDisabledHint") : undefined}
             onClick={() => setPrintAllOpen(true)}
           >

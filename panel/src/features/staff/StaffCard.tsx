@@ -10,6 +10,7 @@ import { QrSvg } from "./QrSvg";
 import { StaffZonesDialog } from "./StaffZonesDialog";
 import { STAFF_KEY } from "./hooks";
 import type { StaffUser } from "./hooks";
+import { READINESS_KEY } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 
 export interface StaffCardProps {
@@ -243,8 +244,12 @@ export function StaffCard({
           // USER_ZONES_KEY(user.id): revoking event-day staff access doesn't
           // change this user's zone assignments, and refetching that query
           // for a row that's about to disappear from the list would just be
-          // error noise, not a real cache-correctness need.
+          // error noise, not a real cache-correctness need. Readiness IS
+          // invalidated (PR #66 review, P1): the backend recomputes the
+          // staff readiness step from the live staff list, so revoking the
+          // last member must un-done the workspace rail's staff step.
           void queryClient.invalidateQueries({ queryKey: STAFF_KEY(eventId) });
+          void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
           if (onMutateResult?.sessionId !== revokeSessionRef.current) return;
           setRevokeConfirmOpen(false);
         },
@@ -349,9 +354,17 @@ export function StaffCard({
           >
             {t("staffActionPrint")}
           </Button>
+          {/* PR #66 review (P2): both gated on generateToken.isPending
+              (NOT controlsDisabled — Zones/Revoke are manager-allowed, so
+              they must not inherit its !isAdmin term): revoking a member
+              mid-generation would still let the generate's unconditional
+              onSuccess cache a token — and open the print sheet — for a
+              user who was just revoked. Print/Generate already gate
+              themselves via controlsDisabled above. */}
           <Button
             type="button"
             variant="link"
+            disabled={generateToken.isPending}
             onClick={() => setZonesOpen(true)}
             className="h-auto p-0 text-caption text-muted-foreground hover:no-underline"
           >
@@ -360,6 +373,7 @@ export function StaffCard({
           <Button
             type="button"
             variant="link"
+            disabled={generateToken.isPending}
             onClick={() => setRevokeConfirmOpen(true)}
             className="ml-auto h-auto p-0 text-caption text-destructive hover:no-underline"
           >

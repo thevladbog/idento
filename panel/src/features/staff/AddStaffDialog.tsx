@@ -8,6 +8,7 @@ import { z } from "zod";
 import { ROLE_LABEL_KEYS } from "./StaffCard";
 import { STAFF_KEY, useEventStaff, useTenantUsers } from "./hooks";
 import type { StaffUser } from "./hooks";
+import { READINESS_KEY } from "../events/hooks";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
 
@@ -135,8 +136,16 @@ export function AddStaffDialog({
     if (isPending) e.preventDefault();
   }
 
+  // Called by BOTH modes' assign-success paths (existing-user assign, and
+  // the create→assign chain). Readiness is invalidated alongside the staff
+  // list (PR #66 review, P1): the backend recomputes the staff readiness
+  // step from the live staff list, so adding the first member must flip the
+  // workspace rail's staff step without waiting for an unrelated refetch.
+  // Unconditional, same as the staff-list invalidation — the assignment
+  // really happened server-side even if this dialog session was abandoned.
   function invalidateStaffList() {
     void queryClient.invalidateQueries({ queryKey: STAFF_KEY(eventId) });
+    void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
   }
 
   function handleExistingSubmit(event: React.FormEvent<HTMLFormElement>) {

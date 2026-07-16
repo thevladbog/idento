@@ -353,6 +353,7 @@
   "zonesRulesAddClause": "+ or condition",
   "zonesRulesNoConditions": "No conditions yet — everyone has access until you add one and save.",
   "zonesRulesValidationHint": "Fill in every condition and remove duplicates before saving.",
+  "zonesRulesDuplicateAdvanced": "Already constrained by an advanced rule",
   "zonesRulesAdvancedHeading": "Also applies (view only)",
   "zonesRulesAdvanced": "{{category}} — {{detail}}",
   "zonesRulesAdvancedDenied": "denied",

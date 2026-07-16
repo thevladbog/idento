@@ -147,7 +147,24 @@ export function ZoneRuleEditor({
     return trimmed !== "" && (trimmedValueCounts.get(trimmed) ?? 0) > 1;
   }
 
-  const hasInvalidClause = clauses.some((clause) => isBlank(clause.value) || isDuplicate(clause.value));
+  // PR #66 review (P2): zone_access_rules has a UNIQUE index on
+  // (zone_id, category) — backend/migrations/000010_event_zones.up.sql:40 —
+  // and the PUT is delete-and-replace of the WHOLE set, so a simple clause
+  // duplicating a read-only advanced (deny/time-windowed) rule's category
+  // fails the entire save wholesale. Exact match on the RAW trimmed value
+  // (case-sensitive — the index is on the raw column, so "Staff" and
+  // "staff" genuinely coexist) against the passthrough rules already held
+  // in component state.
+  const advancedCategories = new Set(complexRules.map((rule) => rule.category));
+
+  function isAdvancedDuplicate(value: string): boolean {
+    const trimmed = value.trim();
+    return trimmed !== "" && advancedCategories.has(trimmed);
+  }
+
+  const hasInvalidClause = clauses.some(
+    (clause) => isBlank(clause.value) || isDuplicate(clause.value) || isAdvancedDuplicate(clause.value),
+  );
 
   function updateClauseValue(id: string, value: string) {
     setClauses((prev) => prev.map((clause) => (clause.id === id ? { ...clause, value } : clause)));
@@ -235,32 +252,44 @@ export function ZoneRuleEditor({
           <p className="text-caption text-muted-foreground">{t("zonesRulesNoConditions")}</p>
         ) : null}
         {clauses.map((clause, index) => {
-          const invalid = isBlank(clause.value) || isDuplicate(clause.value);
+          const advancedCollision = isAdvancedDuplicate(clause.value);
+          const invalid = isBlank(clause.value) || isDuplicate(clause.value) || advancedCollision;
           return (
-            <div key={clause.id} className="flex items-center gap-2">
-              <span className="text-body text-muted-foreground">{t("zonesRulesSentenceWhen")}</span>
-              <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-caption font-medium text-muted-foreground">
-                {t("zonesRulesCategoryChip")}
-              </span>
-              <span className="text-body text-muted-foreground">{t("zonesRulesSentenceIs")}</span>
-              <Input
-                aria-label={t("zonesRulesValueInputLabel", { index: index + 1 })}
-                aria-invalid={invalid}
-                value={clause.value}
-                placeholder={t("zonesRulesValuePlaceholder")}
-                disabled={saveRules.isPending}
-                onChange={(e) => updateClauseValue(clause.id, e.target.value)}
-                className={cn("max-w-xs", invalid && "border-destructive")}
-              />
-              <button
-                type="button"
-                aria-label={t("zonesRulesRemoveClause", { index: index + 1 })}
-                disabled={saveRules.isPending}
-                className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => removeClause(clause.id)}
-              >
-                <X aria-hidden className="size-4" />
-              </button>
+            <div key={clause.id} className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="text-body text-muted-foreground">{t("zonesRulesSentenceWhen")}</span>
+                <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-caption font-medium text-muted-foreground">
+                  {t("zonesRulesCategoryChip")}
+                </span>
+                <span className="text-body text-muted-foreground">{t("zonesRulesSentenceIs")}</span>
+                <Input
+                  aria-label={t("zonesRulesValueInputLabel", { index: index + 1 })}
+                  aria-invalid={invalid}
+                  value={clause.value}
+                  placeholder={t("zonesRulesValuePlaceholder")}
+                  disabled={saveRules.isPending}
+                  onChange={(e) => updateClauseValue(clause.id, e.target.value)}
+                  className={cn("max-w-xs", invalid && "border-destructive")}
+                />
+                <button
+                  type="button"
+                  aria-label={t("zonesRulesRemoveClause", { index: index + 1 })}
+                  disabled={saveRules.isPending}
+                  className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => removeClause(clause.id)}
+                >
+                  <X aria-hidden className="size-4" />
+                </button>
+              </div>
+              {/* Dedicated per-clause message (PR #66 review, P2) — this
+                  collision has its own copy because the generic
+                  zonesRulesValidationHint ("remove duplicates") points at
+                  the EDITABLE clauses; here the conflicting rule is in the
+                  read-only advanced list below, which the user can't edit
+                  from this UI at all. */}
+              {advancedCollision ? (
+                <p className="text-caption text-destructive">{t("zonesRulesDuplicateAdvanced")}</p>
+              ) : null}
             </div>
           );
         })}
