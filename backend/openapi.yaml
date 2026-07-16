@@ -3039,8 +3039,9 @@ paths:
     post:
       operationId: assignStaffToZone
       summary: >
-        Assign a staff member to a zone (admin/manager only; silently
-        no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING)
+        Assign an existing tenant user as staff on a zone (admin/manager
+        only; silently no-ops on a duplicate pair — store uses ON CONFLICT
+        DO NOTHING)
       security: [{ bearerAuth: [] }]
       parameters:
         - name: zone_id
@@ -3089,7 +3090,12 @@ paths:
         "404":
           description: >
             Zone does not exist, or its parent event does not exist / belongs
-            to a different tenant (requireZoneOwnership).
+            to a different tenant (requireZoneOwnership). Or the target
+            user_id has no role in the caller's active tenant ("User not
+            found" — GetUserTenantRole returns "", covering both "user does
+            not exist" and "user belongs to a different tenant", same
+            uniform 404 either way; same membership check as
+            POST /api/events/{event_id}/staff and GET /api/users/{user_id}/zones).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3098,7 +3104,10 @@ paths:
             Store failure resolving the zone's event ownership ("Internal
             error", from the nested requireEventOwnership call inside
             requireZoneOwnership — a GetEventZoneByID failure itself is
-            masked as 404 above), or persisting the assignment ("Failed to
+            masked as 404 above), checking the target user's tenant
+            membership ("Failed to verify user membership" — unlike the
+            membership 404 above, a GetUserTenantRole error is surfaced
+            honestly as a 500), or persisting the assignment ("Failed to
             assign staff").
           content:
             application/json:
