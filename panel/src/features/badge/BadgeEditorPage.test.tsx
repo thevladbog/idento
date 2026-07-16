@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { BadgeEditorPage } from "./BadgeEditorPage";
 import { startMswServer } from "../../test/msw";
@@ -38,15 +38,30 @@ function renderPage() {
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
+  return { router, queryClient };
 }
 
 let templateResponse: unknown = { template: null, version: 0 };
 let templateStatus = 200;
+let fetchCount = 0;
+
+// evt-2 always serves a fixed, visibly-different template (100 × 60 mm @
+// 203 dpi) so the cross-event navigation test below can tell the two
+// events' docs apart; every other event id serves the mutable
+// `templateResponse` fixture.
+const EVT_2_RESPONSE = {
+  template: { width_mm: 100, height_mm: 60, dpi: 203, elements: [] },
+  version: 7,
+};
 
 const server = startMswServer(
-  http.get("http://api.test/api/events/:id/badge-template", () => {
+  http.get("http://api.test/api/events/:id/badge-template", ({ params }) => {
+    fetchCount += 1;
     if (templateStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: templateStatus });
+    }
+    if (params.id === "evt-2") {
+      return HttpResponse.json(EVT_2_RESPONSE);
     }
     return HttpResponse.json(templateResponse);
   }),
@@ -58,6 +73,7 @@ describe("BadgeEditorPage", () => {
     window.__ENV__ = { API_URL: "http://api.test" };
     templateResponse = { template: null, version: 0 };
     templateStatus = 200;
+    fetchCount = 0;
   });
 
   it("renders the top bar title and the locked Test print / ZPL preview actions", async () => {
@@ -111,6 +127,49 @@ describe("BadgeEditorPage", () => {
 
     expect(await screen.findByTestId("badge-pane-elements")).toBeInTheDocument();
     expect(screen.getByTestId("badge-pane-properties")).toBeInTheDocument();
+  });
+
+  it("does not re-dispatch load over the editor's state when a background refetch returns changed data", async () => {
+    templateResponse = { template: null, version: 0 };
+    const { queryClient } = renderPage();
+
+    const canvas = await screen.findByTestId("badge-pane-canvas");
+    expect(canvas.textContent).toMatch(/90/); // parseTemplateDoc(null) defaults loaded
+
+    // Another operator saved meanwhile: a background refetch (window
+    // refocus, or a BADGE_TEMPLATE_KEY invalidation) now returns a
+    // different template. The page must NOT re-dispatch "load" — that
+    // would clobber the operator's in-progress editor state (doc, dirty,
+    // selectedId) mid-session. The loaded baseline only ever changes via
+    // an explicit reload path (Task 10's conflict handling).
+    templateResponse = EVT_2_RESPONSE;
+    await act(async () => {
+      await queryClient.invalidateQueries();
+    });
+    await waitFor(() => expect(fetchCount).toBe(2));
+    // Let any (buggy) re-load dispatch flush before the negative assertion.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    const canvasAfter = screen.getByTestId("badge-pane-canvas");
+    expect(canvasAfter.textContent).toMatch(/90/);
+    expect(canvasAfter.textContent).not.toMatch(/100/);
+  });
+
+  it("re-seeds the editor from the new event's template when navigating to another event", async () => {
+    const { router } = renderPage();
+
+    const canvas = await screen.findByTestId("badge-pane-canvas");
+    expect(canvas.textContent).toMatch(/90/); // evt-1's doc
+
+    // The refetch guard above must be scoped to ONE event — switching to a
+    // different event's editor re-seeds from that event's template rather
+    // than showing evt-1's stale doc.
+    await act(async () => {
+      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+    expect(screen.getByTestId("badge-pane-canvas").textContent).not.toMatch(/90/);
   });
 
   it("shows the canvas placeholder (not the empty-state guidance) once the template already has elements", async () => {

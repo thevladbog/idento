@@ -44,14 +44,39 @@ export function BadgeEditorPage() {
     () => initialEditorState(parseTemplateDoc(null), 0),
   );
 
+  // The raw `template` value the CURRENT doc was loaded from. Task 10's
+  // save must serialize against THIS snapshot (serializeTemplateDoc's
+  // `originalRaw`), and refresh it on successful save/conflict-reload —
+  // never against a later `templateQuery.data.template`, which a
+  // background refetch can advance past the loaded baseline (mispairing
+  // per-element extras while the version check 409s). Captured at the
+  // same moment "load" is dispatched so the doc/version/raw triple can
+  // never drift apart.
+  const originalRawRef = React.useRef<unknown>(null);
+
+  // Seeds the reducer from the fetched template exactly once per event —
+  // an `initializedRef` guard (same pattern as ZoneRuleEditor.tsx's
+  // clause derivation) stops a background refetch (window refocus, or a
+  // BADGE_TEMPLATE_KEY invalidation after another operator's save) from
+  // re-dispatching "load" and clobbering in-progress edits (doc, dirty,
+  // selectedId all reset). Reset whenever the target event changes so
+  // navigating between events re-seeds from the new event's template.
+  const initializedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!templateQuery.data) return;
+    initializedRef.current = false;
+  }, [eventId]);
+
+  React.useEffect(() => {
+    if (initializedRef.current) return;
+    if (!templateQuery.isSuccess) return;
+    originalRawRef.current = templateQuery.data.template;
     dispatch({
       type: "load",
       doc: parseTemplateDoc(templateQuery.data.template),
       version: templateQuery.data.version,
     });
-  }, [templateQuery.data]);
+    initializedRef.current = true;
+  }, [templateQuery.isSuccess, templateQuery.data]);
 
   return (
     <div className="flex h-full min-h-[420px] flex-col gap-4">
