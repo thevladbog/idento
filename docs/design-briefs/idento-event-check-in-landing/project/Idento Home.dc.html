@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#ffffff;font-family:'Inter',system-ui,sans-serif;color:#09090b}
+a{color:#00935e;text-decoration:none}a:hover{color:#00714a}
+summary{list-style:none;cursor:pointer}summary::-webkit-details-marker{display:none}
+@keyframes ide-scan{0%{top:8px;opacity:1}26%{top:74px;opacity:1}30%,100%{top:8px;opacity:0}}
+@keyframes ide-scan-sm{0%{top:2px;opacity:1}26%{top:30px;opacity:1}30%,100%{top:2px;opacity:0}}
+@keyframes ide-check{0%,32%{transform:scale(.55);opacity:.25}40%{transform:scale(1.12);opacity:1}46%,100%{transform:scale(1);opacity:1}}
+@keyframes ide-badge{0%,58%{transform:translateY(-56px)}76%,94%{transform:translateY(6px)}100%{transform:translateY(-56px)}}
+@keyframes ide-badge-lg{0%,56%{transform:translateY(-160px)}78%,94%{transform:translateY(0)}100%{transform:translateY(-160px)}}
+@keyframes ide-hl{0%{border-color:#00935e;box-shadow:0 12px 28px -14px rgba(0,147,94,.45)}26%{border-color:#00935e;box-shadow:0 12px 28px -14px rgba(0,147,94,.45)}34%,100%{border-color:#e9e9ec;box-shadow:0 1px 2px rgba(9,9,11,.04)}}
+@keyframes ide-flow{0%{background-position:0 0}100%{background-position:0 24px}}
+.ide-off *{animation:none!important}
+@media(min-width:1680px){.ide-cw{max-width:1400px!important}}
+@media(max-width:1023px){
+.ide-navlinks{display:none!important}
+.ide-hero{grid-template-columns:1fr!important;gap:44px!important}
+.ide-heroviz{max-width:620px;margin:0 auto 90px;width:100%}
+.ide-facts{display:grid!important;grid-template-columns:1fr 1fr!important;gap:18px!important}
+.ide-g4{grid-template-columns:repeat(2,1fr)!important}
+.ide-2col{grid-template-columns:1fr!important}
+.ide-g5{grid-template-columns:repeat(3,1fr)!important}
+}
+@media(max-width:900px){
+.ide-g3{grid-template-columns:1fr!important;max-width:560px;margin-left:auto!important;margin-right:auto!important}
+}
+@media(max-width:767px){
+.ide-c{padding-left:20px!important;padding-right:20px!important}
+h1{font-size:36px!important}
+h2{font-size:28px!important}
+.ide-navx{display:none!important}
+.ide-g4{grid-template-columns:1fr!important}
+.ide-g5{grid-template-columns:repeat(2,1fr)!important}
+.ide-cmpwrap{overflow-x:auto!important}
+.ide-cmprow{min-width:600px}
+.ide-foot{grid-template-columns:1fr 1fr!important;gap:28px!important}
+.ide-foot>div:first-child{grid-column:1/-1}
+}
+@media(max-width:600px){
+.ide-heromock{grid-template-columns:44px 1fr!important}
+.ide-heromock>div:last-child{display:none}
+}
+@media (prefers-reduced-motion: reduce){.ide-anim,.ide-anim *{animation:none!important}}
+</style>
+</helmet>
+
+<!-- ===================== NAV ===================== -->
+<div data-screen-label="Навигация" style="position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);border-bottom:1px solid #f1f1f3">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;height:68px;padding:0 32px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;border-radius:7px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px">И</div>
+      <span style="font-weight:700;font-size:18px;color:#09090b;letter-spacing:-0.01em">Иденто</span>
+    </div>
+    <div class="ide-navlinks" style="display:flex;gap:30px;font-size:14px;font-weight:500;color:#52525b">
+      <span>Возможности</span><span>Приложения</span><span>Как это работает</span><span>Офлайн</span><span>Цены</span><span>FAQ</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="ide-navx" style="font-size:13px;font-weight:600;color:#71717a;border:1px solid #e4e4e7;border-radius:6px;padding:4px 8px">RU</span>
+      <div class="ide-navx" style="width:28px;height:28px;border-radius:50%;border:1px solid #e4e4e7;display:grid;place-items:center;color:#71717a;font-size:13px">☾</div>
+      <span class="ide-navx" style="font-size:14px;font-weight:500;color:#3f3f46">Войти</span>
+      <div style="background:#00935e;color:#fff;font-size:14px;font-weight:600;padding:9px 18px;border-radius:8px;cursor:pointer" style-hover="background:#00714a">{{ cta }}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== HERO ===================== -->
+<div data-screen-label="Хиро" style="background:linear-gradient(180deg,#ffffff 30%,#f4faf7)">
+  <div class="ide-c ide-cw ide-hero" style="max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1.02fr 1fr;gap:56px;align-items:center;padding:60px 32px 100px">
+    <div style="display:flex;flex-direction:column;gap:24px">
+      <div style="display:flex;align-items:center;gap:8px;align-self:flex-start;background:#e7f5ee;color:#00714a;font-size:13px;font-weight:600;padding:6px 12px;border-radius:99px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#00935e"></span>
+        Работает полностью без интернета
+      </div>
+      <h1 style="margin:0;font-size:52px;line-height:1.08;letter-spacing:-0.03em;font-weight:800;color:#09090b">Регистрация гостей и печать бейджей — онлайн или офлайн</h1>
+      <p style="margin:0;font-size:18px;line-height:1.6;color:#52525b;max-width:520px">Импортируйте любой CSV, соберите бейдж в визуальном редакторе, отмечайте гостей по QR-коду и печатайте бейджи за секунды. Локальная база — очередь идёт, даже если Wi-Fi в зале упал.</p>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="background:#00935e;color:#fff;font-size:16px;font-weight:600;padding:14px 26px;border-radius:8px;box-shadow:0 2px 8px rgba(0,147,94,.25);cursor:pointer" style-hover="background:#00714a">{{ cta }}</div>
+        <div style="display:flex;align-items:center;gap:9px;border:1px solid #e4e4e7;color:#18181b;font-size:16px;font-weight:600;padding:13px 22px;border-radius:8px;background:#fff;cursor:pointer" style-hover="border-color:#00935e">
+          <span style="width:22px;height:22px;border-radius:50%;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:10px">▶</span>
+          Смотреть демо
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;font-size:13px;color:#71717a;flex-wrap:wrap">
+        <span>✓ Без банковской карты</span>
+        <span>✓ До 100 гостей — бесплатно</span>
+        <span>✓ Self-hosted вариант</span>
+      </div>
+    </div>
+
+    <!-- visual: browser editor + animated printer -->
+    <div style="position:relative" class="ide-heroviz ide-anim {{ animOff }}">
+      <div style="background:#fff;border:1px solid #e4e4e7;border-radius:12px;box-shadow:0 24px 60px -20px rgba(9,9,11,.18);overflow:hidden">
+        <div style="display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-bottom:1px solid #f1f1f3;background:#fafafa">
+          <span style="width:10px;height:10px;border-radius:50%;background:#e4e4e7"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#e4e4e7"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#e4e4e7"></span>
+          <div style="margin-left:12px;flex:1;max-width:340px;background:#f1f1f3;border-radius:6px;font-size:11.5px;color:#71717a;padding:5px 12px;font-family:ui-monospace,monospace">app.idento.io/badges/editor</div>
+        </div>
+        <div class="ide-heromock" style="display:grid;grid-template-columns:44px 1fr 150px;height:300px">
+          <div style="border-right:1px solid #f1f1f3;display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:14px">
+            <div style="width:24px;height:24px;border-radius:6px;background:#e7f5ee"></div>
+            <div style="width:24px;height:24px;border-radius:6px;background:#f4f4f5"></div>
+            <div style="width:24px;height:24px;border-radius:6px;background:#f4f4f5"></div>
+            <div style="width:24px;height:24px;border-radius:6px;background:#f4f4f5"></div>
+          </div>
+          <div style="background:repeating-linear-gradient(45deg,#fafafa 0 14px,#f4f6f5 14px 28px);display:grid;place-items:center">
+            <div style="width:180px;height:244px;background:#fff;border:1.5px dashed #00935e;border-radius:10px;display:flex;flex-direction:column;align-items:center;padding:16px 14px;gap:7px">
+              <div style="width:44px;height:8px;border-radius:4px;background:#e7f5ee"></div>
+              <div style="width:64px;height:64px;border-radius:50%;background:#f4f4f5;margin-top:6px"></div>
+              <div style="width:110px;height:12px;border-radius:4px;background:#d4d4d8;margin-top:6px"></div>
+              <div style="width:80px;height:9px;border-radius:4px;background:#e4e4e7"></div>
+              <svg width="46" height="46" viewBox="0 0 56 56" style="margin-top:auto"><g fill="#18181b"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="2" width="6" height="6"></rect><rect x="32" y="10" width="6" height="6"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="40" y="26" width="6" height="6"></rect><rect x="26" y="40" width="6" height="6"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect><rect x="20" y="32" width="6" height="6"></rect></g><g fill="#ffffff"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+            </div>
+          </div>
+          <div style="border-left:1px solid #f1f1f3;padding:14px 12px;display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:9px;font-weight:800;letter-spacing:.08em;color:#a1a1aa">ПОЛЕ ДАННЫХ</div>
+            <div style="border:1px solid #ececef;border-radius:6px;padding:6px 8px;font-family:ui-monospace,monospace;font-size:10px;color:#18181b;background:#fafafa">{имя} {фамилия}</div>
+            <div style="border:1px solid #ececef;border-radius:6px;padding:6px 8px;font-family:ui-monospace,monospace;font-size:10px;color:#71717a;background:#fafafa">{компания}</div>
+            <div style="font-size:9px;font-weight:800;letter-spacing:.08em;color:#a1a1aa;margin-top:4px">ШРИФТ</div>
+            <div style="border:1px solid #ececef;border-radius:6px;padding:6px 8px;font-size:10px;color:#18181b;background:#fafafa">Inter · 24 px</div>
+            <div style="background:#e7f5ee;color:#00714a;border-radius:6px;padding:8px;text-align:center;font-size:10.5px;font-weight:700;margin-top:auto">Тестовая печать</div>
+          </div>
+        </div>
+      </div>
+      <div style="position:absolute;right:-14px;bottom:-92px;display:flex;flex-direction:column;align-items:center">
+        <div style="width:196px;height:52px;background:#27272a;border-radius:12px;position:relative;z-index:2;display:grid;place-items:center;box-shadow:0 14px 30px -12px rgba(9,9,11,.4)">
+          <div style="width:120px;height:5px;border-radius:3px;background:#3f3f46"></div>
+          <div style="position:absolute;right:12px;top:12px;width:7px;height:7px;border-radius:50%;background:#2ee6a8;box-shadow:0 0 8px rgba(46,230,168,.8)"></div>
+        </div>
+        <div style="width:160px;height:170px;overflow:hidden;display:flex;justify-content:center">
+          <div style="width:150px;height:164px;background:#fff;border:1px solid #e4e4e7;border-radius:0 0 10px 10px;box-shadow:0 18px 36px -14px rgba(9,9,11,.3);padding:14px 12px 12px;display:flex;flex-direction:column;align-items:center;gap:5px;animation:ide-badge-lg 6s infinite">
+            <div style="font-weight:800;font-size:15px;color:#09090b;letter-spacing:-0.02em">Анна Соколова</div>
+            <div style="font-size:10.5px;color:#71717a">Мосэкспо · Организатор</div>
+            <div style="background:#e7f5ee;color:#00714a;font-size:9px;font-weight:700;padding:2px 8px;border-radius:99px;letter-spacing:.06em">СПИКЕР</div>
+            <svg width="46" height="46" viewBox="0 0 56 56" style="margin-top:4px"><g fill="#18181b"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="2" width="6" height="6"></rect><rect x="32" y="10" width="6" height="6"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="40" y="26" width="6" height="6"></rect><rect x="26" y="40" width="6" height="6"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect><rect x="20" y="32" width="6" height="6"></rect></g><g fill="#ffffff"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+          </div>
+        </div>
+        <div style="font-size:11.5px;color:#a1a1aa;margin-top:2px">печать · 2–4 сек</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FACTS ===================== -->
+<div data-screen-label="Факты" style="border-top:1px solid #f1f1f3;border-bottom:1px solid #f1f1f3;background:#fff">
+  <div class="ide-c ide-cw ide-facts" style="max-width:1200px;margin:0 auto;display:flex;justify-content:space-between;gap:32px;padding:22px 32px">
+    <div style="text-align:center"><div style="font-weight:700;font-size:15px;color:#09090b">4 платформы</div><div style="font-size:12.5px;color:#71717a;margin-top:2px">Web · Android · Desktop · Raspberry Pi</div></div>
+    <div style="text-align:center"><div style="font-weight:700;font-size:15px;color:#09090b">Принтеры Zebra, Dymo, Brother</div><div style="font-size:12.5px;color:#71717a;margin-top:2px">термо, этикеточные и офисные</div></div>
+    <div style="text-align:center"><div style="font-weight:700;font-size:15px;color:#09090b">100% офлайн</div><div style="font-size:12.5px;color:#71717a;margin-top:2px">локальная база, автосинхронизация</div></div>
+    <div style="text-align:center"><div style="font-weight:700;font-size:15px;color:#09090b">Self-hosted</div><div style="font-size:12.5px;color:#71717a;margin-top:2px">данные на вашей инфраструктуре</div></div>
+  </div>
+</div>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<div data-screen-label="Как это работает" class="ide-anim {{ animOff }}" style="background:#fff">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;margin-bottom:44px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:10px">Как это работает</div>
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">От списка в CSV до бейджа в руках</h2>
+    </div>
+    <div class="ide-g4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px">
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:26px 22px;background:#fff;animation:ide-hl 8s infinite;animation-delay:0s">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:28px;height:28px;border-radius:50%;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-size:13px;font-weight:800">1</div>
+          <div style="font-size:16px;font-weight:700;color:#09090b">Импорт</div>
+        </div>
+        <div style="height:64px;border-radius:8px;background:#fafafa;border:1px dashed #d4d4d8;display:grid;place-items:center;font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-bottom:12px">guests.csv · win-1251 ✓ · 847 строк</div>
+        <div style="font-size:13.5px;line-height:1.5;color:#52525b">Любой CSV — кодировка и колонки распознаются автоматически</div>
+      </div>
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:26px 22px;background:#fff;animation:ide-hl 8s infinite;animation-delay:2s">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:28px;height:28px;border-radius:50%;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-size:13px;font-weight:800">2</div>
+          <div style="font-size:16px;font-weight:700;color:#09090b">Дизайн бейджа</div>
+        </div>
+        <div style="height:64px;border-radius:8px;background:#fafafa;border:1px dashed #d4d4d8;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px">
+          <div style="width:34px;height:46px;background:#fff;border:1px solid #00935e;border-radius:4px"></div>
+          <div style="width:34px;height:46px;background:#fff;border:1px dashed #d4d4d8;border-radius:4px"></div>
+        </div>
+        <div style="font-size:13.5px;line-height:1.5;color:#52525b">Drag-and-drop редактор, поля подставляются из данных</div>
+      </div>
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:26px 22px;background:#fff;animation:ide-hl 8s infinite;animation-delay:4s">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:28px;height:28px;border-radius:50%;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-size:13px;font-weight:800">3</div>
+          <div style="font-size:16px;font-weight:700;color:#09090b">Чек-ин и печать</div>
+        </div>
+        <div style="height:64px;border-radius:8px;background:#fafafa;border:1px dashed #d4d4d8;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px">
+          <svg width="34" height="34" viewBox="0 0 56 56"><g fill="#18181b"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect></g><g fill="#fafafa"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+          <span style="color:#00935e;font-weight:800">→</span>
+          <div style="width:26px;height:34px;background:#fff;border:1px solid #d4d4d8;border-radius:3px"></div>
+        </div>
+        <div style="font-size:13.5px;line-height:1.5;color:#52525b">QR, штрих-код или поиск по имени — бейдж сразу в печать</div>
+      </div>
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:26px 22px;background:#fff;animation:ide-hl 8s infinite;animation-delay:6s">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:28px;height:28px;border-radius:50%;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-size:13px;font-weight:800">4</div>
+          <div style="font-size:16px;font-weight:700;color:#09090b">Синхронизация</div>
+        </div>
+        <div style="height:64px;border-radius:8px;background:#fafafa;border:1px dashed #d4d4d8;display:grid;place-items:center;margin-bottom:12px">
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:#00935e">киоск ⇄ телефон ⇄ облако</div>
+        </div>
+        <div style="font-size:13.5px;line-height:1.5;color:#52525b">Устройства сходятся автоматически, отчёт — сразу после события</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== DAY-OF LOOP ===================== -->
+<div data-screen-label="День мероприятия" class="ide-anim {{ animOff }}" style="background:#f4faf7;border-top:1px solid #f1f1f3">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:72px 32px">
+    <div style="text-align:center;margin-bottom:36px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:10px">День мероприятия</div>
+      <h2 style="margin:0;font-size:34px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Меньше 5 секунд на гостя</h2>
+    </div>
+    <div class="ide-g3" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;max-width:960px;margin:0 auto">
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;background:#fff;animation:ide-hl 6s infinite;animation-delay:0s">
+        <div style="width:84px;height:84px;display:grid;place-items:center">
+          <div style="position:relative;width:54px;height:84px;background:#111413;border-radius:9px;border:2px solid #27272a;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;overflow:hidden">
+            <div style="position:relative;width:38px;height:38px;border:1.5px dashed rgba(46,230,168,.7);border-radius:4px;display:grid;place-items:center;overflow:hidden">
+              <svg width="24" height="24" viewBox="0 0 56 56"><g fill="#ffffff"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect></g><g fill="#111413"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+              <div style="position:absolute;left:2px;right:2px;height:2px;border-radius:2px;background:#2ee6a8;box-shadow:0 0 8px rgba(46,230,168,.8);top:2px;animation:ide-scan-sm 6s infinite"></div>
+            </div>
+            <div style="width:38px;height:9px;border-radius:3px;background:#00935e"></div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#09090b">Скан QR</div>
+          <div style="font-size:12.5px;color:#71717a;margin-top:3px">телефон, киоск или USB-сканер</div>
+        </div>
+      </div>
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;background:#fff;animation:ide-hl 6s infinite;animation-delay:2s">
+        <div style="width:84px;height:84px;display:grid;place-items:center">
+          <div style="width:112px;height:70px;border-radius:7px;background:#00935e;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;box-shadow:0 10px 20px -10px rgba(0,147,94,.6);animation:ide-check 6s infinite">
+            <div style="font-size:17px;font-weight:900;line-height:1">✓</div>
+            <div style="font-size:9.5px;font-weight:800">Анна Соколова</div>
+            <div style="font-size:7.5px;opacity:.85">Добро пожаловать!</div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#09090b">Гость найден</div>
+          <div style="font-size:12.5px;color:#71717a;margin-top:3px">поиск работает и без QR — по имени</div>
+        </div>
+      </div>
+      <div style="border:1.5px solid #e9e9ec;border-radius:14px;padding:24px 18px;display:flex;flex-direction:column;align-items:center;gap:14px;background:#fff;animation:ide-hl 6s infinite;animation-delay:4s">
+        <div style="width:84px;height:84px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start">
+          <div style="width:76px;height:32px;background:#27272a;border-radius:8px;position:relative;z-index:2;display:grid;place-items:center">
+            <div style="width:44px;height:4px;border-radius:2px;background:#52525b"></div>
+          </div>
+          <div style="width:56px;height:62px;overflow:hidden;display:flex;justify-content:center">
+            <div style="width:50px;height:58px;background:#fff;border:1px solid #e4e4e7;border-radius:0 0 6px 6px;box-shadow:0 8px 14px -8px rgba(9,9,11,.3);padding:6px 5px;display:flex;flex-direction:column;align-items:center;gap:3px;animation:ide-badge 6s infinite">
+              <div style="width:30px;height:5px;border-radius:2px;background:#18181b"></div>
+              <div style="width:22px;height:4px;border-radius:2px;background:#d4d4d8"></div>
+              <div style="width:16px;height:16px;background:#18181b;margin-top:3px"></div>
+            </div>
+          </div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:15px;font-weight:700;color:#09090b">Бейдж печатается</div>
+          <div style="font-size:12.5px;color:#71717a;margin-top:3px">Zebra, Dymo, Brother или офисный</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FEATURES ===================== -->
+<div data-screen-label="Возможности" style="background:#fff">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;max-width:620px;margin:0 auto 48px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:12px">Возможности</div>
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Весь цикл мероприятия — один инструмент</h2>
+    </div>
+    <div class="ide-g3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
+      <div style="border:1px solid #ececef;border-radius:14px;padding:28px">
+        <div style="width:40px;height:40px;border-radius:10px;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:18px;margin-bottom:18px">⇪</div>
+        <div style="font-weight:700;font-size:18px;color:#09090b;margin-bottom:14px">До мероприятия</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:14.5px;line-height:1.5;color:#52525b">
+          <span><b style="color:#18181b">Импорт любого CSV</b> — колонки распознаются автоматически</span>
+          <span><b style="color:#18181b">Визуальный редактор бейджей</b> — drag-and-drop, поля из данных</span>
+          <span><b style="color:#18181b">Зоны и права доступа</b> — залы, VIP, бекстейдж: кому куда можно</span>
+        </div>
+      </div>
+      <div style="border:1px solid #d9efe4;background:#fbfefd;border-radius:14px;padding:28px">
+        <div style="width:40px;height:40px;border-radius:10px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:18px;margin-bottom:18px">✓</div>
+        <div style="font-weight:700;font-size:18px;color:#09090b;margin-bottom:14px">В день мероприятия</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:14.5px;line-height:1.5;color:#52525b">
+          <span><b style="color:#18181b">Чек-ин по QR и поиску</b> — сканер на любом Android</span>
+          <span><b style="color:#18181b">Мгновенная печать</b> — бейдж выходит за секунды</span>
+          <span><b style="color:#18181b">Офлайн-режим</b> — интернет не нужен вообще</span>
+          <span><b style="color:#18181b">Контроль зон</b> — скан на входе в зал: допуск или отказ</span>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;padding:28px">
+        <div style="width:40px;height:40px;border-radius:10px;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:18px;margin-bottom:18px">⇅</div>
+        <div style="font-weight:700;font-size:18px;color:#09090b;margin-bottom:14px">Команда и данные</div>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:14.5px;line-height:1.5;color:#52525b">
+          <span><b style="color:#18181b">QR-вход персонала</b> — волонтёр сканирует карточку и сразу на станции</span>
+          <span><b style="color:#18181b">Роли для персонала</b> — стойки, волонтёры, супервайзеры</span>
+          <span><b style="color:#18181b">Живой монитор</b> — планшет со статистикой чек-ина в реальном времени</span>
+          <span><b style="color:#18181b">Синхронизация</b> — устройства сходятся, как только есть сеть</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== APPS ===================== -->
+<div data-screen-label="Приложения" style="background:#fff;border-top:1px solid #f1f1f3">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;max-width:640px;margin:0 auto 44px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:12px">Одна система</div>
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Панель, киоск и сканер работают вместе</h2>
+    </div>
+    <div class="ide-g3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px">
+      <div style="border:1px solid #ececef;border-radius:14px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="height:190px;background:#fafafa;border-bottom:1px solid #f1f1f3;padding:16px 16px 0;display:flex">
+          <div style="flex:1;background:#fff;border:1px solid #e4e4e7;border-bottom:none;border-radius:8px 8px 0 0;box-shadow:0 10px 24px -14px rgba(9,9,11,.18);overflow:hidden;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:4px;height:20px;padding:0 8px;border-bottom:1px solid #f1f1f3;background:#fafafa">
+              <span style="width:5px;height:5px;border-radius:50%;background:#e4e4e7"></span>
+              <span style="width:5px;height:5px;border-radius:50%;background:#e4e4e7"></span>
+              <span style="width:5px;height:5px;border-radius:50%;background:#e4e4e7"></span>
+              <div style="margin-left:6px;flex:1;max-width:120px;background:#f1f1f3;border-radius:3px;font-size:7px;color:#a1a1aa;padding:2px 6px;font-family:ui-monospace,monospace">app.idento.io</div>
+            </div>
+            <div style="flex:1;padding:9px;display:flex;flex-direction:column;gap:6px">
+              <div style="border:1px solid #c6e6d6;background:#f2faf6;border-radius:7px;padding:8px 10px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+                  <span style="font-size:9px;font-weight:700;color:#09090b">TechConf Moscow 2026</span>
+                  <span style="font-size:7px;font-weight:800;color:#00714a;background:#e7f5ee;border-radius:99px;padding:1px 6px">LIVE</span>
+                </div>
+                <div style="height:5px;border-radius:3px;background:#e4ede8;margin-top:6px;overflow:hidden"><div style="width:68%;height:100%;background:#00935e"></div></div>
+                <div style="font-size:7.5px;color:#52525b;margin-top:4px">847 из 1240 · 68% отмечено</div>
+              </div>
+              <div style="height:16px;border-radius:5px;background:#f4f4f5"></div>
+              <div style="height:16px;border-radius:5px;background:#f4f4f5"></div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:18px 22px">
+          <div style="font-weight:700;font-size:16px;color:#09090b">Панель организатора</div>
+          <div style="font-size:13.5px;color:#52525b;margin-top:4px;line-height:1.5">События, импорт, бейджи, персонал и живой монитор — в браузере</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:10px">Web</div>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="height:190px;background:#fafafa;border-bottom:1px solid #f1f1f3;display:grid;place-items:center">
+          <div style="width:232px;height:132px;background:#00935e;border-radius:8px;box-shadow:0 14px 30px -12px rgba(0,147,94,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#fff;position:relative;overflow:hidden">
+            <div style="position:absolute;top:0;left:0;right:0;height:14px;background:rgba(0,0,0,.18);display:flex;align-items:center;gap:4px;padding:0 8px">
+              <span style="width:4px;height:4px;border-radius:50%;background:#2ee6a8"></span>
+              <span style="width:4px;height:4px;border-radius:50%;background:#2ee6a8"></span>
+              <span style="width:4px;height:4px;border-radius:50%;background:#2ee6a8"></span>
+              <span style="margin-left:auto;font-size:6.5px;opacity:.75;font-family:ui-monospace,monospace">офлайн-очередь: 0</span>
+            </div>
+            <div style="font-size:24px;font-weight:900;line-height:1;margin-top:6px">✓</div>
+            <div style="font-size:13px;font-weight:800">Анна Соколова</div>
+            <div style="font-size:8.5px;opacity:.85">Добро пожаловать! Бейдж печатается…</div>
+          </div>
+        </div>
+        <div style="padding:18px 22px">
+          <div style="font-weight:700;font-size:16px;color:#09090b">Киоск</div>
+          <div style="font-size:13.5px;color:#52525b;margin-top:4px;line-height:1.5">Вердикт читается через всю стойку — самообслуживание или со стойкой</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:10px">Windows · macOS · Linux · Raspberry Pi</div>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="height:190px;background:#fafafa;border-bottom:1px solid #f1f1f3;display:grid;place-items:center">
+          <div style="width:88px;height:160px;background:#111413;border-radius:14px;border:2.5px solid #27272a;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 14px 30px -14px rgba(9,9,11,.4)">
+            <div style="flex:1;display:grid;place-items:center;position:relative">
+              <div style="position:relative;width:46px;height:46px;border:1.5px dashed rgba(46,230,168,.7);border-radius:5px;display:grid;place-items:center">
+                <svg width="28" height="28" viewBox="0 0 56 56"><g fill="#ffffff"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect></g><g fill="#111413"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+              </div>
+            </div>
+            <div style="background:#00935e;color:#fff;padding:8px 6px;text-align:center">
+              <div style="font-size:9px;font-weight:800">✓ Пётр Иванов</div>
+              <div style="font-size:7px;opacity:.85">Главный зал · допуск</div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:18px 22px">
+          <div style="font-weight:700;font-size:16px;color:#09090b">Сканер</div>
+          <div style="font-size:13.5px;color:#52525b;margin-top:4px;line-height:1.5">Чек-ин, контроль зон и печать — с камеры любого телефона</div>
+          <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:10px">Android · APK / Google Play</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== OFFLINE ===================== -->
+<div data-screen-label="Офлайн" style="background:#f4faf7;border-top:1px solid #f1f1f3">
+  <div class="ide-c ide-cw ide-2col" style="max-width:1200px;margin:0 auto;padding:80px 32px;display:grid;grid-template-columns:1fr 1.05fr;gap:64px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase">Почему офлайн</div>
+      <h2 style="margin:0;font-size:38px;line-height:1.1;letter-spacing:-0.025em;font-weight:800;color:#09090b">База гостей живёт на устройстве, а не в облаке</h2>
+      <p style="margin:0;font-size:16px;line-height:1.6;color:#52525b">Каждое устройство — киоск, телефон, ноутбук — хранит полную копию списка. Чек-ин и печать работают локально. Появилась сеть — устройства обмениваются изменениями и сходятся к одному состоянию.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:15px;color:#18181b;font-weight:500">
+        <span style="display:flex;gap:10px;align-items:center"><span style="width:20px;height:20px;border-radius:50%;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:11px;font-weight:800">✓</span>Ноль простоя в день мероприятия</span>
+        <span style="display:flex;gap:10px;align-items:center"><span style="width:20px;height:20px;border-radius:50%;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:11px;font-weight:800">✓</span>Конфликты решаются автоматически</span>
+        <span style="display:flex;gap:10px;align-items:center"><span style="width:20px;height:20px;border-radius:50%;background:#e7f5ee;color:#00935e;display:grid;place-items:center;font-size:11px;font-weight:800">✓</span>Self-hosted: данные не покидают вашу инфраструктуру</span>
+      </div>
+    </div>
+    <div class="ide-anim {{ animOff }}" style="background:#fff;border:1px solid #e4e9e6;border-radius:16px;padding:32px;display:flex;flex-direction:column;align-items:center;box-shadow:0 10px 30px -18px rgba(9,9,11,.12)">
+      <div style="display:flex;gap:18px">
+        <div style="border:1px solid #ececef;background:#fafafa;border-radius:10px;padding:11px 18px;text-align:center"><div style="font-size:20px">🖥</div><div style="font-size:12px;font-weight:600;color:#3f3f46;margin-top:3px">Киоск</div></div>
+        <div style="border:1px solid #ececef;background:#fafafa;border-radius:10px;padding:11px 18px;text-align:center"><div style="font-size:20px">📱</div><div style="font-size:12px;font-weight:600;color:#3f3f46;margin-top:3px">Сканер</div></div>
+        <div style="border:1px solid #ececef;background:#fafafa;border-radius:10px;padding:11px 18px;text-align:center"><div style="font-size:20px">🖨</div><div style="font-size:12px;font-weight:600;color:#3f3f46;margin-top:3px">Принтер</div></div>
+      </div>
+      <div style="width:3px;height:30px;background-image:linear-gradient(#00935e 60%,transparent 60%);background-size:3px 12px;animation:ide-flow 1.4s linear infinite"></div>
+      <div style="border:1.5px solid #00935e;background:#e7f5ee;border-radius:12px;padding:13px 28px;text-align:center">
+        <div style="font-weight:800;font-size:14.5px;color:#00714a">Локальная база</div>
+        <div style="font-size:11.5px;color:#00935e;margin-top:2px">работает всегда, сети не требует</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+        <div style="width:3px;height:30px;background-image:linear-gradient(#a1a1aa 60%,transparent 60%);background-size:3px 12px;animation:ide-flow 1.4s linear infinite"></div>
+        <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">когда появится сеть</span>
+      </div>
+      <div style="border:1px dashed #d4d4d8;background:#fafafa;border-radius:12px;padding:11px 24px;text-align:center">
+        <div style="font-weight:700;font-size:13.5px;color:#52525b">☁ Сервер синхронизации</div>
+        <div style="font-size:11px;color:#a1a1aa;margin-top:2px">облако или ваш собственный</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== USE CASES ===================== -->
+<div data-screen-label="Сценарии" style="background:#fff">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;margin-bottom:44px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:10px">Сценарии</div>
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Подходит для любого формата</h2>
+    </div>
+    <div class="ide-g4" style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px">
+      <div style="border:1px solid #ececef;border-radius:14px;padding:24px">
+        <div style="font-weight:700;font-size:16px;color:#09090b;margin-bottom:10px">Конференции</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.5;color:#52525b">
+          <span>· несколько стоек регистрации</span>
+          <span>· бейджи по категориям участников</span>
+          <span>· печать на месте без очередей</span>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;padding:24px">
+        <div style="font-weight:700;font-size:16px;color:#09090b;margin-bottom:10px">Корпоративные события</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.5;color:#52525b">
+          <span>· данные сотрудников не уходят в облако</span>
+          <span>· self-hosted развёртывание</span>
+          <span>· роли и доступы для подрядчиков</span>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;padding:24px">
+        <div style="font-weight:700;font-size:16px;color:#09090b;margin-bottom:10px">Митапы и хакатоны</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.5;color:#52525b">
+          <span>· бесплатно до 100 гостей</span>
+          <span>· один телефон вместо стойки</span>
+          <span>· QR-вход для волонтёров</span>
+        </div>
+      </div>
+      <div style="border:1px solid #ececef;border-radius:14px;padding:24px">
+        <div style="font-weight:700;font-size:16px;color:#09090b;margin-bottom:10px">Крупные события 1000+</div>
+        <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.5;color:#52525b">
+          <span>· десятки устройств синхронно</span>
+          <span>· киоски самообслуживания</span>
+          <span>· зоны: залы, VIP, бекстейдж</span>
+          <span>· очередь идёт даже без сети</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== COMPARISON ===================== -->
+<div data-screen-label="Сравнение" style="background:#fafafa;border-top:1px solid #f1f1f3">
+  <div class="ide-c" style="max-width:1000px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;margin-bottom:40px">
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Сравните с привычными решениями</h2>
+      <p style="margin:12px auto 0;font-size:15px;color:#52525b;max-width:560px">Иденто есть и в облаке, и on-premise — но в отличие от обычных облачных сервисов работает даже без интернета</p>
+    </div>
+    <div class="ide-cmpwrap" style="background:#fff;border:1px solid #ececef;border-radius:16px;overflow:hidden">
+      <div class="ide-cmprow" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:16px 24px;border-bottom:1px solid #f1f1f3;font-size:13px;font-weight:700;color:#71717a">
+        <span></span>
+        <span style="text-align:center;color:#00714a">Иденто</span>
+        <span style="text-align:center">Только-облачные сервисы</span>
+        <span style="text-align:center">Таблицы + принтер</span>
+      </div>
+      <sc-for list="{{ compareRows }}" as="row" hint-placeholder-count="7">
+        <div class="ide-cmprow" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;padding:13px 24px;border-bottom:1px solid #f7f7f8;font-size:14px;align-items:center">
+          <span style="color:#18181b;font-weight:500">{{ row.label }}</span>
+          <span style="text-align:center;color:#00935e;font-weight:700">{{ row.idento }}</span>
+          <span style="text-align:center;color:#a1a1aa">{{ row.cloud }}</span>
+          <span style="text-align:center;color:#a1a1aa">{{ row.manual }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== HARDWARE ===================== -->
+<div data-screen-label="Железо" style="background:#fff">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:32px;flex-wrap:wrap;gap:10px">
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Работает на вашем железе</h2>
+      <span style="font-family:ui-monospace,monospace;font-size:12px;color:#a1a1aa">спец. оборудование не требуется</span>
+    </div>
+    <div class="ide-2col" style="display:grid;grid-template-columns:1.2fr 1fr;gap:24px">
+      <div style="border:1px solid #ececef;border-radius:14px;overflow:hidden">
+        <div style="height:240px;background:repeating-linear-gradient(45deg,#f4f4f5 0 14px,#fafafa 14px 28px);display:grid;place-items:center;font-family:ui-monospace,monospace;font-size:12px;color:#a1a1aa">фото: киоск-стойка на входе / Raspberry Pi у гейта</div>
+        <div style="padding:20px 24px">
+          <div style="font-weight:700;font-size:16px;color:#09090b">Киоск самообслуживания</div>
+          <div style="font-size:13.5px;color:#52525b;margin-top:4px">Любой ПК на Windows, macOS, Linux — или Raspberry Pi прямо у входа</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px">
+        <div style="border:1px solid #ececef;border-radius:14px;padding:20px 24px;flex:1">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:8px">Принтеры</div>
+          <div style="font-size:15px;font-weight:600;color:#18181b;line-height:1.5">Zebra · Dymo · Brother<br><span style="font-weight:400;color:#52525b;font-size:13.5px">+ любой офисный принтер</span></div>
+        </div>
+        <div style="border:1px solid #ececef;border-radius:14px;padding:20px 24px;flex:1">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:8px">Подключение</div>
+          <div style="font-size:15px;font-weight:600;color:#18181b;line-height:1.5">USB · Bluetooth · сеть<br><span style="font-weight:400;color:#52525b;font-size:13.5px">через локальный агент печати</span></div>
+        </div>
+        <div style="border:1px solid #ececef;border-radius:14px;padding:20px 24px;flex:1">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:8px">Сканеры</div>
+          <div style="font-size:15px;font-weight:600;color:#18181b;line-height:1.5">Камера Android-телефона<br><span style="font-weight:400;color:#52525b;font-size:13.5px">или USB-сканер штрих-кодов</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PRICING ===================== -->
+<div data-screen-label="Цены" style="background:#f4faf7;border-top:1px solid #f1f1f3">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;margin-bottom:36px">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.08em;color:#00935e;text-transform:uppercase;margin-bottom:10px">Цены</div>
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Без платы за каждого гостя</h2>
+      <p style="margin:12px 0 0;font-size:15px;color:#52525b">Фиксированные тарифы — сколько бы участников ни пришло</p>
+    </div>
+    <div style="display:flex;justify-content:center;margin-bottom:36px">
+      <div style="display:flex;gap:4px;background:#fff;border:1px solid #e4e4e7;border-radius:10px;padding:4px">
+        <button style="{{ monthlyBtnStyle }}" onClick="{{ setMonthly }}">Ежемесячно</button>
+        <button style="{{ annualBtnStyle }}" onClick="{{ setAnnual }}">Ежегодно −20%</button>
+      </div>
+    </div>
+    <div class="ide-g3" style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:stretch">
+      <div style="background:#fff;border:1px solid #ececef;border-radius:16px;padding:32px;display:flex;flex-direction:column;gap:18px">
+        <div>
+          <div style="font-weight:700;font-size:18px;color:#09090b">Бесплатный</div>
+          <div style="font-size:13.5px;color:#71717a;margin-top:4px">для митапов и небольших событий</div>
+        </div>
+        <div style="font-size:40px;font-weight:800;letter-spacing:-0.03em;color:#09090b">$0</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:14px;color:#52525b;flex:1">
+          <span>✓ До 100 гостей на событие</span>
+          <span>✓ Все платформы и офлайн-режим</span>
+          <span>✓ Редактор бейджей и печать</span>
+          <span>✓ Импорт CSV</span>
+        </div>
+        <div style="border:1px solid #00935e;color:#00714a;text-align:center;font-size:15px;font-weight:600;padding:12px;border-radius:8px;cursor:pointer" style-hover="background:#e7f5ee">{{ cta }}</div>
+      </div>
+      <div style="background:#fff;border:2px solid #00935e;border-radius:16px;padding:32px;display:flex;flex-direction:column;gap:18px;position:relative;box-shadow:0 20px 44px -20px rgba(0,147,94,.3)">
+        <div style="position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:#00935e;color:#fff;font-size:11.5px;font-weight:700;padding:4px 14px;border-radius:99px;letter-spacing:.04em">ПОПУЛЯРНЫЙ</div>
+        <div>
+          <div style="font-weight:700;font-size:18px;color:#09090b">Профессиональный</div>
+          <div style="font-size:13.5px;color:#71717a;margin-top:4px">для агентств и регулярных событий</div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <span style="font-size:40px;font-weight:800;letter-spacing:-0.03em;color:#09090b">{{ proPrice }}</span>
+          <span style="font-size:13.5px;color:#71717a">{{ periodNote }}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:14px;color:#52525b;flex:1">
+          <span>✓ Без лимита гостей и событий</span>
+          <span>✓ Несколько членов команды и роли</span>
+          <span>✓ Свой бренд на бейджах и киоске</span>
+          <span>✓ Приоритетная поддержка</span>
+        </div>
+        <div style="background:#00935e;color:#fff;text-align:center;font-size:15px;font-weight:600;padding:13px;border-radius:8px;cursor:pointer" style-hover="background:#00714a">Попробовать Pro</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ececef;border-radius:16px;padding:32px;display:flex;flex-direction:column;gap:18px">
+        <div>
+          <div style="font-weight:700;font-size:18px;color:#09090b">Enterprise</div>
+          <div style="font-size:13.5px;color:#71717a;margin-top:4px">для компаний с особыми требованиями</div>
+        </div>
+        <div style="font-size:40px;font-weight:800;letter-spacing:-0.03em;color:#09090b">Custom</div>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:14px;color:#52525b;flex:1">
+          <span>✓ Выделенное или self-hosted развёртывание</span>
+          <span>✓ Несколько организаций и доступов</span>
+          <span>✓ Помощь с внедрением</span>
+          <span>✓ Договор и SLA</span>
+        </div>
+        <div style="border:1px solid #e4e4e7;color:#18181b;text-align:center;font-size:15px;font-weight:600;padding:12px;border-radius:8px;cursor:pointer" style-hover="border-color:#00935e">Связаться с продажами</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FAQ ===================== -->
+<div data-screen-label="FAQ" style="background:#fff">
+  <div class="ide-c" style="max-width:800px;margin:0 auto;padding:80px 32px">
+    <div style="text-align:center;margin-bottom:40px">
+      <h2 style="margin:0;font-size:38px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Частые вопросы</h2>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ faq }}" as="q" hint-placeholder-count="8">
+        <details style="border:1px solid #ececef;border-radius:12px;padding:0 20px;background:#fff">
+          <summary style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:18px 0;font-size:15.5px;font-weight:600;color:#09090b">{{ q.q }}<span style="color:#00935e;font-size:18px;flex:none">+</span></summary>
+          <div style="padding:0 0 18px;font-size:14.5px;line-height:1.6;color:#52525b">{{ q.a }}</div>
+        </details>
+      </sc-for>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== DOWNLOAD ===================== -->
+<div data-screen-label="Скачать" style="background:#fafafa;border-top:1px solid #f1f1f3">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:72px 32px">
+    <div style="text-align:center;margin-bottom:36px">
+      <h2 style="margin:0;font-size:34px;font-weight:800;letter-spacing:-0.02em;color:#09090b">Скачайте и попробуйте сегодня</h2>
+    </div>
+    <div class="ide-g5" style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">
+      <div style="background:#fff;border:1px solid #ececef;border-radius:12px;padding:22px 18px;text-align:center;cursor:pointer" style-hover="border-color:#00935e">
+        <div style="font-weight:700;font-size:15px;color:#09090b">Windows</div>
+        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:4px">.exe</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ececef;border-radius:12px;padding:22px 18px;text-align:center;cursor:pointer" style-hover="border-color:#00935e">
+        <div style="font-weight:700;font-size:15px;color:#09090b">macOS</div>
+        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:4px">.dmg / .pkg</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ececef;border-radius:12px;padding:22px 18px;text-align:center;cursor:pointer" style-hover="border-color:#00935e">
+        <div style="font-weight:700;font-size:15px;color:#09090b">Linux</div>
+        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:4px">AppImage / .deb</div>
+      </div>
+      <div style="background:#fff;border:1px solid #ececef;border-radius:12px;padding:22px 18px;text-align:center;cursor:pointer" style-hover="border-color:#00935e">
+        <div style="font-weight:700;font-size:15px;color:#09090b">Android</div>
+        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:4px">APK / Google Play</div>
+      </div>
+      <div style="background:#fff;border:1px dashed #d4d4d8;border-radius:12px;padding:22px 18px;text-align:center;opacity:.7">
+        <div style="font-weight:700;font-size:15px;color:#71717a">iOS</div>
+        <div style="font-family:ui-monospace,monospace;font-size:11px;color:#a1a1aa;margin-top:4px">скоро</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FINAL CTA ===================== -->
+<div data-screen-label="Финальный CTA" style="background:#04301f;position:relative;overflow:hidden">
+  <div style="position:absolute;inset:0;background:radial-gradient(800px 360px at 50% 0%,rgba(16,183,128,.25),transparent 65%)"></div>
+  <div class="ide-c" style="position:relative;max-width:800px;margin:0 auto;padding:88px 32px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:24px">
+    <h2 style="margin:0;font-size:44px;line-height:1.08;letter-spacing:-0.03em;font-weight:800;color:#fff">Следующее мероприятие — <span style="color:#2ee6a8">без очередей</span></h2>
+    <p style="margin:0;font-size:17px;line-height:1.6;color:rgba(255,255,255,.72);max-width:520px">Начните бесплатно: до 100 гостей, все платформы, офлайн-режим и печать бейджей уже включены.</p>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;justify-content:center">
+      <div style="background:#2ee6a8;color:#04301f;font-size:16px;font-weight:800;padding:15px 30px;border-radius:10px;cursor:pointer" style-hover="background:#5cead1">{{ cta }}</div>
+      <div style="border:1.5px solid rgba(255,255,255,.28);color:#fff;font-size:16px;font-weight:600;padding:14px 26px;border-radius:10px;cursor:pointer" style-hover="border-color:rgba(255,255,255,.6)">Смотреть демо</div>
+    </div>
+    <div style="display:flex;gap:22px;font-size:13px;color:rgba(255,255,255,.55);flex-wrap:wrap;justify-content:center">
+      <span>✓ Без банковской карты</span>
+      <span>✓ Отмена в любой момент</span>
+      <span>✓ Бесплатная помощь со стартом</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== FOOTER ===================== -->
+<div data-screen-label="Футер" style="background:#09090b">
+  <div class="ide-c ide-cw" style="max-width:1200px;margin:0 auto;padding:56px 32px 40px">
+    <div class="ide-foot" style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:40px;margin-bottom:44px">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:28px;height:28px;border-radius:7px;background:#10b780;color:#04120c;display:grid;place-items:center;font-weight:700;font-size:16px">И</div>
+          <span style="font-weight:700;font-size:17px;color:#fafafa">Иденто</span>
+        </div>
+        <div style="font-size:13.5px;line-height:1.6;color:#71717a;max-width:280px">Регистрация, чек-ин и печать бейджей — работает даже без интернета.</div>
+        <div style="display:flex;gap:10px;margin-top:6px">
+          <span style="font-size:12px;font-weight:600;color:#a1a1aa;border:1px solid #27272a;border-radius:6px;padding:4px 10px">RU</span>
+          <span style="font-size:12px;font-weight:600;color:#52525b;border:1px solid #1f1f23;border-radius:6px;padding:4px 10px">EN</span>
+          <span style="font-size:12px;color:#a1a1aa;border:1px solid #27272a;border-radius:6px;padding:4px 10px">☾ Тёмная</span>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px">
+        <span style="font-weight:700;color:#fafafa;margin-bottom:4px">Продукт</span>
+        <span style="color:#71717a">Возможности</span>
+        <span style="color:#71717a">Цены</span>
+        <span style="color:#71717a">Скачать</span>
+        <span style="color:#71717a">Что нового</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px">
+        <span style="font-weight:700;color:#fafafa;margin-bottom:4px">Ресурсы</span>
+        <span style="color:#71717a">Документация</span>
+        <span style="color:#71717a">API</span>
+        <span style="color:#71717a">Self-hosted гид</span>
+        <span style="color:#71717a">Поддержка</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px">
+        <span style="font-weight:700;color:#fafafa;margin-bottom:4px">Компания</span>
+        <span style="color:#71717a">Контакты</span>
+        <span style="color:#71717a">Конфиденциальность</span>
+        <span style="color:#71717a">Условия</span>
+      </div>
+    </div>
+    <div style="border-top:1px solid #1f1f23;padding-top:22px;display:flex;justify-content:space-between;font-size:12.5px;color:#52525b;flex-wrap:wrap;gap:8px">
+      <span>© 2026 Иденто</span>
+      <span>Сделано для тех, кто стоит на регистрации в 8 утра</span>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440}, &quot;ctaVariant&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;start&quot;, &quot;download&quot;], &quot;default&quot;: &quot;start&quot;, &quot;tsType&quot;: &quot;'start' | 'download'&quot;, &quot;section&quot;: &quot;Конверсия&quot;}, &quot;animations&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Поведение&quot;}}">
+class Component extends DCLogic {
+  state = { annual: false };
+
+  renderVals() {
+    const annual = this.state.annual;
+    const variant = this.props.ctaVariant ?? 'start';
+    const animOn = this.props.animations ?? true;
+
+    const btnBase = {
+      padding: '8px 18px', borderRadius: '8px', fontSize: '14px', fontWeight: 600,
+      cursor: 'pointer', border: 'none', fontFamily: 'inherit'
+    };
+
+    return {
+      cta: variant === 'download' ? 'Скачать бесплатно' : 'Начать бесплатно',
+      animOff: animOn ? '' : 'ide-off',
+      proPrice: annual ? '$39' : '$49',
+      periodNote: annual ? 'в месяц при оплате за год' : 'в месяц',
+      setMonthly: () => this.setState({ annual: false }),
+      setAnnual: () => this.setState({ annual: true }),
+      monthlyBtnStyle: { ...btnBase, background: annual ? 'transparent' : '#00935e', color: annual ? '#52525b' : '#fff' },
+      annualBtnStyle: { ...btnBase, background: annual ? '#00935e' : 'transparent', color: annual ? '#fff' : '#52525b' },
+      compareRows: [
+        { label: 'Работа полностью без интернета', idento: '✓', cloud: '✗', manual: '~' },
+        { label: 'Печать бейджей на месте', idento: '✓', cloud: '~', manual: '~' },
+        { label: 'Цена не зависит от числа гостей', idento: '✓', cloud: '✗', manual: '✓' },
+        { label: 'Self-hosted развёртывание', idento: '✓', cloud: '✗', manual: '—' },
+        { label: 'Визуальный редактор бейджей', idento: '✓', cloud: '~', manual: '✗' },
+        { label: 'Синхронизация устройств', idento: '✓', cloud: '✓', manual: '✗' },
+        { label: 'Киоск на любом ПК или Raspberry Pi', idento: '✓', cloud: '✗', manual: '✗' }
+      ],
+      faq: [
+        { q: 'Что будет, если на площадке пропадёт интернет?', a: 'Ничего не остановится. Полная база гостей хранится на каждом устройстве: чек-ин, поиск и печать работают локально. Когда сеть вернётся, устройства автоматически синхронизируются между собой.' },
+        { q: 'Какие принтеры поддерживаются?', a: 'Термопринтеры и этикеточные принтеры Zebra, Dymo, Brother, а также любые офисные принтеры. Подключение — USB, Bluetooth или сеть через локальный агент печати.' },
+        { q: 'Как импортировать список участников?', a: 'Загрузите любой CSV — кодировка (включая Windows-1251 из Excel) определяется автоматически, колонки сопоставляются с полями в пару кликов. Строки с ошибками попадают в отчёт: их можно исправить и дозагрузить, остальные импортируются сразу.' },
+        { q: 'Где хранятся данные участников?', a: 'На ваших устройствах. В облачном варианте синхронизация идёт через наш сервер, в self-hosted — всё разворачивается на вашей инфраструктуре, и данные не покидают её.' },
+        { q: 'Нужно ли специальное оборудование?', a: 'Нет. Сканером служит камера любого Android-телефона, киоском — любой ПК или Raspberry Pi, печать — на вашем существующем принтере.' },
+        { q: 'Какие форматы бейджей поддерживаются?', a: 'Любые: от стандартных этикеток 54×90 мм до полноформатных A6-бейджей. Размер и раскладка задаются в визуальном редакторе.' },
+        { q: 'Можно ли настроить бейдж под бренд события?', a: 'Да. Редактор drag-and-drop: логотипы, цвета, шрифты, QR-код и любые поля из вашего CSV. Разные шаблоны для разных категорий участников.' },
+        { q: 'Мы уже используем другой сервис. Как переехать?', a: 'Выгрузите список участников в CSV из текущего сервиса и импортируйте его в Иденто — обычно переезд занимает меньше часа. На тарифе Pro поможем с настройкой.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

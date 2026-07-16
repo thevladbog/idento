@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#eceded;font-family:'Inter',system-ui,sans-serif;color:#09090b}
+a{color:#00935e;text-decoration:none}a:hover{color:#00714a}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tid:hover{color:#fff}
+.dv-tname{font:600 13px/1.2 'Inter',system-ui,sans-serif;color:#1a1a1a}
+.dv-group{font:600 10.5px ui-monospace,Menlo,monospace;color:#71717a;letter-spacing:.09em;text-transform:uppercase;margin:30px 0 12px}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-oid:hover{color:#1a1a1a}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:rgba(0,0,0,.6)}
+.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.09);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#00935e;color:#fff}
+.dv-next{margin:26px 0 0;font:12px/1.5 'Inter',system-ui,sans-serif;color:rgba(0,0,0,.5)}
+</style>
+</helmet>
+
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Service catalog (nomenclature) — items that feed invoice lines in <a class="dv-oid" href="#3c">3c</a>, with per-item VAT</span></div>
+<div class="dv-opts">
+
+<!-- ============ 4a: SERVICE CATALOG ============ -->
+<div class="dv-opt" id="4a">
+  <div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Catalog · second tab on Plans — name, unit, default price, VAT category, active flag</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="4a Service catalog">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+
+    <div style="background:#fafafa;padding:18px 22px 26px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+        <h2 style="margin:0;font-size:16px;font-weight:700">Plans</h2>
+        <div style="display:flex;gap:2px;font-size:12.5px;font-weight:500">
+          <span style="padding:6px 12px;border-radius:7px;color:#71717a;cursor:pointer">Subscription plans</span>
+          <span style="padding:6px 12px;border-radius:7px;background:#e7f5ee;color:#00714a;font-weight:600">Service catalog</span>
+        </div>
+        <span style="margin-left:auto;font-size:12px;font-weight:600;color:#fff;background:#00935e;border-radius:7px;padding:7px 14px;cursor:pointer" style-hover="background:#00714a">+ New item</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 372px;gap:16px;align-items:start">
+        <!-- catalog table -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;padding:8px 14px;border-bottom:1px solid #ececef;background:#fafafa;font-size:10.5px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em">
+            <span>Item</span><span>Unit</span><span style="text-align:right">Default price</span><span style="text-align:right">VAT</span><span>Used in, 12 mo</span><span style="text-align:right">Active</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;align-items:center;padding:10px 14px;border-bottom:1px solid #f6f6f7;background:#f6faf8;border-left:3px solid #00935e">
+            <div><div style="font-size:12.5px;font-weight:600">Training: working with the service</div><div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">svc-training</div></div>
+            <span style="font-size:12px;color:#52525b">hour</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€250.00</span>
+            <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right;color:#52525b">0% RC</span>
+            <span style="font-size:11.5px;color:#71717a">14 invoices · €48.5k</span>
+            <span style="justify-self:end;width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;align-items:center;padding:10px 14px;border-bottom:1px solid #f6f6f7" style-hover="background:#fafcfb">
+            <div><div style="font-size:12.5px;font-weight:600">On-site support at the event</div><div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">svc-onsite</div></div>
+            <span style="font-size:12px;color:#52525b">day</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€900.00</span>
+            <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right;color:#52525b">0% RC</span>
+            <span style="font-size:11.5px;color:#71717a">6 invoices · €16.2k</span>
+            <span style="justify-self:end;width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;align-items:center;padding:10px 14px;border-bottom:1px solid #f6f6f7" style-hover="background:#fafcfb">
+            <div><div style="font-size:12.5px;font-weight:600">Badge stock, PVC blank</div><div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">goods-badge-pvc</div></div>
+            <span style="font-size:12px;color:#52525b">pcs</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€1.20</span>
+            <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right;color:#52525b">22%</span>
+            <span style="font-size:11.5px;color:#71717a">9 invoices · €7.8k</span>
+            <span style="justify-self:end;width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;align-items:center;padding:10px 14px;border-bottom:1px solid #f6f6f7" style-hover="background:#fafcfb">
+            <div><div style="font-size:12.5px;font-weight:600">Custom development / integration</div><div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">svc-custom-dev</div></div>
+            <span style="font-size:12px;color:#52525b">hour</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€120.00</span>
+            <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right;color:#52525b">0% RC</span>
+            <span style="font-size:11.5px;color:#71717a">2 invoices · €5.3k</span>
+            <span style="justify-self:end;width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 70px 110px 96px 150px 62px;gap:0 12px;align-items:center;padding:10px 14px;opacity:.55" style-hover="background:#fafcfb">
+            <div><div style="font-size:12.5px;font-weight:600">Branded lanyards</div><div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">goods-lanyard</div></div>
+            <span style="font-size:12px;color:#52525b">pcs</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€0.80</span>
+            <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right;color:#52525b">22%</span>
+            <span style="font-size:11.5px;color:#71717a">discontinued Mar 2026</span>
+            <span style="justify-self:end;width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+          </div>
+        </div>
+
+        <!-- edit panel -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f1f1f3">
+            <span style="font-size:13px;font-weight:700">Training: working with the service</span>
+            <span style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">svc-training</span>
+          </div>
+          <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Name <span style="font-weight:400;color:#a1a1aa">— printed on the invoice</span></div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px">Training: working with the service</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div>
+                <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Unit</div>
+                <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center">hour <span style="color:#a1a1aa">▾</span></div>
+              </div>
+              <div>
+                <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Default price</div>
+                <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">€250.00</div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">VAT category</div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center">Services, EU B2B — 0% reverse charge <span style="color:#a1a1aa">▾</span></div>
+              <div style="font-size:10.5px;color:#a1a1aa;margin-top:5px">Sets the default rate on new invoice lines; editable per line. Goods default to the domestic rate (22%).</div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Note on invoice <span style="font-weight:400;color:#a1a1aa">— optional second line</span></div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px;color:#52525b">Remote sessions, recording included</div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;border-top:1px solid #f1f1f3;padding-top:12px">
+              <span style="font-size:12px;color:#52525b">Active — available in the line catalog</span>
+              <span style="width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #f1f1f3;background:#fafafa">
+            <span style="font-size:12px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer">Discard</span>
+            <span style="font-size:12px;font-weight:600;color:#fff;background:#00935e;border-radius:7px;padding:7px 13px;cursor:pointer" style-hover="background:#00714a">Save item</span>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:#71717a;line-height:1.65;margin-top:12px">Items here populate the “+ Add service line” catalog in <a href="#3c">3c</a> with prefilled unit, price and VAT. Prices are defaults — editable per line; edits are audit-logged like plan changes. Subscriptions are not catalog items — they come from Plans.</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="dv-next">Try next: “add currency profiles (EUR / RUB) per item” · “show the unit select open” · “make the whole invoicing flow interactive”</p>
+</section>
+
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Printable PDF forms + invoice line editor · generated by <a class="dv-oid" href="#2b">2b</a> from templates in <a class="dv-oid" href="#2c">2c</a></span></div>
+
+<div class="dv-group">PDF form — A4 · single international format: payment QR, barcode, stamp area</div>
+<div class="dv-opts">
+
+<!-- ============ 3a: INVOICE EN A4 ============ -->
+<div class="dv-opt" id="3a">
+  <div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Invoice · EN — bank transfer + payment QR, CODE-128 barcoded</div>
+  <div class="dv-card" style="width:794px" data-screen-label="3a Invoice EN">
+    <div style="padding:52px 56px;min-height:1000px;display:flex;flex-direction:column;font-size:13px;color:#18181b">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <span style="display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px"><span style="width:26px;height:26px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:15px">И</span>Idento OÜ</span>
+          <div style="font-size:11px;color:#71717a;line-height:1.6;margin-top:8px">Sepapaja 6, 15551 Tallinn, Estonia<br>Reg. no 16712345 · VAT EE102345678<br>billing@idento.io</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:24px;font-weight:800;letter-spacing:-0.02em">INVOICE</div>
+          <div style="font-family:ui-monospace,monospace;font-size:13px;margin-top:4px">INV-1043</div>
+          <div style="font-size:11px;color:#71717a;line-height:1.7;margin-top:6px">Issue date: Jul 10, 2026<br>Due date: <b style="color:#18181b">Jul 24, 2026</b></div>
+          <div style="width:152px;height:32px;margin:14px 0 0 auto;background:repeating-linear-gradient(90deg,#18181b 0 2px,#fff 2px 4px,#18181b 4px 9px,#fff 9px 11px,#18181b 11px 12px,#fff 12px 15px,#18181b 15px 19px,#fff 19px 20px,#18181b 20px 22px,#fff 22px 26px,#18181b 26px 27px,#fff 27px 29px,#18181b 29px 34px,#fff 34px 37px)"></div>
+        </div>
+      </div>
+      <div style="height:2px;background:#00935e;margin:26px 0"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em;margin-bottom:6px">BILLED TO</div>
+          <div style="font-size:12.5px;line-height:1.6"><b>Acme Conf Group LLC</b><br>Herengracht 124, 1015 BT Amsterdam<br>Netherlands · VAT NL861234567B01</div>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em;margin-bottom:6px">SUBJECT</div>
+          <div style="font-size:12.5px;line-height:1.6">Idento subscription — <b>Professional</b> plan<br>Service period: Aug 1, 2026 – Jul 31, 2027<br>Tenant: <span style="font-family:ui-monospace,monospace;font-size:11.5px">acme-conf</span></div>
+        </div>
+      </div>
+      <div style="background:#fafafa;border:1px solid #ececef;border-radius:8px;padding:16px 18px;display:flex;gap:22px;align-items:center;margin-top:24px">
+        <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px">
+          <div style="grid-column:span 2;font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em">PAYMENT — BANK TRANSFER</div>
+          <div><span style="color:#71717a">Beneficiary:</span> Idento OÜ</div>
+          <div><span style="color:#71717a">Bank:</span> LHV Pank, Tallinn</div>
+          <div><span style="color:#71717a">IBAN:</span> <span style="font-family:ui-monospace,monospace">EE38 7700 7710 0123 4567</span></div>
+          <div><span style="color:#71717a">BIC:</span> <span style="font-family:ui-monospace,monospace">LHVBEE22</span></div>
+          <div style="grid-column:span 2"><span style="color:#71717a">Reference:</span> <b>INV-1043</b> — please include with your payment</div>
+        </div>
+        <svg width="96" height="96" viewBox="0 0 56 56" style="flex:none"><g fill="#18181b"><rect width="16" height="16"></rect><rect x="40" width="16" height="16"></rect><rect y="40" width="16" height="16"></rect><rect x="22" y="2" width="6" height="6"></rect><rect x="32" y="10" width="6" height="6"></rect><rect x="22" y="22" width="12" height="12"></rect><rect x="40" y="26" width="6" height="6"></rect><rect x="26" y="40" width="6" height="6"></rect><rect x="38" y="46" width="12" height="6"></rect><rect x="48" y="34" width="6" height="6"></rect><rect x="20" y="32" width="6" height="6"></rect></g><g fill="#ffffff"><rect x="4" y="4" width="8" height="8"></rect><rect x="44" y="4" width="8" height="8"></rect><rect x="4" y="44" width="8" height="8"></rect></g></svg>
+      </div>
+      <div style="font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em;margin-top:28px">SUBSCRIPTION</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:12.5px">
+        <thead><tr style="border-bottom:1.5px solid #18181b">
+          <th style="text-align:left;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a">DESCRIPTION</th>
+          <th style="text-align:left;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:220px">PERIOD</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:70px">VAT</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:110px">AMOUNT</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #ececef">
+            <td style="padding:11px 0">Professional plan · yearly subscription</td>
+            <td style="padding:11px 0;color:#52525b">Aug 1, 2026 – Jul 31, 2027</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace;color:#52525b">0% RC</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace">€1,788.00</td>
+          </tr>
+          <tr style="border-bottom:1px solid #ececef">
+            <td style="padding:11px 0">Custom limit add-on · 10,000 attendees per event</td>
+            <td style="padding:11px 0;color:#52525b">Aug 1, 2026 – Jul 31, 2027</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace;color:#52525b">0% RC</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace">€300.00</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em;margin-top:22px">SERVICES &amp; GOODS</div>
+      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:12.5px">
+        <thead><tr style="border-bottom:1.5px solid #18181b">
+          <th style="text-align:left;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a">DESCRIPTION</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:70px">QTY</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:110px">UNIT PRICE</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:70px">VAT</th>
+          <th style="text-align:right;padding:8px 0;font-size:10.5px;letter-spacing:.06em;color:#71717a;width:110px">AMOUNT</th>
+        </tr></thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #ececef">
+            <td style="padding:11px 0">Training: working with the service</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace">12 h</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace">€250.00</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace;color:#52525b">0% RC</td>
+            <td style="padding:11px 0;text-align:right;font-family:ui-monospace,monospace">€3,000.00</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <div style="width:280px;display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+          <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Subtotal</span><span style="font-family:ui-monospace,monospace">€5,088.00</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:#71717a">VAT 0% — reverse charge, Art. 196 EU VAT Dir.</span><span style="font-family:ui-monospace,monospace">€0.00</span></div>
+          <div style="display:flex;justify-content:space-between;border-top:1.5px solid #18181b;padding-top:8px;font-weight:700;font-size:14px"><span>Total due</span><span style="font-family:ui-monospace,monospace">€5,088.00</span></div>
+        </div>
+      </div>
+      <div style="margin-top:auto">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:26px">
+          <div>
+            <div style="width:230px;border-bottom:1px solid #18181b;height:42px"></div>
+            <div style="font-size:11px;color:#71717a;margin-top:6px">Igor Ivanov · CEO, Idento OÜ</div>
+          </div>
+          <div style="width:132px;height:132px;background:#f1f5f3;border:1.5px dashed #b7c9bf;border-radius:10px;display:grid;place-items:center;font-size:10px;font-weight:600;letter-spacing:.09em;color:#9aada2">PLACE FOR SEAL</div>
+        </div>
+        <div style="font-size:10.5px;color:#a1a1aa;margin-top:14px;line-height:1.6">Payment terms: 14 days. Late payments may lead to service suspension per the Service Agreement. Questions: billing@idento.io</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="dv-group">Invoice line editor</div>
+<div class="dv-opts">
+
+<!-- ============ 3c: LINE ITEMS EDITOR ============ -->
+<div class="dv-opt" id="3c">
+  <div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>Lines are built from a catalog, prefilled from the tenant’s plan — proration computed live</div>
+  <div class="dv-card" style="width:860px" data-screen-label="3c Invoice line editor">
+    <div style="background:#fafafa;padding:20px 22px 24px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+        <span style="font-size:14px;font-weight:700">Line items — INV-1043 · Acme Conf Group</span>
+        <span style="font-size:11px;color:#71717a">currency EUR · from tenant billing profile</span>
+      </div>
+
+      <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:visible">
+        <div style="padding:8px 14px;background:#fafafa;border-bottom:1px solid #ececef;font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em">SUBSCRIPTION</div>
+        <!-- saved line -->
+        <div style="display:grid;grid-template-columns:20px 1fr 96px 70px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+          <span style="color:#c4c4c9;font-size:13px;cursor:grab">⠿</span>
+          <div><div style="font-size:12.5px;font-weight:600">Professional plan · yearly</div><div style="font-size:10.5px;color:#a1a1aa">Aug 1, 2026 – Jul 31, 2027 · VAT 0% RC · from plan card</div></div>
+          <span style="font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">€1,788.00</span>
+          <span style="display:flex;gap:8px;justify-content:flex-end;color:#a1a1aa;font-size:12px"><span style="cursor:pointer" style-hover="color:#00935e">✎</span><span style="cursor:pointer" style-hover="color:#dc2626">✕</span></span>
+        </div>
+
+        <!-- line in EDIT mode -->
+        <div style="border-bottom:1px solid #f1f1f3;background:#f6faf8;border-left:3px solid #00935e;padding:12px 14px 14px 25px">
+          <div style="display:grid;grid-template-columns:1fr 170px;gap:10px;margin-bottom:10px">
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">Description</div>
+              <div style="border:1.5px solid #00935e;background:#fff;border-radius:7px;padding:7px 11px;font-size:12.5px">Custom limit add-on · 10,000 attendees per event<span style="border-left:1.5px solid #18181b">&nbsp;</span></div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">Linked to</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px;display:flex;justify-content:space-between;align-items:center">limits.override Jul 9 <span style="color:#a1a1aa">▾</span></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 76px 110px 96px 110px;gap:10px;align-items:end">
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">From</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px">Aug 1, 2026</div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">To</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px">Jul 31, 2027</div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">Qty</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px;font-family:ui-monospace,monospace;text-align:right">1</div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">Unit price</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px;font-family:ui-monospace,monospace;text-align:right">€300.00</div>
+            </div>
+            <div>
+              <div style="font-size:10.5px;font-weight:600;color:#71717a;margin-bottom:4px">VAT</div>
+              <div style="border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 11px;font-size:12px;display:flex;justify-content:space-between">0% RC <span style="color:#a1a1aa">▾</span></div>
+            </div>
+            <div style="display:flex;gap:6px;justify-content:flex-end">
+              <span style="font-size:11.5px;font-weight:600;border:1px solid #e4e4e7;background:#fff;border-radius:6px;padding:7px 11px;cursor:pointer">Cancel</span>
+              <span style="font-size:11.5px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:7px 11px;cursor:pointer" style-hover="background:#00714a">Save line</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- proration credit line -->
+        <div style="display:grid;grid-template-columns:20px 1fr 96px 70px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+          <span style="color:#c4c4c9;font-size:13px;cursor:grab">⠿</span>
+          <div><div style="font-size:12.5px;font-weight:600;color:#b45309">Credit — unused Starter period</div><div style="font-size:10.5px;color:#a1a1aa">Jun 2 – Jul 31, 2026 · VAT 0% RC · auto-prorated from previous subscription</div></div>
+          <span style="font-size:12.5px;font-family:ui-monospace,monospace;text-align:right;color:#b45309">−€248.00</span>
+          <span style="display:flex;gap:8px;justify-content:flex-end;color:#a1a1aa;font-size:12px"><span style="cursor:pointer">✎</span><span style="cursor:pointer">✕</span></span>
+        </div>
+
+        <!-- add from catalog (open) -->
+        <div style="padding:11px 14px;border-bottom:1px solid #f1f1f3;position:relative">
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#00714a;border:1.5px solid #00935e;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer">+ Add line from catalog <span style="color:#a1a1aa">▴</span></span>
+          <div style="margin-top:8px;width:440px;background:#fff;border:1px solid #e4e4e7;border-radius:9px;box-shadow:0 16px 40px -12px rgba(0,0,0,.22);overflow:hidden">
+            <div style="padding:9px 13px;border-bottom:1px solid #f6f6f7;cursor:pointer" style-hover="background:#f6faf8"><div style="font-size:12.5px;font-weight:600">Plan renewal</div><div style="font-size:10.5px;color:#a1a1aa">prefilled: Professional · yearly · €1,788 · next period dates</div></div>
+            <div style="padding:9px 13px;border-bottom:1px solid #f6f6f7;cursor:pointer;background:#f6faf8"><div style="font-size:12.5px;font-weight:600">Plan upgrade — prorated</div><div style="font-size:10.5px;color:#71717a">new plan price minus credit for unused time on the current plan, computed from subscription dates</div></div>
+            <div style="padding:9px 13px;border-bottom:1px solid #f6f6f7;cursor:pointer" style-hover="background:#f6faf8"><div style="font-size:12.5px;font-weight:600">Custom limit add-on</div><div style="font-size:10.5px;color:#a1a1aa">prefilled from the tenant’s active overrides</div></div>
+            <div style="padding:9px 13px;border-bottom:1px solid #f6f6f7;cursor:pointer" style-hover="background:#f6faf8"><div style="font-size:12.5px;font-weight:600">Trial extension · €0</div><div style="font-size:10.5px;color:#a1a1aa">zero-amount line — documents the extension on paper</div></div>
+            <div style="padding:9px 13px;cursor:pointer" style-hover="background:#f6faf8"><div style="font-size:12.5px;font-weight:600">Custom line…</div><div style="font-size:10.5px;color:#a1a1aa">free description + amount</div></div>
+          </div>
+        </div>
+
+        <!-- services & goods block -->
+        <div style="padding:8px 14px;background:#fafafa;border-bottom:1px solid #ececef;font-size:10px;font-weight:700;color:#71717a;letter-spacing:.08em">SERVICES &amp; GOODS</div>
+        <div style="display:grid;grid-template-columns:20px 1fr 96px 70px;gap:12px;align-items:center;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+          <span style="color:#c4c4c9;font-size:13px;cursor:grab">⠿</span>
+          <div><div style="font-size:12.5px;font-weight:600">Training: working with the service</div><div style="font-size:10.5px;color:#a1a1aa">12 h × €250.00 · unit: hour · VAT 0% RC</div></div>
+          <span style="font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">€3,000.00</span>
+          <span style="display:flex;gap:8px;justify-content:flex-end;color:#a1a1aa;font-size:12px"><span style="cursor:pointer" style-hover="color:#00935e">✎</span><span style="cursor:pointer" style-hover="color:#dc2626">✕</span></span>
+        </div>
+        <div style="padding:11px 14px;border-bottom:1px solid #f1f1f3;display:flex;align-items:center;gap:12px">
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:#00714a;border:1px solid #bfe8d6;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer" style-hover="border-color:#00935e">+ Add service line <span style="color:#a1a1aa">▾</span></span>
+          <span style="font-size:10.5px;color:#a1a1aa">catalog: training / hour · on-site support / day · badge stock / pcs · custom line</span>
+        </div>
+
+        <!-- totals -->
+        <div style="display:flex;justify-content:flex-end;padding:12px 14px;background:#fafafa">
+          <div style="width:270px;display:flex;flex-direction:column;gap:5px;font-size:12px">
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Subtotal</span><span style="font-family:ui-monospace,monospace">€4,840.00</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">VAT 0% — reverse charge</span><span style="font-family:ui-monospace,monospace">€0.00</span></div>
+            <div style="display:flex;justify-content:space-between;border-top:1px solid #e4e4e7;padding-top:6px;font-weight:700;font-size:13px"><span>Total</span><span style="font-family:ui-monospace,monospace">€4,840.00</span></div>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:#71717a;line-height:1.65;margin-top:12px">Catalog lines are prefilled from the plan card and active overrides — operators never retype prices. Proration credits compute from subscription dates and stay editable. “Linked to” ties a line to the subscription change it pays for (feeds the “linked change” column in <a href="#2a">2a</a>). Totals recalc live; VAT mode and currency come from the tenant billing profile. Two groups — Subscription and Services &amp; goods — print as the two blocks on <a href="#3a">3a</a>; service lines carry qty × unit price (hour / day / pcs).</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="dv-next">Try next: “make the QR and barcode payloads real” · “show the Mark paid sheet closing INV-1043” · “export <a class="dv-oid" href="#3a">3a</a> as a standalone printable PDF”</p>
+</section>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Manual invoicing &amp; document templates — committed to <a class="dv-oid" href="#1a">1a</a> dark chrome, <a class="dv-oid" href="#1e">1e</a> stacked workbench, <a class="dv-oid" href="#1g">1g</a> sheet pattern</span></div>
+
+<div class="dv-group">Billing inside the tenant workbench</div>
+<div class="dv-opts">
+
+<!-- ============ 2a: BILLING SECTION IN WORKBENCH ============ -->
+<div class="dv-opt" id="2a">
+  <div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Billing section · invoices as first-class records, paid → drives the plan change</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="2a Tenant billing">
+    <!-- dark chrome (1a) -->
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+
+    <!-- identity header -->
+    <div style="background:#fff;border-bottom:1px solid #ececef;padding:14px 22px">
+      <div style="font-size:11.5px;color:#71717a;margin-bottom:8px"><a href="#1c">← Tenants</a> / Acme Conf Group</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:9px;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-weight:700;font-size:16px">A</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <h2 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-0.01em">Acme Conf Group</h2>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #bfe8d6;background:#e7f5ee;color:#00714a"><span style="width:6px;height:6px;border-radius:50%;background:#00935e"></span>Active</span>
+            <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46">Professional</span>
+            <span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 6px">CUSTOM LIMITS</span>
+          </div>
+          <div style="font-size:11.5px;color:#71717a;margin-top:3px"><span style="font-family:ui-monospace,monospace">acme-conf</span> · created Mar 2, 2025 · next billing Aug 1 (manual) · 4 users</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span style="font-size:12px;font-weight:600;border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:7px 13px;cursor:pointer"><a href="#1h" style="color:#1d4ed8">Impersonate…</a></span>
+          <span style="font-size:12px;font-weight:600;border:1px solid #fecaca;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer" style-hover="background:#fef2f2"><a href="#1f" style="color:#b91c1c">Suspend…</a></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fafafa;display:grid;grid-template-columns:168px 1fr;gap:18px;padding:18px 22px 26px">
+      <div style="position:sticky;top:14px;align-self:start;display:flex;flex-direction:column;gap:1px;font-size:12.5px;font-weight:500">
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Summary</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Subscription &amp; limits</span>
+        <span style="padding:7px 11px;border-radius:7px;background:#e7f5ee;color:#00714a;font-weight:600">Billing</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Lifecycle</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Users</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Activity</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+        <!-- balance strip -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px">
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+            <div style="font-size:11px;font-weight:600;color:#71717a">Outstanding</div>
+            <div style="font-size:19px;font-weight:700;margin-top:2px">€2,088</div>
+            <div style="font-size:10.5px;color:#a1a1aa">INV-1043 · due Jul 24</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+            <div style="font-size:11px;font-weight:600;color:#71717a">Paid, 12 months</div>
+            <div style="font-size:19px;font-weight:700;margin-top:2px">€2,237</div>
+            <div style="font-size:10.5px;color:#a1a1aa">3 invoices</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+            <div style="font-size:11px;font-weight:600;color:#71717a">Next renewal</div>
+            <div style="font-size:19px;font-weight:700;margin-top:2px">Aug 1</div>
+            <div style="font-size:10.5px;color:#a1a1aa">Professional · yearly</div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+            <div style="font-size:11px;font-weight:600;color:#71717a">Payment terms</div>
+            <div style="font-size:19px;font-weight:700;margin-top:2px">14 days</div>
+            <div style="font-size:10.5px;color:#a1a1aa">via procurement, allow 2–3 wks</div>
+          </div>
+        </div>
+
+        <!-- invoices table -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f1f1f3">
+            <span style="font-size:12.5px;font-weight:700">Invoices</span>
+            <span style="font-size:11px;color:#71717a">payment happens outside the system — the console tracks issue → sent → paid</span>
+            <span style="margin-left:auto;font-size:11.5px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:5px 12px;cursor:pointer" style-hover="background:#00714a"><a href="#2b" style="color:#fff">Issue invoice…</a></span>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 220px 90px 90px 80px 110px 1fr 150px;gap:0 12px;padding:7px 16px;border-bottom:1px solid #ececef;background:#fafafa;font-size:10.5px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em">
+            <span>Number</span><span>What for</span><span>Issued</span><span>Due</span><span style="text-align:right">Amount</span><span>Status</span><span>Linked change</span><span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 220px 90px 90px 80px 110px 1fr 150px;gap:0 12px;align-items:center;padding:9px 16px;border-bottom:1px solid #f6f6f7">
+            <span style="font-size:12px;font-family:ui-monospace,monospace;font-weight:600">INV-1044</span>
+            <span style="font-size:12px;color:#3f3f46">Custom limit add-on · 10k attendees</span>
+            <span style="font-size:11.5px;color:#71717a">—</span>
+            <span style="font-size:11.5px;color:#71717a">—</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€300</span>
+            <span style="justify-self:start;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid #e4e4e7;background:#f4f4f5;color:#52525b"><span style="width:6px;height:6px;border-radius:50%;background:#a1a1aa"></span>Draft</span>
+            <span style="font-size:11px;color:#a1a1aa">will link on payment</span>
+            <span style="display:flex;gap:6px;justify-content:flex-end"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#00935e">Edit</span><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#00935e">Send</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 220px 90px 90px 80px 110px 1fr 150px;gap:0 12px;align-items:center;padding:9px 16px;border-bottom:1px solid #f6f6f7">
+            <span style="font-size:12px;font-family:ui-monospace,monospace;font-weight:600">INV-1043</span>
+            <span style="font-size:12px;color:#3f3f46">Professional · Aug 2026 – Jul 2027</span>
+            <span style="font-size:11.5px;color:#71717a">Jul 10</span>
+            <span style="font-size:11.5px;color:#3f3f46;font-weight:600">Jul 24</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€2,088</span>
+            <span style="justify-self:start;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8"><span style="width:6px;height:6px;border-radius:50%;background:#2563eb"></span>Sent</span>
+            <span style="font-size:11px;color:#71717a">on paid → renew Professional to Aug 2027</span>
+            <span style="display:flex;gap:6px;justify-content:flex-end"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#00935e">PDF</span><span style="font-size:11px;font-weight:600;color:#00714a;border:1px solid #bfe8d6;background:#e7f5ee;border-radius:6px;padding:3px 9px;cursor:pointer">Mark paid…</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 220px 90px 90px 80px 110px 1fr 150px;gap:0 12px;align-items:center;padding:9px 16px;border-bottom:1px solid #f6f6f7">
+            <span style="font-size:12px;font-family:ui-monospace,monospace;font-weight:600">INV-1027</span>
+            <span style="font-size:12px;color:#3f3f46">Upgrade Starter → Professional</span>
+            <span style="font-size:11.5px;color:#71717a">May 28</span>
+            <span style="font-size:11.5px;color:#71717a">Jun 11</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€1,490</span>
+            <span style="justify-self:start;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid #bfe8d6;background:#e7f5ee;color:#00714a"><span style="width:6px;height:6px;border-radius:50%;background:#00935e"></span>Paid Jun 2</span>
+            <span style="font-size:11px;color:#71717a">→ Plan: Starter → Professional (jr, Jun 2)</span>
+            <span style="display:flex;gap:6px;justify-content:flex-end"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#00935e">PDF</span></span>
+          </div>
+          <div style="display:grid;grid-template-columns:92px 220px 90px 90px 80px 110px 1fr 150px;gap:0 12px;align-items:center;padding:9px 16px">
+            <span style="font-size:12px;font-family:ui-monospace,monospace;font-weight:600">INV-1013</span>
+            <span style="font-size:12px;color:#3f3f46">Starter · Apr 2025 – Mar 2026</span>
+            <span style="font-size:11.5px;color:#71717a">Mar 31</span>
+            <span style="font-size:11.5px;color:#71717a">Apr 14</span>
+            <span style="font-size:12px;font-family:ui-monospace,monospace;text-align:right">€588</span>
+            <span style="justify-self:start;display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid #bfe8d6;background:#e7f5ee;color:#00714a"><span style="width:6px;height:6px;border-radius:50%;background:#00935e"></span>Paid Apr 14</span>
+            <span style="font-size:11px;color:#71717a">→ Trial → Starter (jr, Apr 14)</span>
+            <span style="display:flex;gap:6px;justify-content:flex-end"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#00935e">PDF</span></span>
+          </div>
+        </div>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+          <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:#71717a;line-height:1.65">Status vocabulary: Draft (gray) → Sent (blue) → Paid (green) / Overdue (red, auto after due date). “Mark paid…” opens a sheet that records payment AND proposes the linked subscription change in one step — billing and plan state never drift apart. Every transition lands in the audit log and the tenant’s change feed.</div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2b: ISSUE INVOICE SHEET ============ -->
+<div class="dv-opt" id="2b">
+  <div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>Issue invoice · side sheet (pattern from <a class="dv-oid" href="#1g">1g</a>), template-driven</div>
+  <div class="dv-card" style="width:760px;background:#3a3d3c" data-screen-label="2b Issue invoice">
+    <div style="display:flex;justify-content:flex-end;min-height:700px">
+      <div style="width:500px;background:#fff;box-shadow:-24px 0 60px -18px rgba(0,0,0,.45);display:flex;flex-direction:column">
+        <div style="padding:18px 22px;border-bottom:1px solid #f1f1f3">
+          <div style="font-size:15.5px;font-weight:700;letter-spacing:-0.01em">Issue invoice — Acme Conf Group</div>
+          <div style="font-size:12px;color:#71717a;margin-top:3px">Number assigned on send · payment is recorded manually when it arrives</div>
+        </div>
+        <div style="padding:16px 22px;display:flex;flex-direction:column;gap:14px;flex:1">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Number</div>
+              <div style="border:1px solid #ececef;background:#fafafa;border-radius:7px;padding:8px 12px;font-size:12.5px;font-family:ui-monospace,monospace;color:#71717a">INV-1043 · auto</div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Due date</div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px">Jul 24, 2026 <span style="color:#a1a1aa">· terms: 14 d</span></div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Document template <span style="font-weight:400;color:#a1a1aa">— manage in <a href="#2c">Documents</a></span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px;display:flex;justify-content:space-between;align-items:center">Invoice · EN (default) <span style="color:#a1a1aa">▾</span></div>
+          </div>
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+              <span style="font-size:11.5px;font-weight:600;color:#3f3f46">Line items</span>
+              <span style="font-size:11px;font-weight:600;color:#00935e;cursor:pointer">+ Add line</span>
+            </div>
+            <div style="border:1px solid #e4e4e7;border-radius:8px;overflow:hidden">
+              <div style="display:grid;grid-template-columns:1fr 90px 24px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid #f1f1f3">
+                <div><div style="font-size:12.5px;font-weight:600">Professional plan · yearly</div><div style="font-size:10.5px;color:#a1a1aa">Aug 1, 2026 – Jul 31, 2027 · prefilled from plan</div></div>
+                <span style="font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">€1,788</span>
+                <span style="color:#c4c4c9;font-size:13px;text-align:center">✕</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 90px 24px;gap:10px;align-items:center;padding:9px 12px;border-bottom:1px solid #f1f1f3">
+                <div><div style="font-size:12.5px;font-weight:600">Custom limit add-on · 10,000 attendees/event</div><div style="font-size:10.5px;color:#a1a1aa">active override on this tenant</div></div>
+                <span style="font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">€300</span>
+                <span style="color:#c4c4c9;font-size:13px;text-align:center">✕</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:9px 12px;background:#fafafa">
+                <span style="font-size:12px;font-weight:700">Total</span>
+                <span style="font-size:12.5px;font-weight:700;font-family:ui-monospace,monospace">€2,088</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">On payment <span style="font-weight:400;color:#a1a1aa">— proposed subscription change, applied when marked paid</span></div>
+            <div style="border:1px solid #bfe8d6;background:#f2faf6;border-radius:7px;padding:9px 12px;font-size:12px;color:#00714a">Renew <b>Professional</b> until Aug 1, 2027 · keep custom limit 10,000</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Internal note <span style="color:#b91c1c">*</span> <span style="font-weight:400;color:#a1a1aa">— audit log</span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:9px 12px;font-size:12.5px;min-height:34px">Yearly renewal agreed with Anna on Jul 8 call; procurement needs 2–3 weeks.</div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;border-top:1px solid #f1f1f3;background:#fafafa">
+          <span style="font-size:12.5px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:8px 14px;cursor:pointer">Save draft</span>
+          <span style="font-size:12.5px;font-weight:600;color:#fff;background:#00935e;border-radius:7px;padding:8px 14px;cursor:pointer" style-hover="background:#00714a">Generate PDF &amp; mark sent</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Document templates</div>
+<div class="dv-opts">
+
+<!-- ============ 2c: DOCUMENT TEMPLATES ============ -->
+<div class="dv-opt" id="2c">
+  <div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Documents · variable-driven templates with live preview, per-language</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="2c Document templates">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+
+    <div style="background:#fafafa;display:grid;grid-template-columns:250px 1fr 360px;gap:16px;padding:18px 22px 26px">
+      <!-- template list -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px"><h2 style="margin:0;font-size:16px;font-weight:700">Documents</h2><span style="font-size:11.5px;font-weight:600;color:#00935e;cursor:pointer">+ New</span></div>
+        <div style="background:#fff;border:1.5px solid #00935e;border-radius:8px;padding:11px 13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,147,94,.12)">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:700">Invoice</span><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 6px">EN · DEFAULT</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">used by Issue invoice · edited Jul 3</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600">Счёт на оплату</span><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#52525b;background:#f4f4f5;border-radius:4px;padding:1px 6px">RU</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">for RU-invoiced tenants · edited Jun 12</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600">Service agreement</span><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#52525b;background:#f4f4f5;border-radius:4px;padding:1px 6px">EN</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">attached to first invoice · edited May 20</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600">Акт об оказании услуг</span><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#52525b;background:#f4f4f5;border-radius:4px;padding:1px 6px">RU</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">generated on “Mark paid” · edited Jun 12</div>
+        </div>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+          <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:#71717a;line-height:1.6;margin-top:6px">Template edits are versioned in the audit log; already-issued PDFs never change.</div>
+        </sc-if>
+      </div>
+
+      <!-- editor -->
+      <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f1f1f3">
+          <span style="font-size:13px;font-weight:700">Invoice · EN</span>
+          <span style="font-size:11px;color:#71717a">v7</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <span style="font-size:11.5px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:5px 11px;cursor:pointer" style-hover="border-color:#00935e">Test with Acme data</span>
+            <span style="font-size:11.5px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:5px 11px;cursor:pointer" style-hover="background:#00714a">Save</span>
+          </div>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid #f1f1f3">
+          <div style="font-size:10.5px;font-weight:700;color:#71717a;letter-spacing:.05em;margin-bottom:8px">VARIABLES — click to insert</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">tenant.legal_name</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">tenant.billing_address</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">invoice.number</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">invoice.due_date</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">invoice.lines</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">invoice.total</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">plan.name</span>
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:2px 7px;cursor:pointer">period</span>
+          </div>
+        </div>
+        <div style="flex:1;padding:14px 16px;font-family:ui-monospace,monospace;font-size:11.5px;line-height:1.9;color:#3f3f46;background:#fcfcfc">
+          <div>INVOICE <span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{invoice.number}</span></div>
+          <div style="color:#a1a1aa">————————————————————————</div>
+          <div>Billed to: <span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{tenant.legal_name}</span></div>
+          <div><span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{tenant.billing_address}</span></div>
+          <div style="margin-top:8px">For: <span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{plan.name}</span> subscription, <span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{period}</span></div>
+          <div style="margin-top:8px"><span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{invoice.lines}</span></div>
+          <div style="margin-top:8px">Total due: <b><span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{invoice.total}</span></b> by <span style="color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">{invoice.due_date}</span></div>
+          <div style="margin-top:8px;color:#71717a">Payment reference: please include the invoice number.<span style="border-left:1.5px solid #18181b">&nbsp;</span></div>
+        </div>
+      </div>
+
+      <!-- preview -->
+      <div>
+        <div style="font-size:10.5px;font-weight:700;color:#71717a;letter-spacing:.05em;margin-bottom:8px">PREVIEW — ACME CONF GROUP · INV-1043</div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;box-shadow:0 10px 26px -14px rgba(0,0,0,.2);padding:22px 24px;min-height:430px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px"><span style="width:20px;height:20px;border-radius:5px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:12px">И</span>Idento OÜ</span>
+            <span style="font-family:ui-monospace,monospace;font-size:11px;color:#71717a">INV-1043</span>
+          </div>
+          <div style="height:1px;background:#ececef"></div>
+          <div style="font-size:11px;color:#52525b;line-height:1.6">Billed to: <b>Acme Conf Group LLC</b><br>Herengracht 124, Amsterdam, NL</div>
+          <div style="font-size:11px;color:#52525b">For: <b>Professional</b> subscription, Aug 1, 2026 – Jul 31, 2027</div>
+          <div style="border:1px solid #ececef;border-radius:6px;overflow:hidden;font-size:10.5px">
+            <div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #f1f1f3"><span>Professional plan · yearly</span><span style="font-family:ui-monospace,monospace">€1,788</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #f1f1f3"><span>Custom limit add-on · 10k attendees</span><span style="font-family:ui-monospace,monospace">€300</span></div>
+            <div style="display:flex;justify-content:space-between;padding:6px 10px;background:#fafafa;font-weight:700"><span>Total due by Jul 24, 2026</span><span style="font-family:ui-monospace,monospace">€2,088</span></div>
+          </div>
+          <div style="font-size:10px;color:#a1a1aa;margin-top:auto">Payment reference: please include the invoice number.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="dv-next">Try next: “move all turn-1 screens to <a class="dv-oid" href="#1a">1a</a>’s dark chrome” · “add an overdue queue to the Overview” · “show the Mark paid sheet”</p>
+</section>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Idento Platform Console — all surfaces · EN · light + dark components</span></div>
+
+<div class="dv-group">Console signature × Overview queues — two directions</div>
+<div class="dv-opts">
+
+<!-- ============ 1a: OVERVIEW, dark top chrome, queue modules ============ -->
+<div class="dv-opt" id="1a">
+  <div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Signature A: inverted dark top chrome · queues as three modules</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1a Overview — dark chrome">
+
+    <!-- shell A: dark top chrome -->
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Analytics</span>
+      </div>
+      <div style="flex:1;max-width:320px;margin-left:auto;display:flex;align-items:center;gap:8px;background:#1c1c21;border:1px solid #2b2b31;border-radius:7px;padding:6px 11px;font-size:12.5px;color:#8d8d96">
+        <span style="font-size:12px">⌕</span> Search tenants…
+        <span style="margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#6f6f78;border:1px solid #33333a;border-radius:4px;padding:1px 5px">⌘K</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="width:26px;height:26px;border-radius:50%;border:1px solid #33333a;display:grid;place-items:center;color:#9d9da6;font-size:12px">☾</span>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="width:26px;height:26px;border-radius:50%;background:#2b4a3d;color:#7fe0b7;display:grid;place-items:center;font-size:11px;font-weight:700">SP</span>
+          <span style="font-size:12px;color:#9d9da6">support@idento.io</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fafafa;padding:22px 26px 28px">
+      <!-- KPI strip -->
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin:0;font-size:17px;font-weight:700;letter-spacing:-0.01em">Overview</h2>
+        <span style="font-size:11.5px;color:#71717a">Thu, Jul 10 · 14:36 UTC · every number links to the tenant list behind it</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:18px">
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">Active tenants</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px">24</div>
+          <a href="#1c" style="font-size:10.5px;color:#00935e;font-weight:600">View list →</a>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">On trial</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px">6</div>
+          <a href="#1c" style="font-size:10.5px;color:#00935e;font-weight:600">View list →</a>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">Suspended</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px;color:#b45309">2</div>
+          <a href="#1c" style="font-size:10.5px;color:#00935e;font-weight:600">View list →</a>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">Trial → paid, 90 d</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px">38%</div>
+          <div style="font-size:10.5px;color:#a1a1aa">8 of 21 trials</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">Active events now</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px">7</div>
+          <div style="font-size:10.5px;color:#a1a1aa">across 5 tenants</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+          <div style="font-size:11px;font-weight:600;color:#71717a">Check-ins today</div>
+          <div style="font-size:22px;font-weight:700;margin-top:2px">3,412</div>
+          <div style="font-size:10.5px;color:#a1a1aa">platform-wide</div>
+        </div>
+      </div>
+
+      <!-- queues row -->
+      <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-bottom:14px">
+        <!-- trials expiring -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+            <span style="width:7px;height:7px;border-radius:50%;background:#2563eb"></span>
+            <span style="font-size:12.5px;font-weight:700">Trials ending within 7 days</span>
+            <span style="font-size:11px;font-weight:700;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:99px;padding:1px 7px">4</span>
+            <a href="#1c" style="margin-left:auto;font-size:11px;font-weight:600">Open as filter →</a>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 90px 1fr auto;gap:0 12px;align-items:center;padding:9px 14px;border-bottom:1px solid #f6f6f7">
+            <div><div style="font-size:12.5px;font-weight:600">Orbit Weekly</div><div style="font-size:11px;color:#71717a">1 event · 60 attendees · 1 user</div></div>
+            <span style="font-size:11.5px;font-weight:700;color:#b91c1c">ends tomorrow</span>
+            <span style="font-size:11px;color:#71717a">low usage — likely churn</span>
+            <div style="display:flex;gap:6px"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Extend trial</span><span style="font-size:11px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="background:#00714a">Assign plan</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 90px 1fr auto;gap:0 12px;align-items:center;padding:9px 14px;border-bottom:1px solid #f6f6f7">
+            <div><div style="font-size:12.5px;font-weight:600">Beacon Events</div><div style="font-size:11px;color:#71717a">2 events · 380 attendees · 2 users</div></div>
+            <span style="font-size:11.5px;font-weight:700;color:#b45309">in 2 days</span>
+            <span style="font-size:11px;color:#71717a">active daily — invoice #1041 sent</span>
+            <div style="display:flex;gap:6px"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Extend trial</span><span style="font-size:11px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="background:#00714a">Assign plan</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 90px 1fr auto;gap:0 12px;align-items:center;padding:9px 14px;border-bottom:1px solid #f6f6f7">
+            <div><div style="font-size:12.5px;font-weight:600">DevDays Berlin</div><div style="font-size:11px;color:#71717a">1 event · 140 attendees · 3 users</div></div>
+            <span style="font-size:11.5px;font-weight:600;color:#52525b">in 5 days</span>
+            <span style="font-size:11px;color:#71717a">building badge templates</span>
+            <div style="display:flex;gap:6px"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Extend trial</span><span style="font-size:11px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="background:#00714a">Assign plan</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1.2fr 90px 1fr auto;gap:0 12px;align-items:center;padding:9px 14px">
+            <div><div style="font-size:12.5px;font-weight:600">Interlace Media</div><div style="font-size:11px;color:#71717a">2 events · 210 attendees · 1 user</div></div>
+            <span style="font-size:11.5px;font-weight:600;color:#52525b">in 6 days</span>
+            <span style="font-size:11px;color:#71717a">no contact yet</span>
+            <div style="display:flex;gap:6px"><span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Extend trial</span><span style="font-size:11px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="background:#00714a">Assign plan</span></div>
+          </div>
+        </div>
+
+        <!-- over limit + suspended stacked -->
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+              <span style="width:7px;height:7px;border-radius:50%;background:#dc2626"></span>
+              <span style="font-size:12.5px;font-weight:700">Over limit</span>
+              <span style="font-size:11px;font-weight:700;color:#b91c1c;background:#fff;border:1px solid #fca5a5;border-radius:99px;padding:1px 7px">3</span>
+              <a href="#1c" style="margin-left:auto;font-size:11px;font-weight:600">Open as filter →</a>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f6f6f7">
+              <div style="flex:1"><span style="font-size:12.5px;font-weight:600">Forum One</span><div style="font-size:11px;color:#71717a">attendees 612 / 500 per event</div></div>
+              <div style="width:64px;height:5px;border-radius:3px;background:#f1f1f3;overflow:hidden"><div style="width:100%;height:100%;background:#dc2626"></div></div>
+              <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Review</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f6f6f7">
+              <div style="flex:1"><span style="font-size:12.5px;font-weight:600">Kappa Conferences</span><div style="font-size:11px;color:#71717a">users 4 / 2 on Free</div></div>
+              <div style="width:64px;height:5px;border-radius:3px;background:#f1f1f3;overflow:hidden"><div style="width:100%;height:100%;background:#dc2626"></div></div>
+              <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Review</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px">
+              <div style="flex:1"><span style="font-size:12.5px;font-weight:600">Cityline Expo</span><div style="font-size:11px;color:#71717a">events 11 / 10 this month</div></div>
+              <div style="width:64px;height:5px;border-radius:3px;background:#f1f1f3;overflow:hidden"><div style="width:100%;height:100%;background:#dc2626"></div></div>
+              <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Review</span>
+            </div>
+          </div>
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid #f1f1f3">
+              <span style="width:7px;height:7px;border-radius:50%;background:#d97706"></span>
+              <span style="font-size:12.5px;font-weight:700">Recently suspended</span>
+              <span style="font-size:11px;font-weight:700;color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:99px;padding:1px 7px">2</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid #f6f6f7">
+              <div style="flex:1"><span style="font-size:12.5px;font-weight:600">GreenBadge Co</span><div style="font-size:11px;color:#71717a">3 d ago · invoice #1031 unpaid</div></div>
+              <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Reactivate</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px">
+              <div style="flex:1"><span style="font-size:12.5px;font-weight:600">NorthPress</span><div style="font-size:11px;color:#71717a">12 d ago · requested by owner</div></div>
+              <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 9px;cursor:pointer" style-hover="border-color:#00935e">Reactivate</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- analytics row -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:12.5px;font-weight:700">Signups per week</span><span style="font-size:10.5px;color:#a1a1aa">12 weeks</span></div>
+          <div style="display:flex;align-items:flex-end;gap:5px;height:84px;margin-top:12px">
+            <sc-for list="{{ signupBars }}" as="b" hint-placeholder-count="12"><div style="flex:1;border-radius:3px 3px 0 0;background:{{ b.bg }};height:{{ b.h }}"></div></sc-for>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9.5px;color:#a1a1aa;margin-top:5px;font-family:ui-monospace,monospace"><span>Apr 20</span><span>Jul 6</span></div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:12.5px;font-weight:700">Check-ins per day</span><span style="font-size:10.5px;color:#a1a1aa">14 days</span></div>
+          <div style="display:flex;align-items:flex-end;gap:4px;height:84px;margin-top:12px">
+            <sc-for list="{{ checkinBars }}" as="b" hint-placeholder-count="14"><div style="flex:1;border-radius:3px 3px 0 0;background:{{ b.bg }};height:{{ b.h }}"></div></sc-for>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9.5px;color:#a1a1aa;margin-top:5px;font-family:ui-monospace,monospace"><span>Jun 27</span><span>today</span></div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:11px"><span style="font-size:12.5px;font-weight:700">Tenants by plan</span><a href="#1i" style="font-size:10.5px;font-weight:600">Plans →</a></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ planBars }}" as="p" hint-placeholder-count="4">
+              <div style="display:grid;grid-template-columns:86px 1fr 22px;align-items:center;gap:9px">
+                <span style="font-size:11.5px;color:#52525b">{{ p.name }}</span>
+                <div style="height:8px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#00935e;width:{{ p.w }}"></div></div>
+                <span style="font-size:11.5px;font-weight:600;text-align:right">{{ p.n }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="border-top:1px solid #f1f1f3;margin-top:12px;padding-top:10px">
+            <div style="font-size:11px;font-weight:600;color:#71717a;margin-bottom:7px">Top tenants by usage (attendees)</div>
+            <sc-for list="{{ topTenants }}" as="p" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:110px 1fr 44px;align-items:center;gap:9px;padding:2px 0">
+                <span style="font-size:11.5px;color:#52525b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+                <div style="height:6px;border-radius:3px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:3px;background:#8fd6b8;width:{{ p.w }}"></div></div>
+                <span style="font-size:11px;font-weight:600;text-align:right;font-family:ui-monospace,monospace">{{ p.n }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1b: OVERVIEW, green rail, unified action inbox ============ -->
+<div class="dv-opt" id="1b">
+  <div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Signature B: colored console rail · queues merged into one “Needs attention” inbox</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1b Overview — rail">
+    <div style="display:grid;grid-template-columns:216px 1fr;min-height:760px">
+
+      <!-- shell B: colored rail -->
+      <div style="background:#0b2a1e;color:#cfe9dd;display:flex;flex-direction:column;padding:16px 12px">
+        <div style="display:flex;align-items:center;gap:9px;padding:2px 8px 14px">
+          <div style="width:26px;height:26px;border-radius:7px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px">И</div>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:#fff;letter-spacing:-0.01em">Idento</div>
+            <div style="font-family:ui-monospace,monospace;font-size:9px;letter-spacing:.09em;color:#5fbf97">PLATFORM CONSOLE</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px;font-size:13px;font-weight:500">
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;background:rgba(255,255,255,.09);color:#fff">Overview<span style="margin-left:auto;font-size:10.5px;font-weight:700;background:#dc2626;color:#fff;border-radius:99px;padding:1px 6px">9</span></div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:#9fc9b6">Tenants<span style="margin-left:auto;font-size:10.5px;color:#5f8f79">32</span></div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:#9fc9b6">Plans</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:#9fc9b6">All Users</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:#9fc9b6">Audit Log</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;color:#9fc9b6">Analytics</div>
+        </div>
+        <div style="margin-top:auto;border-top:1px solid rgba(255,255,255,.1);padding-top:12px;display:flex;align-items:center;gap:8px;padding-left:8px">
+          <span style="width:26px;height:26px;border-radius:50%;background:#1d4d38;color:#7fe0b7;display:grid;place-items:center;font-size:11px;font-weight:700">SP</span>
+          <div><div style="font-size:11.5px;color:#e6f4ed;font-weight:600">support</div><div style="font-size:10px;color:#5f8f79">super admin</div></div>
+          <span style="margin-left:auto;width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.14);display:grid;place-items:center;font-size:11px;color:#9fc9b6">☾</span>
+        </div>
+      </div>
+
+      <!-- content -->
+      <div style="background:#fafafa;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:14px;height:52px;padding:0 22px;background:#fff;border-bottom:1px solid #ececef">
+          <div style="flex:1;max-width:380px;display:flex;align-items:center;gap:8px;background:#f4f4f5;border:1px solid #e9e9ec;border-radius:7px;padding:6px 11px;font-size:12.5px;color:#8d8d96">
+            <span>⌕</span> Search tenants by name, slug, owner email…
+            <span style="margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#a1a1aa;border:1px solid #e4e4e7;border-radius:4px;padding:1px 5px">⌘K</span>
+          </div>
+          <span style="margin-left:auto;font-size:11.5px;color:#71717a">Thu, Jul 10 · 14:36 UTC</span>
+          <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:5px;padding:3px 7px">production</span>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;padding:20px 22px 26px">
+          <!-- unified inbox -->
+          <div>
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+              <h2 style="margin:0;font-size:16px;font-weight:700;letter-spacing:-0.01em">Needs attention</h2>
+              <span style="font-size:11.5px;color:#71717a">9 items · trials, limits and suspensions in one queue, most urgent first</span>
+            </div>
+            <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+              <sc-for list="{{ inbox }}" as="q" hint-placeholder-count="8">
+                <div style="display:grid;grid-template-columns:92px 1fr auto;gap:12px;align-items:center;padding:10px 14px;border-bottom:1px solid #f6f6f7">
+                  <span style="justify-self:start;font-size:9.5px;font-weight:700;letter-spacing:.05em;font-family:ui-monospace,monospace;color:{{ q.tfg }};background:{{ q.tbg }};border:1px solid {{ q.tbd }};border-radius:5px;padding:2px 6px">{{ q.t }}</span>
+                  <div>
+                    <div style="font-size:12.5px;font-weight:600">{{ q.name }}</div>
+                    <div style="font-size:11px;color:#71717a">{{ q.line }}</div>
+                  </div>
+                  <span style="font-size:11px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap" style-hover="border-color:#00935e">{{ q.act }}</span>
+                </div>
+              </sc-for>
+              <div style="padding:9px 14px;font-size:11px;color:#a1a1aa">+ 1 more · <a href="#1c" style="font-weight:600">open Tenants with this filter →</a></div>
+            </div>
+          </div>
+
+          <!-- analytics summary column -->
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+                <div style="font-size:11px;font-weight:600;color:#71717a">Active tenants</div>
+                <div style="font-size:20px;font-weight:700;margin-top:2px">24</div>
+              </div>
+              <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+                <div style="font-size:11px;font-weight:600;color:#71717a">On trial</div>
+                <div style="font-size:20px;font-weight:700;margin-top:2px">6</div>
+              </div>
+              <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+                <div style="font-size:11px;font-weight:600;color:#71717a">Trial → paid, 90 d</div>
+                <div style="font-size:20px;font-weight:700;margin-top:2px">38%</div>
+              </div>
+              <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px">
+                <div style="font-size:11px;font-weight:600;color:#71717a">Check-ins today</div>
+                <div style="font-size:20px;font-weight:700;margin-top:2px">3,412</div>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:12.5px;font-weight:700">Signups per week</span><span style="font-size:10.5px;color:#a1a1aa">12 weeks</span></div>
+              <div style="display:flex;align-items:flex-end;gap:5px;height:64px;margin-top:12px">
+                <sc-for list="{{ signupBars }}" as="b" hint-placeholder-count="12"><div style="flex:1;border-radius:3px 3px 0 0;background:{{ b.bg }};height:{{ b.h }}"></div></sc-for>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+              <div style="font-size:12.5px;font-weight:700;margin-bottom:10px">Tenants by plan</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ planBars }}" as="p" hint-placeholder-count="4">
+                  <div style="display:grid;grid-template-columns:86px 1fr 22px;align-items:center;gap:9px">
+                    <span style="font-size:11.5px;color:#52525b">{{ p.name }}</span>
+                    <div style="height:8px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#00935e;width:{{ p.w }}"></div></div>
+                    <span style="font-size:11.5px;font-weight:600;text-align:right">{{ p.n }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:13px 14px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px"><span style="font-size:12.5px;font-weight:700">Active events now</span><span style="font-size:11px;font-weight:700;color:#00714a;background:#e7f5ee;border:1px solid #bfe8d6;border-radius:99px;padding:1px 7px">7</span></div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:11.5px;color:#52525b">
+                <div style="display:flex;justify-content:space-between"><span>Spring Summit 2026 · Acme Conf Group</span><span style="font-family:ui-monospace,monospace;color:#71717a">1,204 in</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Tallinn Tech Days · Eventra OÜ</span><span style="font-family:ui-monospace,monospace;color:#71717a">867 in</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Press Forum · Meridian Group</span><span style="font-family:ui-monospace,monospace;color:#71717a">311 in</span></div>
+                <div style="font-size:10.5px;color:#a1a1aa">+ 4 more</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MORE-SIG -->
+</div>
+
+<div class="dv-group">Tenants list — saved queues as first-class filters</div>
+<div class="dv-opts">
+
+<!-- ============ 1c: TENANTS LIST ============ -->
+<div class="dv-opt" id="1c">
+  <div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Tenants · status / plan / usage columns, operator-question filters · dark chrome per <a class="dv-oid" href="#1a">1a</a></div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1c Tenants list">
+    <div style="display:grid;grid-template-columns:1fr;grid-template-rows:auto 1fr;min-height:820px">
+
+      <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+        <div style="display:flex;align-items:center;gap:9px">
+          <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+          <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+        </div>
+        <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+        <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+          <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+          <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Tenants</span>
+          <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+          <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+          <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+          <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+        </div>
+        <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+      </div>
+
+      <div style="background:#fafafa;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;gap:14px;height:52px;padding:0 22px;background:#fff;border-bottom:1px solid #ececef">
+          <div style="flex:1;max-width:380px;display:flex;align-items:center;gap:8px;background:#f4f4f5;border:1px solid #e9e9ec;border-radius:7px;padding:6px 11px;font-size:12.5px;color:#8d8d96">
+            <span>⌕</span> Search tenants by name, slug, owner email…
+            <span style="margin-left:auto;font-family:ui-monospace,monospace;font-size:10px;color:#a1a1aa;border:1px solid #e4e4e7;border-radius:4px;padding:1px 5px">⌘K</span>
+          </div>
+          <span style="margin-left:auto;font-size:12.5px;font-weight:600;color:#fff;background:#00935e;border-radius:7px;padding:7px 14px;cursor:pointer" style-hover="background:#00714a">+ Create tenant</span>
+        </div>
+
+        <div style="padding:18px 22px 24px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+            <h2 style="margin:0;font-size:16px;font-weight:700;letter-spacing:-0.01em">Tenants</h2>
+            <span style="font-size:11.5px;color:#71717a">32 organizations</span>
+          </div>
+
+          <!-- saved queues -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <span style="font-size:11.5px;font-weight:600;color:#fff;background:#18181b;border:1px solid #18181b;border-radius:99px;padding:5px 12px">All · 32</span>
+            <span style="font-size:11.5px;font-weight:600;color:#1d4ed8;background:#fff;border:1px solid #bfdbfe;border-radius:99px;padding:5px 12px;cursor:pointer">Trials expiring this week · 4</span>
+            <span style="font-size:11.5px;font-weight:600;color:#b91c1c;background:#fff;border:1px solid #fca5a5;border-radius:99px;padding:5px 12px;cursor:pointer">Over limit · 3</span>
+            <span style="font-size:11.5px;font-weight:600;color:#b45309;background:#fff;border:1px solid #fde68a;border-radius:99px;padding:5px 12px;cursor:pointer">Suspended · 2</span>
+            <span style="font-size:11.5px;font-weight:600;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:99px;padding:5px 12px;cursor:pointer">On custom limits · 5</span>
+            <span style="margin-left:auto;display:flex;gap:8px">
+              <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Status: any ▾</span>
+              <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Plan: any ▾</span>
+              <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Sort: last activity ▾</span>
+            </span>
+          </div>
+
+          <!-- table -->
+          <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+            <div style="display:grid;grid-template-columns:218px 148px 132px 52px 46px 200px 76px 96px 30px;gap:0 12px;align-items:center;padding:8px 14px;border-bottom:1px solid #ececef;background:#fafafa;font-size:10.5px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em">
+              <span>Tenant</span><span>Status</span><span>Plan</span><span style="text-align:right">Events</span><span style="text-align:right">Users</span><span>Attendees vs limit</span><span>Created</span><span>Last activity</span><span></span>
+            </div>
+            <sc-for list="{{ tenants }}" as="t" hint-placeholder-count="10">
+              <div style="display:grid;grid-template-columns:218px 148px 132px 52px 46px 200px 76px 96px 30px;gap:0 12px;align-items:center;padding:8px 14px;border-bottom:1px solid #f6f6f7;cursor:pointer" style-hover="background:#fafcfb">
+                <div>
+                  <div style="font-size:12.5px;font-weight:600">{{ t.n }}</div>
+                  <div style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace">{{ t.slug }}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-start;gap:3px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;border:1px solid {{ t.bd }};background:{{ t.bg }};color:{{ t.fg }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ t.dot }}"></span>{{ t.st }}<span style="font-weight:500;color:{{ t.fg }}">{{ t.sub }}</span></span>
+                  <sc-if value="{{ t.ol }}" hint-placeholder-val="{{ false }}"><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#b91c1c;border:1px solid #fca5a5;border-radius:5px;padding:1px 6px">OVER LIMIT · {{ t.ol }}</span></sc-if>
+                </div>
+                <div style="font-size:12px;color:#3f3f46">{{ t.plan }}<sc-if value="{{ t.custom }}" hint-placeholder-val="{{ false }}"><span style="margin-left:5px;font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 5px">CUSTOM</span></sc-if></div>
+                <span style="font-size:12px;text-align:right;font-family:ui-monospace,monospace">{{ t.ev }}</span>
+                <span style="font-size:12px;text-align:right;font-family:ui-monospace,monospace">{{ t.us }}</span>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:72px;height:5px;border-radius:3px;background:#f1f1f3;overflow:hidden;flex:none"><div style="height:100%;border-radius:3px;background:{{ t.mc }};width:{{ t.mw }}"></div></div>
+                  <span style="font-size:11px;color:#52525b;font-family:ui-monospace,monospace;white-space:nowrap">{{ t.mt }}</span>
+                </div>
+                <span style="font-size:11.5px;color:#71717a">{{ t.cr }}</span>
+                <span style="font-size:11.5px;color:#71717a">{{ t.la }}</span>
+                <span style="color:#a1a1aa;font-size:13px;text-align:right">›</span>
+              </div>
+            </sc-for>
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;font-size:11.5px;color:#71717a">
+              <span>1–14 of 32 · server-side pagination</span>
+              <div style="display:flex;gap:6px">
+                <span style="border:1px solid #e4e4e7;border-radius:6px;padding:4px 10px;color:#a1a1aa">← Prev</span>
+                <span style="border:1px solid #e4e4e7;border-radius:6px;padding:4px 10px;font-weight:600;cursor:pointer" style-hover="border-color:#00935e">Next →</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Tenant detail workbench — tabs vs stacked</div>
+<div class="dv-opts">
+
+<!-- ============ 1d: TENANT DETAIL, TABS ============ -->
+<div class="dv-opt" id="1d">
+  <div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Tabs layout · persistent identity header, Summary tab shown</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1d Tenant detail — tabs">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+
+    <!-- identity header -->
+    <div style="background:#fff;border-bottom:1px solid #ececef;padding:14px 22px 0">
+      <div style="font-size:11.5px;color:#71717a;margin-bottom:8px"><a href="#1c">← Tenants</a> / Acme Conf Group</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:9px;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-weight:700;font-size:16px">A</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <h2 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-0.01em">Acme Conf Group</h2>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #bfe8d6;background:#e7f5ee;color:#00714a"><span style="width:6px;height:6px;border-radius:50%;background:#00935e"></span>Active</span>
+            <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46">Professional</span>
+            <span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 6px">CUSTOM LIMITS</span>
+          </div>
+          <div style="font-size:11.5px;color:#71717a;margin-top:3px"><span style="font-family:ui-monospace,monospace">acme-conf</span> · created Mar 2, 2025 · next billing Aug 1 (manual) · 4 users · last activity 2 min ago</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span style="font-size:12px;font-weight:600;color:#1d4ed8;border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:7px 13px;cursor:pointer"><a href="#1h" style="color:#1d4ed8">Impersonate…</a></span>
+          <span style="font-size:12px;font-weight:600;color:#b91c1c;border:1px solid #fecaca;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer" style-hover="background:#fef2f2"><a href="#1f" style="color:#b91c1c">Lifecycle ▾</a></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:2px;margin-top:12px;font-size:13px;font-weight:500">
+        <span style="padding:9px 13px;border-bottom:2px solid #00935e;color:#09090b;font-weight:600">Summary</span>
+        <span style="padding:9px 13px;border-bottom:2px solid transparent;color:#71717a">Subscription &amp; limits</span>
+        <span style="padding:9px 13px;border-bottom:2px solid transparent;color:#71717a">Lifecycle</span>
+        <span style="padding:9px 13px;border-bottom:2px solid transparent;color:#71717a">Users <span style="font-size:10.5px;color:#a1a1aa">4</span></span>
+        <span style="padding:9px 13px;border-bottom:2px solid transparent;color:#71717a">Activity</span>
+      </div>
+    </div>
+
+    <!-- summary tab -->
+    <div style="background:#fafafa;padding:18px 22px 26px;display:grid;grid-template-columns:1.4fr 1fr;gap:14px">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:12px">Usage vs limits</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:grid;grid-template-columns:150px 1fr 150px;align-items:center;gap:12px">
+              <span style="font-size:12px;color:#52525b">Events this month</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#00935e;width:48%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;color:#3f3f46;text-align:right">12 / 25</span>
+            </div>
+            <div style="display:grid;grid-template-columns:150px 1fr 150px;align-items:center;gap:12px">
+              <span style="font-size:12px;color:#52525b">Attendees / event</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#d97706;width:84%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;color:#3f3f46;text-align:right">8,420 / 10,000 <b style="color:#00714a;font-size:9.5px">CUSTOM</b></span>
+            </div>
+            <div style="display:grid;grid-template-columns:150px 1fr 150px;align-items:center;gap:12px">
+              <span style="font-size:12px;color:#52525b">Users</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#00935e;width:40%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;color:#3f3f46;text-align:right">4 / 10</span>
+            </div>
+            <div style="display:grid;grid-template-columns:150px 1fr 150px;align-items:center;gap:12px">
+              <span style="font-size:12px;color:#52525b">Kiosk devices</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;border-radius:4px;background:#00935e;width:60%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;color:#3f3f46;text-align:right">3 / 5</span>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#71717a;margin-top:12px;border-top:1px solid #f1f1f3;padding-top:10px">Live now: <b>Spring Summit 2026</b> — 1,204 check-ins today · surfaced in lifecycle dialogs as a consequence</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px"><span style="font-size:12.5px;font-weight:700">Latest subscription changes</span><span style="font-size:11px;font-weight:600;color:#00935e">Subscription &amp; limits →</span></div>
+          <div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #f6f6f7;font-size:12px">
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa;width:44px;flex:none">Jul 9</span>
+            <span style="color:#3f3f46">attendees_per_event: 5,000 → <b>10,000</b> · support · “Spring Summit 2026, approved by JR”</span>
+          </div>
+          <div style="display:flex;gap:10px;padding:7px 0;font-size:12px">
+            <span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa;width:44px;flex:none">Jun 2</span>
+            <span style="color:#3f3f46">Plan: Starter → <b>Professional</b> · jr · “invoice #1027 paid”</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:10px">Key dates</div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Created</span><span style="font-weight:600">Mar 2, 2025</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Trial → paid</span><span style="font-weight:600">Apr 14, 2025</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">On Professional since</span><span style="font-weight:600">Jun 2, 2026</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Next billing (manual)</span><span style="font-weight:600">Aug 1, 2026</span></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:10px">Contacts</div>
+          <div style="display:flex;flex-direction:column;gap:7px;font-size:12px">
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Owner</span><span style="font-weight:600">Anna Petrova</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Email</span><span style="font-weight:600">anna@acmeconf.io</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Billing ref</span><span style="font-family:ui-monospace,monospace">invoices #1013–1042</span></div>
+          </div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Operator notes</div>
+          <div style="font-size:12px;color:#52525b;line-height:1.55;background:#fafafa;border:1px solid #f1f1f3;border-radius:7px;padding:10px 12px">Big spring event every year (~10k attendees). Prefers invoice via procurement — allow 2–3 weeks. Contact Anna directly, not the shared inbox.</div>
+          <div style="font-size:10.5px;color:#a1a1aa;margin-top:6px">edited by support · Jul 9</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1e: TENANT DETAIL, STACKED ============ -->
+<div class="dv-opt" id="1e">
+  <div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Stacked layout · all 6 sections on one page with anchor rail</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1e Tenant detail — stacked">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+
+    <!-- identity header (sticky in product) -->
+    <div style="background:#fff;border-bottom:1px solid #ececef;padding:14px 22px">
+      <div style="font-size:11.5px;color:#71717a;margin-bottom:8px"><a href="#1c">← Tenants</a> / Acme Conf Group</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:38px;height:38px;border-radius:9px;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-weight:700;font-size:16px">A</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:9px">
+            <h2 style="margin:0;font-size:18px;font-weight:700;letter-spacing:-0.01em">Acme Conf Group</h2>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #bfe8d6;background:#e7f5ee;color:#00714a"><span style="width:6px;height:6px;border-radius:50%;background:#00935e"></span>Active</span>
+            <span style="font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46">Professional</span>
+            <span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#00714a;background:#e7f5ee;border-radius:4px;padding:1px 6px">CUSTOM LIMITS</span>
+          </div>
+          <div style="font-size:11.5px;color:#71717a;margin-top:3px"><span style="font-family:ui-monospace,monospace">acme-conf</span> · created Mar 2, 2025 · next billing Aug 1 (manual) · 4 users · last activity 2 min ago</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px">
+          <span style="font-size:12px;font-weight:600;border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:7px 13px;cursor:pointer"><a href="#1h" style="color:#1d4ed8">Impersonate…</a></span>
+          <span style="font-size:12px;font-weight:600;border:1px solid #fecaca;background:#fff;border-radius:7px;padding:7px 13px;cursor:pointer" style-hover="background:#fef2f2"><a href="#1f" style="color:#b91c1c">Suspend…</a></span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fafafa;display:grid;grid-template-columns:168px 1fr;gap:18px;padding:18px 22px 28px">
+      <!-- anchor rail -->
+      <div style="position:sticky;top:14px;align-self:start;display:flex;flex-direction:column;gap:1px;font-size:12.5px;font-weight:500">
+        <span style="padding:7px 11px;border-radius:7px;background:#e7f5ee;color:#00714a;font-weight:600">Summary</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Subscription &amp; limits</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Lifecycle</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Users</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Activity</span>
+        <span style="padding:7px 11px;border-radius:7px;color:#52525b">Impersonate</span>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+        <!-- SUMMARY -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="font-size:12.5px;font-weight:700;margin-bottom:12px">Summary — usage vs limits</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 26px">
+            <div style="display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:10px">
+              <span style="font-size:12px;color:#52525b">Events / month</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;background:#00935e;width:48%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right">12 / 25</span>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:10px">
+              <span style="font-size:12px;color:#52525b">Users</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;background:#00935e;width:40%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right">4 / 10</span>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:10px">
+              <span style="font-size:12px;color:#52525b">Attendees / event</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;background:#d97706;width:84%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right">8.4k / 10k</span>
+            </div>
+            <div style="display:grid;grid-template-columns:120px 1fr 90px;align-items:center;gap:10px">
+              <span style="font-size:12px;color:#52525b">Kiosks</span>
+              <div style="height:7px;border-radius:4px;background:#f1f1f3;overflow:hidden"><div style="height:100%;background:#00935e;width:60%"></div></div>
+              <span style="font-size:11.5px;font-family:ui-monospace,monospace;text-align:right">3 / 5</span>
+            </div>
+          </div>
+          <div style="font-size:11px;color:#71717a;margin-top:12px;border-top:1px solid #f1f1f3;padding-top:10px">Owner: Anna Petrova · anna@acmeconf.io · notes: big spring event yearly, invoice via procurement (2–3 weeks)</div>
+        </div>
+
+        <!-- SUBSCRIPTION & LIMITS -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #f1f1f3">
+            <span style="font-size:12.5px;font-weight:700">Subscription &amp; limits</span>
+            <span style="font-size:11px;color:#71717a">append-only — every change lands below with a reason</span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <span style="font-size:11.5px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:5px 11px;cursor:pointer" style-hover="border-color:#00935e">Extend trial…</span>
+              <span style="font-size:11.5px;font-weight:600;border:1px solid #e4e4e7;border-radius:6px;padding:5px 11px;cursor:pointer" style-hover="border-color:#00935e">Override limits…</span>
+              <span style="font-size:11.5px;font-weight:600;color:#fff;background:#00935e;border-radius:6px;padding:5px 11px;cursor:pointer" style-hover="background:#00714a">Change plan…</span>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:16px;padding:14px 16px">
+            <div style="border:1px solid #ececef;border-radius:8px;padding:12px 14px;background:#fafafa">
+              <div style="font-size:11px;font-weight:600;color:#71717a;margin-bottom:8px">CURRENT STATE</div>
+              <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+                <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Plan</span><span style="font-weight:600">Professional</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Billing</span><span style="font-weight:600">manual · next Aug 1</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Last invoice</span><span style="font-family:ui-monospace,monospace">#1027 · paid Jun 2</span></div>
+                <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Override</span><span style="font-weight:600;color:#00714a">attendees/event: 10,000</span></div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#71717a;margin-bottom:6px">CHANGES</div>
+              <div style="display:flex;flex-direction:column">
+                <div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Jul 9</span><span style="color:#3f3f46">attendees_per_event: 5,000 → <b>10,000</b> · support · “Spring Summit 2026, approved by JR”</span></div>
+                <div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Jun 2</span><span style="color:#3f3f46">Plan: Starter → <b>Professional</b> · jr · “invoice #1027 paid”</span></div>
+                <div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Apr 14</span><span style="color:#3f3f46">Trial → <b>Starter</b> · jr · “invoice #1013 paid”</span></div>
+                <div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:6px 0;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Mar 30</span><span style="color:#3f3f46">Trial ends: Mar 30 → <b>Apr 14</b> · jr · “waiting for procurement”</span></div>
+                <div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:6px 0;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Mar 2</span><span style="color:#3f3f46">Tenant created on <b>Trial</b> · self-signup</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LIFECYCLE -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:14px 16px">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px">
+            <span style="font-size:12.5px;font-weight:700">Lifecycle</span>
+            <span style="font-size:11px;color:#71717a">a state timeline, not a dropdown — archive is reachable only from suspended</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0;margin-bottom:14px">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:130px">
+              <span style="width:22px;height:22px;border-radius:50%;background:#e7f5ee;border:2px solid #00935e;color:#00714a;display:grid;place-items:center;font-size:11px;font-weight:700">✓</span>
+              <span style="font-size:11px;font-weight:600">Created</span><span style="font-size:10px;color:#a1a1aa;font-family:ui-monospace,monospace">Mar 2, 2025</span>
+            </div>
+            <div style="flex:1;height:2px;background:#00935e"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:130px">
+              <span style="width:22px;height:22px;border-radius:50%;background:#e7f5ee;border:2px solid #00935e;color:#00714a;display:grid;place-items:center;font-size:11px;font-weight:700">✓</span>
+              <span style="font-size:11px;font-weight:600">Trial</span><span style="font-size:10px;color:#a1a1aa;font-family:ui-monospace,monospace">→ Apr 14</span>
+            </div>
+            <div style="flex:1;height:2px;background:#00935e"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:130px">
+              <span style="width:22px;height:22px;border-radius:50%;background:#00935e;border:2px solid #00935e;color:#fff;display:grid;place-items:center;font-size:10px;font-weight:700">●</span>
+              <span style="font-size:11px;font-weight:700;color:#00714a">Active</span><span style="font-size:10px;color:#00935e;font-family:ui-monospace,monospace">current</span>
+            </div>
+            <div style="flex:1;height:2px;background:repeating-linear-gradient(90deg,#d4d4d8 0 6px,transparent 6px 12px)"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:130px">
+              <span style="width:22px;height:22px;border-radius:50%;background:#fff;border:2px dashed #d4d4d8;color:#a1a1aa;display:grid;place-items:center;font-size:10px">–</span>
+              <span style="font-size:11px;font-weight:600;color:#a1a1aa">Suspended</span><span style="font-size:10px;color:#c4c4c9">blocks all access</span>
+            </div>
+            <div style="flex:1;height:2px;background:repeating-linear-gradient(90deg,#d4d4d8 0 6px,transparent 6px 12px)"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:130px">
+              <span style="width:22px;height:22px;border-radius:50%;background:#fff;border:2px dashed #d4d4d8;color:#a1a1aa;display:grid;place-items:center;font-size:10px">–</span>
+              <span style="font-size:11px;font-weight:600;color:#a1a1aa">Archived</span><span style="font-size:10px;color:#c4c4c9">30-day retention</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;border-top:1px solid #f1f1f3;padding-top:12px">
+            <span style="font-size:12px;font-weight:600;color:#b91c1c;border:1px solid #fecaca;border-radius:7px;padding:6px 13px;cursor:pointer" style-hover="background:#fef2f2"><a href="#1f" style="color:#b91c1c">Suspend…</a></span>
+            <span style="font-size:12px;font-weight:600;color:#a1a1aa;border:1px solid #ececef;border-radius:7px;padding:6px 13px;cursor:not-allowed">Archive…</span>
+            <span style="font-size:11px;color:#71717a">Archive is disabled while active — suspend first. Both open a typed-confirmation dialog with live consequences (<a href="#1f">1f</a>, <a href="#1g">1g</a>).</span>
+          </div>
+        </div>
+
+        <!-- USERS -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #f1f1f3"><span style="font-size:12.5px;font-weight:700">Users</span><span style="font-size:11px;color:#71717a">5 members</span></div>
+          <div style="display:grid;grid-template-columns:190px 1fr 110px 130px;gap:0 12px;padding:7px 16px;border-bottom:1px solid #ececef;background:#fafafa;font-size:10.5px;font-weight:600;color:#71717a;text-transform:uppercase;letter-spacing:.04em">
+            <span>Name</span><span>Email</span><span>Role</span><span>Last login</span>
+          </div>
+          <sc-for list="{{ acmeUsers }}" as="u" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:190px 1fr 110px 130px;gap:0 12px;align-items:center;padding:8px 16px;border-bottom:1px solid #f6f6f7">
+              <span style="font-size:12.5px;font-weight:600">{{ u.name }}</span>
+              <span style="font-size:12px;color:#52525b;font-family:ui-monospace,monospace">{{ u.email }}</span>
+              <span style="justify-self:start;font-size:10.5px;font-weight:600;padding:2px 9px;border-radius:99px;background:{{ u.rbg }};color:{{ u.rfg }}">{{ u.role }}</span>
+              <span style="font-size:11.5px;color:#71717a">{{ u.last }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- ACTIVITY -->
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid #f1f1f3"><span style="font-size:12.5px;font-weight:700">Activity</span><span style="font-size:11px;color:#71717a">usage + audit entries scoped to this tenant</span><a href="#1j" style="margin-left:auto;font-size:11px;font-weight:600">Full audit log →</a></div>
+          <div style="display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 16px;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Today 14:32</span><span style="color:#3f3f46"><b>support@idento.io</b> started impersonation · reason: ticket #4821</span></div>
+          <div style="display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 16px;border-bottom:1px solid #f6f6f7;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Today 09:14</span><span style="color:#3f3f46">Event <b>Spring Summit 2026</b> opened check-in · kiosk-01, kiosk-02 online</span></div>
+          <div style="display:grid;grid-template-columns:96px 1fr;gap:10px;padding:8px 16px;font-size:12px"><span style="font-family:ui-monospace,monospace;font-size:10.5px;color:#a1a1aa">Jul 9 18:20</span><span style="color:#3f3f46"><b>support@idento.io</b> raised attendees_per_event to 10,000 · “Spring Summit 2026, approved by JR”</span></div>
+        </div>
+
+        <!-- IMPERSONATE -->
+        <div style="background:#fff;border:1px solid #bfdbfe;border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:14px">
+          <div style="flex:1">
+            <div style="font-size:12.5px;font-weight:700;color:#1d4ed8">Impersonate</div>
+            <div style="font-size:11.5px;color:#52525b;margin-top:3px">Enter Acme Conf Group as admin to reproduce a customer issue. Requires a reason, expires after 30 minutes, and every action is recorded in the audit log. Full ceremony: <a href="#1h">1h</a>.</div>
+          </div>
+          <span style="font-size:12px;font-weight:600;border:1px solid #bfdbfe;background:#eff6ff;border-radius:7px;padding:7px 14px;cursor:pointer;white-space:nowrap"><a href="#1h" style="color:#1d4ed8">Impersonate…</a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Destructive lifecycle dialogs — typed confirmation + live consequences</div>
+<div class="dv-opts">
+
+<!-- ============ 1f: SUSPEND MODAL ============ -->
+<div class="dv-opt" id="1f">
+  <div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Variant A: centered modal · consequences fetched at confirm time</div>
+  <div class="dv-card" style="width:760px;background:#3a3d3c" data-screen-label="1f Suspend dialog">
+    <div style="padding:44px 60px;display:grid;place-items:center">
+      <div style="width:560px;background:#fff;border-radius:12px;box-shadow:0 30px 70px -20px rgba(0,0,0,.5);overflow:hidden">
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:18px 20px 0">
+          <span style="width:34px;height:34px;border-radius:9px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;display:grid;place-items:center;font-size:16px;font-weight:700;flex:none">⏸</span>
+          <div>
+            <div style="font-size:15.5px;font-weight:700;letter-spacing:-0.01em">Suspend Acme Conf Group</div>
+            <div style="font-size:12px;color:#71717a;margin-top:2px">Blocks every user, kiosk and API key of this tenant immediately. Reversible — reactivate any time.</div>
+          </div>
+        </div>
+        <div style="margin:14px 20px;border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:11px 13px">
+          <div style="display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;color:#b91c1c;letter-spacing:.04em;margin-bottom:8px"><span style="width:6px;height:6px;border-radius:50%;background:#dc2626"></span>LIVE CONSEQUENCES · fetched just now</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:12px;color:#57201f;line-height:1.45">
+            <div>• <b>Spring Summit 2026 is running today</b> — 1,204 attendees checked in; 2 kiosks and 3 scanners will stop working mid-event</div>
+            <div>• <b>4 users</b> lose access to the admin panel immediately</div>
+            <div>• API access is blocked; the badge-print agent goes offline</div>
+            <div>• Billing state is unchanged — subscription stays Professional</div>
+          </div>
+        </div>
+        <div style="padding:0 20px 6px;display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Reason <span style="color:#b91c1c">*</span> <span style="font-weight:400;color:#a1a1aa">— recorded in the audit log</span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:9px 12px;font-size:12.5px;color:#18181b;min-height:38px">Invoice #1038 unpaid 45+ days; owner notified twice (Jun 24, Jul 3). Approved by JR in #ops.</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Type <span style="font-family:ui-monospace,monospace;background:#f4f4f5;border-radius:4px;padding:1px 5px">acme-conf</span> to confirm</div>
+            <div style="border:1.5px solid #00935e;border-radius:7px;padding:9px 12px;font-size:12.5px;font-family:ui-monospace,monospace;color:#18181b;display:flex;align-items:center;justify-content:space-between">acme-conf <span style="color:#00935e;font-size:12px">✓ match</span></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #f1f1f3;margin-top:12px;background:#fafafa">
+          <span style="font-size:12.5px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:8px 16px;cursor:pointer">Cancel</span>
+          <span style="font-size:12.5px;font-weight:600;color:#fff;background:#dc2626;border-radius:7px;padding:8px 16px;cursor:pointer" style-hover="background:#b91c1c">Suspend tenant</span>
+        </div>
+      </div>
+      <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+        <div style="width:560px;margin-top:12px;font-family:ui-monospace,monospace;font-size:10.5px;color:#c9cfcc;line-height:1.6">Button stays disabled until the name matches AND reason is non-empty. Consequences re-fetch on open; a running event escalates the block to red.</div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1g: ARCHIVE SIDE SHEET ============ -->
+<div class="dv-opt" id="1g">
+  <div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Variant B: side sheet · per-consequence acknowledgment, retention countdown</div>
+  <div class="dv-card" style="width:760px;background:#3a3d3c" data-screen-label="1g Archive dialog">
+    <div style="display:flex;justify-content:flex-end;min-height:640px">
+      <div style="width:470px;background:#fff;box-shadow:-24px 0 60px -18px rgba(0,0,0,.45);display:flex;flex-direction:column">
+        <div style="padding:18px 22px;border-bottom:1px solid #f1f1f3">
+          <div style="font-size:10.5px;font-weight:700;font-family:ui-monospace,monospace;letter-spacing:.06em;color:#b91c1c;margin-bottom:6px">STEP 2 OF 2 · DESTRUCTIVE</div>
+          <div style="font-size:15.5px;font-weight:700;letter-spacing:-0.01em">Archive GreenBadge Co</div>
+          <div style="font-size:12px;color:#71717a;margin-top:3px">Currently <b style="color:#b45309">suspended</b> — archive is allowed. Starts a 30-day retention clock, then data is deleted.</div>
+        </div>
+        <div style="padding:16px 22px;display:flex;flex-direction:column;gap:14px;flex:1">
+          <div style="border:1px solid #e4e4e7;border-radius:8px;padding:12px 14px;background:#fafafa">
+            <div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:7px"><span>Retention countdown</span><span style="color:#b91c1c;font-family:ui-monospace,monospace">deletes Aug 9, 2026</span></div>
+            <div style="height:8px;border-radius:4px;background:#ececef;overflow:hidden;display:flex"><div style="width:0%;background:#dc2626"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:#a1a1aa;margin-top:5px;font-family:ui-monospace,monospace"><span>today</span><span>30 days</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46">Acknowledge each consequence</div>
+            <div style="display:flex;gap:10px;border:1px solid #e4e4e7;border-radius:7px;padding:10px 12px;font-size:12px;color:#3f3f46;align-items:flex-start"><span style="width:16px;height:16px;border-radius:4px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:10px;flex:none;margin-top:1px">✓</span>All events, attendees and badge templates are deleted after Aug 9 — unrecoverable</div>
+            <div style="display:flex;gap:10px;border:1px solid #e4e4e7;border-radius:7px;padding:10px 12px;font-size:12px;color:#3f3f46;align-items:flex-start"><span style="width:16px;height:16px;border-radius:4px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:10px;flex:none;margin-top:1px">✓</span>3 user accounts are permanently disconnected from this tenant</div>
+            <div style="display:flex;gap:10px;border:1px solid #e4e4e7;border-radius:7px;padding:10px 12px;font-size:12px;color:#3f3f46;align-items:flex-start"><span style="width:16px;height:16px;border-radius:4px;border:1.5px solid #d4d4d8;flex:none;margin-top:1px"></span>The slug <span style="font-family:ui-monospace,monospace;background:#f4f4f5;border-radius:4px;padding:0 4px">greenbadge</span> is released and may be claimed by a new signup</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Reason <span style="color:#b91c1c">*</span></div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:9px 12px;font-size:12.5px;color:#18181b;min-height:36px">Churned — owner confirmed closure by email Jul 6 (ticket #4788).</div>
+          </div>
+          <div>
+            <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Type <span style="font-family:ui-monospace,monospace;background:#f4f4f5;border-radius:4px;padding:1px 5px">greenbadge</span> to confirm</div>
+            <div style="border:1px solid #e4e4e7;border-radius:7px;padding:9px 12px;font-size:12.5px;font-family:ui-monospace,monospace;color:#a1a1aa">greenb<span style="border-left:1.5px solid #18181b">&nbsp;</span></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 22px;border-top:1px solid #f1f1f3;background:#fafafa">
+          <span style="font-size:11px;color:#a1a1aa">1 acknowledgment + name match missing</span>
+          <div style="display:flex;gap:8px">
+            <span style="font-size:12.5px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:8px 16px;cursor:pointer">Cancel</span>
+            <span style="font-size:12.5px;font-weight:600;color:#fff;background:#f1a8a8;border-radius:7px;padding:8px 16px;cursor:not-allowed">Archive tenant</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Impersonation — entry ceremony, banner, exit, audit trail</div>
+<div class="dv-opts">
+
+<!-- ============ 1h: IMPERSONATION CEREMONY ============ -->
+<div class="dv-opt" id="1h">
+  <div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>The full choreography · banner tone is tweakable (amber / red)</div>
+  <div class="dv-card" style="width:1280px;background:#eef0ef" data-screen-label="1h Impersonation ceremony">
+    <div style="padding:26px 28px;display:grid;grid-template-columns:460px 1fr;gap:24px">
+
+      <!-- step 1: entry dialog -->
+      <div>
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#71717a;margin-bottom:10px">① ENTRY — CONFIRMATION + MANDATORY REASON</div>
+        <div style="background:#fff;border-radius:12px;box-shadow:0 18px 44px -16px rgba(0,0,0,.25);overflow:hidden">
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:18px 20px 0">
+            <span style="width:34px;height:34px;border-radius:9px;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;display:grid;place-items:center;font-size:15px;flex:none">👁</span>
+            <div>
+              <div style="font-size:15px;font-weight:700;letter-spacing:-0.01em">Impersonate Acme Conf Group</div>
+              <div style="font-size:12px;color:#71717a;margin-top:2px">You will act as an <b>admin inside the customer’s account</b>. They may see your changes immediately.</div>
+            </div>
+          </div>
+          <div style="margin:14px 20px 0;display:flex;flex-direction:column;gap:12px">
+            <div style="border:1px solid #ececef;border-radius:8px;background:#fafafa;padding:10px 13px;display:flex;flex-direction:column;gap:5px;font-size:12px">
+              <div style="display:flex;justify-content:space-between"><span style="color:#71717a">You enter as</span><span style="font-weight:600">support@idento.io · role: admin</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Session limit</span><span style="font-weight:600">30 minutes, no refresh</span></div>
+              <div style="display:flex;justify-content:space-between"><span style="color:#71717a">Recording</span><span style="font-weight:600">every action → audit log</span></div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Reason <span style="color:#b91c1c">*</span> <span style="font-weight:400;color:#a1a1aa">— shown in the audit log forever</span></div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:9px 12px;font-size:12.5px;color:#18181b;min-height:38px">Ticket #4821 — customer reports “can’t create events”; reproducing under their account.</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #f1f1f3;margin-top:14px;background:#fafafa">
+            <span style="font-size:12.5px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:8px 16px;cursor:pointer">Cancel</span>
+            <span style="font-size:12.5px;font-weight:600;color:#fff;background:#1d4ed8;border-radius:7px;padding:8px 16px;cursor:pointer">Start 30-min session</span>
+          </div>
+        </div>
+
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#71717a;margin:20px 0 10px">③ EXIT / EXPIRY — BACK IN THE CONSOLE</div>
+        <div style="background:#fff;border-radius:10px;border:1px solid #e7e7ea;padding:13px 16px;display:flex;gap:11px;align-items:flex-start">
+          <span style="width:26px;height:26px;border-radius:50%;background:#e7f5ee;color:#00714a;display:grid;place-items:center;font-size:13px;flex:none">✓</span>
+          <div style="font-size:12px;color:#3f3f46;line-height:1.5"><b>Impersonation session ended</b> (28 min · 14 actions). A summary entry was written to the audit log — <a href="#1j">see rendering in 1j</a>. Expiry at 30:00 force-logs-out with the same summary.</div>
+        </div>
+      </div>
+
+      <!-- step 2: banner spec -->
+      <div>
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#71717a;margin-bottom:10px">② INSIDE THE CUSTOMER APP — UNREMOVABLE BANNER (spec for the customer-facing design system)</div>
+        <div style="background:#fff;border-radius:12px;border:1px solid #e7e7ea;overflow:hidden;box-shadow:0 10px 30px -14px rgba(0,0,0,.18)">
+          <sc-if value="{{ bannerAmber }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;align-items:center;gap:12px;background:#78350f;color:#fef3c7;padding:9px 16px;font-size:12.5px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#fbbf24;flex:none"></span>
+              <span>You are in <b>Acme Conf Group</b> as <b>support@idento.io</b> · impersonation session</span>
+              <span style="margin-left:auto;font-family:ui-monospace,monospace;font-weight:700;color:#fde68a">27:14 left</span>
+              <span style="font-size:12px;font-weight:700;color:#78350f;background:#fbbf24;border-radius:6px;padding:5px 13px;cursor:pointer">Exit session</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ bannerRed }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:12px;background:#7f1d1d;color:#fee2e2;padding:9px 16px;font-size:12.5px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#f87171;flex:none"></span>
+              <span>You are in <b>Acme Conf Group</b> as <b>support@idento.io</b> · impersonation session</span>
+              <span style="margin-left:auto;font-family:ui-monospace,monospace;font-weight:700;color:#fecaca">27:14 left</span>
+              <span style="font-size:12px;font-weight:700;color:#7f1d1d;background:#fca5a5;border-radius:6px;padding:5px 13px;cursor:pointer">Exit session</span>
+            </div>
+          </sc-if>
+          <!-- customer app underneath -->
+          <div style="display:flex;align-items:center;gap:14px;height:50px;padding:0 18px;border-bottom:1px solid #f1f1f3">
+            <span style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px"><span style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-size:13px">A</span>Acme Conf Group</span>
+            <span style="font-size:13px;color:#52525b">Events · Attendees · Badges · Team · Settings</span>
+            <span style="margin-left:auto;width:28px;height:28px;border-radius:50%;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;display:grid;place-items:center;font-size:10.5px;font-weight:700">SP</span>
+          </div>
+          <div style="padding:18px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;background:#fafafa">
+            <div style="background:#fff;border:1px solid #ececef;border-radius:8px;padding:12px 14px"><div style="font-size:11px;color:#71717a;font-weight:600">Spring Summit 2026</div><div style="font-size:16px;font-weight:700;margin-top:2px">1,204 checked in</div></div>
+            <div style="background:#fff;border:1px solid #ececef;border-radius:8px;padding:12px 14px"><div style="font-size:11px;color:#71717a;font-weight:600">Create event</div><div style="font-size:12px;color:#b91c1c;margin-top:4px;font-weight:600">403 — reproducing the bug ↑</div></div>
+            <div style="background:#fff;border:1px solid #ececef;border-radius:8px;padding:12px 14px"><div style="font-size:11px;color:#71717a;font-weight:600">Kiosks online</div><div style="font-size:16px;font-weight:700;margin-top:2px">2 of 3</div></div>
+          </div>
+        </div>
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+          <div style="font-family:ui-monospace,monospace;font-size:10.5px;color:#71717a;line-height:1.65;margin-top:10px">Banner: position fixed, above all app chrome, not dismissable; countdown live; avatar swaps to the operator. Tone follows the customer app’s warning palette — toggle amber/red in Tweaks.</div>
+        </sc-if>
+
+        <div style="font-family:ui-monospace,monospace;font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#71717a;margin:18px 0 10px">④ AUDIT TRAIL — SESSION AS ONE EXPANDABLE ENTRY</div>
+        <div style="background:#fff;border-radius:10px;border:1px solid #e7e7ea;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f6f6f7">
+            <span style="font-size:10px;font-weight:700;font-family:ui-monospace,monospace;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 6px">IMPERSONATION</span>
+            <span style="font-size:12.5px"><b>support@idento.io</b> in <b>Acme Conf Group</b> · 14:32–15:00 · 14 actions</span>
+            <span style="margin-left:auto;font-size:11px;color:#71717a">reason: ticket #4821</span>
+            <span style="font-size:12px;color:#a1a1aa">▾</span>
+          </div>
+          <div style="padding:8px 14px 10px;display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:#52525b;background:#fafafa">
+            <div style="display:flex;gap:10px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#a1a1aa;width:38px">14:34</span>Opened event “Autumn Expo” draft</div>
+            <div style="display:flex;gap:10px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#a1a1aa;width:38px">14:36</span>Attempted create event → 403 tenant_limit (events 12/12 before override)</div>
+            <div style="display:flex;gap:10px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#a1a1aa;width:38px">14:51</span>Re-tested create event → 201 OK</div>
+            <div style="font-size:10.5px;color:#a1a1aa">…11 more · every row carries imp_by=support@idento.io</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Plans editor &amp; Audit log</div>
+<div class="dv-opts">
+
+<!-- ============ 1i: PLANS EDITOR ============ -->
+<div class="dv-opt" id="1i">
+  <div class="dv-olabel"><a class="dv-oid" href="#1i">1i</a>Plans · JSON limits become explicit fields, “-1” becomes an Unlimited toggle</div>
+  <div class="dv-card" style="width:1000px" data-screen-label="1i Plans editor">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+    <div style="background:#fafafa;display:grid;grid-template-columns:250px 1fr;gap:16px;padding:18px 22px 24px">
+      <!-- tier list -->
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px"><h2 style="margin:0;font-size:16px;font-weight:700">Plans</h2><span style="font-size:11.5px;font-weight:600;color:#00935e;cursor:pointer">+ New</span></div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:600">Free</span><span style="font-size:9.5px;font-weight:700;font-family:ui-monospace,monospace;color:#1d4ed8;background:#eff6ff;border-radius:4px;padding:1px 6px">DEFAULT</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">5 tenants · 1 event/mo · 100 attendees</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="font-size:13px;font-weight:600">Starter</div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">9 tenants · 10 events/mo · 2,000 attendees</div>
+        </div>
+        <div style="background:#fff;border:1.5px solid #00935e;border-radius:8px;padding:11px 13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,147,94,.12)">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:13px;font-weight:700">Professional</span><span style="font-size:10px;color:#00714a;font-weight:700">editing</span></div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">15 tenants · 25 events/mo · 5,000 attendees</div>
+        </div>
+        <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;padding:11px 13px;cursor:pointer">
+          <div style="font-size:13px;font-weight:600">Business</div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">3 tenants · unlimited events · 50,000 attendees</div>
+        </div>
+      </div>
+
+      <!-- editor form -->
+      <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid #f1f1f3">
+          <span style="font-size:13.5px;font-weight:700">Professional</span>
+          <span style="font-size:11px;color:#71717a">plan_id: pro · used by 15 tenants</span>
+        </div>
+        <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Name</div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px">Professional</div>
+            </div>
+            <div>
+              <div style="font-size:11.5px;font-weight:600;color:#3f3f46;margin-bottom:5px">Price note <span style="font-weight:400;color:#a1a1aa">— manual billing, informational</span></div>
+              <div style="border:1px solid #e4e4e7;border-radius:7px;padding:8px 12px;font-size:12.5px">€149 / month, invoiced manually</div>
+            </div>
+            <div style="border-top:1px solid #f1f1f3;padding-top:12px">
+              <div style="font-size:11px;font-weight:700;color:#71717a;letter-spacing:.05em;margin-bottom:10px">LIMITS</div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div style="display:grid;grid-template-columns:1fr 84px 92px;align-items:center;gap:10px">
+                  <span style="font-size:12px;color:#52525b">Events / month</span>
+                  <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 10px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">25</div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span><span style="font-size:10.5px;color:#a1a1aa">Unlimited</span></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 84px 92px;align-items:center;gap:10px">
+                  <span style="font-size:12px;color:#52525b">Attendees / event</span>
+                  <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 10px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">5,000</div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span><span style="font-size:10.5px;color:#a1a1aa">Unlimited</span></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 84px 92px;align-items:center;gap:10px">
+                  <span style="font-size:12px;color:#52525b">Users</span>
+                  <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 10px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">10</div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span><span style="font-size:10.5px;color:#a1a1aa">Unlimited</span></div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 84px 92px;align-items:center;gap:10px">
+                  <span style="font-size:12px;color:#52525b">Badge templates</span>
+                  <div style="border:1px solid #ececef;border-radius:7px;padding:6px 10px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right;color:#c4c4c9;background:#fafafa">∞</div>
+                  <div style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span><span style="font-size:10.5px;color:#00714a;font-weight:600">Unlimited</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:#71717a;letter-spacing:.05em;margin-bottom:10px">FEATURES</div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#52525b">Visual badge editor</span><span style="width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#52525b">API access</span><span style="width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#52525b">Offline sync (kiosk + mobile)</span><span style="width:30px;height:17px;border-radius:9px;background:#00935e;position:relative"><span style="position:absolute;top:2px;right:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#52525b">Custom branding on badges</span><span style="width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+              </div>
+            </div>
+            <div style="border-top:1px solid #f1f1f3;padding-top:12px">
+              <div style="font-size:11px;font-weight:700;color:#71717a;letter-spacing:.05em;margin-bottom:10px">SIGNUP</div>
+              <div style="display:grid;grid-template-columns:1fr 84px;align-items:center;gap:10px;margin-bottom:9px">
+                <span style="font-size:12px;color:#52525b">Trial length, days</span>
+                <div style="border:1px solid #e4e4e7;border-radius:7px;padding:6px 10px;font-size:12.5px;font-family:ui-monospace,monospace;text-align:right">14</div>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;color:#52525b">Default plan for new signups</span><span style="width:30px;height:17px;border-radius:9px;background:#e4e4e7;position:relative"><span style="position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2)"></span></span></div>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:13px 18px;border-top:1px solid #f1f1f3;background:#fafafa">
+          <span style="font-size:11.5px;color:#b45309">⚠ Changes apply immediately to 15 tenants on this plan (custom overrides win)</span>
+          <span style="margin-left:auto;font-size:12.5px;font-weight:600;color:#3f3f46;border:1px solid #e4e4e7;background:#fff;border-radius:7px;padding:7px 14px;cursor:pointer">Discard</span>
+          <span style="font-size:12.5px;font-weight:600;color:#fff;background:#00935e;border-radius:7px;padding:7px 14px;cursor:pointer" style-hover="background:#00714a">Save plan</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 1j: AUDIT LOG ============ -->
+<div class="dv-opt" id="1j">
+  <div class="dv-olabel"><a class="dv-oid" href="#1j">1j</a>Audit log · human-readable diffs, actor + IP/UA on every entry</div>
+  <div class="dv-card" style="width:1280px" data-screen-label="1j Audit log">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <div style="display:flex;gap:2px;font-size:13px;font-weight:500;margin-left:6px">
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Overview</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Tenants</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Plans</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">Documents</span>
+        <span style="padding:6px 11px;border-radius:7px;color:#9d9da6">All Users</span>
+        <span style="padding:6px 11px;border-radius:7px;background:#232327;color:#fff">Audit Log</span>
+      </div>
+      <span style="margin-left:auto;font-size:12px;color:#9d9da6">support@idento.io</span>
+    </div>
+    <div style="background:#fafafa;padding:18px 22px 24px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+        <h2 style="margin:0;font-size:16px;font-weight:700">Audit log</h2>
+        <span style="font-size:11.5px;color:#71717a">every operator action, forever · server-side pagination</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Actor: anyone ▾</span>
+        <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Action: all types ▾</span>
+        <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Tenant: any ▾</span>
+        <span style="font-size:11.5px;font-weight:500;color:#52525b;background:#fff;border:1px solid #e4e4e7;border-radius:7px;padding:5px 10px;cursor:pointer">Date: last 30 days ▾</span>
+        <span style="margin-left:auto;font-size:11.5px;color:#8d8d96;background:#fff;border:1px solid #e9e9ec;border-radius:7px;padding:5px 11px;min-width:200px">⌕ Search reason, invoice #…</span>
+      </div>
+      <div style="background:#fff;border:1px solid #e7e7ea;border-radius:8px;overflow:hidden">
+        <sc-for list="{{ audit }}" as="a" hint-placeholder-count="9">
+          <div>
+            <sc-if value="{{ a.first }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:7px 16px;background:#fafafa;border-bottom:1px solid #ececef;border-top:1px solid #ececef;font-size:10.5px;font-weight:700;color:#71717a;letter-spacing:.05em;text-transform:uppercase">{{ a.day }}</div>
+            </sc-if>
+            <div style="display:grid;grid-template-columns:44px 158px 168px 148px 1fr 178px;gap:0 12px;align-items:center;padding:9px 16px;border-bottom:1px solid #f6f6f7">
+              <span style="font-size:11px;font-family:ui-monospace,monospace;color:#a1a1aa">{{ a.time }}</span>
+              <span style="justify-self:start;font-size:10px;font-weight:700;font-family:ui-monospace,monospace;color:{{ a.afg }};background:{{ a.abg }};border-radius:5px;padding:2px 7px">{{ a.act }}</span>
+              <span style="font-size:11.5px;color:#3f3f46;font-family:ui-monospace,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.actor }}</span>
+              <span style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.target }}</span>
+              <span style="font-size:12px;color:#3f3f46">{{ a.diff }}</span>
+              <span style="font-size:10.5px;color:#a1a1aa;font-family:ui-monospace,monospace;text-align:right">{{ a.meta }}</span>
+            </div>
+          </div>
+        </sc-for>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;font-size:11.5px;color:#71717a">
+          <span>1–9 of 1,384</span>
+          <div style="display:flex;gap:6px">
+            <span style="border:1px solid #e4e4e7;border-radius:6px;padding:4px 10px;color:#a1a1aa">← Prev</span>
+            <span style="border:1px solid #e4e4e7;border-radius:6px;padding:4px 10px;font-weight:600;cursor:pointer" style-hover="border-color:#00935e">Next →</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="dv-group">Dark theme — console component vocabulary</div>
+<div class="dv-opts">
+
+<!-- ============ 1k: DARK COMPONENT BOARD ============ -->
+<div class="dv-opt" id="1k">
+  <div class="dv-olabel"><a class="dv-oid" href="#1k">1k</a>Same tokens in dark · chips, meters, state timeline, change feed, dialogs</div>
+  <div class="dv-card" style="width:1280px;background:#101013" data-screen-label="1k Dark components">
+    <div style="display:flex;align-items:center;gap:18px;height:52px;padding:0 20px;background:#101013;color:#fafafa;border-bottom:1px solid #232327">
+      <div style="display:flex;align-items:center;gap:9px">
+        <div style="width:24px;height:24px;border-radius:6px;background:#00935e;color:#fff;display:grid;place-items:center;font-weight:700;font-size:14px">И</div>
+        <span style="font-weight:700;font-size:14px;letter-spacing:-0.01em">Idento</span>
+      </div>
+      <span style="font-family:ui-monospace,monospace;font-size:10px;font-weight:600;letter-spacing:.08em;color:#2fd598;border:1px solid #234438;background:rgba(0,147,94,.14);border-radius:5px;padding:3px 7px">PLATFORM CONSOLE</span>
+      <span style="font-size:12px;color:#9d9da6">the chrome stays #101013 in both themes — the context signal never changes</span>
+      <span style="margin-left:auto;width:24px;height:24px;border-radius:50%;border:1px solid rgba(255,255,255,.16);display:grid;place-items:center;font-size:11px;color:#fde68a">☀</span>
+    </div>
+    <div style="padding:22px 26px 28px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;color:#f4f4f5">
+
+      <!-- chips -->
+      <div style="background:#17171b;border:1px solid #26262b;border-radius:8px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:12px">Status chips — one vocabulary everywhere</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid #1d4a38;background:rgba(31,201,138,.12);color:#4ade9d"><span style="width:6px;height:6px;border-radius:50%;background:#1fc98a"></span>Active</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid #1e3a6e;background:rgba(96,165,250,.12);color:#93c5fd"><span style="width:6px;height:6px;border-radius:50%;background:#60a5fa"></span>Trial · ends Jul 12</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid #5c4310;background:rgba(251,191,36,.12);color:#fcd34d"><span style="width:6px;height:6px;border-radius:50%;background:#fbbf24"></span>Suspended</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid #33333a;background:rgba(161,161,170,.12);color:#a1a1aa"><span style="width:6px;height:6px;border-radius:50%;background:#71717a"></span>Archived · deletes Aug 9</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:700;font-family:ui-monospace,monospace;padding:3px 8px;border-radius:5px;border:1px solid #7f2e2e;color:#fca5a5">OVER LIMIT · attendees 612/500</span>
+        </div>
+        <div style="font-size:10.5px;color:#71717a;margin-top:12px;border-top:1px solid #26262b;padding-top:10px">Label always accompanies color — chips pass AA without relying on hue.</div>
+      </div>
+
+      <!-- meters -->
+      <div style="background:#17171b;border:1px solid #26262b;border-radius:8px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:12px">Usage meters</div>
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="display:grid;grid-template-columns:110px 1fr 82px;align-items:center;gap:10px">
+            <span style="font-size:11.5px;color:#a1a1aa">Events / month</span>
+            <div style="height:7px;border-radius:4px;background:#26262b;overflow:hidden"><div style="height:100%;background:#1fc98a;width:48%"></div></div>
+            <span style="font-size:11px;font-family:ui-monospace,monospace;text-align:right;color:#d4d4d8">12 / 25</span>
+          </div>
+          <div style="display:grid;grid-template-columns:110px 1fr 82px;align-items:center;gap:10px">
+            <span style="font-size:11.5px;color:#a1a1aa">Attendees</span>
+            <div style="height:7px;border-radius:4px;background:#26262b;overflow:hidden"><div style="height:100%;background:#fbbf24;width:84%"></div></div>
+            <span style="font-size:11px;font-family:ui-monospace,monospace;text-align:right;color:#d4d4d8">8.4k / 10k</span>
+          </div>
+          <div style="display:grid;grid-template-columns:110px 1fr 82px;align-items:center;gap:10px">
+            <span style="font-size:11.5px;color:#a1a1aa">Users</span>
+            <div style="height:7px;border-radius:4px;background:#26262b;overflow:hidden"><div style="height:100%;background:#f87171;width:100%"></div></div>
+            <span style="font-size:11px;font-family:ui-monospace,monospace;text-align:right;color:#fca5a5">4 / 2</span>
+          </div>
+        </div>
+        <div style="font-size:10.5px;color:#71717a;margin-top:12px;border-top:1px solid #26262b;padding-top:10px">Green &lt; 80% · amber ≥ 80% · red = over; value text carries the exact numbers.</div>
+      </div>
+
+      <!-- buttons + dialog -->
+      <div style="background:#17171b;border:1px solid #26262b;border-radius:8px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:12px">Actions &amp; destructive accents</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+          <span style="font-size:12px;font-weight:600;color:#0b2a1e;background:#1fc98a;border-radius:7px;padding:7px 13px;cursor:pointer">Assign plan</span>
+          <span style="font-size:12px;font-weight:600;color:#d4d4d8;border:1px solid #33333a;border-radius:7px;padding:7px 13px;cursor:pointer">Extend trial…</span>
+          <span style="font-size:12px;font-weight:600;color:#93c5fd;border:1px solid #1e3a6e;background:rgba(96,165,250,.08);border-radius:7px;padding:7px 13px;cursor:pointer">Impersonate…</span>
+          <span style="font-size:12px;font-weight:600;color:#fca5a5;border:1px solid #7f2e2e;border-radius:7px;padding:7px 13px;cursor:pointer">Suspend…</span>
+          <span style="font-size:12px;font-weight:600;color:#fff;background:#dc2626;border-radius:7px;padding:7px 13px;cursor:pointer">Suspend tenant</span>
+        </div>
+        <div style="border:1px solid #7f2e2e;background:rgba(220,38,38,.08);border-radius:8px;padding:10px 12px">
+          <div style="font-size:10.5px;font-weight:700;color:#fca5a5;letter-spacing:.04em;margin-bottom:6px">LIVE CONSEQUENCES</div>
+          <div style="font-size:11.5px;color:#e5b8b8;line-height:1.5">• Spring Summit 2026 is running today — 1,204 checked in<br>• 4 users lose access immediately</div>
+        </div>
+      </div>
+
+      <!-- state timeline -->
+      <div style="grid-column:span 2;background:#17171b;border:1px solid #26262b;border-radius:8px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:16px">Lifecycle state timeline</div>
+        <div style="display:flex;align-items:center">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:120px">
+            <span style="width:20px;height:20px;border-radius:50%;background:rgba(31,201,138,.15);border:2px solid #1fc98a;color:#4ade9d;display:grid;place-items:center;font-size:10px;font-weight:700">✓</span>
+            <span style="font-size:10.5px;font-weight:600;color:#d4d4d8">Created</span>
+          </div>
+          <div style="flex:1;height:2px;background:#1fc98a"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:120px">
+            <span style="width:20px;height:20px;border-radius:50%;background:rgba(31,201,138,.15);border:2px solid #1fc98a;color:#4ade9d;display:grid;place-items:center;font-size:10px;font-weight:700">✓</span>
+            <span style="font-size:10.5px;font-weight:600;color:#d4d4d8">Trial</span>
+          </div>
+          <div style="flex:1;height:2px;background:#1fc98a"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:120px">
+            <span style="width:20px;height:20px;border-radius:50%;background:#1fc98a;border:2px solid #1fc98a;color:#0b2a1e;display:grid;place-items:center;font-size:9px;font-weight:700">●</span>
+            <span style="font-size:10.5px;font-weight:700;color:#4ade9d">Active · current</span>
+          </div>
+          <div style="flex:1;height:2px;background:repeating-linear-gradient(90deg,#3a3a42 0 6px,transparent 6px 12px)"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:120px">
+            <span style="width:20px;height:20px;border-radius:50%;border:2px dashed #3a3a42;color:#71717a;display:grid;place-items:center;font-size:9px">–</span>
+            <span style="font-size:10.5px;font-weight:600;color:#71717a">Suspended</span>
+          </div>
+          <div style="flex:1;height:2px;background:repeating-linear-gradient(90deg,#3a3a42 0 6px,transparent 6px 12px)"></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:5px;width:120px">
+            <span style="width:20px;height:20px;border-radius:50%;border:2px dashed #3a3a42;color:#71717a;display:grid;place-items:center;font-size:9px">–</span>
+            <span style="font-size:10.5px;font-weight:600;color:#71717a">Archived</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- change feed -->
+      <div style="background:#17171b;border:1px solid #26262b;border-radius:8px;padding:14px 16px">
+        <div style="font-size:12px;font-weight:700;margin-bottom:10px">Append-only change feed</div>
+        <div style="display:grid;grid-template-columns:44px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #26262b;font-size:11.5px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#71717a">Jul 9</span><span style="color:#d4d4d8">attendees: 5,000 → <b style="color:#f4f4f5">10,000</b> · support · “Spring Summit”</span></div>
+        <div style="display:grid;grid-template-columns:44px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid #26262b;font-size:11.5px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#71717a">Jun 2</span><span style="color:#d4d4d8">Plan: Starter → <b style="color:#f4f4f5">Professional</b> · jr · “#1027 paid”</span></div>
+        <div style="display:grid;grid-template-columns:44px 1fr;gap:8px;padding:6px 0;font-size:11.5px"><span style="font-family:ui-monospace,monospace;font-size:10px;color:#71717a">Mar 2</span><span style="color:#d4d4d8">Created on <b style="color:#f4f4f5">Trial</b> · self-signup</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<p class="dv-next">Try next: “commit to <a class="dv-oid" href="#1a">1a</a>’s dark chrome for all screens” · “merge <a class="dv-oid" href="#1b">1b</a>’s inbox into <a class="dv-oid" href="#1a">1a</a>” · “make the tenant workbench interactive with working dialogs” · “full dark version of <a class="dv-oid" href="#1c">1c</a>”</p>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;annotations&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Canvas&quot;}, &quot;bannerTone&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;amber&quot;, &quot;red&quot;], &quot;default&quot;: &quot;amber&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Impersonation&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const showNotes = this.props.annotations ?? true;
+    const bannerAmber = (this.props.bannerTone ?? 'amber') === 'amber';
+    const bannerRed = !bannerAmber;
+
+    const signups = [1,2,2,4,3,5,4,6,5,7,6,8];
+    const signupBars = signups.map((v,i) => ({ h: Math.round(v/8*100)+'%', bg: i === signups.length-1 ? '#00935e' : '#9adbbf' }));
+    const checkins = [420,380,60,90,1240,2210,980,760,410,120,300,1820,2640,3412];
+    const checkinBars = checkins.map((v,i) => ({ h: Math.max(4, Math.round(v/3412*100))+'%', bg: i === checkins.length-1 ? '#00935e' : '#9adbbf' }));
+    const planBars = [
+      { name: 'Free', n: 5, w: '28%' },
+      { name: 'Starter', n: 9, w: '50%' },
+      { name: 'Professional', n: 15, w: '84%' },
+      { name: 'Business', n: 3, w: '17%' },
+    ];
+    const topTenants = [
+      { name: 'Eventra OÜ', n: '24.3k', w: '100%' },
+      { name: 'Acme Conf Group', n: '8.4k', w: '35%' },
+      { name: 'Meridian Group', n: '6.1k', w: '25%' },
+      { name: 'NorthPress', n: '2.3k', w: '9%' },
+      { name: 'Cityline Expo', n: '1.9k', w: '8%' },
+    ];
+
+    const chip = (st) => ({
+      Active:    { dot:'#00935e', fg:'#00714a', bg:'#e7f5ee', bd:'#bfe8d6' },
+      Trial:     { dot:'#2563eb', fg:'#1d4ed8', bg:'#eff6ff', bd:'#bfdbfe' },
+      Suspended: { dot:'#d97706', fg:'#b45309', bg:'#fffbeb', bd:'#fde68a' },
+      Archived:  { dot:'#a1a1aa', fg:'#52525b', bg:'#f4f4f5', bd:'#e4e4e7' },
+    }[st]);
+
+    const T = (n, slug, st, sub, plan, custom, ev, at, mt, pct, us, cr, la, ol) => {
+      const c = chip(st);
+      const mc = pct > 100 ? '#dc2626' : pct >= 80 ? '#d97706' : '#00935e';
+      return { n, slug, st, sub, plan, custom, ev, at, mt, us, cr, la, ol: ol || '',
+        dot: c.dot, fg: c.fg, bg: c.bg, bd: c.bd,
+        mw: Math.min(100, pct) + '%', mc };
+    };
+    const tenants = [
+      T('Acme Conf Group','acme-conf','Active','','Professional',true,12,'8,420','8,420 / 10k',84,4,'Mar 2025','2 min ago'),
+      T('Eventra OÜ','eventra','Active','','Business',false,31,'24,300','24.3k / 50k',49,11,'Nov 2024','5 min ago'),
+      T('Forum One','forum-one','Active','','Professional',false,9,'612','612 / 500 per event',122,6,'Jan 2025','14 min ago','attendees 612/500'),
+      T('Meridian Group','meridian','Active','','Professional',false,18,'6,100','6,100 / 10k',61,7,'Dec 2024','32 min ago'),
+      T('Cityline Expo','cityline','Active','','Starter',false,11,'1,890','1,890 / 2k',95,2,'Feb 2025','26 min ago','events 11/10'),
+      T('Beacon Events','beacon','Trial','ends Jul 12','Starter (trial)',false,2,'380','380 / 500',76,2,'Jun 2026','1 h ago'),
+      T('Orbit Weekly','orbit','Trial','ends Jul 11','Starter (trial)',false,1,'60','60 / 500',12,1,'Jun 2026','8 h ago'),
+      T('DevDays Berlin','devdays','Trial','ends Jul 15','Starter (trial)',false,1,'140','140 / 500',28,3,'Jul 2026','3 h ago'),
+      T('Interlace Media','interlace','Trial','ends Jul 16','Starter (trial)',false,2,'210','210 / 500',42,1,'Jul 2026','5 h ago'),
+      T('Kappa Conferences','kappa','Active','','Free',false,2,'90','90 / 100',90,4,'May 2026','2 d ago','users 4/2'),
+      T('Helix Summits','helix','Active','','Starter',false,6,'950','950 / 2k',48,2,'Apr 2025','1 d ago'),
+      T('GreenBadge Co','greenbadge','Suspended','3 d ago','Starter',false,4,'1,120','1,120 / 2k',56,3,'Aug 2025','3 d ago'),
+      T('NorthPress','northpress','Suspended','12 d ago','Professional',false,7,'2,300','2,300 / 10k',23,5,'Oct 2024','12 d ago'),
+      T('Lumen Fairs','lumen','Archived','deletes Aug 9','Starter',false,0,'—','—',0,0,'Sep 2024','41 d ago'),
+    ];
+
+    const inbox = [
+      { t:'TRIAL', tfg:'#1d4ed8', tbg:'#eff6ff', tbd:'#bfdbfe', name:'Orbit Weekly', line:'Trial ends tomorrow · 1 event, 60 attendees — low usage, likely churn', act:'Extend / Assign plan', urgent:true },
+      { t:'OVER LIMIT', tfg:'#b91c1c', tbg:'#ffffff', tbd:'#fca5a5', name:'Forum One', line:'Attendees 612 / 500 per event on Professional — needs a custom limit or Business', act:'Review limits', urgent:true },
+      { t:'TRIAL', tfg:'#1d4ed8', tbg:'#eff6ff', tbd:'#bfdbfe', name:'Beacon Events', line:'Trial ends in 2 days · active daily · invoice #1041 sent, awaiting payment', act:'Extend / Assign plan', urgent:false },
+      { t:'OVER LIMIT', tfg:'#b91c1c', tbg:'#ffffff', tbd:'#fca5a5', name:'Kappa Conferences', line:'Users 4 / 2 on Free — over since Jul 2', act:'Review limits', urgent:false },
+      { t:'SUSPENDED', tfg:'#b45309', tbg:'#fffbeb', tbd:'#fde68a', name:'GreenBadge Co', line:'Suspended 3 d ago · invoice #1031 unpaid 30+ days · owner replied today', act:'Reactivate', urgent:false },
+      { t:'TRIAL', tfg:'#1d4ed8', tbg:'#eff6ff', tbd:'#bfdbfe', name:'DevDays Berlin', line:'Trial ends in 5 days · building badge templates', act:'Extend / Assign plan', urgent:false },
+      { t:'OVER LIMIT', tfg:'#b91c1c', tbg:'#ffffff', tbd:'#fca5a5', name:'Cityline Expo', line:'Events 11 / 10 this month on Starter', act:'Review limits', urgent:false },
+      { t:'TRIAL', tfg:'#1d4ed8', tbg:'#eff6ff', tbd:'#bfdbfe', name:'Interlace Media', line:'Trial ends in 6 days · no contact yet', act:'Extend / Assign plan', urgent:false },
+    ];
+
+    const acmeUsers = [
+      { name:'Anna Petrova', email:'anna@acmeconf.io', role:'Owner', rfg:'#00714a', rbg:'#e7f5ee', last:'2 min ago' },
+      { name:'Boris Kim', email:'boris@acmeconf.io', role:'Admin', rfg:'#00714a', rbg:'#e7f5ee', last:'1 h ago' },
+      { name:'Dana Ross', email:'dana@acmeconf.io', role:'Staff', rfg:'#52525b', rbg:'#f4f4f5', last:'Yesterday' },
+      { name:'Egor Lanin', email:'egor@acmeconf.io', role:'Staff', rfg:'#52525b', rbg:'#f4f4f5', last:'Jul 2' },
+      { name:'Front desk kiosk', email:'kiosk-01@acmeconf.io', role:'Kiosk', rfg:'#52525b', rbg:'#f4f4f5', last:'2 min ago' },
+    ];
+
+    const audit = [
+      { day:'Today · Jul 10', time:'14:32', actor:'support@idento.io', act:'impersonation.start', afg:'#1d4ed8', abg:'#eff6ff', target:'Acme Conf Group', diff:'Entered tenant as admin · reason: ticket #4821 — “can’t create events”', meta:'188.42.11.7 · Chrome / macOS', first:true },
+      { day:'', time:'14:05', actor:'jr@idento.io', act:'subscription.update', afg:'#00714a', abg:'#e7f5ee', target:'Beacon Events', diff:'Trial ends: Jul 12 → Jul 26 · reason: invoice #1041 pending, procurement delay', meta:'91.108.4.62 · Firefox / Linux', first:false },
+      { day:'', time:'11:48', actor:'jr@idento.io', act:'plan.assign', afg:'#00714a', abg:'#e7f5ee', target:'Forum One', diff:'Plan: Starter → Professional · reason: invoice #1042 paid Jul 9', meta:'91.108.4.62 · Firefox / Linux', first:false },
+      { day:'Yesterday · Jul 9', time:'18:20', actor:'support@idento.io', act:'limits.override', afg:'#00714a', abg:'#e7f5ee', target:'Acme Conf Group', diff:'attendees_per_event: 5,000 → 10,000 · reason: Spring Summit 2026, approved by JR', meta:'188.42.11.7 · Chrome / macOS', first:true },
+      { day:'', time:'16:41', actor:'jr@idento.io', act:'tenant.suspend', afg:'#b91c1c', abg:'#fef2f2', target:'GreenBadge Co', diff:'Status: active → suspended · reason: invoice #1031 unpaid 30+ days', meta:'91.108.4.62 · Firefox / Linux', first:false },
+      { day:'', time:'10:12', actor:'support@idento.io', act:'impersonation.end', afg:'#1d4ed8', abg:'#eff6ff', target:'NorthPress', diff:'Session closed · 28 min · 14 actions recorded in this log', meta:'188.42.11.7 · Chrome / macOS', first:false },
+      { day:'Jul 8', time:'09:34', actor:'jr@idento.io', act:'tenant.reactivate', afg:'#b45309', abg:'#fffbeb', target:'Meridian Group', diff:'Status: suspended → active · reason: payment received, invoice #1029', meta:'91.108.4.62 · Firefox / Linux', first:true },
+      { day:'', time:'09:02', actor:'jr@idento.io', act:'plan.update', afg:'#52525b', abg:'#f4f4f5', target:'— (Plans)', diff:'Professional: attendees_per_event 5,000 → 10,000 (plan default)', meta:'91.108.4.62 · Firefox / Linux', first:false },
+      { day:'Jul 7', time:'17:26', actor:'jr@idento.io', act:'tenant.archive', afg:'#b91c1c', abg:'#fef2f2', target:'Lumen Fairs', diff:'Status: suspended → archived · data deletes Aug 9 · reason: churned, confirmed by email', meta:'91.108.4.62 · Firefox / Linux', first:true },
+    ];
+
+    return { showNotes, bannerAmber, bannerRed, signupBars, checkinBars, planBars, topTenants, tenants, inbox, acmeUsers, audit };
+  }
+}
+</script>
+</body>
+</html>
