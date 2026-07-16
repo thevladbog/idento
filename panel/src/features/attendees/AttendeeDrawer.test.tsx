@@ -5,6 +5,7 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { AttendeeDrawer } from "./AttendeeDrawer";
 import { useAttendeesPage } from "./hooks";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -84,7 +85,13 @@ let lastAddZoneAccessBody: unknown;
 let removeZoneAccessCount = 0;
 let lastRemovedZoneAccessId: string | undefined;
 
+let readinessHitCount = 0;
+
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.get("http://api.test/api/attendees/:id", () => {
     attendeeGetHitCount += 1;
     if (attendeeStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: attendeeStatus });
@@ -157,6 +164,15 @@ function AttendeesListObserver() {
   return null;
 }
 
+// Same pattern for GET /api/events/:id/readiness (ReadinessObserver, as in
+// AddAttendeeDialog.test.tsx): a genuinely subscribed useQuery consumer so
+// READINESS_KEY invalidation produces an OBSERVABLE refetch
+// (readinessHitCount above), not just an asserted invalidate call.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
+
 // Same shape as ImportWizard.test.tsx's `createGate()`: a deterministic,
 // manually-released promise for a delayed MSW handler to await, so a test
 // can synchronize on the handler having settled (via the returned
@@ -192,6 +208,7 @@ describe("AttendeeDrawer", () => {
     lastAddZoneAccessBody = undefined;
     removeZoneAccessCount = 0;
     lastRemovedZoneAccessId = undefined;
+    readinessHitCount = 0;
   });
 
   it("shows a single whole-body skeleton while the attendee is loading, not the real sections", async () => {
@@ -405,6 +422,7 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     lastAddZoneAccessBody = undefined;
     removeZoneAccessCount = 0;
     lastRemovedZoneAccessId = undefined;
+    readinessHitCount = 0;
   });
 
   it("edit details PATCHes only the changed field", async () => {
@@ -794,17 +812,19 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
   });
 
-  it("delete: DELETEs the attendee, invalidates the list, and closes the whole drawer", async () => {
+  it("delete: DELETEs the attendee, invalidates the list AND readiness (the deletion changes the rail's attendees count), and closes the whole drawer", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     renderWithProviders(
       <>
         <AttendeesListObserver />
+        <ReadinessObserver eventId="evt-1" />
         <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />
       </>,
     );
     await screen.findByText("Ada Lovelace");
     await waitFor(() => expect(listHitCount).toBe(1));
+    await waitFor(() => expect(readinessHitCount).toBe(1));
 
     await user.click(screen.getByRole("button", { name: "Delete…" }));
     const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
@@ -814,6 +834,9 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     expect(lastDeletedAttendeeId).toBe("a1");
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+    // The genuinely subscribed readiness observer actually refetches —
+    // not just an invalidateQueries call asserted in isolation.
+    await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
   });
 
   it("keeps the delete confirm dialog open with an inline error when the delete fails", async () => {

@@ -7,6 +7,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
+import { READINESS_KEY } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
@@ -173,7 +174,12 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       }
     }
     if (attemptedAny) {
+      // Readiness too: every deleted attendee changes the live count the
+      // backend recomputes the rail's attendees step from — same
+      // cache-correctness rationale as the list invalidation above, so it
+      // also runs regardless of the session check below.
       await queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      void queryClient.invalidateQueries({ queryKey: READINESS_KEY(eventId) });
     }
     if (deleteSessionRef.current !== sessionId) return;
     setDeleting(false);

@@ -47,6 +47,10 @@ work while this rewrite runs (see root `AGENTS.md`).
   not just an explicit Cancel) on one comprehensive `isBusy` check covering
   ALL in-flight operations, not just the primary mutation — see
   `ImportWizard.tsx`'s `isStep3Busy`.
+- **Readiness invalidation:** any mutation that changes an entity count shown
+  in the workspace readiness rail (attendees, zones, staff) must also
+  invalidate `READINESS_KEY(eventId)` (`src/features/events/hooks.ts`)
+  alongside its own list key — nothing else refetches the readiness query.
 
 ## API workflow (openapi-first)
 

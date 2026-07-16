@@ -4,14 +4,31 @@ import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
+import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
+
+// Genuinely subscribed observer for GET /api/events/:id/readiness — same
+// ReadinessObserver pattern as AddStaffDialog.test.tsx/ZonesPage.test.tsx:
+// mounting a real useQuery consumer alongside the component under test makes
+// `invalidateQueries` for READINESS_KEY produce an OBSERVABLE refetch (via
+// `readinessHitCount`), rather than merely asserting the invalidate call was
+// made.
+function ReadinessObserver({ eventId }: { eventId: string }) {
+  useEventReadiness(eventId);
+  return null;
+}
 
 let createCount = 0;
 let lastCreateBody: unknown;
 let createDelayMs = 0;
+let readinessHitCount = 0;
 
 const server = startMswServer(
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessHitCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
   http.post("http://api.test/api/events/:eventId/attendees", async ({ request, params }) => {
     createCount += 1;
     lastCreateBody = await request.json();
@@ -48,6 +65,7 @@ describe("AddAttendeeDialog", () => {
     createCount = 0;
     lastCreateBody = undefined;
     createDelayMs = 0;
+    readinessHitCount = 0;
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
@@ -73,10 +91,16 @@ describe("AddAttendeeDialog", () => {
     expect(createCount).toBe(0);
   });
 
-  it("posts only the non-empty fields, invalidates the list, closes, and resets on success", async () => {
+  it("posts only the non-empty fields, invalidates the list AND readiness (the created attendee changes the rail's attendees step), closes, and resets on success", async () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
-    const { queryClient } = renderWithProviders(<AddAttendeeDialog eventId="evt-1" open onOpenChange={onOpenChange} />);
+    const { queryClient } = renderWithProviders(
+      <>
+        <ReadinessObserver eventId="evt-1" />
+        <AddAttendeeDialog eventId="evt-1" open onOpenChange={onOpenChange} />
+      </>,
+    );
+    await waitFor(() => expect(readinessHitCount).toBe(1));
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     await user.type(screen.getByLabelText("First name"), "Ada");
@@ -93,6 +117,9 @@ describe("AddAttendeeDialog", () => {
         }),
       ),
     );
+    // The genuinely subscribed readiness observer actually refetches —
+    // not just an invalidateQueries call asserted in isolation.
+    await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
   });
 
   it("posts all provided fields, omitting only the ones left blank", async () => {

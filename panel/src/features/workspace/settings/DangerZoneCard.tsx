@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { ATTENDEES_LIST_KEY } from "../../attendees/hooks";
+import { READINESS_KEY } from "../../events/hooks";
 import { $api } from "../../../shared/api/query";
 import type { components } from "../../../shared/api/schema";
 
@@ -67,7 +68,15 @@ export function DangerZoneCard({ event }: DangerZoneCardProps) {
   // extra state.
   const generateCodes = $api.useMutation("post", "/api/events/{event_id}/attendees/generate-codes", {
     onSuccess: () => {
+      // Readiness too — kept in lockstep with every other attendee-mutating
+      // success path (AddAttendeeDialog, BulkBar, AttendeeDrawer,
+      // ImportWizard). Today's aggregate (backend readiness.go) reads only
+      // entity counts + badge template, which a code backfill doesn't
+      // change, but the rail renders exclusively from this query and
+      // nothing else refetches it — one cheap GET here beats a stale rail
+      // the moment readiness starts caring about codes.
       void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(event.id) });
+      void queryClient.invalidateQueries({ queryKey: READINESS_KEY(event.id) });
     },
   });
 
