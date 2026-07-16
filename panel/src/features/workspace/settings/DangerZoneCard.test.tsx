@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { DangerZoneCard } from "./DangerZoneCard";
+import { useAttendeesPage } from "../../attendees/hooks";
 import { $api } from "../../../shared/api/query";
 import { startMswServer } from "../../../test/msw";
 import "../../../shared/i18n";
@@ -35,6 +36,13 @@ let lastDeletedId: string | undefined;
 let deleteStatusOverride: number | null = null;
 let deleteDelayMs = 0;
 
+let attendeesListHitCount = 0;
+let generateCodesCount = 0;
+let lastGenerateCodesEventId: string | undefined;
+let generateCodesStatusOverride: number | null = null;
+let generateCodesUpdatedCount = 3;
+let generateCodesDelayMs = 0;
+
 const server = startMswServer(
   http.get("http://api.test/api/events", () => {
     listHitCount += 1;
@@ -52,6 +60,26 @@ const server = startMswServer(
     // Tasks 5/6's fonts/api-keys endpoints, this one's 204 claim holds.
     return new HttpResponse(null, { status: 204 });
   }),
+  // AttendeesListObserver below keeps this query actively subscribed so
+  // ATTENDEES_LIST_KEY invalidation is observable via a hit-count bump,
+  // same pattern as the events-list ListObserver above.
+  http.get("http://api.test/api/events/:eventId/attendees", () => {
+    attendeesListHitCount += 1;
+    return HttpResponse.json({ attendees: [], total: 0, page: 1, per_page: 50 });
+  }),
+  http.post("http://api.test/api/events/:eventId/attendees/generate-codes", async ({ params }) => {
+    generateCodesCount += 1;
+    lastGenerateCodesEventId = params.eventId as string;
+    if (generateCodesDelayMs) await delay(generateCodesDelayMs);
+    if (generateCodesStatusOverride) {
+      return HttpResponse.json({ error: "server error" }, { status: generateCodesStatusOverride });
+    }
+    return HttpResponse.json({
+      status: "ok",
+      updated_count: generateCodesUpdatedCount,
+      message: "done",
+    });
+  }),
 );
 void server;
 
@@ -64,11 +92,22 @@ function ListObserver() {
   return null;
 }
 
+// Same ListObserver pattern as above (and as AttendeeDrawer.test.tsx's own
+// AttendeesListObserver): keeps the attendees list query actively
+// subscribed so `queryClient.invalidateQueries` on ATTENDEES_LIST_KEY
+// actually triggers an observable refetch we can assert on via
+// `attendeesListHitCount`.
+function AttendeesListObserver() {
+  useAttendeesPage(EVENT.id, { page: 1 });
+  return null;
+}
+
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <ListObserver />
+      <AttendeesListObserver />
       {ui}
     </QueryClientProvider>,
   );
@@ -81,6 +120,12 @@ describe("DangerZoneCard", () => {
     lastDeletedId = undefined;
     deleteStatusOverride = null;
     deleteDelayMs = 0;
+    attendeesListHitCount = 0;
+    generateCodesCount = 0;
+    lastGenerateCodesEventId = undefined;
+    generateCodesStatusOverride = null;
+    generateCodesUpdatedCount = 3;
+    generateCodesDelayMs = 0;
     navigateMock.mockClear();
     window.__ENV__ = { API_URL: "http://api.test" };
   });
@@ -97,6 +142,109 @@ describe("DangerZoneCard", () => {
       screen.getByText("Attendees, check-in history and the badge design — gone. Typed confirmation required."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete event…" })).toBeInTheDocument();
+  });
+
+  describe("generate missing codes row", () => {
+    it("renders a plain (non-destructive) row above the delete row, with an outline button", async () => {
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+
+      await screen.findByRole("heading", { name: "Danger zone" });
+
+      // The row's title text is deliberately reused verbatim as the
+      // button's own label (no separate "action verb" copy exists for this
+      // row) — scope this query to the <p> so it doesn't also match the
+      // button below.
+      expect(screen.getByText("Generate missing codes", { selector: "p" })).toBeInTheDocument();
+      expect(
+        screen.getByText("Backfills a code for every attendee that doesn't have one. Existing codes are never changed."),
+      ).toBeInTheDocument();
+
+      const generateButton = screen.getByRole("button", { name: "Generate missing codes" });
+      // Outline, never destructive — this row's whole point is that the
+      // backend call is a non-destructive backfill, so it must not carry
+      // the same red-flag styling as the real delete action.
+      expect(generateButton.className).toContain("border-border");
+      expect(generateButton.className).not.toContain("bg-destructive");
+
+      // DOM order: the generate row's title must appear before the delete
+      // row's title, i.e. it's the row ABOVE, not below.
+      const generateTitle = screen.getByText("Generate missing codes", { selector: "p" });
+      const deleteTitle = screen.getByText("Delete this event");
+      expect(
+        generateTitle.compareDocumentPosition(deleteTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("mutates immediately on click, with no confirm dialog, and disables the button while pending", async () => {
+      generateCodesDelayMs = 50;
+      const user = userEvent.setup();
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+
+      const generateButton = screen.getByRole("button", { name: "Generate missing codes" });
+      await user.click(generateButton);
+
+      // No confirm dialog — this is a non-destructive backfill (spec §9).
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(generateButton).toBeDisabled();
+
+      await waitFor(() => expect(generateCodesCount).toBe(1));
+      expect(lastGenerateCodesEventId).toBe("evt-1");
+      await waitFor(() => expect(generateButton).toBeEnabled());
+    });
+
+    it("shows the updated_count from the response and invalidates the attendees list on success", async () => {
+      generateCodesUpdatedCount = 7;
+      const user = userEvent.setup();
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+      await waitFor(() => expect(attendeesListHitCount).toBe(1));
+
+      await user.click(screen.getByRole("button", { name: "Generate missing codes" }));
+
+      expect(await screen.findByText("7 codes generated")).toBeInTheDocument();
+      await waitFor(() => expect(attendeesListHitCount).toBeGreaterThan(1));
+    });
+
+    it("renders a zero count honestly, with no fake success embellishment", async () => {
+      generateCodesUpdatedCount = 0;
+      const user = userEvent.setup();
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+
+      await user.click(screen.getByRole("button", { name: "Generate missing codes" }));
+
+      expect(await screen.findByText("0 codes generated")).toBeInTheDocument();
+    });
+
+    it("shows an inline error on failure, without touching the attendees list", async () => {
+      generateCodesStatusOverride = 500;
+      const user = userEvent.setup();
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+      await waitFor(() => expect(attendeesListHitCount).toBe(1));
+
+      await user.click(screen.getByRole("button", { name: "Generate missing codes" }));
+
+      expect(await screen.findByText("Couldn't generate codes. Please try again.")).toBeInTheDocument();
+      expect(screen.queryByText(/codes generated/)).not.toBeInTheDocument();
+      // A failed backfill invalidates nothing — the attendees list query
+      // must not have been asked to refetch.
+      expect(attendeesListHitCount).toBe(1);
+    });
+
+    it("replaces the previous result line on a re-run, rather than stacking both", async () => {
+      generateCodesStatusOverride = 500;
+      const user = userEvent.setup();
+      renderWithProviders(<DangerZoneCard event={EVENT} />);
+
+      const generateButton = screen.getByRole("button", { name: "Generate missing codes" });
+      await user.click(generateButton);
+      expect(await screen.findByText("Couldn't generate codes. Please try again.")).toBeInTheDocument();
+
+      generateCodesStatusOverride = null;
+      generateCodesUpdatedCount = 4;
+      await user.click(generateButton);
+
+      expect(await screen.findByText("4 codes generated")).toBeInTheDocument();
+      expect(screen.queryByText("Couldn't generate codes. Please try again.")).not.toBeInTheDocument();
+    });
   });
 
   it("keeps the confirm button disabled until the exact event name is typed", async () => {
