@@ -14,6 +14,7 @@ import { SaveStatePill } from "./SaveStatePill";
 import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
 import { usePreviewAttendee } from "./usePreviewAttendee";
 import { useSaveTemplate } from "./useSaveTemplate";
+import { ZplPreviewModal } from "./ZplPreviewModal";
 import { useFontCoverage } from "./zpl/fontCoverage";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
@@ -98,6 +99,15 @@ export function BadgeEditorPage() {
   // for why a DropdownMenu needs this same treatment the Reload/Overwrite
   // ConfirmDialogs already get.
   const [previewPickerOpen, setPreviewPickerOpen] = React.useState(false);
+
+  // P3.2 Task 5: the ZPL preview modal's own open flag -- same "lifted up so
+  // handlePageKeyDown can gate on it" rationale as previewPickerOpen above,
+  // since this modal is a Radix Dialog too (a Dialog IS covered by
+  // handlePageKeyDown's guardOpen-style role="dialog" checks in spirit, but
+  // those checks are each their OWN dedicated open flag, not a generic
+  // "any dialog" check -- this follows the same established pattern rather
+  // than introducing a different one).
+  const [zplPreviewOpen, setZplPreviewOpen] = React.useState(false);
 
   const [state, dispatch] = React.useReducer(
     editorReducer,
@@ -338,6 +348,14 @@ export function BadgeEditorPage() {
   const guardOpen = resolver.status === "blocked" || guardRevertOpen;
   const guardSaveLabel = resolver.status === "blocked" ? t("badgeGuardSave") : t("badgeGuardSaveStay");
 
+  // P3.2 Task 5: the ZPL preview modal's header caption -- the same
+  // attendee/sample distinction PreviewPicker already shows in the top bar,
+  // spelled out as a plain name string (the modal has no access to the raw
+  // `Attendee` object's own display logic, so this derives it once here).
+  const previewName = preview.mode === "attendee" && preview.attendee
+    ? `${preview.attendee.first_name} ${preview.attendee.last_name}`.trim()
+    : t("badgePreviewSample");
+
   function handleGuardDiscard() {
     if (resolver.status === "blocked") {
       resolver.proceed();
@@ -382,7 +400,14 @@ export function BadgeEditorPage() {
   // here instead of staying that component's own internal state.
   function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
-    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen) return;
+    // `zplPreviewOpen` (P3.2 Task 5): the ZPL preview modal is a Radix
+    // Dialog, same as the Reload/Overwrite ConfirmDialogs above -- Radix's
+    // own Escape-to-close listens on `document` natively, entirely in
+    // parallel with React's synthetic dispatch (which still walks the React
+    // tree across the modal's Portal), so the SAME keystroke that closes the
+    // preview modal would also reach this handler and incorrectly pop the
+    // dirty-changes guard without this check.
+    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen || zplPreviewOpen) return;
     // Deselect-first, regardless of where focus currently is (final-review
     // Important 4). Task 8's canvas contract (BadgeCanvas.tsx's own
     // artboard keydown handler) only swallows Escape and deselects when the
@@ -523,9 +548,10 @@ export function BadgeEditorPage() {
           <Lock aria-hidden className="size-4" />
           {t("badgeTestPrintLocked")}
         </Button>
-        <Button type="button" variant="outline" disabled aria-disabled="true">
-          <Lock aria-hidden className="size-4" />
-          {t("badgeZplPreviewLocked")}
+        {/* P3.2 Task 5: unlocked -- the ZPL preview modal below is this
+            button's entire purpose now, so no more Lock icon/disabled. */}
+        <Button type="button" variant="outline" onClick={() => setZplPreviewOpen(true)}>
+          {t("badgeZplPreview")}
         </Button>
       </div>
 
@@ -619,6 +645,21 @@ export function BadgeEditorPage() {
         // itself now reflects that instead of looking clickable and doing
         // nothing.
         saveDisabled={saveDisabled}
+      />
+
+      {/* P3.2 Task 5: generates from serializeTemplateDoc(state.doc,
+          originalRawRef.current) + preview.data -- the SAME "the exact thing
+          that would be saved, previewed against the same attendee the canvas
+          shows" inputs (plan reconciliation #13), not a separately-derived
+          snapshot. */}
+      <ZplPreviewModal
+        open={zplPreviewOpen}
+        onOpenChange={setZplPreviewOpen}
+        doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
+        config={state.doc}
+        previewData={preview.data}
+        previewName={previewName}
+        eventId={eventId}
       />
 
       {templateQuery.isLoading ? (

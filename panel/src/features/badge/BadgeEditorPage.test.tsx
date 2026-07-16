@@ -247,14 +247,83 @@ describe("BadgeEditorPage", () => {
     attendeesRequests = [];
   });
 
-  it("renders the top bar title and the locked Test print / ZPL preview actions", async () => {
+  it("renders the top bar title, the locked Test print action, and the unlocked ZPL preview action", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Badge editor" })).toBeInTheDocument();
     const testPrint = screen.getByRole("button", { name: /Test print/ });
-    const zplPreview = screen.getByRole("button", { name: /ZPL preview/ });
+    // P3.2 Task 5: ZPL preview is no longer the locked idiom -- it's a live
+    // button that opens ZplPreviewModal (see the describe block below).
+    const zplPreview = screen.getByRole("button", { name: "ZPL preview" });
     expect(testPrint).toBeDisabled();
-    expect(zplPreview).toBeDisabled();
+    expect(zplPreview).not.toBeDisabled();
+  });
+
+  describe("ZPL preview modal (P3.2 Task 5)", () => {
+    // jsdom has no `FontFace` constructor -- useEventFontFaces treats that
+    // as a permanent "idle" state (see that hook's own module comment), so
+    // without this stub the modal would sit forever showing its generating
+    // placeholder. A trivial mock (this file's fonts stub always returns an
+    // empty list, so `.load()` is never even called) is enough to let
+    // status reach "ready" quickly. Scoped to just this describe block so
+    // the rest of the file keeps exercising jsdom's real FontFace-less
+    // default.
+    class MockFontFace {
+      constructor(_family: string, _source: unknown, _descriptors?: { weight?: string; style?: string }) {}
+      load(): Promise<this> {
+        return Promise.resolve(this);
+      }
+    }
+
+    beforeEach(() => {
+      (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
+      Object.defineProperty(document, "fonts", {
+        value: { add: () => {} },
+        configurable: true,
+        writable: true,
+      });
+    });
+
+    afterEach(() => {
+      delete (globalThis as unknown as { FontFace?: unknown }).FontFace;
+      // @ts-expect-error -- test-only cleanup; real jsdom has no `fonts`.
+      delete document.fonts;
+    });
+
+    it("opens the ZPL preview modal from the top-bar button", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByTestId("badge-pane-elements");
+      await user.click(screen.getByRole("button", { name: "ZPL preview" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByRole("heading", { name: "ZPL preview" })).toBeInTheDocument();
+    });
+
+    // Context note: same Radix-Dialog-vs-page-level-Escape-handler issue
+    // handlePageKeyDown's own comment documents for previewPickerOpen below
+    // -- without also gating on `zplPreviewOpen`, the SAME Escape keystroke
+    // that closes this modal would also bubble up and incorrectly pop the
+    // dirty-changes guard.
+    it("pressing Escape to close the ZPL preview modal does not also open the dirty-changes guard", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user); // dirty
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+
+      await user.click(screen.getByRole("button", { name: "ZPL preview" }));
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      // The dirty guard must NOT have opened for this same keystroke, and
+      // the doc is still dirty exactly as it was before.
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+    });
   });
 
   it("shows skeleton panes and no pane content while the template query is loading", async () => {
