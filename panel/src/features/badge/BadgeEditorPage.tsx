@@ -412,7 +412,15 @@ export function BadgeEditorPage() {
           onSelect={preview.setAttendee}
           listError={preview.listError}
           open={previewPickerOpen}
-          onOpenChange={setPreviewPickerOpen}
+          onOpenChange={(open) => {
+            setPreviewPickerOpen(open);
+            // Review Minor 1: a search typed to browse but abandoned (the
+            // picker closed without a pick) must not still filter the
+            // option list the next time the dropdown opens. Also runs on a
+            // selection-close (Radix fires onOpenChange(false) then too) --
+            // harmless, setAttendee already cleared the search itself.
+            if (!open) preview.clearSearch();
+          }}
         />
         <div className="flex-1" />
         <SaveStatePill dirty={state.dirty} isPending={saveTemplate.isPending} conflict={conflict} savedAt={state.savedAt} />

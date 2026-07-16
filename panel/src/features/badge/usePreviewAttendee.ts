@@ -89,12 +89,22 @@ export interface UsePreviewAttendeeResult {
   setAttendee: (attendee: Attendee) => void;
   search: string;
   setSearch: (value: string) => void;
+  // Clears the picker's search text AND the already-debounced value in one
+  // synchronous step -- called by BadgeEditorPage when the picker closes
+  // without a selection, so an abandoned search never still filters the
+  // option list the next time the dropdown opens (and never leaves a stale
+  // debounced query key alive for up to SEARCH_DEBOUNCE_MS after close).
+  clearSearch: () => void;
   options: Attendee[];
   // Distinguishes the two sample-mode causes for PreviewPicker's honesty
   // note (spec §6 "error != silently-sample") -- `mode` alone can't tell a
   // genuinely empty event apart from a failed list fetch; both fall back to
   // the same SAMPLE_PERSONA data, but only the fetch-error case shows the
-  // extra `badgePreviewListError` note.
+  // extra `badgePreviewListError` note. Deliberately NOT a bare
+  // `baseQuery.isError`: a failed REFETCH with retained last-known-good
+  // data keeps rendering the real attendee (see the derivation below), and
+  // the note's copy ("showing sample data") would be a lie in that state --
+  // this is only true when the error is WHY sample data is on the canvas.
   listError: boolean;
 }
 
@@ -140,21 +150,72 @@ export function usePreviewAttendee(eventId: string): UsePreviewAttendeeResult {
   const searchQuery = useAttendeesPage(eventId, { page: 1, perPage: PER_PAGE, search: debouncedSearch });
 
   const options = searchQuery.data?.attendees ?? [];
-  const baseAttendees = baseQuery.data?.attendees ?? [];
-  const listError = baseQuery.isError;
-  const zeroAttendees = baseQuery.isSuccess && baseQuery.data.total === 0;
-  const candidate = selectedAttendee ?? baseAttendees[0];
+  // Last-known-good envelope: react-query RETAINS the last successful `data`
+  // when a refetch fails (status flips to 'error', data stays) -- the same
+  // documented fact BadgeEditorPage's reload-conflict path leans on. Reading
+  // through `data` (instead of isSuccess-gated reads) is what lets a failed
+  // background REFETCH keep showing the last verified attendee rather than
+  // dishonestly flipping the canvas to the sample persona.
+  const baseData = baseQuery.data;
+  const baseAttendees = baseData?.attendees ?? [];
 
-  // Attendee mode requires: no list error, a genuinely non-empty event, the
-  // base fetch having actually resolved (never fabricate during the initial
-  // loading window -- fall back to the labeled sample instead), AND a real
-  // candidate attendee to show. Anything else is sample mode.
-  const resolvedAttendee = !listError && !zeroAttendees && baseQuery.isSuccess && candidate ? candidate : undefined;
-  const mode: PreviewMode = resolvedAttendee ? "attendee" : "sample";
-  const data = resolvedAttendee ? attendeeToPreviewData(resolvedAttendee) : SAMPLE_PERSONA;
+  // Review fix (Task 12 follow-up): a picked attendee is NEVER rendered
+  // from its pick-time snapshot -- the effective attendee is re-derived
+  // from the freshest available list data on every render:
+  //  - id present in the fresh base page (or the current search results) ->
+  //    render the FRESH object, so another operator's field edits propagate
+  //    into the preview on the very next refetch;
+  //  - VERIFIABLY absent -- the base fetch's LATEST attempt succeeded
+  //    (isSuccess, not just retained data) AND the page-1 envelope provably
+  //    covers the whole roster (total <= attendees.length), yet the id is
+  //    gone (deleted) -> drop the selection and fall back to the default
+  //    first attendee (or sample mode when the roster is empty);
+  //  - absent but UNVERIFIABLE -- the refetch errored (data above is the
+  //    retained stale list), or the roster spans multiple pages (an
+  //    attendee picked via search can legitimately live beyond page 1's 50
+  //    rows, so absence from page 1 proves nothing) -> retain the
+  //    last-known-good snapshot rather than clearing a selection nothing
+  //    actually disproved. Same honesty rule as `listError` above: an error
+  //    is surfaced as an error, never silently rewritten into a different
+  //    preview.
+  const freshSelected = selectedAttendee
+    ? baseAttendees.find((a) => a.id === selectedAttendee.id)
+      ?? searchQuery.data?.attendees.find((a) => a.id === selectedAttendee.id)
+    : undefined;
+  const selectionVerifiablyGone = Boolean(
+    selectedAttendee
+    && !freshSelected
+    && baseQuery.isSuccess
+    && baseData
+    && baseData.total <= baseData.attendees.length,
+  );
+  const effectiveSelected = freshSelected ?? (selectionVerifiablyGone ? undefined : selectedAttendee ?? undefined);
+  const candidate = effectiveSelected ?? baseAttendees[0];
+
+  // State hygiene for the verifiably-gone case: the derivation above
+  // already stops RENDERING the dropped selection, but the stored snapshot
+  // would otherwise linger and silently resurrect if the same id ever
+  // reappeared in a later refetch -- clear it for real.
+  React.useEffect(() => {
+    if (selectionVerifiablyGone) setSelectedAttendee(null);
+  }, [selectionVerifiablyGone]);
+
+  // `candidate` is undefined exactly when there's nothing real to show:
+  // the list has never loaded successfully (initial loading window or
+  // initial error -- never fabricate during either), or the last verified
+  // roster is empty. Everything else -- including a failed refetch with
+  // retained data -- stays attendee mode.
+  const mode: PreviewMode = candidate ? "attendee" : "sample";
+  const data = candidate ? attendeeToPreviewData(candidate) : SAMPLE_PERSONA;
+  const listError = baseQuery.isError && !candidate;
 
   function setSearch(value: string) {
     setSearchState(value);
+  }
+
+  function clearSearch() {
+    setSearchState("");
+    setDebouncedSearch("");
   }
 
   function setAttendee(attendee: Attendee) {
@@ -162,16 +223,17 @@ export function usePreviewAttendee(eventId: string): UsePreviewAttendeeResult {
     // Picking an attendee closes the loop on the current search -- the next
     // time the dropdown opens it shows the full list again, not still
     // filtered down to whatever the operator typed to find this one.
-    setSearchState("");
+    clearSearch();
   }
 
   return {
     data,
     mode,
-    attendee: resolvedAttendee,
+    attendee: candidate,
     setAttendee,
     search,
     setSearch,
+    clearSearch,
     options,
     listError,
   };

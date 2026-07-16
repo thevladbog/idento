@@ -1180,6 +1180,125 @@ describe("BadgeEditorPage preview data (Task 12)", () => {
     expect(el).toHaveAttribute("title", "Empty for this attendee — no invented value shown.");
   });
 
+  // Review fix (Important): a picked attendee must never be rendered from
+  // its frozen pick-time snapshot -- it's re-validated against the freshest
+  // successful list data on every refetch. Fresh fields propagate; an id
+  // verifiably gone from the roster drops the selection; an ERRORED refetch
+  // retains the last-known-good preview (error != silently-clear, the same
+  // honesty rule the sample fallback follows).
+  describe("selected-attendee revalidation against fresh list data", () => {
+    async function selectMax(user: ReturnType<typeof userEvent.setup>) {
+      await screen.findByRole("button", { name: "Zoe Zephyr" });
+      await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+      await user.click(screen.getByRole("menuitem", { name: "Max Muster" }));
+      await screen.findByRole("button", { name: "Max Muster" });
+    }
+
+    it("renders the selected attendee from the FRESH refetched object -- another operator's field edits propagate", async () => {
+      templateResponse = templateWithSourceElement("first_name");
+      const user = userEvent.setup();
+      const { queryClient } = renderPage();
+      await selectMax(user);
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Max");
+
+      // Another operator renames Max; any invalidation-driven refetch now
+      // returns the updated row under the same id.
+      attendeesResponse = {
+        attendees: [ZOE, { ...MAX, first_name: "Maximilian" }], total: 2, page: 1, per_page: 50,
+      };
+      await act(async () => {
+        await queryClient.invalidateQueries();
+      });
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Maximilian Muster" })).toBeInTheDocument());
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Maximilian");
+    });
+
+    it("drops a selection verifiably absent from a successful refetch, falling back to the first attendee", async () => {
+      templateResponse = templateWithSourceElement("first_name");
+      const user = userEvent.setup();
+      const { queryClient } = renderPage();
+      await selectMax(user);
+
+      // Max was deleted; the refetched page-1 envelope provably covers the
+      // whole roster (total === attendees.length), so his absence is a
+      // verified fact, not a paging artifact.
+      attendeesResponse = { attendees: [ZOE], total: 1, page: 1, per_page: 50 };
+      await act(async () => {
+        await queryClient.invalidateQueries();
+      });
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Zoe Zephyr" })).toBeInTheDocument());
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Zoe");
+      expect(screen.queryByText("Sample data")).not.toBeInTheDocument();
+    });
+
+    it("drops a verifiably-gone selection to sample mode when the refetched roster is empty", async () => {
+      templateResponse = templateWithSourceElement("first_name");
+      const user = userEvent.setup();
+      const { queryClient } = renderPage();
+      await selectMax(user);
+
+      attendeesResponse = { attendees: [], total: 0, page: 1, per_page: 50 };
+      await act(async () => {
+        await queryClient.invalidateQueries();
+      });
+
+      await waitFor(() => expect(screen.getByText("Sample data")).toBeInTheDocument());
+      expect(screen.getByRole("button", { name: "Анна Петрова" })).toBeInTheDocument();
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Анна");
+      // A verified-empty roster is not a fetch failure -- no error note.
+      expect(screen.queryByText("Couldn't load attendees — showing sample data.")).not.toBeInTheDocument();
+    });
+
+    it("retains the selected attendee (last-known-good) when the refetch itself errors", async () => {
+      templateResponse = templateWithSourceElement("first_name");
+      const user = userEvent.setup();
+      const { queryClient } = renderPage();
+      await selectMax(user);
+
+      // The refetch fails: react-query retains the last-successful data
+      // (status flips to 'error', data stays) -- nothing disproved the
+      // selection, so it must NOT be cleared.
+      attendeesStatus = 500;
+      await act(async () => {
+        await queryClient.invalidateQueries();
+      });
+      // Let the query's error-state notification flush before the negative
+      // assertions: the observer update lands a tick AFTER invalidateQueries'
+      // own promise resolves (verified empirically -- without this flush the
+      // pre-fix code passed these assertions by accident, still showing the
+      // last render). Same idiom as the "does not re-dispatch load" test.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+      expect(screen.getByRole("button", { name: "Max Muster" })).toBeInTheDocument();
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Max");
+      // The `badgePreviewListError` copy claims sample data is showing --
+      // it isn't (the retained real attendee is), so the note must stay
+      // hidden rather than lie about what's on the canvas.
+      expect(screen.queryByText("Couldn't load attendees — showing sample data.")).not.toBeInTheDocument();
+    });
+  });
+
+  // Review Minor 1: a search typed to browse (but abandoned without a pick)
+  // must not still filter the option list the next time the picker opens.
+  it("clears the picker's search when it closes without a selection", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("button", { name: "Zoe Zephyr" });
+    await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+    const input = screen.getByRole("searchbox", { name: "Search attendees" });
+    fireEvent.change(input, { target: { value: "max" } });
+    expect(input).toHaveValue("max");
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+    expect(screen.getByRole("searchbox", { name: "Search attendees" })).toHaveValue("");
+  });
+
   // Context note: the picker's DropdownMenu is not a Dialog, so it isn't
   // covered by handlePageKeyDown's existing guardOpen/reloadDialogOpen/
   // overwriteDialogOpen checks -- without also gating on `previewPickerOpen`
