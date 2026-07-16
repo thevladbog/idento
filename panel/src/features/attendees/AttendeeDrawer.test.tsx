@@ -1189,4 +1189,31 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     expect(screen.queryByText(/Couldn.t send/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
   });
+
+  // Distinct from the mark-printed-failure test above: here the AGENT
+  // itself rejects (the send never happened at all), so this must show the
+  // full failure copy — the agent's own verbatim error text (same
+  // "error instanceof Error ? error.message : fallback" idiom TestPrintDialog
+  // uses) — never the softened "sent, but..." warning, and never a "printed"
+  // claim.
+  it("shows the agent's own error text and keeps the dialog open when the send itself fails (not a mark-printed failure)", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    printStatus = 404;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    expect(await within(dialog).findByText(/printer offline/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+    expect(markPrintedHitCount).toBe(0);
+    expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
+  });
 });
