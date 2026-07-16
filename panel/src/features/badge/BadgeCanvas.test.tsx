@@ -285,6 +285,34 @@ describe("BadgeCanvas", () => {
       fireEvent.keyDown(screen.getByTestId("badge-canvas-artboard"), { key: "ArrowRight" });
       expect(onMove).not.toHaveBeenCalled();
     });
+
+    it("clamps an edge nudge with the element's rendered footprint, matching where drag would stop", () => {
+      // A text element with NO explicit width/height renders with the
+      // canvas's default text footprint (40x8mm) -- the same footprint the
+      // drag path clamps against. On a 90mm-wide board the max-fitting x
+      // for that footprint is 50; a nudge from x=50 must stay clamped at
+      // 50, NOT slide to 50.5 by clamping a zero-size box (regression
+      // coverage: nudge and drag must use the SAME footprint fallback).
+      const { onMove } = renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 50, y: 5, text: "Hi" }]),
+        selectedId: "t1",
+      });
+
+      fireEvent.keyDown(screen.getByTestId("badge-canvas-artboard"), { key: "ArrowRight" });
+      expect(onMove).toHaveBeenCalledWith("t1", 50, 5);
+    });
+  });
+
+  describe("focus-to-nudge", () => {
+    it("focuses the artboard when an element is clicked, so arrow-nudge works without a Tab stop first", () => {
+      renderCanvas({
+        doc: docWith([{ id: "e1", type: "box", x: 5, y: 5, width: 20, height: 10 }]),
+      });
+
+      fireEvent.click(screen.getByTestId("badge-canvas-element-e1"));
+
+      expect(document.activeElement).toBe(screen.getByTestId("badge-canvas-artboard"));
+    });
   });
 
   describe("Escape", () => {

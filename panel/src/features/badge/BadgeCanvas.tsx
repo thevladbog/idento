@@ -26,6 +26,34 @@ export interface BadgeCanvasProps {
   onResize: (id: string, width: number, height: number) => void;
 }
 
+// Part of the SAME documented non-token-color exception as the literal-white
+// artboard face below (the plan's Global Constraints "token classes only"
+// line, docs/superpowers/plans/2026-07-16-panel-p3.1-badge-editor.md line
+// 21 -- same pattern as QrSvg.tsx / print.css): the wrapper represents the
+// physical WORK SURFACE around a physical badge and must stay the board's
+// theme-invariant dark neutral (#3f3f46, board §4a's "neutral artboard
+// chrome") in BOTH themes. A token class here (`bg-foreground/90` was the
+// plan text's drafting error) inverts in dark mode (--foreground flips
+// #18181b -> #f4f4f5, packages/ui/src/theme.css:7,40), leaving a white
+// artboard floating on a near-white wrapper. The two caption colors are the
+// board's own footer-text neutrals (#c8c8cd spec line, #8e8e96 muted link)
+// -- fixed for the same reason: they sit ON the fixed-dark surface, so a
+// theme-flipping text token (`text-background` is #101012 in dark mode)
+// would go dark-on-dark.
+const WORK_SURFACE_BG = "#3f3f46";
+const WORK_SURFACE_CAPTION = "#c8c8cd";
+const WORK_SURFACE_CAPTION_MUTED = "#8e8e96";
+
+// Same exception, artboard CONTENTS: everything drawn on the white badge
+// face represents physical thermal print, which is always black-on-white
+// (exactly why QrSvg renders literal black modules) -- a theme token
+// (`text-foreground`/`border-foreground` flip to #f4f4f5 in dark mode)
+// would render the badge's own text/lines INVISIBLE on the fixed-white
+// face. INK = the print itself; INK_MUTED = editor-only annotation text
+// on the face (the barcode's value line) that isn't print truth.
+const ARTBOARD_INK = "#000000";
+const ARTBOARD_INK_MUTED = "#52525b";
+
 // The px viewport the artboard fits into (canvasMath's fitScale). This is a
 // FIXED design-time size, not a live-measured container size: jsdom (this
 // repo's test environment) always reports 0 for clientWidth/clientHeight,
@@ -134,6 +162,18 @@ export function BadgeCanvas({
   // "resize" dispatch round-trips through the editor reducer and back down
   // as new `doc` props).
   const dragRef = React.useRef<DragState | null>(null);
+
+  // The artboard is the keyboard-nudge listener (tabIndex=0 +
+  // handleArtboardKeyDown below); selecting an element by CLICK must also
+  // move focus there, or the documented arrow-key nudge path would only
+  // work after a separate Tab stop -- a pointer-select would silently
+  // strand keyboard use.
+  const artboardRef = React.useRef<HTMLDivElement | null>(null);
+
+  function selectByClick(id: string) {
+    artboardRef.current?.focus();
+    onSelect(id);
+  }
 
   function beginMove(event: React.PointerEvent<HTMLDivElement>, el: BadgeElement) {
     if (event.button !== 0) return;
@@ -273,24 +313,29 @@ export function BadgeCanvas({
 
     event.preventDefault();
     const step = event.shiftKey ? NUDGE_MM_SHIFT : NUDGE_MM;
+    // Same footprint fallback as the drag path (elementFootprint) -- NOT
+    // raw el.width/el.height (undefined -> 0), which would let a nudge
+    // slide a default-footprint element past where a drag of the same
+    // element clamps. One footprint rule for both input paths.
+    const { width, height } = elementFootprint(el);
     const next = clampPosition(
-      { x: el.x + delta.dx * step, y: el.y + delta.dy * step, width: el.width, height: el.height },
+      { x: el.x + delta.dx * step, y: el.y + delta.dy * step, width, height },
       doc,
     );
     onMove(el.id, next.x, next.y);
   }
 
   return (
-    // Global Constraints (docs/superpowers/plans/2026-07-16-panel-p3.1-badge-editor.md,
-    // line 21: "token classes only"). `bg-foreground/90` IS a token class
-    // (an opacity modifier on the existing `--foreground` design token),
-    // not a literal hex, so the dark WRAPPER needs no exception -- only
-    // the white ARTBOARD FACE below does (see that comment).
+    // Fixed dark work surface -- theme-invariant by design; see
+    // WORK_SURFACE_BG's exception comment above (the same sanctioned
+    // physical-media exception as the white artboard face below).
     <div
-      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg bg-foreground/90 p-4"
+      className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg p-4"
+      style={{ backgroundColor: WORK_SURFACE_BG }}
       data-testid="badge-canvas"
     >
       <div
+        ref={artboardRef}
         role="group"
         aria-label={t("badgeArtboardCaption", { w: doc.width_mm, h: doc.height_mm, dpi: doc.dpi })}
         tabIndex={0}
@@ -318,7 +363,7 @@ export function BadgeCanvas({
             scale={scale}
             selected={el.id === selectedId}
             resolvedText={resolveElementText(el, previewData)}
-            onSelect={() => onSelect(el.id)}
+            onSelect={() => selectByClick(el.id)}
             onPointerDownMove={(event) => beginMove(event, el)}
             onPointerMove={(event) => handlePointerMove(event, el)}
             onPointerUp={endDrag}
@@ -327,14 +372,18 @@ export function BadgeCanvas({
         ))}
       </div>
 
-      <p className="text-code text-background">
+      {/* Fixed caption neutrals on the fixed-dark surface -- see
+          WORK_SURFACE_CAPTION*'s exception comment above. */}
+      <p className="text-code" style={{ color: WORK_SURFACE_CAPTION }}>
         {t("badgeArtboardCaption", { w: doc.width_mm, h: doc.height_mm, dpi: doc.dpi })}
       </p>
       {/* Canvas render is an EDITING AID, not print truth (reconciliation
           #5) -- this stays visible permanently, not just for some
           first-run tip, so nobody mistakes this approximation for what
           actually prints until P3.2's real ZPL preview exists. */}
-      <p className="text-caption text-background/70">{t("badgeCanvasApproximation")}</p>
+      <p className="text-caption" style={{ color: WORK_SURFACE_CAPTION_MUTED }}>
+        {t("badgeCanvasApproximation")}
+      </p>
     </div>
   );
 }
@@ -406,8 +455,9 @@ function ElementContent({
       const fontSizePx = Math.max(mmToPx(fontSizePt * MM_PER_POINT, scale), 6);
       return (
         <span
-          className="block w-full truncate leading-none text-foreground"
-          style={{ fontSize: fontSizePx, textAlign: element.align ?? "left" }}
+          className="block w-full truncate leading-none"
+          // Fixed ink color -- see ARTBOARD_INK's exception comment above.
+          style={{ fontSize: fontSizePx, textAlign: element.align ?? "left", color: ARTBOARD_INK }}
         >
           {resolvedText}
         </span>
@@ -437,18 +487,22 @@ function ElementContent({
       // accessible name, not just a visual footnote.
       return (
         <div
-          className="flex h-full w-full flex-col items-center justify-center gap-0.5 bg-muted"
+          className="flex h-full w-full flex-col items-center justify-center gap-0.5"
           aria-label={t("badgeBarcodeApproximation")}
         >
           <div
             className="h-2/3 w-full"
+            // Fixed ink stripes -- see ARTBOARD_INK's exception comment.
             style={{
               backgroundImage:
-                "repeating-linear-gradient(90deg, var(--foreground) 0px, var(--foreground) 2px, transparent 2px, transparent 4px)",
+                `repeating-linear-gradient(90deg, ${ARTBOARD_INK} 0px, ${ARTBOARD_INK} 2px, transparent 2px, transparent 4px)`,
             }}
             aria-hidden
           />
-          <span className="w-full truncate px-0.5 text-center font-mono text-[9px] text-muted-foreground">
+          <span
+            className="w-full truncate px-0.5 text-center font-mono text-[9px]"
+            style={{ color: ARTBOARD_INK_MUTED }}
+          >
             {resolvedText}
           </span>
         </div>
@@ -458,8 +512,9 @@ function ElementContent({
     case "box":
       // Both render as simple bordered divs per the brief -- a "line" is
       // just a very thin box in this format (zpl.go's own generator draws
-      // both with the same `^GB` graphic-box command).
-      return <div className="h-full w-full border-2 border-foreground" aria-hidden />;
+      // both with the same `^GB` graphic-box command). Fixed ink border --
+      // see ARTBOARD_INK's exception comment above.
+      return <div className="h-full w-full border-2" style={{ borderColor: ARTBOARD_INK }} aria-hidden />;
 
     default:
       return null;
