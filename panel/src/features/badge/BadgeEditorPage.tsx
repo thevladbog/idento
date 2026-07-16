@@ -3,6 +3,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { BadgeCanvas } from "./BadgeCanvas";
 import { editorReducer, initialEditorState } from "./editorState";
 import { ElementsPane } from "./ElementsPane";
 import { useBadgeTemplate } from "./hooks";
@@ -131,24 +132,37 @@ export function BadgeEditorPage() {
             fieldSchema={fieldSchema}
           />
 
-          <div
-            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 p-4 text-center"
-            data-testid="badge-pane-canvas"
-          >
-            {state.doc.elements.length === 0 ? (
-              <>
+          <div className="flex h-full flex-col gap-2" data-testid="badge-pane-canvas">
+            {/* Keyed off `state.doc.elements` (not `template === null`) so
+                this guidance also covers an already-saved-but-still-empty
+                template, and disappears the moment an element is added --
+                see this component's own doc comment above. Rendered ABOVE
+                the real canvas (Task 8), not overlaid on it: the canvas
+                itself always shows the (empty) artboard underneath. */}
+            {state.doc.elements.length === 0 && (
+              <div className="rounded-lg border border-border bg-muted/30 p-4 text-center">
                 <p className="text-body font-medium text-foreground">{t("badgeEmptyTitle")}</p>
-                <p className="max-w-sm text-caption text-muted-foreground">
+                <p className="mx-auto max-w-sm text-caption text-muted-foreground">
                   {t("badgeEmptyBody", {
                     width: state.doc.width_mm,
                     height: state.doc.height_mm,
                     dpi: state.doc.dpi,
                   })}
                 </p>
-              </>
-            ) : (
-              <p className="text-caption text-muted-foreground">{t("badgePaneCanvas")}</p>
+              </div>
             )}
+            <BadgeCanvas
+              doc={state.doc}
+              selectedId={state.selectedId}
+              // Task 12's job to populate for real -- an empty object is a
+              // valid input today; BadgeCanvas's own resolveElementText
+              // falls back to each element's static `text` when a source
+              // doesn't resolve, never fabricating a value.
+              previewData={{}}
+              onSelect={(id) => dispatch({ type: "select", id })}
+              onMove={(id, x, y) => dispatch({ type: "move", id, x, y })}
+              onResize={(id, width, height) => dispatch({ type: "resize", id, width, height })}
+            />
           </div>
 
           <div className="rounded-lg border border-border p-4" data-testid="badge-pane-properties">

@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act, fireEvent, render, screen, waitFor, within,
+} from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { BadgeEditorPage } from "./BadgeEditorPage";
 import { startMswServer } from "../../test/msw";
@@ -185,7 +187,7 @@ describe("BadgeEditorPage", () => {
     expect(screen.getByTestId("badge-pane-canvas").textContent).not.toMatch(/90/);
   });
 
-  it("shows the canvas placeholder (not the empty-state guidance) once the template already has elements", async () => {
+  it("mounts the real BadgeCanvas artboard (not the empty-state guidance) once the template already has elements", async () => {
     templateResponse = {
       template: {
         width_mm: 90,
@@ -199,5 +201,31 @@ describe("BadgeEditorPage", () => {
 
     await screen.findByTestId("badge-pane-canvas");
     expect(screen.queryByText("Add your first element")).not.toBeInTheDocument();
+    expect(screen.getByTestId("badge-canvas-artboard")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-canvas-element-el-1")).toBeInTheDocument();
+  });
+
+  it("wires BadgeCanvas selection into the shared reducer, in sync with ElementsPane", async () => {
+    templateResponse = {
+      template: {
+        width_mm: 90,
+        height_mm: 55,
+        dpi: 300,
+        elements: [{ id: "el-1", type: "text", x: 5, y: 5, text: "Hi" }],
+      },
+      version: 2,
+    };
+    renderPage();
+
+    const canvasElement = await screen.findByTestId("badge-canvas-element-el-1");
+    fireEvent.click(canvasElement);
+
+    // Same selection state now shown on the ElementsPane row (aria-current)
+    // -- proves the page wires BOTH panes to the SAME `state.selectedId`,
+    // not two independently-tracked selections. Scoped to the elements
+    // pane: the canvas element ALSO renders the literal text "Hi".
+    const elementsPane = screen.getByTestId("badge-pane-elements");
+    const row = within(elementsPane).getByText("Hi").closest("button");
+    expect(row).toHaveAttribute("aria-current", "true");
   });
 });
