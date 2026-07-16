@@ -7,6 +7,7 @@ import { BadgeCanvas } from "./BadgeCanvas";
 import { editorReducer, initialEditorState } from "./editorState";
 import { ElementsPane } from "./ElementsPane";
 import { useBadgeTemplate } from "./hooks";
+import { PropertiesPane } from "./PropertiesPane";
 import { parseTemplateDoc } from "./templateTypes";
 import { $api } from "../../shared/api/query";
 
@@ -165,9 +166,12 @@ export function BadgeEditorPage() {
             />
           </div>
 
-          <div className="rounded-lg border border-border p-4" data-testid="badge-pane-properties">
-            <h3 className="text-body font-medium text-muted-foreground">{t("badgePaneProperties")}</h3>
-          </div>
+          <PropertiesPane
+            element={state.doc.elements.find((element) => element.id === state.selectedId) ?? null}
+            fieldSchema={fieldSchema}
+            config={state.doc}
+            onUpdate={(id, patch) => dispatch({ type: "update", id, patch })}
+          />
         </div>
       )}
     </div>
