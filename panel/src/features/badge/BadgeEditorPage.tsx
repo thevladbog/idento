@@ -1,4 +1,4 @@
-import { Button, Skeleton } from "@idento/ui";
+import { Button, ConfirmDialog, Skeleton } from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import * as React from "react";
@@ -8,7 +8,10 @@ import { editorReducer, initialEditorState } from "./editorState";
 import { ElementsPane } from "./ElementsPane";
 import { useBadgeTemplate } from "./hooks";
 import { PropertiesPane } from "./PropertiesPane";
-import { parseTemplateDoc } from "./templateTypes";
+import { SaveStatePill } from "./SaveStatePill";
+import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
+import { useSaveTemplate } from "./useSaveTemplate";
+import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
 
 // Same rationale as AttendeesPage.tsx / ZonesPage.tsx / StaffPage.tsx:
@@ -16,17 +19,23 @@ import { $api } from "../../shared/api/query";
 // app/router.tsx (which imports this component for the route's `component`).
 const routeApi = getRouteApi("/_app/events/$eventId/badge");
 
-// Board 4a — the badge editor's route/page shell (P3.1 Task 6). Owns:
-//  - the editor-local top bar (title + a save-state-pill placeholder slot,
-//    filled in by Task 10's save model, + the right-aligned "Test print" /
-//    "ZPL preview" actions, both locked with the P2.2 disabled-Button+Lock
-//    idiom until P3.2 wires them up);
+// Board 4a — the badge editor's route/page shell (P3.1 Task 6, save model
+// wired in Task 10). Owns:
+//  - the editor-local top bar (title, the save-state pill, the Save button,
+//    + the right-aligned "Test print" / "ZPL preview" actions, both locked
+//    with the P2.2 disabled-Button+Lock idiom until P3.2 wires them up);
+//  - the conflict banner (below the top bar) and its two ConfirmDialogs;
 //  - the three-pane grid hosting the Elements / Canvas / Properties regions
 //    (Tasks 7-9 replace these labeled placeholders with the real panes);
 //  - the editor's document-state reducer (Task 5), seeded here from
 //    `useBadgeTemplate`'s query once it resolves — Tasks 7-12 consume
 //    `state`/`dispatch` via props only, never re-deriving them from the
-//    query themselves.
+//    query themselves;
+//  - the save mutation's orchestration (Task 10): dispatching "saved" /
+//    "load", the conflict state machine, and keeping `originalRawRef` in
+//    sync — the mutation call itself (and its unconditional
+//    BADGE_TEMPLATE_KEY/READINESS_KEY invalidation) lives in
+//    useSaveTemplate.ts, the ONE home for it.
 //
 // Loading -> Skeleton panes. Fetch error -> `badgeLoadError` copy (distinct
 // from the empty-state copy below) + a retry action. `template: null` (the
@@ -66,20 +75,28 @@ export function BadgeEditorPage() {
   // never drift apart.
   const originalRawRef = React.useRef<unknown>(null);
 
-  // Seeds the reducer from the fetched template exactly once per event —
-  // an `initializedRef` guard (same pattern as ZoneRuleEditor.tsx's
-  // clause derivation) stops a background refetch (window refocus, or a
-  // BADGE_TEMPLATE_KEY invalidation after another operator's save) from
-  // re-dispatching "load" and clobbering in-progress edits (doc, dirty,
-  // selectedId all reset). Reset whenever the target event changes so
-  // navigating between events re-seeds from the new event's template.
-  const initializedRef = React.useRef(false);
-  React.useEffect(() => {
-    initializedRef.current = false;
-  }, [eventId]);
+  // Which event's template has already been loaded into the reducer. This
+  // single piece of state does TWO jobs:
+  //  1. (Task 6's original job, previously a plain `initializedRef` boolean
+  //     ref) stops a background refetch of the SAME event's badge-template
+  //     query (window refocus, or a BADGE_TEMPLATE_KEY invalidation after
+  //     another operator's save) from re-dispatching "load" and clobbering
+  //     in-progress edits (doc, dirty, selectedId all reset) — the effect
+  //     below still short-circuits via `if (initialized) return`.
+  //  2. (Task 10's job) gives Save a REACTIVE, per-render signal for
+  //     whether load-initialization has completed for the CURRENT event.
+  //     Comparing `initializedForEventId === eventId` recomputes to `false`
+  //     on the very FIRST render after an event navigation — before any
+  //     effect has run — unlike a plain ref (which only flips via a LATER
+  //     effect, one render too late): between an event navigation and the
+  //     new event's query resolving, `state.doc` (and `state.dirty`) still
+  //     hold the OLD event's data, so Save must stay disabled for that
+  //     whole window, not just until the next effect flush.
+  const [initializedForEventId, setInitializedForEventId] = React.useState<string | null>(null);
+  const initialized = initializedForEventId === eventId;
 
   React.useEffect(() => {
-    if (initializedRef.current) return;
+    if (initialized) return;
     if (!templateQuery.isSuccess) return;
     originalRawRef.current = templateQuery.data.template;
     dispatch({
@@ -87,18 +104,122 @@ export function BadgeEditorPage() {
       doc: parseTemplateDoc(templateQuery.data.template),
       version: templateQuery.data.version,
     });
-    initializedRef.current = true;
-  }, [templateQuery.isSuccess, templateQuery.data]);
+    setInitializedForEventId(eventId);
+  }, [eventId, initialized, templateQuery.isSuccess, templateQuery.data]);
+
+  // --- Save model (Task 10) ---------------------------------------------
+  const saveTemplate = useSaveTemplate(eventId);
+  // Set on an ApiError.status === 409 (stale version) from the save PUT;
+  // cleared once the Reload or Overwrite resolution succeeds. `state.dirty`
+  // stays true underneath this the whole time (a 409 never dispatches
+  // "saved"), which is exactly why SaveStatePill's priority order checks
+  // `conflict` before `dirty`.
+  const [conflict, setConflict] = React.useState(false);
+  // A non-409 save failure (5xx, network error, ...) shows this inline line
+  // instead — `state.dirty` is untouched (no "saved" dispatch), so the pill
+  // itself falls back to its normal "Unsaved changes" reading.
+  const [saveErrorVisible, setSaveErrorVisible] = React.useState(false);
+  const [reloadDialogOpen, setReloadDialogOpen] = React.useState(false);
+  const [overwriteDialogOpen, setOverwriteDialogOpen] = React.useState(false);
+  // Both conflict-resolution paths do a GET refetch before they're done
+  // (Reload always; Overwrite to re-derive `current_version` — see below),
+  // and neither of those refetches makes `saveTemplate.isPending` true (it's
+  // a different query, not this mutation). These flags extend "busy" to
+  // cover that refetch window too, so the exhaustive busy-gating rule holds
+  // for the WHOLE resolution, not just the PUT sliver of it.
+  const [isReloading, setIsReloading] = React.useState(false);
+  const [isOverwriting, setIsOverwriting] = React.useState(false);
+  const busy = saveTemplate.isPending || isReloading || isOverwriting;
+  const saveDisabled = !initialized || !state.dirty || saveTemplate.isPending || conflict;
+
+  function handleSave() {
+    if (saveDisabled) return;
+    setSaveErrorVisible(false);
+    const template = serializeTemplateDoc(state.doc, originalRawRef.current);
+    saveTemplate.mutate(
+      { params: { path: { id: eventId } }, body: { template, version: state.version } },
+      {
+        onSuccess: (data) => {
+          // Refresh the snapshot to the exact object just PUT — never to a
+          // later `templateQuery.data.template` (see originalRawRef above).
+          originalRawRef.current = template;
+          dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+        },
+        onError: (error) => {
+          if (error instanceof ApiError && error.status === 409) {
+            setConflict(true);
+          } else {
+            setSaveErrorVisible(true);
+          }
+        },
+      },
+    );
+  }
+
+  async function handleReloadConfirm() {
+    if (busy) return;
+    setIsReloading(true);
+    try {
+      const result = await templateQuery.refetch();
+      if (!result.data) return; // refetch itself failed — stay in conflict, dialog open, let the user retry
+      originalRawRef.current = result.data.template;
+      dispatch({ type: "load", doc: parseTemplateDoc(result.data.template), version: result.data.version });
+      setConflict(false);
+      setReloadDialogOpen(false);
+    } finally {
+      setIsReloading(false);
+    }
+  }
+
+  async function handleOverwriteConfirm() {
+    if (busy) return;
+    setIsOverwriting(true);
+    try {
+      // The 409 that set `conflict` carried a `current_version` in its
+      // response BODY, but http.ts's `errors` middleware only keeps
+      // status/code/message on the thrown ApiError (see its `onResponse`
+      // middleware) — the body itself is never retained. Re-deriving the
+      // current version via a fresh GET, as the task brief directs, instead
+      // of threading the 409 body through. If the refetch itself fails,
+      // falling back to the stale `state.version` just re-produces a 409
+      // (conflict stays, banner stays) rather than silently doing nothing.
+      const result = await templateQuery.refetch();
+      const currentVersion = result.data?.version ?? state.version;
+      const template = serializeTemplateDoc(state.doc, originalRawRef.current);
+      saveTemplate.mutate(
+        { params: { path: { id: eventId } }, body: { template, version: currentVersion } },
+        {
+          onSuccess: (data) => {
+            originalRawRef.current = template;
+            dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+            setConflict(false);
+            setOverwriteDialogOpen(false);
+          },
+          onError: (error) => {
+            if (error instanceof ApiError && error.status === 409) {
+              // Someone saved AGAIN between our refetch and this retry —
+              // stay in conflict so the user can see the banner and retry.
+              setConflict(true);
+            } else {
+              setSaveErrorVisible(true);
+            }
+          },
+        },
+      );
+    } finally {
+      setIsOverwriting(false);
+    }
+  }
 
   return (
     <div className="flex h-full min-h-[420px] flex-col gap-4">
       <div className="flex items-center gap-3 border-b border-border pb-4">
         <h2 className="text-page-title">{t("badgeTitle")}</h2>
-        {/* Save-state pill (board 4c: Saved/Saving/Unsaved changes/Conflict)
-            mounts here once Task 10 wires the save mutation — an empty
-            spacer keeps today's locked actions right-aligned in the
-            meantime. */}
-        <div className="flex-1" data-testid="badge-save-state-slot" />
+        <div className="flex-1" />
+        <SaveStatePill dirty={state.dirty} isPending={saveTemplate.isPending} conflict={conflict} savedAt={state.savedAt} />
+        <Button type="button" onClick={handleSave} disabled={saveDisabled}>
+          {t("badgeSave")}
+        </Button>
         <Button type="button" variant="outline" disabled aria-disabled="true">
           <Lock aria-hidden className="size-4" />
           {t("badgeTestPrintLocked")}
@@ -108,6 +229,52 @@ export function BadgeEditorPage() {
           {t("badgeZplPreviewLocked")}
         </Button>
       </div>
+
+      {saveErrorVisible ? <p className="text-body text-destructive">{t("badgeSaveError")}</p> : null}
+
+      {conflict ? (
+        <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <p className="text-body text-destructive">{t("badgeConflictBody")}</p>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setReloadDialogOpen(true)}>
+              {t("badgeConflictReload")}
+            </Button>
+            <Button type="button" variant="outline" disabled={busy} onClick={() => setOverwriteDialogOpen(true)}>
+              {t("badgeConflictOverwrite")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <ConfirmDialog
+        open={reloadDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && busy) return;
+          setReloadDialogOpen(open);
+        }}
+        title={t("badgeConflictReloadTitle")}
+        description={t("badgeConflictReloadBody")}
+        confirmLabel={t("badgeConflictReloadConfirm")}
+        cancelLabel={t("createEventCancel")}
+        closeLabel={t("workspaceDialogClose")}
+        confirmDisabled={busy}
+        onConfirm={() => void handleReloadConfirm()}
+      />
+      <ConfirmDialog
+        open={overwriteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && busy) return;
+          setOverwriteDialogOpen(open);
+        }}
+        title={t("badgeConflictOverwriteTitle")}
+        description={t("badgeConflictOverwriteBody")}
+        confirmLabel={t("badgeConflictOverwriteConfirm")}
+        cancelLabel={t("createEventCancel")}
+        closeLabel={t("workspaceDialogClose")}
+        destructive
+        confirmDisabled={busy}
+        onConfirm={() => void handleOverwriteConfirm()}
+      />
 
       {templateQuery.isLoading ? (
         <div className="grid flex-1 grid-cols-[240px_1fr_280px] gap-4">

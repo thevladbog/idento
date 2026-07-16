@@ -48,9 +48,11 @@ work while this rewrite runs (see root `AGENTS.md`).
   ALL in-flight operations, not just the primary mutation — see
   `ImportWizard.tsx`'s `isStep3Busy`.
 - **Readiness invalidation:** any mutation that changes an entity count shown
-  in the workspace readiness rail (attendees, zones, staff) must also
-  invalidate `READINESS_KEY(eventId)` (`src/features/events/hooks.ts`)
-  alongside its own list key — nothing else refetches the readiness query.
+  in the workspace readiness rail (attendees, zones, staff), OR content a
+  readiness step gates on (the badge template — its "badge" step flips on
+  saved template content, not a count), must also invalidate
+  `READINESS_KEY(eventId)` (`src/features/events/hooks.ts`) alongside its own
+  list/resource key — nothing else refetches the readiness query.
 
 ## API workflow (openapi-first)
 
