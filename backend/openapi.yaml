@@ -1534,10 +1534,15 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "403":
-          description: tenant_suspended from the tenant gate.
+          description: >
+            Caller role is not admin/manager (echo.NewHTTPError →
+            HTTPError), or tenant_suspended from the tenant gate (→ Error).
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Error" }
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPError" }
+                  - { $ref: "#/components/schemas/Error" }
         "404":
           description: >
             Event does not exist, or belongs to a different tenant
