@@ -220,7 +220,10 @@ export interface paths {
         };
         /** A single event scoped to the caller's active tenant */
         get: operations["getEvent"];
-        /** Full replace of an event's editable fields. Any authenticated tenant member can call this — the handler checks tenant ownership only, no role restriction. */
+        /**
+         * Full replace of an event's editable fields. Any authenticated tenant member can call this — the handler checks tenant ownership only, no role restriction.
+         * @description Dual-write (final review Critical 1, P3.1): this is also the legacy web badge editor's save path (web/src/pages/BadgeTemplateEditorV2.tsx's handleSave PUTs its template here as an object-typed custom_fields["badgeTemplate"]). After the primary event update succeeds, when the incoming custom_fields carries a badgeTemplate value that decodes as a JSON OBJECT (mirroring migration 000018's own backfill guard — a string-typed legacy value is print-broken already and is left untouched), the handler ALSO mirrors it into the dedicated badge_template column via store.SyncBadgeTemplateFromLegacy, unconditionally bumping badge_template_version. This write has no expected-version guard (the legacy PUT has no version concept), so it deliberately makes a concurrent panel badge-editor save's NEXT PUT /api/events/{id}/badge-template 409 — correct cross-editor conflict semantics, not a bug. The sync is log-and-continue: a failure there never fails this PUT itself.
+         */
         put: operations["updateEvent"];
         post?: never;
         /** Soft-delete an event (sets deleted_at; the row stays in the database). GetEvents/GetEvent already exclude soft-deleted events, so a deleted event disappears from every listing and 404s on direct fetch. */
@@ -2460,7 +2463,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description version does not match the event's current stored version (store.ErrVersionConflict). current_version is re-read via GetEventBadgeTemplate so the caller can retry. */
+            /** @description version does not match the event's current stored version (store.ErrVersionConflict). current_version is re-read via GetEventBadgeTemplate so the caller can retry. As of the P3.1 dual-write fix, this can also be triggered by the legacy web editor: PUT /api/events/{id} (updateEvent) unconditionally bumps badge_template_version whenever it syncs an object-typed legacy custom_fields["badgeTemplate"] — a save made there between this caller's load and its own PUT surfaces here as an ordinary version conflict, same as two panel saves racing. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -637,26 +637,61 @@ func (s *PGStore) GetEventBadgeTemplate(ctx context.Context, eventID uuid.UUID) 
 // UpdateEventBadgeTemplate persists template verbatim (raw bytes, no
 // re-encoding) under an optimistic-concurrency guard: the UPDATE only
 // matches the row whose current badge_template_version equals
-// expectedVersion, and bumps the version by one in the same statement. On
-// success it returns the new (bumped) version via RETURNING. When the guard
-// misses — expectedVersion is stale — the UPDATE affects 0 rows, which
-// QueryRow surfaces as pgx.ErrNoRows; this method maps that to
-// ErrVersionConflict. Contract: the caller must already have confirmed the
-// event exists and is not soft-deleted (e.g. via requireEventOwnership)
-// before calling — this method does not re-check event existence, so a
-// 0-row result is always reported as a version conflict, never as
-// "not found".
+// expectedVersion (AND which is not soft-deleted — final-review Minor 6:
+// every other events UPDATE in this file already excludes deleted_at IS NOT
+// NULL rows, and this guarded write was the one missing it, which would
+// otherwise let a stale-but-matching version silently "resurrect" a
+// soft-deleted event's badge template), and bumps the version by one in the
+// same statement. On success it returns the new (bumped) version via
+// RETURNING. When the guard misses — expectedVersion is stale, or the event
+// is soft-deleted — the UPDATE affects 0 rows, which QueryRow surfaces as
+// pgx.ErrNoRows; this method maps that to ErrVersionConflict. Contract: the
+// caller must already have confirmed the event exists and is not
+// soft-deleted (e.g. via requireEventOwnership) before calling — this
+// method does not re-check event existence, so a 0-row result is always
+// reported as a version conflict, never as "not found".
 func (s *PGStore) UpdateEventBadgeTemplate(ctx context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
 	var newVersion int
 	query := `UPDATE events
 			  SET badge_template = $1, badge_template_version = badge_template_version + 1, updated_at = NOW()
-			  WHERE id = $2 AND badge_template_version = $3
+			  WHERE id = $2 AND badge_template_version = $3 AND deleted_at IS NULL
 			  RETURNING badge_template_version`
 	err := s.db.QueryRow(ctx, query, []byte(template), eventID, expectedVersion).Scan(&newVersion)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return 0, ErrVersionConflict
 		}
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// SyncBadgeTemplateFromLegacy mirrors an object-typed
+// custom_fields["badgeTemplate"] value — written by the legacy web editor's
+// PUT /api/events/{id} (handler/events.go's UpdateEvent) — into the
+// dedicated badge_template/badge_template_version columns, so it isn't
+// silently shadowed by effectiveBadgeTemplate's column-first rule
+// (badge_template.go) once P3.1 ships. Deliberately UNCONDITIONAL: unlike
+// UpdateEventBadgeTemplate, there is no expectedVersion parameter and no
+// optimistic-concurrency guard on the WHERE clause — the legacy PUT has no
+// version concept to supply one. The UPDATE always matches by id (and
+// excludes soft-deleted rows) and always bumps badge_template_version by
+// one on success. This is a DELIBERATE cross-editor conflict trigger: if a
+// panel operator has the badge editor open with an in-flight version, this
+// bump means their NEXT save's optimistic-concurrency check will 409 —
+// which is the correct outcome (the legacy PUT just changed the template
+// underneath them), not a bug to route around. Callers (UpdateEvent) must
+// treat any error here as log-and-continue: this method's failure must
+// never fail the legacy PUT itself, or a P3.1 rollout would regress
+// pre-P3.1 web-editor save semantics.
+func (s *PGStore) SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.UUID, template json.RawMessage) (int, error) {
+	var newVersion int
+	query := `UPDATE events
+			  SET badge_template = $1, badge_template_version = badge_template_version + 1, updated_at = now()
+			  WHERE id = $2 AND deleted_at IS NULL
+			  RETURNING badge_template_version`
+	err := s.db.QueryRow(ctx, query, []byte(template), eventID).Scan(&newVersion)
+	if err != nil {
 		return 0, err
 	}
 	return newVersion, nil
