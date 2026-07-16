@@ -1,11 +1,12 @@
 import { Button, ConfirmDialog, Skeleton } from "@idento/ui";
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, useBlocker } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { BadgeCanvas } from "./BadgeCanvas";
 import { editorReducer, initialEditorState } from "./editorState";
 import { ElementsPane } from "./ElementsPane";
+import { GuardDialog } from "./GuardDialog";
 import { useBadgeTemplate } from "./hooks";
 import { PropertiesPane } from "./PropertiesPane";
 import { SaveStatePill } from "./SaveStatePill";
@@ -36,6 +37,10 @@ const routeApi = getRouteApi("/_app/events/$eventId/badge");
 //    sync — the mutation call itself (and its unconditional
 //    BADGE_TEMPLATE_KEY/READINESS_KEY invalidation) lives in
 //    useSaveTemplate.ts, the ONE home for it.
+//  - the unsaved-changes guard (Task 11): `useBlocker` (navigation/tab-close)
+//    plus a page-level Escape listener, both driving the SAME `GuardDialog`
+//    in one of two modes — see `performSave`/`revertToBaseline`/`resolver`
+//    below for the one-save-path/one-dialog wiring.
 //
 // Loading -> Skeleton panes. Fetch error -> `badgeLoadError` copy (distinct
 // from the empty-state copy below) + a retry action. `template: null` (the
@@ -155,7 +160,23 @@ export function BadgeEditorPage() {
     setOverwriteFailed(false);
   }, [eventId]);
 
-  function handleSave() {
+  // The ONE save path (Task 11): both the top-bar Save button AND the guard
+  // dialog's "Save & leave"/"Save" action call this SAME function — neither
+  // re-derives `serializeTemplateDoc`'s call, and both are gated by the SAME
+  // `saveDisabled` rule (so a guard-triggered save while, say, an unresolved
+  // conflict is already showing is a safe no-op — same as the top-bar
+  // button being disabled in that state — rather than a second, differently
+  // gated attempt). `onSaved` fires only on a genuine 2xx success. `onFailed`
+  // fires on EITHER a 409 or any other failure, AFTER the SAME onError
+  // branch `handleSave` always ran (conflict banner / inline error) — the
+  // guard dialog passes `resolver.reset()`/`setGuardRevertOpen(false)` here
+  // so a failed guard-triggered save closes the dialog (revealing the
+  // conflict/error banner underneath) instead of leaving `useBlocker`'s
+  // resolver promise dangling forever (neither `proceed()` nor `reset()`
+  // ever called — the whole point of the brief's "never navigates over an
+  // unresolved conflict": it must actively `reset()`, not just skip
+  // `proceed()`).
+  function performSave(onSaved?: () => void, onFailed?: () => void) {
     if (saveDisabled) return;
     setSaveErrorVisible(false);
     const template = serializeTemplateDoc(state.doc, originalRawRef.current);
@@ -167,6 +188,7 @@ export function BadgeEditorPage() {
           // later `templateQuery.data.template` (see originalRawRef above).
           originalRawRef.current = template;
           dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+          onSaved?.();
         },
         onError: (error) => {
           if (error instanceof ApiError && error.status === 409) {
@@ -174,9 +196,113 @@ export function BadgeEditorPage() {
           } else {
             setSaveErrorVisible(true);
           }
+          onFailed?.();
         },
       },
     );
+  }
+
+  function handleSave() {
+    performSave();
+  }
+
+  // --- Dirty guard (Task 11) ---------------------------------------------
+  // `shouldBlockFn` gets `{current, next, action}` for every navigation
+  // attempt. Comparing `next.fullPath`/`current.fullPath` — the route's
+  // PATTERN (e.g. "/events/$eventId/badge"), never the resolved param
+  // values or search string — deliberately does NOT distinguish switching
+  // between two EVENTS' own badge editors (same fullPath, different
+  // `$eventId`) from a future same-event search-param change (Task 12's
+  // `?attendee=` switcher, also same fullPath): both count as "staying on
+  // this same badge route" and are never blocked. This matches the
+  // existing cross-event navigation tests above (Task 6/10's "re-seeds …",
+  // "resets … when navigating to another event", "keeps Save disabled
+  // during the window …"), which navigate directly via `router.navigate`
+  // while dirty and expect no guard interaction — only navigating to a
+  // genuinely DIFFERENT route (another workspace tab, Home, …) is guarded.
+  // `!saveTemplate.isPending` additionally lets a navigation attempt through
+  // uninterrupted while the top-bar Save button's own PUT is already in
+  // flight, rather than layering the guard on top of an in-progress save.
+  const resolver = useBlocker({
+    shouldBlockFn: ({ current, next }) => (
+      state.dirty && !saveTemplate.isPending && next.fullPath !== current.fullPath
+    ),
+    enableBeforeUnload: () => state.dirty,
+    withResolver: true,
+  });
+
+  // Escape-triggered "revert" mode (Task 11): there's nowhere to navigate,
+  // so this is a SEPARATE open flag from the blocker's own resolver, but it
+  // drives the exact SAME GuardDialog (see `guardOpen`/`guardSaveLabel`
+  // below) and the exact same `performSave` path.
+  const [guardRevertOpen, setGuardRevertOpen] = React.useState(false);
+
+  // Discard, in revert mode: restore the doc to the LAST-LOADED baseline.
+  // Re-parses `originalRawRef.current` — deliberately NOT
+  // `templateQuery.data.template` — because the load effect above already
+  // stops trusting a background refetch once `initialized` (see that
+  // effect's own comment): `templateQuery.data` can by now be AHEAD of what
+  // was actually loaded into the reducer, and reverting to that newer,
+  // never-shown doc would revert to something the operator never even saw.
+  // `state.version` is the version paired with THAT SAME baseline — both
+  // are only ever updated together (the load effect, and every successful
+  // save/reload/overwrite handler above) and never touched by an edit
+  // action — so this keeps the doc/version/raw triple exactly as coherent
+  // as it already was. `originalRawRef.current` itself is deliberately left
+  // untouched: reverting TO the baseline means it's already in sync with it
+  // by definition, nothing to refresh.
+  function revertToBaseline() {
+    dispatch({ type: "load", doc: parseTemplateDoc(originalRawRef.current), version: state.version });
+    setConflict(false);
+    setSaveErrorVisible(false);
+  }
+
+  const guardBusy = saveTemplate.isPending;
+  const guardOpen = resolver.status === "blocked" || guardRevertOpen;
+  const guardSaveLabel = resolver.status === "blocked" ? t("badgeGuardSave") : t("badgeGuardSaveStay");
+
+  function handleGuardDiscard() {
+    if (resolver.status === "blocked") {
+      resolver.proceed();
+    } else {
+      revertToBaseline();
+      setGuardRevertOpen(false);
+    }
+  }
+
+  function handleGuardKeep() {
+    if (resolver.status === "blocked") {
+      resolver.reset();
+    } else {
+      setGuardRevertOpen(false);
+    }
+  }
+
+  function handleGuardSave() {
+    if (resolver.status === "blocked") {
+      performSave(() => resolver.proceed(), () => resolver.reset());
+    } else {
+      performSave(() => setGuardRevertOpen(false), () => setGuardRevertOpen(false));
+    }
+  }
+
+  // Page-level Escape listener. Task 8's canvas contract: the artboard
+  // swallows Escape (stopPropagation) whenever something is selected
+  // (deselect-first) and only lets it bubble here once nothing is selected.
+  // Also inert whenever a save is pending, or ANY dialog (this one, or Task
+  // 10's Reload/Overwrite conflict dialogs) is already open — without that
+  // check, React's own portal event semantics would ALSO bubble an Escape
+  // pressed to dismiss one of those OTHER dialogs up to this same handler:
+  // Radix's Escape-to-close listens on `document` natively (see
+  // @radix-ui/react-dismissable-layer), entirely in parallel with — not
+  // instead of — React's own synthetic dispatch, which still walks the
+  // REACT tree across a Portal regardless of where in the real DOM it
+  // renders, so the same keystroke reaches both.
+  function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Escape") return;
+    if (!state.dirty || saveTemplate.isPending) return;
+    if (guardOpen || reloadDialogOpen || overwriteDialogOpen) return;
+    setGuardRevertOpen(true);
   }
 
   async function handleReloadConfirm() {
@@ -252,7 +378,7 @@ export function BadgeEditorPage() {
   }
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col gap-4">
+    <div className="flex h-full min-h-[420px] flex-col gap-4" onKeyDown={handlePageKeyDown}>
       <div className="flex items-center gap-3 border-b border-border pb-4">
         <h2 className="text-page-title">{t("badgeTitle")}</h2>
         <div className="flex-1" />
@@ -344,6 +470,15 @@ export function BadgeEditorPage() {
         destructive
         confirmDisabled={busy}
         onConfirm={() => void handleOverwriteConfirm()}
+      />
+
+      <GuardDialog
+        open={guardOpen}
+        busy={guardBusy}
+        saveLabel={guardSaveLabel}
+        onDiscard={handleGuardDiscard}
+        onKeep={handleGuardKeep}
+        onSave={handleGuardSave}
       />
 
       {templateQuery.isLoading ? (

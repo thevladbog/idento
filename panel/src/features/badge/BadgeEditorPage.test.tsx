@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
+import type { UseBlockerOpts } from "@tanstack/react-router";
 import {
   act, fireEvent, render, screen, waitFor, within,
 } from "@testing-library/react";
@@ -13,12 +14,35 @@ import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
+// Task 11's dirty guard wires `useBlocker`'s `enableBeforeUnload` option as a
+// function of `state.dirty`. There's no way to observe what closure a
+// component passed into a hook from outside except intercepting the call, so
+// this is a DELEGATING wrapper: every call still runs the REAL `useBlocker`
+// (`actual.useBlocker`), so every OTHER test below exercises the real
+// router's own blocking behavior, completely unchanged — it merely records
+// the last-seen options for the ONE "enableBeforeUnload" test further down
+// that reads `lastBlockerOptions` directly. No other test reads it.
+let lastBlockerOptions: UseBlockerOpts | undefined;
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  return {
+    ...actual,
+    useBlocker: (opts: UseBlockerOpts) => {
+      lastBlockerOptions = opts;
+      return actual.useBlocker(opts as never);
+    },
+  };
+});
+
 // Mirrors AttendeesPage.test.tsx / WorkspaceOverview.test.tsx's harness shape:
 // a throwaway route tree whose id/path structure matches the real app
 // closely enough for `getRouteApi("/_app/events/$eventId/badge").useParams()`
 // to resolve, without reconstructing EventWorkspaceLayout's own rail/header
 // (that's EventWorkspaceLayout.test.tsx's job — this page fetches its own
 // badge-template data, same as WorkspaceOverview does for readiness/stats).
+// The sibling `/attendees` route (Task 11) stands in for "another workspace
+// tab" — the dirty-guard tests navigate to it directly via `router.navigate`,
+// same as this file's existing cross-EVENT navigation tests do for `/badge`.
 function buildRouter() {
   const rootRoute = createRootRoute();
   const appLayoutRoute = createRoute({ getParentRoute: () => rootRoute, id: "_app", component: () => <Outlet /> });
@@ -28,7 +52,14 @@ function buildRouter() {
     component: () => <Outlet />,
   });
   const badgeRoute = createRoute({ getParentRoute: () => workspaceRoute, path: "/badge", component: BadgeEditorPage });
-  const routeTree = rootRoute.addChildren([appLayoutRoute.addChildren([workspaceRoute.addChildren([badgeRoute])])]);
+  const otherTabRoute = createRoute({
+    getParentRoute: () => workspaceRoute,
+    path: "/attendees",
+    component: () => <div data-testid="other-workspace-tab">Attendees placeholder</div>,
+  });
+  const routeTree = rootRoute.addChildren([
+    appLayoutRoute.addChildren([workspaceRoute.addChildren([badgeRoute, otherTabRoute])]),
+  ]);
   return createRouter({ routeTree, history: createMemoryHistory({ initialEntries: ["/events/evt-1/badge"] }) });
 }
 
@@ -677,5 +708,285 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     // Once evt-2 has loaded, Save is still disabled — now simply because
     // the freshly-loaded doc isn't dirty.
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+});
+
+// Task 11: the dirty guard — useBlocker-driven navigation/tab-close blocking
+// plus the page-level Escape listener, both routed through the SAME
+// GuardDialog. Owns the guard-flow tests per this task's brief.
+describe("BadgeEditorPage dirty guard (Task 11)", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    templateResponse = { template: null, version: 0 };
+    templateStatus = 200;
+    fetchCount = 0;
+    getDelayMs = 0;
+    putRequests = [];
+    putStatus = 200;
+    putDelayMs = 0;
+    readinessHitCount = 0;
+    lastBlockerOptions = undefined;
+  });
+
+  it("clean doc: navigating to another workspace tab passes straight through, no guard dialog", async () => {
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+
+    await screen.findByTestId("other-workspace-tab");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("dirty doc: navigating to another workspace tab opens the guard dialog; Keep editing keeps the route unchanged", async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Unsaved changes")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("badge-pane-elements")).toBeInTheDocument();
+    expect(screen.queryByTestId("other-workspace-tab")).not.toBeInTheDocument();
+    expect(putRequests).toHaveLength(0);
+  });
+
+  it("dirty doc: Discard changes proceeds with the navigation and fires no PUT", async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+
+    await screen.findByTestId("other-workspace-tab");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(putRequests).toHaveLength(0);
+  });
+
+  it("dirty doc: Save & leave PUTs, then proceeds with the navigation on success", async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: "Save & leave" }));
+
+    await waitFor(() => expect(putRequests).toHaveLength(1));
+    await screen.findByTestId("other-workspace-tab");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("dirty doc: Save & leave with a 409 stays on the page behind the conflict banner, and never navigates", async () => {
+    putStatus = 409;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+
+    await user.click(within(dialog).getByRole("button", { name: "Save & leave" }));
+
+    await waitFor(() => expect(putRequests).toHaveLength(1));
+    // reset()'d, not proceed()'d: the resolver goes back to idle, so the
+    // guard dialog itself closes — revealing Task 10's conflict banner
+    // underneath, exactly like a cancelled Reload/Overwrite dialog does.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByTestId("other-workspace-tab")).not.toBeInTheDocument();
+    expect(screen.getByTestId("badge-pane-elements")).toBeInTheDocument();
+    expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "conflict");
+    expect(
+      screen.getByText("Template changed on the server — review before overwriting."),
+    ).toBeInTheDocument();
+  });
+
+  it("busy-gates all three guard buttons while the Save & leave PUT is pending", async () => {
+    putDelayMs = 60;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save & leave" }));
+
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Discard changes" })).toBeDisabled());
+    expect(within(dialog).getByRole("button", { name: "Keep editing" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Save & leave" })).toBeDisabled();
+
+    // Let the delayed PUT resolve so nothing bleeds into the next test.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("dismissing the dialog via Escape (not clicking a button) also maps to Keep editing — route unchanged, no PUT", async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    await screen.findByRole("dialog");
+
+    // Radix's own DismissableLayer (native `document` keydown listener, see
+    // GuardDialog.tsx) closes the dialog here — NOT this page's own Escape
+    // handler, which is a documented no-op while the guard is already open.
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByTestId("badge-pane-elements")).toBeInTheDocument();
+    expect(screen.queryByTestId("other-workspace-tab")).not.toBeInTheDocument();
+    expect(putRequests).toHaveLength(0);
+  });
+
+  it("busy-gates the Escape/overlay dismiss path too — the dialog does not close via Escape while the PUT is pending", async () => {
+    putDelayMs = 60;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Save & leave" }));
+
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBe(dialog); // still open, busy-gated
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("wires enableBeforeUnload as a function of the doc's dirty state (scoped useBlocker mock)", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByTestId("badge-pane-elements");
+
+    expect(lastBlockerOptions?.enableBeforeUnload).toBeInstanceOf(Function);
+    expect((lastBlockerOptions!.enableBeforeUnload as () => boolean)()).toBe(false);
+
+    await addTextElement(user);
+
+    await waitFor(() => expect((lastBlockerOptions!.enableBeforeUnload as () => boolean)()).toBe(true));
+  });
+
+  describe("Escape", () => {
+    it("does nothing when the doc is clean", async () => {
+      renderPage();
+      const elementsPane = await screen.findByTestId("badge-pane-elements");
+
+      fireEvent.keyDown(elementsPane, { key: "Escape" });
+
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("deselects instead of opening the guard when an element is selected on the canvas, then opens the guard on a second Escape once nothing is selected", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user); // "add" both adds AND selects the new element
+
+      const artboard = await screen.findByTestId("badge-canvas-artboard");
+      fireEvent.keyDown(artboard, { key: "Escape" }); // Task 8: swallowed, deselects
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      fireEvent.keyDown(artboard, { key: "Escape" }); // nothing selected now: bubbles to the page
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("opens the guard in revert mode when dirty and nothing is selected; Discard reverts the doc to the loaded baseline, clears dirty, and fires no PUT", async () => {
+      templateResponse = {
+        template: {
+          width_mm: 90, height_mm: 55, dpi: 300, elements: [{ id: "el-1", type: "text", x: 5, y: 5, text: "Hi" }],
+        },
+        version: 5,
+      };
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId("badge-canvas-element-el-1");
+      await addTextElement(user); // now 2 elements, dirty, new element selected
+
+      const artboard = screen.getByTestId("badge-canvas-artboard");
+      fireEvent.keyDown(artboard, { key: "Escape" }); // deselect
+      fireEvent.keyDown(artboard, { key: "Escape" }); // open the guard, revert mode
+      const dialog = await screen.findByRole("dialog");
+      // Revert mode has nowhere to navigate: no "Save & leave" copy here.
+      expect(within(dialog).queryByRole("button", { name: "Save & leave" })).not.toBeInTheDocument();
+
+      await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.queryByTestId("badge-save-state-pill")).not.toBeInTheDocument(); // clean again
+      expect(screen.getByTestId("badge-canvas-element-el-1")).toBeInTheDocument();
+      // The added element is gone — reverted to the ONE originally-loaded element.
+      expect(screen.getByTestId("badge-pane-canvas").textContent?.match(/Hi/g)).toHaveLength(1);
+      expect(putRequests).toHaveLength(0);
+    });
+
+    it("Keep editing closes the revert-mode guard without touching the doc", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user);
+
+      const artboard = screen.getByTestId("badge-canvas-artboard");
+      fireEvent.keyDown(artboard, { key: "Escape" });
+      fireEvent.keyDown(artboard, { key: "Escape" });
+      const dialog = await screen.findByRole("dialog");
+
+      await user.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+      expect(putRequests).toHaveLength(0);
+    });
+
+    it("the third button reads Save (not Save & leave) in revert mode, and a successful PUT stays on the page", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user);
+
+      const artboard = screen.getByTestId("badge-canvas-artboard");
+      fireEvent.keyDown(artboard, { key: "Escape" });
+      fireEvent.keyDown(artboard, { key: "Escape" });
+      const dialog = await screen.findByRole("dialog");
+
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(putRequests).toHaveLength(1));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.getByTestId("badge-pane-elements")).toBeInTheDocument(); // stayed on the page
+      const pill = await screen.findByTestId("badge-save-state-pill");
+      expect(pill).toHaveAttribute("data-state", "saved");
+    });
   });
 });
