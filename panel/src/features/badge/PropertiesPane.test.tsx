@@ -302,6 +302,39 @@ describe("PropertiesPane", () => {
           expect(screen.getByLabelText("Font")).toHaveValue("LatinFont");
         });
 
+        // Trim-aware precedence, matching generation exactly: generateZpl.ts
+        // only honors customFont when `customFont && customFont.trim()` is
+        // truthy (its raster gate at :152 and native-font command at :199),
+        // and web's own editor legitimately persists `customFont: ""`
+        // (BadgeTemplateEditorV2.tsx:801-804 writes the free-text field
+        // verbatim). A bare `??` here treated "" as SET, silently showing
+        // "Scalable (0)" while the printer used fontFamily "B" -- the select
+        // must show what actually prints.
+        it("shows the fontFamily code (not the first option) when customFont is an empty string", () => {
+          renderPane({
+            element: { ...textElement, fontFamily: "B", customFont: "" },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          expect(screen.getByLabelText("Font")).toHaveValue("B");
+        });
+
+        it("treats a whitespace-only customFont as unset too (no missing-font option, fontFamily wins)", () => {
+          renderPane({
+            element: { ...textElement, fontFamily: "C", customFont: "   " },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          const select = screen.getByLabelText("Font");
+          expect(select).toHaveValue("C");
+          // No phantom "missing font" placeholder for a blank value.
+          expect(
+            Array.from(select.querySelectorAll("option")).some((o) => o.textContent?.includes("font removed")),
+          ).toBe(false);
+        });
+
         it("renders a disabled 'missing font' option when customFont names a font no longer in the list", () => {
           renderPane({
             element: { ...textElement, customFont: "DeletedFont" },
@@ -317,6 +350,27 @@ describe("PropertiesPane", () => {
           expect(missingOption).toBeDefined();
           expect(missingOption.disabled).toBe(true);
           expect(missingOption.textContent).toBe("DeletedFont (font removed)");
+        });
+
+        // The backend's uniqueness constraint is family+weight+style, so one
+        // family can appear several times in the fonts list (e.g. Roboto
+        // normal + Roboto bold). customFont stores only the FAMILY, so two
+        // options with the same value would be duplicate <option value>s --
+        // the optgroup dedupes by family, first occurrence wins.
+        it("dedupes same-family weight/style variants into ONE option (first occurrence's coverage flag)", () => {
+          renderPane({
+            element: textElement,
+            fonts: [
+              fontListItem("font-reg", "Roboto"),
+              { ...fontListItem("font-bold", "Roboto"), weight: "bold" },
+            ],
+            fontCoverage: { "font-reg": true, "font-bold": false },
+          });
+
+          const select = screen.getByLabelText("Font");
+          const eventGroup = select.querySelector('optgroup[label="Event fonts"]');
+          const options = Array.from(eventGroup?.querySelectorAll("option") ?? []).map((o) => o.textContent);
+          expect(options).toEqual(["Roboto (✓ Cyr)"]);
         });
 
         it("renders no Event fonts group at all when the event has no uploaded fonts", () => {

@@ -455,12 +455,16 @@ function ElementContent({
           className="block w-full truncate leading-none"
           // Fixed ink color -- see ARTBOARD_INK's exception comment above.
           // `fontFamily: element.customFont` (P3.2 Task 4) is a VISUAL
-          // approximation only: the browser falls back to its own default
-          // glyphs until (Task 2's) font-face loading completes here, and
-          // this canvas never rasterizes at all -- the TRUE print bitmap is
-          // only ever produced by the ZPL generator/preview (reconciliation
-          // #11). `undefined` (no customFont) is a no-op key, same as any
-          // other unset style property.
+          // approximation only: the editor canvas never loads event
+          // font-faces at all (only print/preview surfaces enable Task 2's
+          // useEventFontFaces hook), so in THIS surface the browser's
+          // fallback face is what renders PERMANENTLY -- the family name
+          // simply nudges matching if the font happens to be installed or
+          // already loaded by another surface. This canvas never rasterizes
+          // either way; the TRUE print bitmap is only ever produced by the
+          // ZPL generator/preview (reconciliation #11). `undefined` (no
+          // customFont) is a no-op key, same as any other unset style
+          // property.
           style={{
             fontSize: fontSizePx,
             textAlign: element.align ?? "left",

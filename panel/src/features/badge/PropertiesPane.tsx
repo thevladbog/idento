@@ -31,7 +31,9 @@ export interface PropertiesPaneProps {
   // `$api.useQuery("get", "/api/events/{event_id}/fonts", ...)`, mirroring
   // the SAME "fetch once at the page, pass down" convention `fieldSchema`
   // already uses) -- the font <select>'s "Event fonts" optgroup lists one
-  // option per entry here, keyed by id, valued by `family`.
+  // option per FAMILY here (weight/style variants of the same family
+  // collapse to the first occurrence -- see `fontsByFamily` below), keyed
+  // by id, valued by `family`.
   fonts: FontListItem[];
   // P3.2 Task 2's `useFontCoverage(eventId)` result, passed straight
   // through -- `true`/`false`/`undefined` (still loading or unparseable)
@@ -180,11 +182,20 @@ export function PropertiesPane({
   const isTextType = element.type === "text";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
 
-  // The font matching the element's customFont, if any -- used to decide
-  // whether customFont names a font that's since been DELETED from the
-  // event (no match: the "missing font" branch below).
-  const customFontMatch = element.customFont
-    ? fonts.find((font) => font.family === element.customFont)
+  // Trim-aware "is customFont actually set?" -- the SAME rule generation
+  // applies (generateZpl.ts's raster gate `customFont && customFont.trim()`
+  // at :152 and its native-font command at :199): an empty or whitespace-only
+  // customFont is NOT set. web's own editor legitimately persists
+  // `customFont: ""` (BadgeTemplateEditorV2.tsx:801-804 writes its free-text
+  // field verbatim), so a bare `??`/truthy check here would disagree with
+  // what actually prints -- `{fontFamily: "B", customFont: ""}` prints with
+  // B, and the select must say so, not silently sit on the first option.
+  const trimmedCustomFont = element.customFont?.trim() ? element.customFont : undefined;
+  // The font matching the element's (effectively set) customFont, if any --
+  // used to decide whether customFont names a font that's since been
+  // DELETED from the event (no match: the "missing font" branch below).
+  const customFontMatch = trimmedCustomFont
+    ? fonts.find((font) => font.family === trimmedCustomFont)
     : undefined;
   // A customFont naming a family that's no longer in `fonts` -- the
   // uploaded font was deleted after this element was configured to use it.
@@ -194,11 +205,28 @@ export function PropertiesPane({
   // back to showing the first option instead, which would misrepresent
   // what's actually saved on the element) -- still selectable AWAY from via
   // any other (enabled) option in the list.
-  const missingFontFamily = element.customFont && !customFontMatch ? element.customFont : undefined;
+  const missingFontFamily = trimmedCustomFont && !customFontMatch ? trimmedCustomFont : undefined;
   // customFont set (matched or missing) always wins the select's displayed
   // value over fontFamily -- mirrors generateZpl.ts's own "customFont wins
   // at generation" precedence (reconciliation #11).
-  const fontSelectValue = element.customFont ?? element.fontFamily ?? "0";
+  const fontSelectValue = trimmedCustomFont ?? element.fontFamily ?? "0";
+
+  // One option per FAMILY, first occurrence wins: the backend's uniqueness
+  // constraint is family+weight+style, so a family can legitimately appear
+  // several times in `fonts` (Roboto normal + Roboto bold). customFont
+  // stores only the family -- two options sharing a value would be
+  // duplicate <option value>s (the browser always resolves the FIRST, and
+  // React warns) -- so weight/style variants deliberately collapse here.
+  // The raster canvas picks the concrete face at draw time via the
+  // element's own bold flag + the browser's font matching, never via this
+  // list; the collapsed option carries the FIRST variant's coverage flag
+  // (variants subset from the same upstream family in practice).
+  const seenFamilies = new Set<string>();
+  const fontsByFamily = fonts.filter((font) => {
+    if (seenFamilies.has(font.family)) return false;
+    seenFamilies.add(font.family);
+    return true;
+  });
 
   // Width/Height display the RENDERED footprint, not `width ?? 0`: for a
   // footprint-defaulted element (a fresh text element carries no explicit
@@ -296,9 +324,9 @@ export function PropertiesPane({
                   {t("badgeFontMissing", { family: missingFontFamily })}
                 </option>
               )}
-              {fonts.length > 0 && (
+              {fontsByFamily.length > 0 && (
                 <optgroup label={t("badgeFontsEventGroup")}>
-                  {fonts.map((font) => (
+                  {fontsByFamily.map((font) => (
                     <option key={font.id} value={font.family}>
                       {fontOptionLabel(font.family, fontCoverage[font.id], t)}
                     </option>

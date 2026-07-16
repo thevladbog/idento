@@ -20,14 +20,14 @@ import { buildGfaCommand, type RasterResult } from "./zplImage";
 export type { RasterResult } from "./zplImage";
 
 // Raw element shape generation reads from: panel's typed `BadgeElement` plus
-// the fields the web editor's raw JSON element can carry that the panel's
-// typed view doesn't promote yet (`customFont`, `bold`) -- Task 4 promotes
-// `customFont` into the typed `BadgeElement` later; generation reads it off
-// the raw object until then. `valign` is already on `BadgeElement` as a
-// plain `string` (templateTypes.ts:28) so it's listed here too for
-// self-documentation but isn't widening anything.
+// the one field the web editor's raw JSON element can carry that the panel's
+// typed view doesn't promote (`bold` -- deliberately excluded from
+// BadgeElement per P3.1 reconciliation #1; only THIS raster path reads it).
+// `customFont` was promoted into the typed `BadgeElement` by P3.2 Task 4
+// (templateTypes.ts), so it's no longer widened here. `valign` is already on
+// `BadgeElement` as a plain `string` (templateTypes.ts:28) so it's listed
+// here for self-documentation but isn't widening anything.
 export type RawBadgeElement = BadgeElement & {
-  customFont?: string;
   bold?: boolean;
   valign?: string;
 };
