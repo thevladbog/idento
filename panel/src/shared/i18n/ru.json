@@ -364,5 +364,17 @@
   "staffFooterNote": "Администраторы и менеджеры входят под своими аккаунтами — управляйте ими в разделе «Команда».",
   "staffActionPrint": "Распечатать карту",
   "staffActionZones": "Зоны",
-  "staffActionRevoke": "Отозвать…"
+  "staffActionRevoke": "Отозвать…",
+  "staffQrIssued": "Выдан {{date}} · действителен 30 дней",
+  "staffQrNotShown": "QR-код был выдан {{date}}. Коды нельзя показать повторно — печать создаст новый.",
+  "staffQrNone": "QR-входа ещё нет",
+  "staffQrGenerate": "Создать",
+  "staffAdminOnly": "Создавать и печатать QR-коды может только администратор.",
+  "staffRegenerateConfirmTitle": "Перевыпустить QR-код?",
+  "staffRegenerateConfirmBody": "Будет выдан новый код — ранее распечатанная карта перестанет работать.",
+  "staffRegenerateError": "Не удалось создать QR-код. Попробуйте ещё раз.",
+  "staffPrintAllConfirmBody": "{{count}} сотрудников — все ранее распечатанные карты перестанут работать.",
+  "staffPrintAllProgress": "{{done}} из {{total}}…",
+  "staffPrintAllFailures": "{{failed}} из {{total}} не удалось выпустить",
+  "staffQrPrintLabel": "QR-код входа для {{email}}"
 }

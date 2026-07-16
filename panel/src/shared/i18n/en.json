@@ -362,5 +362,17 @@
   "staffFooterNote": "Admins & managers sign in with their own accounts — manage them in Team.",
   "staffActionPrint": "Print card",
   "staffActionZones": "Zones",
-  "staffActionRevoke": "Revoke…"
+  "staffActionRevoke": "Revoke…",
+  "staffQrIssued": "Issued {{date}} · valid 30 days",
+  "staffQrNotShown": "QR was issued {{date}}. Codes can't be re-displayed — printing issues a new one.",
+  "staffQrNone": "No QR login yet",
+  "staffQrGenerate": "Generate",
+  "staffAdminOnly": "Only admins can generate or print QR codes.",
+  "staffRegenerateConfirmTitle": "Regenerate QR code?",
+  "staffRegenerateConfirmBody": "A new code is issued — the previously printed card stops working.",
+  "staffRegenerateError": "Couldn't generate the QR code. Try again.",
+  "staffPrintAllConfirmBody": "{{count}} staff — all previously printed cards stop working.",
+  "staffPrintAllProgress": "{{done}} of {{total}}…",
+  "staffPrintAllFailures": "{{failed}} of {{total}} could not be issued",
+  "staffQrPrintLabel": "QR login code for {{email}}"
 }

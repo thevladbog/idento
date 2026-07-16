@@ -2,7 +2,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  render, screen, waitFor, within,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { StaffPage } from "./StaffPage";
 import { startMswServer } from "../../test/msw";
@@ -86,6 +89,14 @@ let userZoneDelayMs: Record<string, number> = {};
 // can't distinguish "the fetch never even ran" from "it ran and resolved
 // to staff", so tests also assert this actually incremented.
 let tenantFetchCount = 0;
+// POST /api/users/:id/qr-token — used by both a single card's Print/Generate
+// and the page-level "Print all" loop. `qrTokenFailIds` lets a test make ONE
+// specific member's generate fail without affecting the others (per-item
+// failure handling, P2.1 attempt-vs-success lesson).
+let qrTokenCallIds: string[] = [];
+let qrTokenFailIds: Set<string> = new Set();
+let qrTokenDelayMs = 0;
+let qrTokenCounter = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/staff", async () => {
@@ -120,6 +131,16 @@ const server = startMswServer(
       role: viewerRole,
     });
   }),
+  http.post("http://api.test/api/users/:id/qr-token", async ({ params }) => {
+    const id = params.id as string;
+    qrTokenCallIds.push(id);
+    if (qrTokenDelayMs) await delay(qrTokenDelayMs);
+    if (qrTokenFailIds.has(id)) {
+      return HttpResponse.json({ error: "boom" }, { status: 500 });
+    }
+    qrTokenCounter += 1;
+    return HttpResponse.json({ qr_token: `QR_gen_${qrTokenCounter}`, user_id: id, email: "x@example.com" });
+  }),
 );
 void server;
 
@@ -141,9 +162,15 @@ describe("StaffPage", () => {
     userZoneStatusOverride = {};
     userZoneDelayMs = {};
     tenantFetchCount = 0;
+    qrTokenCallIds = [];
+    qrTokenFailIds = new Set();
+    qrTokenDelayMs = 0;
+    qrTokenCounter = 0;
   });
 
   afterEach(() => {
+    document.getElementById("qr-print-root")?.remove();
+    delete document.body.dataset.qrPrint;
     localStorage.clear();
   });
 
@@ -316,7 +343,7 @@ describe("StaffPage", () => {
   });
 
   describe("card action row gating by role", () => {
-    it("admin sees Print card / Zones / Revoke…, all disabled placeholders", async () => {
+    it("admin sees an ENABLED Print card (Task 6 wires it up) + disabled Zones/Revoke placeholders (Task 7)", async () => {
       seedRole("admin");
       userZoneAssignments = { u1: [], u2: [] };
       renderAt("/events/evt-1/staff");
@@ -328,19 +355,28 @@ describe("StaffPage", () => {
       const revokeButtons = screen.getAllByRole("button", { name: "Revoke…" });
       expect(zoneButtons).toHaveLength(2);
       expect(revokeButtons).toHaveLength(2);
-      for (const button of [...printButtons, ...zoneButtons, ...revokeButtons]) {
+      for (const button of printButtons) {
+        expect(button).toBeEnabled();
+        expect(button).not.toHaveAttribute("title");
+      }
+      for (const button of [...zoneButtons, ...revokeButtons]) {
         expect(button).toBeDisabled();
       }
     });
 
-    it("manager sees Zones / Revoke… but not Print card", async () => {
+    it("manager sees Zones / Revoke… and a disabled Print card with the admin-only tooltip", async () => {
       seedRole("manager");
       userZoneAssignments = { u1: [], u2: [] };
       renderAt("/events/evt-1/staff");
       await screen.findByText("alice@example.com");
 
       await waitFor(() => expect(screen.getAllByRole("button", { name: "Zones" })).toHaveLength(2));
-      expect(screen.queryByRole("button", { name: "Print card" })).not.toBeInTheDocument();
+      const printButtons = screen.getAllByRole("button", { name: "Print card" });
+      expect(printButtons).toHaveLength(2);
+      for (const button of printButtons) {
+        expect(button).toBeDisabled();
+        expect(button).toHaveAttribute("title", "Only admins can generate or print QR codes.");
+      }
       expect(screen.getAllByRole("button", { name: "Revoke…" })).toHaveLength(2);
     });
 
@@ -354,6 +390,128 @@ describe("StaffPage", () => {
       expect(screen.queryByRole("button", { name: "Print card" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Zones" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Revoke…" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Print all QR cards", () => {
+    beforeEach(() => {
+      vi.spyOn(window, "print").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("opens a tier-1 confirm dialog stating the staff count", async () => {
+      const user = userEvent.setup();
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("2 staff — all previously printed cards stop working.")).toBeInTheDocument();
+      expect(qrTokenCallIds).toEqual([]);
+    });
+
+    it("sequentially generates a token per staff member, invalidates the staff list, and opens the print sheet with every card", async () => {
+      const user = userEvent.setup();
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print all QR cards" }));
+
+      await waitFor(() => expect(qrTokenCallIds).toEqual(["u1", "u2"]));
+      // No failures — the confirm dialog closes on its own once settled.
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(document.getElementById("qr-print-root")).not.toBeNull());
+      const printRoot = document.getElementById("qr-print-root")!;
+      expect(printRoot.textContent).toContain("alice@example.com");
+      expect(printRoot.textContent).toContain("bob@example.com");
+    });
+
+    it("reuses an already-cached token instead of regenerating it", async () => {
+      const user = userEvent.setup();
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      // Print u1's card individually first (never issued -> no confirm,
+      // direct generate) — this populates the page-level token cache.
+      const printButtons = await screen.findAllByRole("button", { name: "Print card" });
+      await user.click(printButtons[0]);
+      await waitFor(() => expect(qrTokenCallIds).toEqual(["u1"]));
+      await waitFor(() => expect(document.getElementById("qr-print-root")).not.toBeNull());
+      // Close the single-card print sheet (simulates the browser's print
+      // flow completing) before starting "Print all".
+      window.dispatchEvent(new Event("afterprint"));
+      await waitFor(() => expect(document.getElementById("qr-print-root")).toBeNull());
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print all QR cards" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      // u1 was only ever generated ONCE (the individual print above) — the
+      // batch loop reused the cached token instead of reissuing it.
+      expect(qrTokenCallIds).toEqual(["u1", "u2"]);
+    });
+
+    it("reports partial failures honestly (attempt-vs-success) and opens the sheet with only the successful cards", async () => {
+      qrTokenFailIds = new Set(["u2"]);
+      const user = userEvent.setup();
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print all QR cards" }));
+
+      // Stays open with the honest failed-vs-total readout — a failure is
+      // never silently counted as "done".
+      expect(await within(dialog).findByText("1 of 2 could not be issued")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      await waitFor(() => expect(document.getElementById("qr-print-root")).not.toBeNull());
+      const printRoot = document.getElementById("qr-print-root")!;
+      expect(printRoot.textContent).toContain("alice@example.com");
+      expect(printRoot.textContent).not.toContain("bob@example.com");
+    });
+
+    it("exhaustively busy-gates the page while the batch loop runs: confirm dialog can't be dismissed, header actions are inert", async () => {
+      qrTokenDelayMs = 40;
+      const user = userEvent.setup();
+      userZoneAssignments = { u1: [], u2: [] };
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print all QR cards" }));
+
+      // Still mid-loop: Cancel is inert, the header's own actions are
+      // disabled, and each card's Generate/Print controls are inert too.
+      await waitFor(() => expect(qrTokenCallIds.length).toBeGreaterThan(0));
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      // The header buttons are legitimately `aria-hidden` while the modal
+      // dialog is open (Radix's focus-trap semantics) — `hidden: true`
+      // reaches them anyway to assert their own `disabled` attribute. The
+      // trigger button shares its accessible name with the dialog's own
+      // confirm button, so scope to the one NOT inside the dialog.
+      expect(screen.getByRole("button", { name: "+ Add staff", hidden: true })).toBeDisabled();
+      const headerPrintAllButton = screen
+        .getAllByRole("button", { name: "Print all QR cards", hidden: true })
+        .find((button) => !dialog.contains(button));
+      expect(headerPrintAllButton).toBeDisabled();
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(qrTokenCallIds).toEqual(["u1", "u2"]);
     });
   });
 });

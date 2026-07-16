@@ -1,13 +1,19 @@
 import {
-  Button, EmptyState, Skeleton,
+  Button, ConfirmDialog, EmptyState, Skeleton,
 } from "@idento/ui";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
 import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { StaffCard } from "./StaffCard";
-import { useEventStaff, useUserZoneAssignments } from "./hooks";
-import type { StaffUser } from "./hooks";
+import type { TFunction } from "i18next";
+import "./print.css";
+import { QrPrintSheet, type QrPrintCard } from "./QrPrintSheet";
+import { ROLE_LABEL_KEYS, StaffCard, formatZonesCaption } from "./StaffCard";
+import {
+  STAFF_KEY, USER_ZONES_KEY, useEventStaff, useUserZoneAssignments,
+} from "./hooks";
+import type { StaffUser, StaffZoneAssignment } from "./hooks";
 import { useEventZones } from "../attendees/hooks";
 import { $api } from "../../shared/api/query";
 import { getCurrentTenant } from "../../shared/api/session";
@@ -17,6 +23,31 @@ import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 // `getRouteApi` with the route's string id avoids a circular import with
 // app/router.tsx (which imports this component for the route's `component`).
 const routeApi = getRouteApi("/_app/events/$eventId/staff");
+
+interface PrintAllProgress {
+  done: number;
+  total: number;
+}
+
+// Reads whatever this user's zone assignments already resolved to (via the
+// per-card useUserZoneAssignments hook mounted in the grid below) straight
+// out of the query cache — "Print all" needs every staff member's zones
+// caption up front to build the print sheet's cards, but deliberately does
+// NOT lift that per-card fetch state up into StaffPage (that would
+// duplicate the exact per-card loading/error handling the grid already
+// owns). `getQueryData` returns undefined if that card's fetch hasn't
+// resolved yet; an empty array is the same honest fallback the per-card
+// hook itself starts from before its own fetch settles.
+function buildMemberZonesCaption(
+  queryClient: QueryClient,
+  member: StaffUser,
+  zoneNameById: Map<string, string>,
+  t: TFunction,
+): string {
+  const assignments = queryClient.getQueryData<StaffZoneAssignment[]>(USER_ZONES_KEY(member.id)) ?? [];
+  const zoneNames = assignments.map((a) => zoneNameById.get(a.zone_id) ?? a.zone_id.slice(0, 8));
+  return formatZonesCaption(t, zoneNames);
+}
 
 // Board 6c — the staff list screen: header (title + mono count + caption +
 // bulk print/add actions), a 3-per-row card grid, empty/loading/error
@@ -33,6 +64,7 @@ const routeApi = getRouteApi("/_app/events/$eventId/staff");
 export function StaffPage() {
   const { t } = useTranslation();
   const { eventId } = routeApi.useParams();
+  const queryClient = useQueryClient();
   const staffQuery = useEventStaff(eventId);
   const zonesQuery = useEventZones(eventId);
 
@@ -47,6 +79,31 @@ export function StaffPage() {
   const isAdmin = role === "admin";
   const canManage = role === "admin" || role === "manager";
 
+  // Session-only QR token cache, keyed by user id — Task 6's task brief is
+  // explicit this must NEVER be persisted (localStorage would leak login
+  // credentials): a QR token IS a bearer credential for event-day staff
+  // login, no different from a password. Shared between every StaffCard
+  // (a single-card regenerate populates it) and the "Print all" loop below
+  // (which reuses whatever's already cached instead of redundantly
+  // reissuing — reconciliation #13).
+  const [tokens, setTokens] = React.useState<Map<string, string>>(() => new Map());
+  // The single shared print sheet's cards — set by either a single card's
+  // "Print card" action or by the "Print all" loop below; only one
+  // #qr-print-root portal may exist at a time (QrPrintSheet.tsx), so this is
+  // page-level state rather than something each StaffCard mounts itself.
+  const [printCards, setPrintCards] = React.useState<QrPrintCard[] | null>(null);
+
+  const [printAllOpen, setPrintAllOpen] = React.useState(false);
+  const [printAllBusy, setPrintAllBusy] = React.useState(false);
+  const [printAllProgress, setPrintAllProgress] = React.useState<PrintAllProgress | null>(null);
+  // Tracks FAILURES separately from printAllProgress.done (which counts
+  // attempts, not successes) — P2.1's BulkBar/ImportWizard lesson: an
+  // attempted-vs-succeeded distinction must survive into the final readout,
+  // never silently counting a failure as "done".
+  const [printAllFailedCount, setPrintAllFailedCount] = React.useState(0);
+  const printAllSessionRef = React.useRef(0);
+  const generateTokenForPrintAll = $api.useMutation("post", "/api/users/{id}/qr-token");
+
   const zoneNameById = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const entry of zonesQuery.data ?? []) {
@@ -58,8 +115,120 @@ export function StaffPage() {
 
   const staff = staffQuery.data ?? [];
 
+  // Reports a freshly (re)generated token up to the shared cache AND
+  // invalidates STAFF_KEY unconditionally (has_qr_token/qr_token_created_at
+  // change on generation — mutation hygiene precedent) — called by every
+  // StaffCard on a successful generate/regenerate, and by the "Print all"
+  // loop below for each member it actually (re)generates.
+  const handleTokenCached = React.useCallback((userId: string, token: string) => {
+    setTokens((prev) => {
+      const next = new Map(prev);
+      next.set(userId, token);
+      return next;
+    });
+    void queryClient.invalidateQueries({ queryKey: STAFF_KEY(eventId) });
+  }, [queryClient, eventId]);
+
+  const handleOpenPrintSheet = React.useCallback((card: QrPrintCard) => {
+    setPrintCards([card]);
+  }, []);
+
+  function handlePrintAllOpenChange(open: boolean) {
+    if (!open) {
+      // Exhaustive busy-gating: the loop below awaits each mutation in
+      // sequence, so backing out mid-way would leave an unknown split of
+      // "already regenerated" vs "still on the old code" with no record of
+      // which — same "genuinely still running" gate as BulkBar's batch
+      // dialogs.
+      if (printAllBusy) return;
+      printAllSessionRef.current += 1;
+      setPrintAllProgress(null);
+      setPrintAllFailedCount(0);
+    }
+    setPrintAllOpen(open);
+  }
+
+  async function handleConfirmPrintAll() {
+    const sessionId = printAllSessionRef.current;
+    setPrintAllBusy(true);
+    const total = staff.length;
+    setPrintAllProgress({ done: 0, total });
+    setPrintAllFailedCount(0);
+    const successfulCards: QrPrintCard[] = [];
+    let failedCount = 0;
+    let attemptedGenerateAny = false;
+
+    for (let i = 0; i < staff.length; i++) {
+      // Unreachable via the UI while printAllBusy blocks dismissal above —
+      // kept as defense-in-depth, same as BulkBar's equivalent loops.
+      if (printAllSessionRef.current !== sessionId) break;
+      const member = staff[i];
+      const roleLabel = t(ROLE_LABEL_KEYS[member.role]);
+      const zonesCaption = buildMemberZonesCaption(queryClient, member, zoneNameById, t);
+      const existingToken = tokens.get(member.id);
+      if (existingToken) {
+        // Reconciliation #13: reuse this session's already-issued token
+        // instead of redundantly regenerating (which would invalidate a
+        // card that may have JUST been printed individually).
+        successfulCards.push({
+          email: member.email, roleLabel, zonesCaption, token: existingToken,
+        });
+      } else {
+        attemptedGenerateAny = true;
+        try {
+          const response = await generateTokenForPrintAll.mutateAsync({ params: { path: { id: member.id } } });
+          setTokens((prev) => {
+            const next = new Map(prev);
+            next.set(member.id, response.qr_token);
+            return next;
+          });
+          successfulCards.push({
+            email: member.email, roleLabel, zonesCaption, token: response.qr_token,
+          });
+        } catch {
+          // Individual failures don't abort the batch — collected and
+          // reported honestly below (attempt-vs-success, P2.1 lesson).
+          failedCount += 1;
+        }
+      }
+      if (printAllSessionRef.current === sessionId) {
+        setPrintAllProgress({ done: i + 1, total });
+        setPrintAllFailedCount(failedCount);
+      }
+    }
+
+    if (attemptedGenerateAny) {
+      // Cache correctness: at least one token really was (re)generated
+      // server-side, so this runs unconditionally.
+      await queryClient.invalidateQueries({ queryKey: STAFF_KEY(eventId) });
+    }
+    setPrintAllBusy(false);
+    if (failedCount > 0) {
+      // Stay open — the final honest readout (staffPrintAllFailures) is the
+      // confirmation the admin reads before closing it themselves, same as
+      // BulkBar's assign-zone dialog.
+    } else {
+      // Bypasses handlePrintAllOpenChange (this isn't a dismiss path), so
+      // its own reset is mirrored here — otherwise a later reopen would
+      // briefly carry this run's now-irrelevant progress/failure counts
+      // until the new run's first tick overwrites them.
+      setPrintAllProgress(null);
+      setPrintAllFailedCount(0);
+      setPrintAllOpen(false);
+    }
+    if (successfulCards.length > 0) {
+      setPrintCards(successfulCards);
+    }
+  }
+
+  const printAllDescription = printAllBusy && printAllProgress
+    ? t("staffPrintAllProgress", { done: printAllProgress.done, total: printAllProgress.total })
+    : !printAllBusy && printAllFailedCount > 0
+      ? t("staffPrintAllFailures", { failed: printAllFailedCount, total: printAllProgress?.total ?? staff.length })
+      : t("staffPrintAllConfirmBody", { count: staff.length });
+
   const addStaffButton = canManage ? (
-    <Button type="button">{t("staffAdd")}</Button>
+    <Button type="button" disabled={printAllBusy}>{t("staffAdd")}</Button>
   ) : null;
 
   return (
@@ -78,12 +247,13 @@ export function StaffPage() {
           {/* Reconciliation #15: "Print all" mirrors the per-card "Print
               card" restriction (admin-only) — always rendered, but disabled
               with a discoverable reason for anyone who will never be
-              allowed to use it, even once Task 6 wires the real handler. */}
+              allowed to use it. */}
           <Button
             type="button"
             variant="outline"
-            disabled={!isAdmin}
+            disabled={!isAdmin || printAllBusy}
             title={!isAdmin ? t("staffPrintAllDisabledHint") : undefined}
+            onClick={() => setPrintAllOpen(true)}
           >
             {t("staffPrintAll")}
           </Button>
@@ -117,6 +287,10 @@ export function StaffPage() {
               zonesError={zonesQuery.isError}
               isAdmin={isAdmin}
               canManage={canManage}
+              cachedToken={tokens.get(member.id)}
+              onTokenCached={handleTokenCached}
+              onOpenPrintSheet={handleOpenPrintSheet}
+              disabled={printAllBusy}
             />
           ))}
         </div>
@@ -125,6 +299,22 @@ export function StaffPage() {
       <div className="rounded-md border border-border p-3 text-caption text-muted-foreground">
         {t("staffFooterNote")}
       </div>
+
+      <ConfirmDialog
+        open={printAllOpen}
+        onOpenChange={handlePrintAllOpenChange}
+        title={t("staffPrintAll")}
+        description={printAllDescription}
+        confirmLabel={t("staffPrintAll")}
+        cancelLabel={t("createEventCancel")}
+        closeLabel={t("workspaceDialogClose")}
+        confirmDisabled={printAllBusy}
+        onConfirm={() => void handleConfirmPrintAll()}
+      />
+
+      {printCards ? (
+        <QrPrintSheet cards={printCards} onAfterPrint={() => setPrintCards(null)} />
+      ) : null}
     </div>
   );
 }
@@ -136,6 +326,10 @@ interface StaffCardRowProps {
   zonesError: boolean;
   isAdmin: boolean;
   canManage: boolean;
+  cachedToken: string | undefined;
+  onTokenCached: (userId: string, token: string) => void;
+  onOpenPrintSheet: (card: QrPrintCard) => void;
+  disabled: boolean;
 }
 
 // Owns the one per-card hook call (`useUserZoneAssignments`) so StaffCard
@@ -144,7 +338,7 @@ interface StaffCardRowProps {
 // a hook once per card valid despite the card count varying with the staff
 // list (each card is its own component instance, not a loop inside one).
 function StaffCardRow({
-  user, zoneNameById, zonesLoading, zonesError, isAdmin, canManage,
+  user, zoneNameById, zonesLoading, zonesError, isAdmin, canManage, cachedToken, onTokenCached, onOpenPrintSheet, disabled,
 }: StaffCardRowProps) {
   const assignmentsQuery = useUserZoneAssignments(user.id);
 
@@ -168,7 +362,10 @@ function StaffCardRow({
       zoneNames={zoneNames}
       isAdmin={isAdmin}
       canManage={canManage}
-      onPrint={() => {}}
+      cachedToken={cachedToken}
+      onTokenCached={onTokenCached}
+      onOpenPrintSheet={onOpenPrintSheet}
+      disabled={disabled}
       onZones={() => {}}
       onRevoke={() => {}}
     />
