@@ -60,6 +60,8 @@ type fakeStore struct {
 	countAttendeesByEventID   func(eventID uuid.UUID) (int, error)
 	getAttendeesPage          func(eventID uuid.UUID, f store.AttendeeFilter) ([]*models.Attendee, int, error)
 	getAttendeeZoneCheckins   func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
+	getEventBadgeTemplate     func(eventID uuid.UUID) (json.RawMessage, int, error)
+	updateEventBadgeTemplate  func(eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -256,6 +258,12 @@ func (f *fakeStore) GetAttendeesPage(_ context.Context, eventID uuid.UUID, filte
 }
 func (f *fakeStore) GetAttendeeZoneCheckins(_ context.Context, attendeeID uuid.UUID) ([]*models.ZoneCheckin, error) {
 	return f.getAttendeeZoneCheckins(attendeeID)
+}
+func (f *fakeStore) GetEventBadgeTemplate(_ context.Context, eventID uuid.UUID) (json.RawMessage, int, error) {
+	return f.getEventBadgeTemplate(eventID)
+}
+func (f *fakeStore) UpdateEventBadgeTemplate(_ context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
+	return f.updateEventBadgeTemplate(eventID, template, expectedVersion)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {

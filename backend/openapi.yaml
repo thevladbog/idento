@@ -235,6 +235,54 @@ components:
       properties:
         zpl: { type: string }
       required: [zpl]
+    BadgeTemplateResponse:
+      type: object
+      description: >
+        GET/PUT /api/events/{id}/badge-template response. template is the
+        stored badge-template JSON verbatim — whatever bytes were last PUT,
+        including any unknown/extra keys (e.g. the panel editor's
+        customFont) — the handler never re-serializes or drops fields; it
+        is null when the event has no template yet. version starts at 0
+        ("no template saved"); the first successful PUT (sent with
+        version: 0) creates version 1, and every subsequent successful PUT
+        bumps it by exactly one.
+      properties:
+        template:
+          type: object
+          nullable: true
+          additionalProperties: true
+        version: { type: integer }
+      required: [template, version]
+    BadgeTemplatePutRequest:
+      type: object
+      description: >
+        PUT /api/events/{id}/badge-template request body. template is
+        persisted verbatim (byte-for-byte, from the raw request bytes)
+        after being validated against a parsed COPY via
+        zpl.ParseBadgeTemplate — unknown keys survive a round trip
+        untouched. version is the caller's last-known version (0 if the
+        event has never had a template saved); it must match the stored
+        version exactly or the request fails with 409
+        (BadgeTemplateConflict).
+      properties:
+        template:
+          type: object
+          additionalProperties: true
+        version: { type: integer, minimum: 0 }
+      required: [template, version]
+    BadgeTemplateConflict:
+      type: object
+      description: >
+        409 body for PUT /api/events/{id}/badge-template when version no
+        longer matches the event's stored version (optimistic concurrency
+        — store.ErrVersionConflict). current_version is re-read via
+        GetEventBadgeTemplate so the caller can re-fetch and retry with the
+        correct version.
+      properties:
+        error: { type: string }
+        current_version: { type: integer }
+      required: [error, current_version]
+      additionalProperties: false
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -1310,6 +1358,124 @@ paths:
             (requireEventOwnership or requireAttendeeOwnership propagates a
             raw store error through writeErr's fallback branch, instead of
             masking it as a 404).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{id}/badge-template:
+    get:
+      operationId: getBadgeTemplate
+      summary: >
+        The event's badge template and its optimistic-concurrency version
+        (P3.1) — reads the dedicated badge_template/badge_template_version
+        columns, never the legacy custom_fields["badgeTemplate"] key.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            template is null and version is 0 when the event has never had
+            a template saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BadgeTemplateResponse" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing" — no
+            existence oracle).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership or reading the badge
+            template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: putBadgeTemplate
+      summary: >
+        Save the event's badge template under an optimistic-concurrency
+        guard.
+      description: >
+        Storage is verbatim: template is persisted as the request's raw
+        JSON bytes, byte-for-byte — the handler validates a parsed COPY via
+        zpl.ParseBadgeTemplate (structural/type checks only) but never
+        re-serializes or strips unknown keys before persisting (e.g. the
+        panel editor's customFont must survive a save untouched). version
+        semantics: 0 means "no template saved yet" — the first successful
+        PUT with version: 0 creates version 1; every subsequent successful
+        PUT must supply the exact current version and bumps it by one.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BadgeTemplatePutRequest" }
+      responses:
+        "200":
+          description: >
+            Saved. template echoes the request's raw bytes verbatim;
+            version is the bumped value.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BadgeTemplateResponse" }
+        "400":
+          description: >
+            id is not a UUID, the body is malformed, template is missing or
+            not a JSON object, version is missing or negative, or the
+            parsed template fails zpl.ParseBadgeTemplate's structural
+            checks (e.g. elements is not an array, or an element's x is not
+            a number) — the parser's own error message is included.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing" — checked
+            before any store call, so a deleted/foreign event never
+            surfaces as a misleading 409).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            version does not match the event's current stored version
+            (store.ErrVersionConflict). current_version is re-read via
+            GetEventBadgeTemplate so the caller can retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BadgeTemplateConflict" }
+        "500":
+          description: >
+            Store failure resolving event ownership, re-reading the
+            current version after a conflict, or persisting the template.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
