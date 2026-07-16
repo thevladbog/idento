@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/google/uuid"
@@ -9,15 +10,12 @@ import (
 )
 
 // incrementAttendeePrintedCountSQL matches IncrementAttendeePrintedCount's
-// exact UPDATE. Deliberately id-only (no `deleted_at IS NULL` guard): the
-// attendees table DOES soft-delete (see e.g. GetAttendeeByID's `WHERE id =
-// $1 AND deleted_at IS NULL`), but by house contract the caller has already
-// established existence/ownership/non-deletion via requireAttendeeOwnership
-// (which routes through GetAttendeeByIDForTenant -> GetAttendeeByID) before
-// ever calling this store method — the exact same id-only precedent as the
-// pre-existing UpdateAttendee (pg_store.go: `UPDATE attendees SET ... WHERE
-// id = $17`, no deleted_at guard either).
-const incrementAttendeePrintedCountSQL = `UPDATE attendees SET printed_count = printed_count \+ 1, updated_at = now\(\) WHERE id = \$1 RETURNING printed_count`
+// exact UPDATE, including the `deleted_at IS NULL` guard
+// (UpdateEventBadgeTemplate precedent — same race class): the caller's
+// requireAttendeeOwnership pre-check can pass and a concurrent soft-delete
+// land before this UPDATE executes; without the guard, an id-only UPDATE
+// would still increment and 200 for a gone attendee.
+const incrementAttendeePrintedCountSQL = `UPDATE attendees SET printed_count = printed_count \+ 1, updated_at = now\(\) WHERE id = \$1 AND deleted_at IS NULL RETURNING printed_count`
 
 func TestIncrementAttendeePrintedCountReturnsBumpedCount(t *testing.T) {
 	mock, err := pgxmock.NewPool()
@@ -87,26 +85,34 @@ func TestIncrementAttendeePrintedCountSequentialCallsAccumulate(t *testing.T) {
 	}
 }
 
-// TestIncrementAttendeePrintedCountNoMatchingRowReturnsError covers the
-// (extremely rare, TOCTOU-only) case where the row vanishes between the
-// caller's requireAttendeeOwnership check and this UPDATE — the RETURNING
-// clause matches 0 rows, QueryRow surfaces pgx.ErrNoRows, and this method
-// must propagate a non-nil error rather than fabricating a count.
-func TestIncrementAttendeePrintedCountNoMatchingRowReturnsError(t *testing.T) {
+// TestIncrementAttendeePrintedCountSoftDeleteRaceReturnsSentinel covers the
+// ONLY reachable 0-row scenario: the attendee existed and passed the
+// caller's requireAttendeeOwnership pre-check, then a concurrent DELETE
+// /api/attendees/{id} set deleted_at before this UPDATE ran — so the
+// `deleted_at IS NULL` guard matches 0 rows (the id itself is real; a
+// nonexistent id can never get past the pre-check). The store must map
+// pgx.ErrNoRows to the exported ErrAttendeeNotFound sentinel — never a
+// fabricated count, never an opaque error — so the handler can render the
+// house 404 masking instead of a 500.
+func TestIncrementAttendeePrintedCountSoftDeleteRaceReturnsSentinel(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("pgxmock.NewPool: %v", err)
 	}
 	defer mock.Close()
 
-	attendeeID := uuid.New()
+	attendeeID := uuid.New() // a real attendee's id — soft-deleted mid-request
 	mock.ExpectQuery(incrementAttendeePrintedCountSQL).
 		WithArgs(attendeeID).
-		WillReturnRows(pgxmock.NewRows([]string{"printed_count"}))
+		WillReturnRows(pgxmock.NewRows([]string{"printed_count"})) // guard matched 0 rows
 
 	s := &PGStore{db: mock}
-	if _, err := s.IncrementAttendeePrintedCount(context.Background(), attendeeID); err == nil {
-		t.Fatal("want a non-nil error when no row matches, got nil")
+	newCount, err := s.IncrementAttendeePrintedCount(context.Background(), attendeeID)
+	if !errors.Is(err, ErrAttendeeNotFound) {
+		t.Fatalf("err = %v, want ErrAttendeeNotFound", err)
+	}
+	if newCount != 0 {
+		t.Errorf("newCount = %d, want 0 (no fabricated count on a missed guard)", newCount)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)

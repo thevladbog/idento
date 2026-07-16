@@ -127,11 +127,13 @@ type Store interface {
 	// docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md; this is
 	// a counter, not a print journal). Contract: the caller must already
 	// have confirmed the attendee exists, belongs to the caller's tenant,
-	// and is not soft-deleted (e.g. via requireAttendeeOwnership, which
-	// routes through GetAttendeeByIDForTenant -> GetAttendeeByID's
-	// `deleted_at IS NULL` filter) before calling — so the UPDATE's WHERE
-	// clause is id-only, matching UpdateAttendee's existing precedent
-	// (also id-only) rather than re-adding a deleted_at guard here.
+	// and is not soft-deleted (e.g. via requireAttendeeOwnership) before
+	// calling. The UPDATE nevertheless carries a `deleted_at IS NULL` guard
+	// (UpdateEventBadgeTemplate precedent — same race class): a concurrent
+	// soft-delete can land between the pre-check and this write, and the
+	// guard turns that into a 0-row miss instead of incrementing a gone
+	// attendee. On 0 rows this returns ErrAttendeeNotFound (reachable ONLY
+	// via that race); handlers map it to the house 404 masking.
 	IncrementAttendeePrintedCount(ctx context.Context, attendeeID uuid.UUID) (int, error)
 
 	GetEventsChangedSince(ctx context.Context, tenantID uuid.UUID, since time.Time) ([]*models.Event, error)

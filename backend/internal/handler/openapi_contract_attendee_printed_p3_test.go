@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"idento/backend/internal/models"
+	"idento/backend/internal/store"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -112,6 +113,52 @@ func TestContractMarkAttendeePrinted_ForeignTenant404s(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestContractMarkAttendeePrinted_SoftDeleteRace404s covers the sentinel
+// path: ownership succeeds (the attendee is live at pre-check time), but
+// the guarded increment reports store.ErrAttendeeNotFound — the only way
+// that happens is a concurrent soft-delete landing between the ownership
+// pre-check and the UPDATE (its `deleted_at IS NULL` guard matched 0 rows).
+// The handler must render the house 404 masking ("Attendee not found",
+// same wording as requireAttendeeOwnership's), NOT a 500.
+func TestContractMarkAttendeePrinted_SoftDeleteRace404s(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+
+	h := New(&fakeStore{
+		// Ownership pre-check passes: the attendee is alive and owned.
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		// ...but the guarded UPDATE misses: soft-deleted mid-request.
+		incrementAttendeePrintedCount: func(uuid.UUID) (int, error) {
+			return 0, store.ErrAttendeeNotFound
+		},
+	})
+
+	e := echo.New()
+	path := "/api/attendees/" + attendee.ID.String() + "/printed"
+	c, rec := newAuthedContext(e, http.MethodPost, path, "", tenantID.String(), "admin")
+	c.SetPath("/api/attendees/:attendee_id/printed")
+	c.SetParamNames("attendee_id")
+	c.SetParamValues(attendee.ID.String())
+	if err := h.MarkAttendeePrinted(c); err != nil {
+		t.Fatalf("MarkAttendeePrinted (soft-delete race): %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404 (not 500 — the sentinel is a masking case), got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Error string `json:"error"`
+	}
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Error != "Attendee not found" {
+		t.Fatalf("error = %q, want %q (requireAttendeeOwnership's masking wording)", got.Error, "Attendee not found")
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 }

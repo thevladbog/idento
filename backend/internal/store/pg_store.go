@@ -1010,23 +1010,36 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 	return err
 }
 
+// ErrAttendeeNotFound is returned by IncrementAttendeePrintedCount when its
+// guarded UPDATE matches 0 rows. By contract the caller has already
+// confirmed the attendee exists, belongs to the caller's tenant, and is not
+// soft-deleted (via requireAttendeeOwnership) before calling — so this
+// sentinel is reachable ONLY via the soft-delete race: the ownership
+// pre-check passes, a concurrent DELETE /api/attendees/{id} sets deleted_at,
+// and the UPDATE's `deleted_at IS NULL` guard then matches nothing. Handlers
+// map it to the house 404 masking ("Attendee not found"), identical to
+// requireAttendeeOwnership's own wording.
+var ErrAttendeeNotFound = errors.New("attendee not found")
+
 // IncrementAttendeePrintedCount bumps printed_count by one and returns the
 // new value (backs the attendees table's Printed pill — reconciliation #6,
 // docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md; this is a
-// counter, not a print journal). The UPDATE is deliberately id-only (no
-// `deleted_at IS NULL` guard), matching UpdateAttendee's existing precedent
-// above: by contract the caller has already established the attendee
-// exists, belongs to the caller's tenant, and is not soft-deleted (e.g. via
-// requireAttendeeOwnership, which routes through GetAttendeeByIDForTenant ->
-// GetAttendeeByID's own `deleted_at IS NULL` filter) before calling this
-// method. If the row vanishes between that check and this call (TOCTOU),
-// RETURNING matches 0 rows and QueryRow surfaces pgx.ErrNoRows, which this
-// method propagates as-is rather than fabricating a count.
+// counter, not a print journal). The UPDATE carries a `deleted_at IS NULL`
+// guard (matching UpdateEventBadgeTemplate's guard above — same race
+// class): the caller's requireAttendeeOwnership pre-check can pass and a
+// concurrent soft-delete land before this UPDATE executes; without the
+// guard, an id-only UPDATE would still increment and 200 for a gone
+// attendee. When the guard misses (0 rows), QueryRow surfaces
+// pgx.ErrNoRows, which this method maps to the exported ErrAttendeeNotFound
+// sentinel — never a fabricated count.
 func (s *PGStore) IncrementAttendeePrintedCount(ctx context.Context, attendeeID uuid.UUID) (int, error) {
 	var newCount int
-	query := `UPDATE attendees SET printed_count = printed_count + 1, updated_at = now() WHERE id = $1 RETURNING printed_count`
+	query := `UPDATE attendees SET printed_count = printed_count + 1, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING printed_count`
 	err := s.db.QueryRow(ctx, query, attendeeID).Scan(&newCount)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, ErrAttendeeNotFound
+		}
 		return 0, err
 	}
 	return newCount, nil

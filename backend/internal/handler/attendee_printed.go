@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
+
+	"idento/backend/internal/store"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -36,6 +39,15 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 
 	newCount, err := h.Store.IncrementAttendeePrintedCount(c.Request().Context(), attendeeID)
 	if err != nil {
+		// ErrAttendeeNotFound is reachable only via the soft-delete race:
+		// the ownership pre-check above passed, then a concurrent DELETE
+		// /api/attendees/{id} set deleted_at before the guarded UPDATE ran.
+		// Map it to the same 404 masking (and wording) as
+		// requireAttendeeOwnership — not a 500: the attendee is gone, and
+		// "gone" must stay indistinguishable from "never existed".
+		if errors.Is(err, store.ErrAttendeeNotFound) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update printed count"})
 	}
 

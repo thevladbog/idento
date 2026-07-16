@@ -3672,7 +3672,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Attendee does not exist, or belongs to a different tenant (requireAttendeeOwnership). */
+            /** @description Attendee does not exist, or belongs to a different tenant (requireAttendeeOwnership) — or the ownership pre-check passed but a concurrent soft-delete landed before the guarded UPDATE ran (the increment's `deleted_at IS NULL` guard matched 0 rows; store.ErrAttendeeNotFound). All three are masked identically: "gone" is indistinguishable from "never existed". */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3681,7 +3681,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Store failure resolving attendee ownership ("Internal error"), or persisting the increment ("Failed to update printed count"). */
+            /** @description Store failure resolving attendee ownership ("Internal error"), or an unexpected store failure persisting the increment ("Failed to update printed count") — a 0-row increment (attendee soft-deleted mid-request) is 404, not 500. */
             500: {
                 headers: {
                     [name: string]: unknown;
