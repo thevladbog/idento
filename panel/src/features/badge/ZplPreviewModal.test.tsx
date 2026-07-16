@@ -142,6 +142,12 @@ describe("ZplPreviewModal", () => {
 
   afterEach(() => {
     unstubFontFaceApi();
+    // Restore jsdom's default clipboard-less `navigator` so the
+    // Object.defineProperty stubs the copy tests install never leak into
+    // later tests/files (each userEvent.setup() call re-installs its own
+    // stub anyway; this removes OURS). Defined `configurable: true` above,
+    // so a plain delete is enough -- and a no-op when a test never stubbed.
+    delete (navigator as unknown as { clipboard?: unknown }).clipboard;
   });
 
   it("shows the exact generated ZPL for a Latin-only doc (native text path, no canvas needed)", async () => {
@@ -241,5 +247,26 @@ describe("ZplPreviewModal", () => {
       "Some event fonts failed to load — this preview may use fallback glyphs.",
     )).toBeInTheDocument();
     await findGeneratedPre();
+  });
+
+  // Task 5 review Important 3: the fonts-LIST fetch failing (not just an
+  // individual font's load) used to leave useEventFontFaces on "idle"
+  // forever, which wedged this modal on its "Generating…" placeholder --
+  // generation only unblocks on a terminal fonts status. The hook now maps
+  // a failed list query to "error" (useEventFontFaces.test.tsx pins that
+  // transition itself); this pins the MODAL's behavior on top of it: warn
+  // visibly, then still generate (native-only path here -- Latin doc).
+  it("shows the fonts warning and still generates when the fonts LIST fetch itself fails (never a permanent Generating state)", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/fonts", () =>
+        HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderModal();
+
+    expect(await screen.findByText(
+      "Some event fonts failed to load — this preview may use fallback glyphs.",
+    )).toBeInTheDocument();
+    const pre = await findGeneratedPre();
+    expect(pre.textContent).toBe(LATIN_EXPECTED_ZPL);
   });
 });

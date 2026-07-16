@@ -30,6 +30,24 @@ export class RasterUnavailableError extends Error {
 // fixed padding factor, not a real font-metrics ascent/descent measurement).
 const HEIGHT_MULTIPLIER = 1.5;
 
+/**
+ * The bitmap height for a given font size in px -- web byte-parity math,
+ * exported pure so the floor semantics are unit-testable under jsdom
+ * (canvasRasterizer.test.ts) even though the drawing itself isn't.
+ *
+ * `Math.floor`, NOT `Math.round`: web assigns the fractional
+ * `fontSize * 1.5` straight to `canvas.height`
+ * (web/src/utils/zpl-image-text.ts:36,39), and `canvas.height` is an HTML
+ * `unsigned long` IDL attribute -- the WebIDL conversion TRUNCATES the
+ * fraction (floor, for positive values). Rounding up would emit a
+ * one-row-taller bitmap than web's for every odd fontSizePx (different
+ * ^GFA totalBytes, different hex -- a parity break, and odd sizes are
+ * common: pointsToDots(8, 300) = 33).
+ */
+export function rasterCanvasHeight(fontSizePx: number): number {
+  return Math.max(1, Math.floor(fontSizePx * HEIGHT_MULTIPLIER));
+}
+
 export interface RasterBitmap {
   bitmap: Uint8Array;
   width: number;
@@ -55,7 +73,7 @@ function rasterizeToBitmap(text: string, opts: RasterizeOpts): RasterBitmap {
   const metrics = ctx.measureText(text);
 
   const width = Math.max(1, Math.ceil(metrics.width));
-  const height = Math.max(1, Math.round(opts.fontSizePx * HEIGHT_MULTIPLIER));
+  const height = rasterCanvasHeight(opts.fontSizePx); // floor -- see rasterCanvasHeight's parity comment
   canvas.width = width;
   canvas.height = height;
 
@@ -69,7 +87,13 @@ function rasterizeToBitmap(text: string, opts: RasterizeOpts): RasterBitmap {
   ctx.fillStyle = "black";
   ctx.font = fontString;
   ctx.textBaseline = "middle";
-  ctx.fillText(text, 0, height / 2);
+  // Baseline y uses the UNTRUNCATED fractional height, exactly like web:
+  // there only `canvas.height` truncates (WebIDL), while `fillText`'s y is
+  // computed from the fractional `textHeight` variable
+  // (zpl-image-text.ts:36,53) -- using the truncated `height / 2` instead
+  // would shift the glyphs a quarter-pixel for odd sizes and break pixel
+  // parity even though the byte LAYOUT would still match.
+  ctx.fillText(text, 0, (opts.fontSizePx * HEIGHT_MULTIPLIER) / 2);
 
   const imageData = ctx.getImageData(0, 0, width, height);
   const bitmap = convertToMonochrome(imageData.data, width, height);

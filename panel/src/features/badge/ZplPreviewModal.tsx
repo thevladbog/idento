@@ -360,8 +360,21 @@ function drawElement(
       // Native-font approximation -- a mapped system font, never the true
       // printer bitmap (built-in ZPL fonts only ever render for real on the
       // printer itself). PRINT_INK -- see this file's exception comment above.
+      //
+      // Task 5 review Important 1: the size MUST be in DOTS-as-px, not
+      // `${n}pt`. This canvas buffer is dot-resolution (its width/height
+      // attributes are mmToDots values, no ctx.scale anywhere), so every
+      // drawn unit must be a dot -- but canvas `pt` units are CSS points
+      // (1pt = 4/3 CSS px), which at 300dpi would draw text ~3x undersized
+      // relative to the dot-space positions and raster-bitmap heights
+      // everything else here uses. `fontSizePx` above is already
+      // pointsToDots(fontSize, dpi) -- the same dot size the ZPL ^A command
+      // and the raster path both use. Bold is honored the same way the
+      // raster path honors it (element.bold). jsdom can't exercise this
+      // drawing code (null 2D context) -- verified via Task 10's manual
+      // printed-matrix checklist, noted in the task report.
       ctx.fillStyle = PRINT_INK;
-      ctx.font = `${fontSize}pt ${mapZPLFontToSystemFont(element.fontFamily)}`;
+      ctx.font = `${element.bold ? "bold " : ""}${fontSizePx}px ${mapZPLFontToSystemFont(element.fontFamily)}`;
       ctx.textBaseline = "top";
       ctx.fillText(text, x, y);
       return;

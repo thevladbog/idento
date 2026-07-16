@@ -206,6 +206,25 @@ describe("useEventFontFaces", () => {
     expect(result.current.status).toBe("ready");
   });
 
+  it("flips to 'error' when the fonts-LIST query itself fails (consumers awaiting a terminal status must never wedge)", async () => {
+    // Task 5 review Important 3: generation surfaces (ZplPreviewModal) only
+    // unblock on a TERMINAL status ("ready" | "error"); with the list query
+    // failing and `data` therefore never arriving, the hook used to stay
+    // "idle" forever, wedging the modal on its generating placeholder.
+    server.use(
+      http.get("http://api.test/api/events/:eventId/fonts", () =>
+        HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+
+    const { result } = renderHook(() => useEventFontFaces("evt-1", true), { wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(result.current.families).toEqual([]);
+    // No font bytes were ever fetched -- the failure is the LIST's, before
+    // any per-font work could start.
+    expect(fileFetchCount).toBe(0);
+  });
+
   it("stays idle under jsdom's real absence of FontFace (documented guard)", async () => {
     unstubFontFaceApi();
     expect(typeof FontFace).toBe("undefined");

@@ -74,9 +74,27 @@ export function useEventFontFaces(eventId: string, enabled: boolean): UseEventFo
 
   React.useEffect(() => {
     if (!enabled) return;
+    if (loadedEventRef.current === eventId) return;
+    // Task 5 review Important 3: the fonts-LIST query itself failing (500,
+    // network error) leaves `data` undefined forever, so without this branch
+    // the hook would sit on "idle" permanently -- and generation surfaces
+    // (ZplPreviewModal) that await a TERMINAL status ("ready" | "error")
+    // would wedge on their loading placeholder. A failed list maps to the
+    // same "error" status a failed individual font load produces (families
+    // stays [] -- nothing loaded), so consumers warn visibly and proceed
+    // native-only. Deliberately gated BEHIND the loadedEventRef guard above:
+    // a failed BACKGROUND refetch after a successful load must not flip an
+    // already-"ready" surface to a false warning (react-query retains the
+    // loaded data; the fonts are already in document.fonts). If the query
+    // later recovers (retry/refetch succeeds), `data` arrives, `isError`
+    // clears, and the load below runs normally -- error is not a dead end.
+    if (fontsQuery.isError) {
+      setStatus("error");
+      setFamilies([]);
+      return;
+    }
     const fonts = fontsQuery.data;
     if (!fonts) return;
-    if (loadedEventRef.current === eventId) return;
     if (typeof FontFace === "undefined") return;
 
     loadedEventRef.current = eventId;
@@ -135,7 +153,7 @@ export function useEventFontFaces(eventId: string, enabled: boolean): UseEventFo
     return () => {
       cancelled = true;
     };
-  }, [enabled, eventId, fontsQuery.data]);
+  }, [enabled, eventId, fontsQuery.data, fontsQuery.isError]);
 
   return { status, families };
 }
