@@ -53,26 +53,31 @@ func (h *Handler) GetEventReadiness(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute readiness"})
 	}
 
-	// Badge template is stored by the editor at custom_fields["badgeTemplate"]
-	// (the same key BadgeZPL reads and zpl.ParseBadgeTemplate parses).
+	// Badge template: effectiveBadgeTemplate (badge_template.go) prefers the
+	// dedicated badge_template column (P3.1) when non-NULL, else falls back
+	// to the legacy custom_fields["badgeTemplate"] key (the same key BadgeZPL
+	// reads and zpl.ParseBadgeTemplate parses) — see that function's doc for
+	// why the column must win even when "emptier" than the legacy value.
 	//
 	// The shipped badge editor (web/src/pages/BadgeTemplateEditorV2.tsx's
-	// handleSave) PUTs custom_fields with badgeTemplate set to a JS object
-	// ({width_mm, height_mm, dpi, elements}) — never a plain string. Postgres
-	// JSONB round-trips that back out as map[string]interface{} via
-	// json.Unmarshal (pg_store.go), so the real-world shape we must detect
-	// as "done" is a map, not a string. A naive "non-nil and not a string"
-	// check would mark a template as done for ANY map — including a
-	// freshly-created one with zero elements, i.e. a blank canvas that
-	// isn't actually print-ready. So for the map shape we additionally
-	// require a non-empty "elements" array (the same field
+	// handleSave, legacy pre-P3.1 path) PUTs custom_fields with badgeTemplate
+	// set to a JS object ({width_mm, height_mm, dpi, elements}) — never a
+	// plain string. Postgres JSONB round-trips that back out as
+	// map[string]interface{} via json.Unmarshal (pg_store.go), so the
+	// real-world shape we must detect as "done" is a map, not a string. A
+	// naive "non-nil and not a string" check would mark a template as done
+	// for ANY map — including a freshly-created one with zero elements, i.e.
+	// a blank canvas that isn't actually print-ready. So for the map shape we
+	// additionally require a non-empty "elements" array (the same field
 	// zpl.ParseBadgeTemplate reads to build the printable elements list).
+	// The dedicated column decodes to the identical map shape, so the same
+	// rule applies to it unchanged.
 	//
 	// The plain-string branch is kept for forward/backward compatibility —
 	// e.g. a future or test-only string-encoded representation — but an
 	// empty string never counts as done.
 	badgeDone := false
-	if raw, ok := event.CustomFields["badgeTemplate"]; ok && raw != nil {
+	if raw := effectiveBadgeTemplate(event); raw != nil {
 		switch v := raw.(type) {
 		case string:
 			badgeDone = v != ""

@@ -73,7 +73,7 @@ func (h *Handler) BadgeZPL(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Attendee does not belong to this event"})
 	}
 
-	rawTemplate := event.CustomFields["badgeTemplate"]
+	rawTemplate := effectiveBadgeTemplate(event)
 	cfg, elements, err := zpl.ParseBadgeTemplate(rawTemplate)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid badge template: " + err.Error()})

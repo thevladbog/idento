@@ -551,13 +551,20 @@ func (s *PGStore) GetEventsByTenantID(ctx context.Context, tenantID uuid.UUID) (
 	return events, nil
 }
 
+// GetEventByID also scans the P3.1 badge_template/badge_template_version
+// columns (unlike GetEventsByTenantID's list query, which doesn't need them):
+// requireEventOwnership and every other event-fetch path that feeds
+// handler/badge_zpl.go and handler/readiness.go route through this method, so
+// they need the column value available on the Event without a second store
+// round-trip.
 func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event, error) {
 	var e models.Event
 	var customFieldsJSON []byte
-	query := `SELECT id, tenant_id, name, start_date, end_date, location, field_schema, custom_fields, created_at, updated_at 
+	var badgeTemplateJSON []byte
+	query := `SELECT id, tenant_id, name, start_date, end_date, location, field_schema, custom_fields, badge_template, badge_template_version, created_at, updated_at
 			  FROM events WHERE id = $1 AND deleted_at IS NULL`
 	err := s.db.QueryRow(ctx, query, id).Scan(
-		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &e.CreatedAt, &e.UpdatedAt,
+		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &badgeTemplateJSON, &e.BadgeTemplateVersion, &e.CreatedAt, &e.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -569,6 +576,9 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 		if err := json.Unmarshal(customFieldsJSON, &e.CustomFields); err != nil {
 			return nil, err
 		}
+	}
+	if len(badgeTemplateJSON) > 0 && string(badgeTemplateJSON) != "null" {
+		e.BadgeTemplate = json.RawMessage(badgeTemplateJSON)
 	}
 	return &e, nil
 }

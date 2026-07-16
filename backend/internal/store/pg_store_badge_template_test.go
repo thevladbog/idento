@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	pgxmock "github.com/pashagolub/pgxmock/v4"
@@ -113,6 +114,106 @@ func TestUpdateEventBadgeTemplateReturnsBumpedVersion(t *testing.T) {
 // guarded UPDATE hitting 0 rows (expectedVersion stale) for an existing
 // event — the store must map that to the exported ErrVersionConflict
 // sentinel, not a generic/opaque error.
+// getEventByIDSQL matches GetEventByID's SELECT once it's extended (P3.1) to
+// also read the badge_template/badge_template_version columns alongside the
+// pre-existing fields. requireEventOwnership (and every other event-fetch
+// path that calls GetEventByID/GetEventByIDForTenant) must see these columns
+// without a second store round-trip, or handler/badge_zpl.go and
+// handler/readiness.go can't apply the column-first fallback rule
+// (reconciliation #7/#8).
+const getEventByIDSQL = `SELECT id, tenant_id, name, start_date, end_date, location, field_schema, custom_fields, badge_template, badge_template_version, created_at, updated_at FROM events WHERE id = \$1 AND deleted_at IS NULL`
+
+// TestGetEventByIDScansBadgeTemplateColumn proves the extended SELECT scans
+// badge_template/badge_template_version into the right Event fields — and,
+// crucially, that adding these two columns to the middle of the column list
+// doesn't shift any of the pre-existing scans (custom_fields still lands in
+// CustomFields, not clobbered by the new columns).
+func TestGetEventByIDScansBadgeTemplateColumn(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	tenantID := uuid.New()
+	now := time.Now()
+	customFieldsJSON := []byte(`{"badgeTemplate":"legacy-stale"}`)
+	templateJSON := []byte(`{"width_mm":50,"height_mm":30,"dpi":203,"elements":[{"id":"e1"}]}`)
+
+	mock.ExpectQuery(getEventByIDSQL).
+		WithArgs(eventID).
+		WillReturnRows(pgxmock.NewRows([]string{
+			"id", "tenant_id", "name", "start_date", "end_date", "location",
+			"field_schema", "custom_fields", "badge_template", "badge_template_version",
+			"created_at", "updated_at",
+		}).AddRow(eventID, tenantID, "Tech Summit", nil, nil, "Main Hall", nil, customFieldsJSON, templateJSON, 3, now, now))
+
+	s := &PGStore{db: mock}
+	event, err := s.GetEventByID(context.Background(), eventID)
+	if err != nil {
+		t.Fatalf("GetEventByID: %v", err)
+	}
+	if event == nil {
+		t.Fatal("event = nil, want a populated Event")
+	}
+	if event.BadgeTemplateVersion != 3 {
+		t.Errorf("BadgeTemplateVersion = %d, want 3", event.BadgeTemplateVersion)
+	}
+	if string(event.BadgeTemplate) != string(templateJSON) {
+		t.Errorf("BadgeTemplate = %s, want %s", event.BadgeTemplate, templateJSON)
+	}
+	if event.CustomFields["badgeTemplate"] != "legacy-stale" {
+		t.Errorf("CustomFields not scanned correctly (columns shifted?): %+v", event.CustomFields)
+	}
+	if event.Name != "Tech Summit" || event.Location != "Main Hall" {
+		t.Errorf("other columns not scanned correctly: name=%q location=%q", event.Name, event.Location)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestGetEventByIDNullBadgeTemplateColumnLeavesZeroValue covers the "no
+// column template saved yet" case: badge_template is NULL and
+// badge_template_version is its DEFAULT 0 (per migration 000018) — the Event
+// must come back with a nil BadgeTemplate and BadgeTemplateVersion 0, never a
+// fabricated value.
+func TestGetEventByIDNullBadgeTemplateColumnLeavesZeroValue(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	tenantID := uuid.New()
+	now := time.Now()
+
+	mock.ExpectQuery(getEventByIDSQL).
+		WithArgs(eventID).
+		WillReturnRows(pgxmock.NewRows([]string{
+			"id", "tenant_id", "name", "start_date", "end_date", "location",
+			"field_schema", "custom_fields", "badge_template", "badge_template_version",
+			"created_at", "updated_at",
+		}).AddRow(eventID, tenantID, "Tech Summit", nil, nil, "Main Hall", nil, nil, nil, 0, now, now))
+
+	s := &PGStore{db: mock}
+	event, err := s.GetEventByID(context.Background(), eventID)
+	if err != nil {
+		t.Fatalf("GetEventByID: %v", err)
+	}
+	if event.BadgeTemplate != nil {
+		t.Errorf("BadgeTemplate = %s, want nil", event.BadgeTemplate)
+	}
+	if event.BadgeTemplateVersion != 0 {
+		t.Errorf("BadgeTemplateVersion = %d, want 0", event.BadgeTemplateVersion)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 func TestUpdateEventBadgeTemplateVersionMismatchReturnsConflict(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

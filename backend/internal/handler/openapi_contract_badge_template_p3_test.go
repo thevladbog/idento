@@ -3,7 +3,11 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"idento/backend/internal/models"
@@ -389,4 +393,282 @@ func TestOpenAPIContract_BadgeTemplate_InvalidEventID400(t *testing.T) {
 		t.Fatalf("PUT: want 400, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	validateResponse(t, http.MethodPut, badPath, rec)
+}
+
+// ---------------------------------------------------------------------------
+// Column-first fallback reads (P3.1 Task 3): BadgeZPL and GetEventReadiness
+// must both prefer the dedicated badge_template column over the legacy
+// custom_fields["badgeTemplate"] key, via the shared effectiveBadgeTemplate
+// helper (badge_template.go). PutBadgeTemplate never writes the legacy key
+// back, so once a column value exists it is the only up-to-date source.
+// ---------------------------------------------------------------------------
+
+// wantPWDirective mirrors zpl.Generate/mmToDots's rounding so tests can
+// assert on the exact "^PW<dots>" directive produced for a given width_mm —
+// a value distinctive enough to prove which template (column vs. legacy) the
+// handler actually rendered from.
+func wantPWDirective(widthMM float64, dpi int) string {
+	dots := int(math.Round((widthMM / 25.4) * float64(dpi)))
+	return "^PW" + strconv.Itoa(dots)
+}
+
+// newBadgeZPLHandler builds a Handler whose event/attendee stores return the
+// given fixtures for any GetEventByID(ForTenant)/GetAttendeeByID(ForTenant)
+// lookup — enough to drive BadgeZPL's ownership checks and template read.
+func newBadgeZPLHandler(event *models.Event, attendee *models.Attendee) *Handler {
+	return New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+	})
+}
+
+func badgeZPLPath(eventID uuid.UUID) string {
+	return "/api/events/" + eventID.String() + "/badge-zpl"
+}
+
+func newTestAttendee(eventID uuid.UUID) *models.Attendee {
+	return &models.Attendee{ID: uuid.New(), EventID: eventID, FirstName: "Ada", LastName: "Lovelace", Code: "ABC123"}
+}
+
+// event with a column template and NO legacy key at all → BadgeZPL must
+// generate from the column (brief Step 1, badge-zpl case 1).
+func TestOpenAPIContract_BadgeZPL_UsesColumnTemplateWhenLegacyKeyAbsent(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	event.BadgeTemplate = json.RawMessage(`{"width_mm":40,"height_mm":20,"dpi":203,"elements":[]}`)
+	event.BadgeTemplateVersion = 1
+	// event.CustomFields is left nil — the legacy key is entirely absent.
+
+	attendee := newTestAttendee(event.ID)
+	h := newBadgeZPLHandler(event, attendee)
+	e := echo.New()
+	path := badgeZPLPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{"attendee_id":"`+attendee.ID.String()+`"}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id/badge-zpl")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+
+	if err := h.BadgeZPL(c); err != nil {
+		t.Fatalf("BadgeZPL: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got BadgeZPLResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := wantPWDirective(40, 203)
+	if !strings.Contains(got.ZPL, want) {
+		t.Fatalf("ZPL = %q, want it to contain %q (column dims, width_mm=40) — column template not used", got.ZPL, want)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// event with NO column template (never saved via the P3.1 endpoint) but a
+// legacy map template → BadgeZPL must still fall back and generate from it
+// (brief Step 1, badge-zpl case 2).
+func TestOpenAPIContract_BadgeZPL_FallsBackToLegacyMapWhenColumnAbsent(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	// event.BadgeTemplate left as its zero value (nil) — no column saved yet.
+	event.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(45),
+			"height_mm": float64(25),
+			"dpi":       float64(203),
+			"elements":  []interface{}{},
+		},
+	}
+
+	attendee := newTestAttendee(event.ID)
+	h := newBadgeZPLHandler(event, attendee)
+	e := echo.New()
+	path := badgeZPLPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{"attendee_id":"`+attendee.ID.String()+`"}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id/badge-zpl")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+
+	if err := h.BadgeZPL(c); err != nil {
+		t.Fatalf("BadgeZPL: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got BadgeZPLResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := wantPWDirective(45, 203)
+	if !strings.Contains(got.ZPL, want) {
+		t.Fatalf("ZPL = %q, want it to contain %q (legacy map dims, width_mm=45) — fallback broken", got.ZPL, want)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// readinessBadgeStep extracts the "badge" step's status (and the aggregate
+// ready flag) from a recorded GetEventReadiness response.
+func readinessBadgeStep(t *testing.T, rec *httptest.ResponseRecorder, path string) (string, bool) {
+	t.Helper()
+	var resp struct {
+		Ready bool `json:"ready"`
+		Steps []struct {
+			Key    string `json:"key"`
+			Status string `json:"status"`
+		} `json:"steps"`
+	}
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+	for _, s := range resp.Steps {
+		if s.Key == "badge" {
+			return s.Status, resp.Ready
+		}
+	}
+	t.Fatal("badge step missing from response")
+	return "", false
+}
+
+// TestContractGetEventReadinessBadgeTemplateColumn extends
+// TestContractGetEventReadinessBadgeTemplateShapes (openapi_contract_events_p1_test.go)
+// for the P3.1 dedicated badge_template column: the "badge" readiness step
+// must read the column ahead of the legacy custom_fields map, applying the
+// same "non-empty elements array" done-rule to it (brief Step 1, readiness
+// cases 1-3).
+func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
+	tenantID := uuid.New()
+	fs := func(event *models.Event) *fakeStore {
+		return &fakeStore{
+			getEventByID:            func(uuid.UUID) (*models.Event, error) { return event, nil },
+			countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
+			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
+			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+		}
+	}
+	e := echo.New()
+	run := func(event *models.Event) (*httptest.ResponseRecorder, string) {
+		path := "/api/events/" + event.ID.String() + "/readiness"
+		c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "admin")
+		c.SetPath("/api/events/:id/readiness")
+		c.SetParamNames("id")
+		c.SetParamValues(event.ID.String())
+		if err := New(fs(event)).GetEventReadiness(c); err != nil {
+			t.Fatalf("GetEventReadiness: %v", err)
+		}
+		return rec, path
+	}
+
+	// (1) Column template with a non-empty elements array → done.
+	withElements := contractEvent(tenantID, "Column Template With Elements")
+	withElements.BadgeTemplate = json.RawMessage(`{"width_mm":50,"height_mm":30,"dpi":203,"elements":[{"id":"e1","type":"text"}]}`)
+	withElements.BadgeTemplateVersion = 1
+	rec, path := run(withElements)
+	if status, ready := readinessBadgeStep(t, rec, path); status != readinessDone || !ready {
+		t.Fatalf("column template with elements must be badge=done, got status=%s ready=%v", status, ready)
+	}
+
+	// (2) Column NULL (never saved) + legacy map with elements → fallback,
+	// still done.
+	legacyOnly := contractEvent(tenantID, "Legacy Map Only")
+	legacyOnly.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(50),
+			"height_mm": float64(30),
+			"dpi":       float64(203),
+			"elements":  []interface{}{map[string]interface{}{"id": "e1"}},
+		},
+	}
+	rec, path = run(legacyOnly)
+	if status, ready := readinessBadgeStep(t, rec, path); status != readinessDone || !ready {
+		t.Fatalf("legacy map fallback (no column yet) must be badge=done, got status=%s ready=%v", status, ready)
+	}
+
+	// (3) Column NULL + no legacy value either → not done.
+	neither := contractEvent(tenantID, "Neither Column Nor Legacy")
+	rec, path = run(neither)
+	if status, ready := readinessBadgeStep(t, rec, path); status != readinessNotDone || ready {
+		t.Fatalf("no template anywhere must be badge=not_done, got status=%s ready=%v", status, ready)
+	}
+}
+
+// TestContractBadgeTemplatePutThenReadinessRegression is the exact staleness
+// bug this task exists to prevent (reconciliation #7/#8): an event has a
+// "done"-looking legacy custom_fields map (elements present) from before
+// P3.1. A PUT to /badge-template saves a brand-new column template with an
+// EMPTY elements array (the shape a fresh badge-editor canvas produces).
+// Readiness must flip to NOT done — the column, even though "emptier" than
+// the legacy value, wins because it is the only value PutBadgeTemplate keeps
+// current. A regression here means readiness/badge_zpl silently serve stale
+// pre-P3.1 data forever after the first column save.
+func TestContractBadgeTemplatePutThenReadinessRegression(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Stale Legacy After Column PUT")
+	event.CustomFields = map[string]interface{}{
+		"badgeTemplate": map[string]interface{}{
+			"width_mm":  float64(50),
+			"height_mm": float64(30),
+			"dpi":       float64(203),
+			"elements":  []interface{}{map[string]interface{}{"id": "old-el"}},
+		},
+	}
+
+	h := New(&fakeStore{
+		getEventByID:            func(uuid.UUID) (*models.Event, error) { return event, nil },
+		countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
+		getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
+		getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+		getEventBadgeTemplate: func(uuid.UUID) (json.RawMessage, int, error) {
+			return event.BadgeTemplate, event.BadgeTemplateVersion, nil
+		},
+		updateEventBadgeTemplate: func(_ uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
+			if expectedVersion != event.BadgeTemplateVersion {
+				return 0, store.ErrVersionConflict
+			}
+			event.BadgeTemplate = template
+			event.BadgeTemplateVersion++
+			return event.BadgeTemplateVersion, nil
+		},
+	})
+	e := echo.New()
+	readinessPath := "/api/events/" + event.ID.String() + "/readiness"
+	getReadiness := func() *httptest.ResponseRecorder {
+		c, rec := newAuthedContext(e, http.MethodGet, readinessPath, "", tenantID.String(), "admin")
+		c.SetPath("/api/events/:id/readiness")
+		c.SetParamNames("id")
+		c.SetParamValues(event.ID.String())
+		if err := h.GetEventReadiness(c); err != nil {
+			t.Fatalf("GetEventReadiness: %v", err)
+		}
+		return rec
+	}
+
+	// Precondition: before any column PUT, readiness reads the legacy map
+	// fallback and reports done.
+	rec := getReadiness()
+	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessDone || !ready {
+		t.Fatalf("precondition failed: legacy map must read as done before any column PUT, got status=%s ready=%v", status, ready)
+	}
+
+	// PUT a fresh, empty-elements column template — version 0 since none has
+	// been saved via this endpoint yet.
+	putPath := "/api/events/" + event.ID.String() + "/badge-template"
+	c, rec := newAuthedContext(e, http.MethodPut, putPath,
+		`{"template":{"width_mm":50,"height_mm":30,"dpi":203,"elements":[]},"version":0}`, tenantID.String(), "admin")
+	c.SetPath("/api/events/:id/badge-template")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+	if err := h.PutBadgeTemplate(c); err != nil {
+		t.Fatalf("PutBadgeTemplate: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PutBadgeTemplate: want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	// The regression check: readiness must now report NOT done.
+	rec = getReadiness()
+	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessNotDone || ready {
+		t.Fatalf("after PUTting an empty-elements column template, badge must be not_done (column must win over the stale, done-looking legacy map), got status=%s ready=%v", status, ready)
+	}
 }
