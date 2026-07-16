@@ -233,18 +233,6 @@ export const agentApi = {
     }
   },
 
-  testScanner: async (scannerId: string) => {
-    try {
-      const response = await axios.post(
-        `${AGENT_URL}/scanners/${encodeURIComponent(scannerId)}/test`
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Failed to test scanner", error);
-      throw error;
-    }
-  },
-
   getAvailablePorts: async () => {
     try {
       const response = await axios.get<ScannerPort[] | string[]>(

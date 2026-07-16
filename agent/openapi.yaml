@@ -3,27 +3,59 @@ info:
   title: Idento Hardware Agent API
   description: |
     API для локального агента, управляющего принтерами и сканерами.
-    
+
     ## Основные возможности:
     - Управление принтерами (USB, Bluetooth, Network)
     - Управление сканерами штрих-кодов/QR-кодов
     - Печать этикеток (ZPL, TSPL, ESC/POS)
+    - Печать PDF на системных принтерах
     - Обнаружение USB/COM портов
     - Тестирование оборудования
-    
+
     ## Установка:
     Агент запускается локально на компьютере с подключенным оборудованием.
-    
-  version: 1.0.0
+
+    ## Авторизация:
+    Все эндпоинты, кроме `GET /health`, защищены. Запрос авторизуется одним из
+    двух способов:
+
+    1. **Bearer-токен** (десктоп-приложение): заголовок
+       `Authorization: Bearer <token>`. Токен генерируется агентом при первом
+       запуске и хранится в `~/.idento/agent_config.json` (поле `auth_token`,
+       права файла 0600). Валидный токен авторизует запрос безусловно.
+    2. **Браузерный fallback (loopback + Origin)**: без токена запрос
+       разрешается, только если одновременно:
+       - `Host` указывает на loopback (`localhost` / `127.0.0.1`);
+       - заголовок `Origin` входит в allowlist;
+       - для мутаций (POST/PUT/PATCH/DELETE) задан
+         `Content-Type: application/json`.
+
+       Allowlist источников: переменная окружения `AGENT_ALLOWED_ORIGINS`
+       (CSV, имеет приоритет), иначе `allowed_origins` из конфига, иначе
+       dev-значения по умолчанию (`http://localhost:5173`,
+       `http://localhost:5174`, `http://localhost:3000`).
+
+    Отказы авторизации: `403` — Host не loopback (без токена); `415` — мутация
+    без `Content-Type: application/json` (без токена); `401` — Origin не в
+    allowlist.
+
+    Тело всех ответов об ошибках — plain text (не JSON).
+  version: 1.1.0
   contact:
     name: Idento Support
     email: support@idento.app
   license:
     name: MIT
-    
+
 servers:
   - url: http://localhost:12345
     description: Local agent (default port)
+
+security:
+  # Либо bearer-токен агента, либо (пустая схема) браузерный fallback:
+  # loopback Host + allow-listed Origin (см. раздел «Авторизация»).
+  - AgentToken: []
+  - {}
 
 tags:
   - name: Health
@@ -33,17 +65,36 @@ tags:
   - name: Scanners
     description: Управление сканерами
   - name: Print
-    description: Печать этикеток
+    description: Печать этикеток и PDF
   - name: Scan
     description: Сканирование кодов
+  - name: Meta
+    description: Спецификация и документация API
 
 components:
+  securitySchemes:
+    AgentToken:
+      type: http
+      scheme: bearer
+      description: |
+        Общий секрет агента из `~/.idento/agent_config.json` (поле
+        `auth_token`). Генерируется автоматически при первом запуске и
+        печатается в лог один раз. Используется десктоп-приложением; браузерные
+        клиенты вместо токена проходят по allowlist Origin (см. раздел
+        «Авторизация» в описании API).
+
   schemas:
     PrintRequest:
       type: object
+      description: |
+        Задание на печать. Обязателен `printer_name` и хотя бы одно из полей:
+        `zpl` (основной формат) или `template` (legacy). Если задан `zpl`,
+        поля `template`/`data` игнорируются.
       required:
         - printer_name
-        - zpl
+      anyOf:
+        - required: [zpl]
+        - required: [template]
       properties:
         printer_name:
           type: string
@@ -51,20 +102,51 @@ components:
           example: "Network_192_168_0_245"
         zpl:
           type: string
-          description: ZPL команды для печати
+          description: ZPL команды для печати (отправляются на принтер как есть)
           example: "^XA^FO50,50^ADN,36,20^FDHello World^FS^XZ"
-          
+        template:
+          type: string
+          description: |
+            Legacy: ZPL/TSPL шаблон с плейсхолдерами вида `{{key}}`,
+            которые заменяются значениями из `data`.
+          example: "^XA^FO50,50^ADN,36,20^FD{{name}}^FS^XZ"
+        data:
+          type: object
+          additionalProperties: true
+          description: "Legacy: значения для подстановки в плейсхолдеры шаблона"
+          example:
+            name: "John Doe"
+
+    PrintPDFRequest:
+      type: object
+      required:
+        - printer_name
+        - pdf_base64
+      properties:
+        printer_name:
+          type: string
+          description: |
+            Имя системного принтера. Label-принтеры (network) PDF не
+            поддерживают — для них используйте `POST /print` с ZPL.
+          example: "HP_Smart_Tank_790_series"
+        pdf_base64:
+          type: string
+          format: byte
+          description: PDF документ, закодированный в base64 (стандартный алфавит)
+
     PrintResponse:
       type: object
       properties:
         status:
           type: string
-          example: "sent"
-        message:
-          type: string
-          
+          example: "printed"
+
     ScanData:
       type: object
+      description: |
+        Последний отсканированный код. Если сканирований ещё не было (или буфер
+        очищен через `POST /scan/clear`), `code` — пустая строка, а `time` —
+        нулевое значение `0001-01-01T00:00:00Z`.
       properties:
         code:
           type: string
@@ -73,7 +155,7 @@ components:
           type: string
           format: date-time
           description: Время сканирования
-          
+
     NetworkPrinterRequest:
       type: object
       required:
@@ -94,7 +176,7 @@ components:
           description: Порт (по умолчанию 9100)
           default: 9100
           example: 9100
-          
+
     ScannerRequest:
       type: object
       required:
@@ -104,7 +186,7 @@ components:
           type: string
           description: Имя COM/USB порта
           example: "COM3"
-          
+
     FontsResponse:
       type: object
       properties:
@@ -125,14 +207,49 @@ components:
             type: string
         note:
           type: string
-          
-    Error:
+
+    PrinterFontsResponse:
       type: object
+      description: |
+        Статический справочник шрифтов. Содержимое НЕ читается с принтера —
+        реальный список загруженных шрифтов принтер печатает на этикетке
+        (см. описание `GET /printers/{name}/fonts`).
       properties:
-        error:
+        printer:
           type: string
-        message:
+          description: Имя принтера из запроса
+        resident_fonts:
+          type: array
+          description: Встроенные ZPL-шрифты (одинаковы для всех принтеров)
+          items:
+            type: string
+          example:
+            - "0 (9x5 dots) - use fontFamily='0'"
+            - "A (11x9 dots) - use fontFamily='A'"
+        loaded_fonts_examples:
+          type: array
+          description: |
+            Примеры имён загружаемых шрифтов — НЕ реальное содержимое памяти
+            принтера.
+          items:
+            type: string
+          example:
+            - "TT0003M_"
+            - "ARIAL.TTF"
+        queried:
+          type: boolean
+          description: |
+            true означает лишь, что ZPL-команды `^WD` отправлены на принтер;
+            их результат агенту не возвращается.
+        query_method:
           type: string
+          description: Способ получения результата запроса шрифтов
+          example: "printed"
+        note:
+          type: string
+        instructions:
+          type: string
+          description: Инструкции для пользователя по выбору шрифта
 
     PrinterEntry:
       type: object
@@ -163,19 +280,19 @@ paths:
       tags:
         - Health
       summary: Проверка состояния агента
-      description: Возвращает 200 OK если агент работает
+      description: |
+        Возвращает 200 OK если агент работает. Единственный эндпоинт,
+        доступный без авторизации. Ответ — plain text, не JSON.
+      security: []
       responses:
         '200':
           description: Агент работает
           content:
-            application/json:
+            text/plain:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: "ok"
-                    
+                type: string
+                example: "Idento Agent is running"
+
   /printers:
     get:
       tags:
@@ -225,10 +342,8 @@ paths:
                     type: string
         '400':
           description: Некорректные данные (name обязателен)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
+        '500':
+          description: Не удалось обновить конфигурацию
 
   /printers/add:
     post:
@@ -243,7 +358,7 @@ paths:
             schema:
               $ref: '#/components/schemas/NetworkPrinterRequest'
       responses:
-        '200':
+        '201':
           description: Принтер добавлен
           content:
             application/json:
@@ -252,14 +367,18 @@ paths:
                 properties:
                   status:
                     type: string
+                    example: "added"
                   name:
                     type: string
-                  ip:
+                    example: "Network_Office"
+                  address:
                     type: string
-                  port:
-                    type: integer
+                    description: Адрес принтера в формате IP:порт
+                    example: "192.168.0.245:9100"
         '400':
-          description: Некорректные данные
+          description: Некорректные данные (name и ip обязательны)
+        '500':
+          description: Не удалось загрузить конфигурацию
 
   /printers/default:
     get:
@@ -279,6 +398,8 @@ paths:
                     type: string
                     nullable: true
                     description: Имя принтера по умолчанию или null
+        '500':
+          description: Не удалось загрузить конфигурацию
     post:
       tags:
         - Printers
@@ -308,13 +429,24 @@ paths:
                     type: string
         '400':
           description: Принтер не найден в списке или некорректный запрос
-          
+        '500':
+          description: Не удалось загрузить или сохранить конфигурацию
+
   /printers/{name}/fonts:
     get:
       tags:
         - Printers
-      summary: Получить шрифты принтера
-      description: Запрашивает у принтера список загруженных шрифтов (ZPL)
+      summary: Шрифты конкретного принтера (статический справочник)
+      description: |
+        **ВАЖНО:** агент НЕ читает список шрифтов с принтера. Ответ — статический
+        справочник встроенных (resident) ZPL-шрифтов и примеров имён загружаемых
+        шрифтов, одинаковый для всех принтеров.
+
+        Побочный эффект: агент отправляет на принтер ZPL-команды `^WD` (запрос
+        содержимого памяти E:, B:, R:). Большинство принтеров ПЕЧАТАЮТ результат
+        на этикетке, а не возвращают его по сети — реальный список загруженных
+        шрифтов нужно смотреть на распечатанных этикетках. Ошибки отправки этих
+        команд логируются, но на ответ не влияют.
       parameters:
         - name: name
           in: path
@@ -324,12 +456,16 @@ paths:
           description: Имя принтера
       responses:
         '200':
-          description: Информация о шрифтах
+          description: |
+            Статический справочник шрифтов (queried=true означает лишь, что
+            команды отправлены на принтер)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/FontsResponse'
-                
+                $ref: '#/components/schemas/PrinterFontsResponse'
+        '404':
+          description: Принтер не найден (или некорректный путь)
+
   /printers/fonts:
     get:
       tags:
@@ -343,13 +479,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FontsResponse'
-                
+
   /print:
     post:
       tags:
         - Print
       summary: Отправить задание на печать
-      description: Печать этикетки с ZPL кодом на выбранном принтере
+      description: |
+        Печать этикетки на выбранном принтере. Основной формат — поле `zpl`
+        (сырые команды). Legacy формат — `template` с плейсхолдерами `{{key}}`
+        и объект `data` для подстановки.
       requestBody:
         required: true
         content:
@@ -358,14 +497,49 @@ paths:
               $ref: '#/components/schemas/PrintRequest'
       responses:
         '200':
-          description: Задание отправлено
+          description: Задание выполнено
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PrintResponse'
         '400':
-          description: Некорректные данные
-          
+          description: Некорректные данные (нужно поле zpl или template)
+        '404':
+          description: Принтер не найден
+        '500':
+          description: Ошибка печати
+
+  /print-pdf:
+    post:
+      tags:
+        - Print
+      summary: Отправить PDF на печать
+      description: |
+        Печать PDF документа на системном принтере. Работает только для
+        системных принтеров (type=system) на платформах с поддержкой печати PDF;
+        label-принтеры (network) должны использовать `POST /print` с ZPL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrintPDFRequest'
+      responses:
+        '200':
+          description: Задание выполнено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrintResponse'
+        '400':
+          description: |
+            Некорректные данные: невалидный base64, принтер не поддерживает PDF
+            (label-принтер) или печать PDF не поддерживается на этой платформе
+        '404':
+          description: Принтер не найден
+        '500':
+          description: Ошибка печати
+
   /scanners:
     get:
       tags:
@@ -389,7 +563,7 @@ paths:
                 example:
                   - name: "Scanner_COM3"
                     port_name: "COM3"
-                  
+
   /scanners/ports:
     get:
       tags:
@@ -397,11 +571,15 @@ paths:
       summary: Получить список доступных портов
       description: |
         Сканирует систему и возвращает доступные USB/COM порты для подключения сканеров.
-        
+
         ### Поддерживаемые порты:
         - **Windows**: COM1, COM2, COM3, ...
         - **Linux**: /dev/ttyUSB0, /dev/ttyACM0, ...
         - **macOS**: /dev/tty.usbserial-*, /dev/tty.usbmodem*
+
+        Всегда присутствует только `port_name`; остальные поля опциональны и
+        опускаются, если метаданные USB устройства недоступны. При ошибке
+        обнаружения возвращается пустой массив (не ошибка).
       responses:
         '200':
           description: Список портов
@@ -411,6 +589,8 @@ paths:
                 type: array
                 items:
                   type: object
+                  required:
+                    - port_name
                   properties:
                     port_name:
                       type: string
@@ -424,6 +604,16 @@ paths:
                     transport:
                       type: string
                       example: "usb"
+                    vendor_id:
+                      type: string
+                    product_id:
+                      type: string
+                    manufacturer:
+                      type: string
+                    product:
+                      type: string
+                    serial_number:
+                      type: string
                 example:
                   - port_name: "COM3"
                     display_name: "COM3"
@@ -433,13 +623,16 @@ paths:
                     display_name: "/dev/ttyUSB0"
                     device_type: "serial"
                     transport: "usb"
-                  
+
   /scanners/add:
     post:
       tags:
         - Scanners
       summary: Добавить COM/USB сканер
-      description: Добавляет сканер на указанном порту
+      description: |
+        Открывает сканер на указанном порту и добавляет порт в allow-list
+        конфигурации (сканер будет автоматически открываться при старте агента).
+        Если сканер на этом порту уже открыт, возвращает status=exists.
       requestBody:
         required: true
         content:
@@ -448,7 +641,7 @@ paths:
               $ref: '#/components/schemas/ScannerRequest'
       responses:
         '200':
-          description: Сканер добавлен
+          description: Сканер добавлен (status=added) или уже существует (status=exists)
           content:
             application/json:
               schema:
@@ -456,17 +649,27 @@ paths:
                 properties:
                   status:
                     type: string
+                    enum: [added, exists]
                   name:
                     type: string
+                    example: "Scanner_COM3"
                   port:
                     type: string
+                    example: "COM3"
         '400':
-          description: Некорректные данные
+          description: Некорректные данные (port_name обязателен)
+        '500':
+          description: Не удалось открыть сканер или сохранить конфигурацию
+
   /scanners/remove:
     post:
       tags:
         - Scanners
       summary: Удалить COM/USB сканер
+      description: |
+        Закрывает сканер и удаляет порт из allow-list конфигурации. Операция
+        идемпотентна: если сканер не найден, всё равно возвращается 200 (порт
+        удаляется из конфигурации, если он там был).
       requestBody:
         required: true
         content:
@@ -475,7 +678,7 @@ paths:
               $ref: '#/components/schemas/ScannerRequest'
       responses:
         '200':
-          description: Сканер удален
+          description: Сканер удалён (или отсутствовал)
           content:
             application/json:
               schema:
@@ -483,15 +686,18 @@ paths:
                 properties:
                   status:
                     type: string
+                    example: "removed"
                   name:
                     type: string
+                    example: "Scanner_COM3"
                   port:
                     type: string
-        '404':
-          description: Сканер не найден
+                    example: "COM3"
+        '400':
+          description: Некорректные данные (port_name обязателен)
         '500':
           description: Не удалось сохранить конфигурацию
-          
+
   /scan/last:
     get:
       tags:
@@ -499,7 +705,9 @@ paths:
       summary: Получить последний отсканированный код
       description: |
         Возвращает последний код, отсканированный любым подключенным сканером.
-        Используется для polling при тестировании сканеров.
+        Используется для polling при тестировании сканеров. Если сканирований
+        не было, code — пустая строка, time — нулевое значение
+        0001-01-01T00:00:00Z.
       responses:
         '200':
           description: Данные последнего сканирования
@@ -507,7 +715,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ScanData'
-                
+
   /scan/clear:
     post:
       tags:
@@ -526,3 +734,30 @@ paths:
                     type: string
                     example: "cleared"
 
+  /openapi.yaml:
+    get:
+      tags:
+        - Meta
+      summary: Получить OpenAPI спецификацию агента
+      description: Возвращает этот документ в формате YAML
+      responses:
+        '200':
+          description: OpenAPI спецификация
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      tags:
+        - Meta
+      summary: Интерактивная документация API
+      description: HTML страница с документацией (Scalar UI) на основе /openapi.yaml
+      responses:
+        '200':
+          description: Страница документации
+          content:
+            text/html:
+              schema:
+                type: string
