@@ -188,6 +188,63 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
 
     expect(serialized).toEqual({ width_mm: 90, height_mm: 55, dpi: 300, elements: [] });
   });
+
+  it("pairs duplicate element ids first-occurrence-wins: the first element keeps its own extras, the second gets no merge partner", () => {
+    // Backend's zpl.ParseBadgeTemplate does NOT enforce id uniqueness, and
+    // legacy web templates can carry duplicate ids. Merge pairing must be
+    // deterministic: the FIRST raw element with a given id is the merge
+    // partner for the FIRST doc element with that id (and is consumed);
+    // later doc elements with the same id get no partner, so nothing is
+    // cross-inherited between same-id elements.
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [
+        { id: "e1", type: "text", x: 1, y: 2, customFont: "A" },
+        { id: "e1", type: "box", x: 3, y: 4, customFont: "B" },
+      ],
+    };
+
+    const doc = parseTemplateDoc(raw);
+    expect(doc.elements).toHaveLength(2);
+
+    const serialized = serializeTemplateDoc(doc, raw);
+    const elements = serialized.elements as Array<Record<string, unknown>>;
+
+    expect(elements).toHaveLength(2);
+    // first occurrence keeps ITS OWN extras — never the later duplicate's
+    expect(elements[0]).toEqual({ id: "e1", type: "text", x: 1, y: 2, customFont: "A" });
+    // second duplicate has no merge partner: own typed fields only, no
+    // cross-inherited customFont from either raw element
+    expect(elements[1]).toEqual({ id: "e1", type: "box", x: 3, y: 4 });
+  });
+
+  it("documents that a raw element with no string id is dropped by parse and does not reappear after serialize", () => {
+    // Legacy-path caveat, pinned deliberately: the typed view (and therefore
+    // any panel save built from it) only carries elements that structurally
+    // narrowed — an id-less element from a legacy/hand-crafted document is
+    // dropped by parseTemplateDoc and serializeTemplateDoc has no id to
+    // match it back by, so its extras (customFont here) are lost on save.
+    // Tasks 5+ inherit this knowingly: verbatim preservation is guaranteed
+    // per element only when the element has a string id.
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [
+        { id: "ok", type: "text", x: 0, y: 0 },
+        { type: "text", x: 1, y: 1, customFont: "legacy" }, // no id
+      ],
+    };
+
+    const doc = parseTemplateDoc(raw);
+    expect(doc.elements.map((el) => el.id)).toEqual(["ok"]);
+
+    const serialized = serializeTemplateDoc(doc, raw);
+
+    expect(serialized.elements).toEqual([{ id: "ok", type: "text", x: 0, y: 0 }]);
+  });
 });
 
 describe("ZPL_FONTS", () => {

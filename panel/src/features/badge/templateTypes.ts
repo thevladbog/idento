@@ -152,16 +152,29 @@ export function parseTemplateDoc(raw: unknown): BadgeTemplateDoc {
 export function serializeTemplateDoc(doc: BadgeTemplateDoc, originalRaw: unknown): Record<string, unknown> {
   const base = isPlainObject(originalRaw) ? originalRaw : {};
   const originalElements = Array.isArray(base.elements) ? base.elements : [];
+  // First-occurrence-wins pairing for duplicate ids: the backend's
+  // zpl.ParseBadgeTemplate does NOT enforce id uniqueness, and legacy web
+  // templates can carry two elements sharing an id. A plain Map.set here
+  // would let the LAST duplicate win as merge partner for EVERY doc element
+  // with that id (silently cross-inheriting its extras onto the first).
+  // Instead, the FIRST raw occurrence keeps the id (deterministic, and the
+  // most likely intended pairing since parseTemplateDoc preserves element
+  // order), and each entry is consumed on use below so a second doc element
+  // with the same id gets NO merge partner rather than the wrong one —
+  // degrading to its own typed fields, never crashing, never mixing extras
+  // between same-id elements.
   const originalById = new Map<string, Record<string, unknown>>();
   for (const element of originalElements) {
-    if (isPlainObject(element) && typeof element.id === "string") {
+    if (isPlainObject(element) && typeof element.id === "string" && !originalById.has(element.id)) {
       originalById.set(element.id, element);
     }
   }
 
   const elements = doc.elements.map((element) => {
     const originalElement = originalById.get(element.id);
-    return originalElement ? { ...originalElement, ...element } : { ...element };
+    if (originalElement === undefined) return { ...element };
+    originalById.delete(element.id); // consume: each original merges at most once
+    return { ...originalElement, ...element };
   });
 
   return {
