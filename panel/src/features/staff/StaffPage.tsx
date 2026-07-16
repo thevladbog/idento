@@ -36,17 +36,30 @@ interface PrintAllProgress {
 // caption up front to build the print sheet's cards, but deliberately does
 // NOT lift that per-card fetch state up into StaffPage (that would
 // duplicate the exact per-card loading/error handling the grid already
-// owns). `getQueryData` returns undefined if that card's fetch hasn't
-// resolved yet; an empty array is the same honest fallback the per-card
-// hook itself starts from before its own fetch settles.
+// owns).
+//
+// Final-review Finding 2: `getQueryData(...) ?? []` used to collapse BOTH
+// "genuinely resolved to zero assignments" AND "never resolved / errored"
+// into the same empty array — printing the false "No zones assigned" claim
+// for a member whose zones we actually couldn't verify. `getQueryData`
+// returns undefined for exactly that unverifiable case (no successful
+// fetch has ever landed in cache), so it's checked explicitly and rendered
+// as a blank/omitted zones segment instead — never a fabricated claim,
+// mirroring formatPrintZonesCaption's "error" handling for the same reason.
 function buildMemberZonesCaption(
   queryClient: QueryClient,
   member: StaffUser,
   zoneNameById: Map<string, string>,
   t: TFunction,
 ): string {
-  const assignments = queryClient.getQueryData<StaffZoneAssignment[]>(USER_ZONES_KEY(member.id)) ?? [];
-  const zoneNames = assignments.map((a) => zoneNameById.get(a.zone_id) ?? a.zone_id.slice(0, 8));
+  const assignments = queryClient.getQueryData<StaffZoneAssignment[]>(USER_ZONES_KEY(member.id));
+  if (assignments === undefined) return "";
+  // Foreign ids (assignments belonging to some OTHER event — see
+  // StaffCardRow's comment below for why) are filtered out entirely, same
+  // as the on-screen caption.
+  const zoneNames = assignments
+    .filter((a) => zoneNameById.has(a.zone_id))
+    .map((a) => zoneNameById.get(a.zone_id)!);
   return formatZonesCaption(t, zoneNames);
 }
 
@@ -358,12 +371,18 @@ function StaffCardRow({
   } else if (assignmentsQuery.isError || zonesError) {
     zoneNames = "error";
   } else {
-    zoneNames = (assignmentsQuery.data ?? []).map(
-      // Falls back to a short id slice (never a fabricated name) if a
-      // zone was deleted after the assignment was made — same fallback
-      // AttendeeDrawer.tsx uses for the same "stale id, zone gone" case.
-      (assignment) => zoneNameById.get(assignment.zone_id) ?? assignment.zone_id.slice(0, 8),
-    );
+    // Final-review Finding 2: GET /api/users/{user_id}/zones is TENANT-wide
+    // (the backend filters by user_id only, not by event), and
+    // staff_zone_assignments.zone_id has ON DELETE CASCADE — so an
+    // assignment whose zone_id is NOT in THIS event's zoneNameById belongs
+    // to some OTHER event in the same tenant, not a deleted zone (that case
+    // is unreachable: the row would have been cascade-deleted along with
+    // the zone). Such foreign ids are filtered out entirely rather than
+    // rendered as a hex-sliced id, which would be neither honest (it reads
+    // as if it were this event's own zone) nor useful to the viewer.
+    zoneNames = (assignmentsQuery.data ?? [])
+      .filter((assignment) => zoneNameById.has(assignment.zone_id))
+      .map((assignment) => zoneNameById.get(assignment.zone_id)!);
   }
 
   return (

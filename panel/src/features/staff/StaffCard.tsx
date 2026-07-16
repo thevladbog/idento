@@ -97,6 +97,20 @@ export function formatZonesCaption(t: TFunction, zoneNames: string[] | "loading"
   return t("staffZonesCaption", { zones: zoneNames.join(", ") });
 }
 
+// Print-only variant of the caption above (final-review Finding 2): a
+// physical card is never allowed to carry an unverifiable claim. The
+// on-screen `staffZonesError` copy is fine to SHOW (it's an honest "we
+// don't know" reading, right next to a retry affordance) but baking that
+// same sentence onto a printed card would read as if it were a real,
+// factual zone list. "error" therefore prints as an omitted/blank segment
+// instead — the minimal honest rendering — while every other state
+// (including "loading", already blank) is unchanged.
+// eslint-disable-next-line react-refresh/only-export-components -- Pure helper shared with StaffPage's "Print all" loop; not a real Fast Refresh issue for this pattern.
+export function formatPrintZonesCaption(t: TFunction, zoneNames: string[] | "loading" | "error"): string {
+  if (zoneNames === "error") return "";
+  return formatZonesCaption(t, zoneNames);
+}
+
 // Local-time display (deliberately NOT UTC-pinned, unlike every other
 // timestamp in this codebase — e.g. eventDates.ts/AttendeeDrawer.tsx pin UTC
 // because THEIR source values are bare calendar dates / server-recorded
@@ -146,7 +160,7 @@ export function StaffCard({
 
   function buildPrintCard(token: string): QrPrintCard {
     return {
-      email: user.email, roleLabel, zonesCaption, token,
+      email: user.email, roleLabel, zonesCaption: formatPrintZonesCaption(t, zoneNames), token,
     };
   }
 
@@ -309,6 +323,19 @@ export function StaffCard({
           </Button>
         </div>
       )}
+
+      {/* Final-review Finding 1: the two confirm-less generate paths (this
+          dashed box's own Generate button, and never-issued "Print card" —
+          both call runGenerate with no ConfirmDialog ever mounted) had no
+          surface for generateToken.isError at all before this — the button
+          just disabled then re-enabled with nothing shown (the P2.1
+          "silent failure" bug class). Gated on `!confirmOpen` so this never
+          double-renders alongside the regenerate dialog's own error copy
+          (~line 349 below), which is the only other place this same error
+          is ever shown. */}
+      {generateToken.isError && !confirmOpen ? (
+        <span className="text-caption text-destructive">{t("staffRegenerateError")}</span>
+      ) : null}
 
       {canManage ? (
         <div className="flex items-center gap-3">

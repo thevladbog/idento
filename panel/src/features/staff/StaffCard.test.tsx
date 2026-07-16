@@ -159,6 +159,49 @@ describe("StaffCard — QR area + print flow", () => {
     });
   });
 
+  // P2.1's "silent failure" bug class, reopened for the two confirm-less
+  // generate paths: the dashed-box Generate button and never-issued "Print
+  // card" both call runGenerate with no ConfirmDialog ever mounted, so
+  // generateToken.isError (previously only ever read inside that dialog's
+  // own description) had nowhere to render — the button just re-enabled
+  // with nothing shown.
+  describe("Silent-failure surfacing on confirm-less generate paths", () => {
+    it("dashed-box Generate: a failed mutation shows the inline staffRegenerateError line on the card itself", async () => {
+      qrTokenStatus = 500;
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ has_qr_token: false }) });
+
+      await user.click(screen.getByRole("button", { name: "Generate" }));
+
+      expect(await screen.findByText("Couldn't generate the QR code. Try again.")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("never-issued 'Print card': a failed mutation (no confirm dialog) shows the same inline error", async () => {
+      qrTokenStatus = 500;
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ has_qr_token: false }) });
+
+      await user.click(await screen.findByRole("button", { name: "Print card" }));
+
+      expect(await screen.findByText("Couldn't generate the QR code. Try again.")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+
+    it("does not double-render the error when the regenerate confirm dialog IS open — it stays inside the dialog only", async () => {
+      qrTokenStatus = 500;
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-01T00:00:00Z" }) });
+
+      await user.click(await screen.findByRole("button", { name: "Print card" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print card" }));
+
+      expect(await within(dialog).findByText("Couldn't generate the QR code. Try again.")).toBeInTheDocument();
+      expect(screen.getAllByText("Couldn't generate the QR code. Try again.")).toHaveLength(1);
+    });
+  });
+
   describe("Print flow", () => {
     it("cached token: 'Print card' opens the sheet directly with no network call and no confirm", async () => {
       const user = userEvent.setup();
@@ -234,6 +277,25 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       await waitFor(() => expect(onOpenPrintSheet).toHaveBeenCalledWith(
         expect.objectContaining({ token: "QR_generated_1" }),
+      ));
+    });
+
+    // Finding 2 (final review): zoneNames === "error" is an unverifiable
+    // state — the on-screen caption is allowed to say so (staffZonesError),
+    // but baking that literal error copy onto a PRINTED physical card would
+    // read as if it were a real, factual zone list. The printed card must
+    // omit the zones segment instead (minimal honest rendering).
+    it("zoneNames === 'error': the printed card omits the zones segment instead of baking in the error copy", async () => {
+      const user = userEvent.setup();
+      const onOpenPrintSheet = vi.fn();
+      renderCard({
+        user: staffUser({ id: "u5", has_qr_token: false }), zoneNames: "error", onOpenPrintSheet,
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Print card" }));
+
+      await waitFor(() => expect(onOpenPrintSheet).toHaveBeenCalledWith(
+        expect.objectContaining({ zonesCaption: "" }),
       ));
     });
 

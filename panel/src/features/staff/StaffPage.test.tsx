@@ -287,6 +287,27 @@ describe("StaffPage", () => {
       // The error card's caption must not also satisfy the empty-state text.
       expect(screen.getAllByText("No zones assigned")).toHaveLength(1);
     });
+
+    // Finding 2 (final review): GET /api/users/{user_id}/zones is
+    // TENANT-wide (backend filters by user_id only), and
+    // staff_zone_assignments.zone_id has ON DELETE CASCADE — so an
+    // assignment whose zone_id isn't in THIS event's zoneNameById belongs to
+    // some OTHER event, not a "deleted zone" (that case is unreachable).
+    // Such foreign ids must be filtered out entirely, never rendered as a
+    // hex-sliced id (which is neither honest nor useful).
+    it("excludes an assignment whose zone_id belongs to another event (foreign id) from the caption — no hex-slice fallback", async () => {
+      userZoneAssignments = {
+        u1: [
+          { id: "a1", user_id: "u1", zone_id: "z1", assigned_at: "2026-01-01T00:00:00Z", assigned_by: "u-admin" },
+          { id: "a2", user_id: "u1", zone_id: "ffffffff-ffff-ffff-ffff-ffffffffffff", assigned_at: "2026-01-01T00:00:00Z", assigned_by: "u-admin" },
+        ],
+        u2: [],
+      };
+      renderAt("/events/evt-1/staff");
+
+      expect(await screen.findByText("QR login · zones: Main hall")).toBeInTheDocument();
+      expect(screen.queryByText(/ffffffff/)).not.toBeInTheDocument();
+    });
   });
 
   it("shows loading skeletons and never a fabricated count before staff arrives", async () => {
@@ -517,6 +538,32 @@ describe("StaffPage", () => {
       const printRoot = document.getElementById("qr-print-root")!;
       expect(printRoot.textContent).toContain("alice@example.com");
       expect(printRoot.textContent).not.toContain("bob@example.com");
+    });
+
+    // Finding 2 (final review): buildMemberZonesCaption previously treated
+    // `queryClient.getQueryData(...) ?? []` as "verifiably empty" — an
+    // unresolved/errored per-user zones query is neither, so printing "No
+    // zones assigned" for it is a false claim on a physical card. It must
+    // print a neutral, honest blank segment instead.
+    it("print-all: a member whose per-user zones query errored (unresolved cache) never gets the false 'No zones assigned' claim baked into the printed card", async () => {
+      staffResponse = [staffUser({ id: "u2", email: "bob@example.com", role: "staff" })];
+      userZoneStatusOverride = { u2: 500 };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("bob@example.com");
+      // Let bob's per-card zones query actually settle into its errored
+      // state (on-screen honesty — unaffected by this fix) before Print all.
+      await waitFor(() => expect(screen.getByText("Couldn't load zones.")).toBeInTheDocument());
+
+      await user.click(await screen.findByRole("button", { name: "Print all QR cards" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Print all QR cards" }));
+
+      await waitFor(() => expect(document.getElementById("qr-print-root")).not.toBeNull());
+      const printRoot = document.getElementById("qr-print-root")!;
+      expect(printRoot.textContent).toContain("bob@example.com");
+      expect(printRoot.textContent).not.toContain("No zones assigned");
+      expect(printRoot.textContent).not.toContain("Couldn't load zones");
     });
 
     it("exhaustively busy-gates the page while the batch loop runs: confirm dialog can't be dismissed, header actions are inert", async () => {
