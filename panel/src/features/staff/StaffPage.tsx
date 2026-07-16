@@ -8,6 +8,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import "./print.css";
+import { AddStaffDialog } from "./AddStaffDialog";
 import { QrPrintSheet, type QrPrintCard } from "./QrPrintSheet";
 import { ROLE_LABEL_KEYS, StaffCard, formatZonesCaption } from "./StaffCard";
 import {
@@ -92,6 +93,11 @@ export function StaffPage() {
   // #qr-print-root portal may exist at a time (QrPrintSheet.tsx), so this is
   // page-level state rather than something each StaffCard mounts itself.
   const [printCards, setPrintCards] = React.useState<QrPrintCard[] | null>(null);
+
+  // Drives the shared AddStaffDialog instance mounted below — a single
+  // page-level dialog (not one per row), matching the existing print-sheet
+  // pattern above.
+  const [addStaffOpen, setAddStaffOpen] = React.useState(false);
 
   const [printAllOpen, setPrintAllOpen] = React.useState(false);
   const [printAllBusy, setPrintAllBusy] = React.useState(false);
@@ -228,7 +234,7 @@ export function StaffPage() {
       : t("staffPrintAllConfirmBody", { count: staff.length });
 
   const addStaffButton = canManage ? (
-    <Button type="button" disabled={printAllBusy}>{t("staffAdd")}</Button>
+    <Button type="button" disabled={printAllBusy} onClick={() => setAddStaffOpen(true)}>{t("staffAdd")}</Button>
   ) : null;
 
   return (
@@ -282,6 +288,7 @@ export function StaffPage() {
             <StaffCardRow
               key={member.id}
               user={member}
+              eventId={eventId}
               zoneNameById={zoneNameById}
               zonesLoading={zonesQuery.isLoading}
               zonesError={zonesQuery.isError}
@@ -315,12 +322,15 @@ export function StaffPage() {
       {printCards ? (
         <QrPrintSheet cards={printCards} onAfterPrint={() => setPrintCards(null)} />
       ) : null}
+
+      <AddStaffDialog eventId={eventId} open={addStaffOpen} onOpenChange={setAddStaffOpen} isAdmin={isAdmin} />
     </div>
   );
 }
 
 interface StaffCardRowProps {
   user: StaffUser;
+  eventId: string;
   zoneNameById: Map<string, string>;
   zonesLoading: boolean;
   zonesError: boolean;
@@ -338,7 +348,7 @@ interface StaffCardRowProps {
 // a hook once per card valid despite the card count varying with the staff
 // list (each card is its own component instance, not a loop inside one).
 function StaffCardRow({
-  user, zoneNameById, zonesLoading, zonesError, isAdmin, canManage, cachedToken, onTokenCached, onOpenPrintSheet, disabled,
+  user, eventId, zoneNameById, zonesLoading, zonesError, isAdmin, canManage, cachedToken, onTokenCached, onOpenPrintSheet, disabled,
 }: StaffCardRowProps) {
   const assignmentsQuery = useUserZoneAssignments(user.id);
 
@@ -360,14 +370,13 @@ function StaffCardRow({
     <StaffCard
       user={user}
       zoneNames={zoneNames}
+      eventId={eventId}
       isAdmin={isAdmin}
       canManage={canManage}
       cachedToken={cachedToken}
       onTokenCached={onTokenCached}
       onOpenPrintSheet={onOpenPrintSheet}
       disabled={disabled}
-      onZones={() => {}}
-      onRevoke={() => {}}
     />
   );
 }

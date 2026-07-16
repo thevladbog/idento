@@ -78,6 +78,7 @@ function seedRole(role: "admin" | "manager" | "staff") {
 }
 
 let staffResponse: unknown[] = [];
+let tenantUsersResponse: unknown[] = [];
 let staffStatus = 200;
 let staffDelayMs = 0;
 let zonesResponse: unknown[] = [];
@@ -141,6 +142,32 @@ const server = startMswServer(
     qrTokenCounter += 1;
     return HttpResponse.json({ qr_token: `QR_gen_${qrTokenCounter}`, user_id: id, email: "x@example.com" });
   }),
+  // Used by AddStaffDialog's existing-mode candidate list.
+  http.get("http://api.test/api/users", () => HttpResponse.json(tenantUsersResponse)),
+  // Stateful: a successful assign actually adds the member to
+  // `staffResponse`, so the STAFF_KEY invalidation AddStaffDialog triggers
+  // refetches a list that genuinely reflects the POST.
+  http.post("http://api.test/api/events/:eventId/staff", async ({ request }) => {
+    const body = (await request.json()) as { user_id: string };
+    const member = tenantUsersResponse.find((u) => (u as { id: string }).id === body.user_id);
+    if (member && !staffResponse.some((m) => (m as { id: string }).id === body.user_id)) {
+      staffResponse = [...staffResponse, member];
+    }
+    return HttpResponse.json(
+      {
+        id: "es-new", event_id: "evt-1", user_id: body.user_id, assigned_at: "2026-01-01T00:00:00Z", assigned_by: "u1",
+      },
+      { status: 201 },
+    );
+  }),
+  // Stateful: a successful revoke actually removes the member from
+  // `staffResponse`, so the STAFF_KEY invalidation this triggers refetches a
+  // list that genuinely reflects the DELETE — same as the real backend.
+  http.delete("http://api.test/api/events/:eventId/staff/:userId", ({ params }) => {
+    const userId = params.userId as string;
+    staffResponse = staffResponse.filter((member) => (member as { id: string }).id !== userId);
+    return new HttpResponse(null, { status: 204 });
+  }),
 );
 void server;
 
@@ -151,6 +178,11 @@ describe("StaffPage", () => {
     staffResponse = [
       staffUser({ id: "u1", email: "alice@example.com", role: "admin" }),
       staffUser({ id: "u2", email: "bob@example.com", role: "staff" }),
+    ];
+    tenantUsersResponse = [
+      staffUser({ id: "u1", email: "alice@example.com", role: "admin" }),
+      staffUser({ id: "u2", email: "bob@example.com", role: "staff" }),
+      staffUser({ id: "u3", email: "carol@example.com", role: "staff" }),
     ];
     staffStatus = 200;
     staffDelayMs = 0;
@@ -343,7 +375,7 @@ describe("StaffPage", () => {
   });
 
   describe("card action row gating by role", () => {
-    it("admin sees an ENABLED Print card (Task 6 wires it up) + disabled Zones/Revoke placeholders (Task 7)", async () => {
+    it("admin sees an ENABLED Print card, Zones, and Revoke… (Task 6 + Task 7 both wired)", async () => {
       seedRole("admin");
       userZoneAssignments = { u1: [], u2: [] };
       renderAt("/events/evt-1/staff");
@@ -355,12 +387,11 @@ describe("StaffPage", () => {
       const revokeButtons = screen.getAllByRole("button", { name: "Revoke…" });
       expect(zoneButtons).toHaveLength(2);
       expect(revokeButtons).toHaveLength(2);
-      for (const button of printButtons) {
+      for (const button of [...printButtons, ...zoneButtons, ...revokeButtons]) {
         expect(button).toBeEnabled();
-        expect(button).not.toHaveAttribute("title");
       }
-      for (const button of [...zoneButtons, ...revokeButtons]) {
-        expect(button).toBeDisabled();
+      for (const button of printButtons) {
+        expect(button).not.toHaveAttribute("title");
       }
     });
 
@@ -377,7 +408,12 @@ describe("StaffPage", () => {
         expect(button).toBeDisabled();
         expect(button).toHaveAttribute("title", "Only admins can generate or print QR codes.");
       }
-      expect(screen.getAllByRole("button", { name: "Revoke…" })).toHaveLength(2);
+      const zoneButtons = screen.getAllByRole("button", { name: "Zones" });
+      const revokeButtons = screen.getAllByRole("button", { name: "Revoke…" });
+      expect(revokeButtons).toHaveLength(2);
+      for (const button of [...zoneButtons, ...revokeButtons]) {
+        expect(button).toBeEnabled();
+      }
     });
 
     it("staff sees no card action row at all", async () => {
@@ -512,6 +548,59 @@ describe("StaffPage", () => {
 
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       expect(qrTokenCallIds).toEqual(["u1", "u2"]);
+    });
+  });
+
+  describe("Add staff wiring", () => {
+    it("clicking '+ Add staff' opens the AddStaffDialog, and adding carol invalidates the staff list", async () => {
+      userZoneAssignments = { u1: [], u2: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      await user.click(screen.getAllByRole("button", { name: "+ Add staff" })[0]);
+      expect(await screen.findByText("carol@example.com")).toBeInTheDocument();
+
+      await user.click(screen.getByText("carol@example.com"));
+      await user.click(screen.getByRole("button", { name: "Add" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+  });
+
+  describe("Zones wiring", () => {
+    it("clicking Zones on a specific card opens the StaffZonesDialog scoped to that user", async () => {
+      userZoneAssignments = { u1: [{ id: "a1", user_id: "u1", zone_id: "z1", assigned_at: "2026-01-01T00:00:00Z", assigned_by: "u-admin" }], u2: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+
+      const zoneButtons = await screen.findAllByRole("button", { name: "Zones" });
+      await user.click(zoneButtons[0]);
+
+      expect(await screen.findByText("Zone access for alice@example.com")).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: "Main hall" })).toBeChecked();
+      expect(screen.getByRole("switch", { name: "VIP" })).not.toBeChecked();
+    });
+  });
+
+  describe("Revoke wiring", () => {
+    it("confirming Revoke removes the staff member from the list", async () => {
+      userZoneAssignments = { u1: [], u2: [] };
+      const user = userEvent.setup();
+      renderAt("/events/evt-1/staff");
+      await screen.findByText("alice@example.com");
+      await screen.findByText("bob@example.com");
+
+      const revokeButtons = await screen.findAllByRole("button", { name: "Revoke…" });
+      // Row order follows staffResponse: index 1 is bob (u2).
+      await user.click(revokeButtons[1]);
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByText("bob@example.com loses event-day access to this event. You can re-add them anytime.")).toBeInTheDocument();
+      await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+      await waitFor(() => expect(screen.queryByText("bob@example.com")).not.toBeInTheDocument());
+      expect(screen.getByText("alice@example.com")).toBeInTheDocument();
     });
   });
 });

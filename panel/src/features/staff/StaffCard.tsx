@@ -1,11 +1,14 @@
 import {
   Avatar, AvatarFallback, Button, Card, ConfirmDialog, Skeleton,
 } from "@idento/ui";
+import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { QrPrintCard } from "./QrPrintSheet";
 import { QrSvg } from "./QrSvg";
+import { StaffZonesDialog } from "./StaffZonesDialog";
+import { STAFF_KEY } from "./hooks";
 import type { StaffUser } from "./hooks";
 import { $api } from "../../shared/api/query";
 
@@ -18,13 +21,24 @@ export interface StaffCardProps {
   // into an empty array (P2.1 honesty rule: an error must never render as
   // "no zones").
   zoneNames: string[] | "loading" | "error";
-  onZones: () => void;
-  onRevoke: () => void;
+  // Needed for the Zones/Revoke actions this card owns internally (the
+  // StaffZonesDialog it mounts, and the DELETE .../staff/{user_id} revoke
+  // call below) — both are event-scoped, unlike everything else on this
+  // card (which is keyed purely by user.id).
+  eventId: string;
   // Mirrors StaffPage's header gating (the caller's role in the active
   // tenant, fetched live — see StaffPage.tsx): printing/generating a QR
-  // card is admin-only (reconciliation #11/15); Zones/Revoke are available
-  // to admin OR manager but stay disabled placeholders here — Task 7 wires
-  // them.
+  // card is admin-only (reconciliation #11/15). Zones/Revoke are available
+  // to admin OR manager — gated by `canManage` alone below. NOTE
+  // (reconciliation #15 gate-check): the backend's own
+  // AssignStaffToZone/RemoveStaffFromZone handlers (backend/internal/
+  // handler/zones.go) carry NO role check at all — only requireZoneOwnership
+  // (tenant scope), unlike AssignStaffToEvent/UnassignStaffFromEvent/
+  // GetUsers/CreateUser, which all explicitly reject non-admin/manager
+  // callers server-side. This `canManage` gate is therefore UI-only
+  // enforcement for the Zones action specifically — a plain "staff" caller
+  // who forged a direct request could still call those two zone endpoints
+  // successfully. Documented, not fixed: the backend is out of scope here.
   isAdmin: boolean;
   canManage: boolean;
   // Session-scoped QR token cache, owned and passed down by StaffPage
@@ -96,10 +110,21 @@ function formatIssuedAt(iso: string, locale: string): string {
 }
 
 export function StaffCard({
-  user, zoneNames, onZones, onRevoke, isAdmin, canManage, cachedToken, onTokenCached, onOpenPrintSheet, disabled,
+  user, zoneNames, eventId, isAdmin, canManage, cachedToken, onTokenCached, onOpenPrintSheet, disabled,
 }: StaffCardProps) {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [zonesOpen, setZonesOpen] = React.useState(false);
+  const [revokeConfirmOpen, setRevokeConfirmOpen] = React.useState(false);
+  // Same non-blocking, session-ref-guarded pattern as the regenerate confirm
+  // below: revoke is a single fire-and-forget destructive action once
+  // confirmed, so backing out mid-flight just means "don't act on the
+  // response when it lands" — invalidation still runs unconditionally.
+  const revokeSessionRef = React.useRef(0);
+  const revokeStaff = $api.useMutation("delete", "/api/events/{event_id}/staff/{user_id}", {
+    onMutate: () => ({ sessionId: revokeSessionRef.current }),
+  });
   // Bumped whenever the regenerate confirm dialog closes (Cancel/X/Escape/
   // outside-click all route through handleConfirmOpenChange below, since
   // that's the single onOpenChange Radix's Dialog calls for every dismiss
@@ -182,6 +207,35 @@ export function StaffCard({
       if (!generateToken.isPending) generateToken.reset();
     }
     setConfirmOpen(open);
+  }
+
+  function handleRevokeConfirmOpenChange(open: boolean) {
+    if (!open) {
+      revokeSessionRef.current += 1;
+      // Same "don't detach an in-flight observer" nuance as
+      // handleConfirmOpenChange above.
+      if (!revokeStaff.isPending) revokeStaff.reset();
+    }
+    setRevokeConfirmOpen(open);
+  }
+
+  function handleConfirmRevoke() {
+    revokeStaff.mutate(
+      { params: { path: { event_id: eventId, user_id: user.id } } },
+      {
+        onSuccess: (_data, _vars, onMutateResult) => {
+          // The assignment WAS removed server-side regardless of session —
+          // invalidate unconditionally. Deliberately does NOT touch
+          // USER_ZONES_KEY(user.id): revoking event-day staff access doesn't
+          // change this user's zone assignments, and refetching that query
+          // for a row that's about to disappear from the list would just be
+          // error noise, not a real cache-correctness need.
+          void queryClient.invalidateQueries({ queryKey: STAFF_KEY(eventId) });
+          if (onMutateResult?.sessionId !== revokeSessionRef.current) return;
+          setRevokeConfirmOpen(false);
+        },
+      },
+    );
   }
 
   // Reconciliation #11/15 + the task brief: generate/print are admin-only,
@@ -271,8 +325,7 @@ export function StaffCard({
           <Button
             type="button"
             variant="link"
-            disabled
-            onClick={onZones}
+            onClick={() => setZonesOpen(true)}
             className="h-auto p-0 text-caption text-muted-foreground hover:no-underline"
           >
             {t("staffActionZones")}
@@ -280,8 +333,7 @@ export function StaffCard({
           <Button
             type="button"
             variant="link"
-            disabled
-            onClick={onRevoke}
+            onClick={() => setRevokeConfirmOpen(true)}
             className="ml-auto h-auto p-0 text-caption text-destructive hover:no-underline"
           >
             {t("staffActionRevoke")}
@@ -308,6 +360,30 @@ export function StaffCard({
         closeLabel={t("workspaceDialogClose")}
         confirmDisabled={generateToken.isPending}
         onConfirm={() => runGenerate(true)}
+      />
+
+      {canManage ? <StaffZonesDialog user={user} eventId={eventId} open={zonesOpen} onOpenChange={setZonesOpen} /> : null}
+
+      <ConfirmDialog
+        open={revokeConfirmOpen}
+        onOpenChange={handleRevokeConfirmOpenChange}
+        title={t("staffRevokeConfirmTitle")}
+        description={
+          revokeStaff.isError ? (
+            <>
+              {t("staffRevokeConfirmBody", { email: user.email })}
+              <span className="mt-1 block text-destructive">{t("staffRevokeError")}</span>
+            </>
+          ) : (
+            t("staffRevokeConfirmBody", { email: user.email })
+          )
+        }
+        confirmLabel={t("staffRevokeConfirmAction")}
+        cancelLabel={t("createEventCancel")}
+        closeLabel={t("workspaceDialogClose")}
+        destructive
+        confirmDisabled={revokeStaff.isPending}
+        onConfirm={handleConfirmRevoke}
       />
     </Card>
   );

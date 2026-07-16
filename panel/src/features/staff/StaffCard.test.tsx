@@ -15,6 +15,11 @@ let qrTokenCallIds: string[] = [];
 let qrTokenStatus = 200;
 let qrTokenDelayMs = 0;
 let qrTokenCounter = 0;
+let zonesResponse: unknown[] = [];
+let userZonesResponse: unknown[] = [];
+let revokeCalls: { eventId: string; userId: string }[] = [];
+let revokeStatus = 200;
+let revokeDelayMs = 0;
 
 const server = startMswServer(
   http.post("http://api.test/api/users/:id/qr-token", async ({ params }) => {
@@ -30,6 +35,14 @@ const server = startMswServer(
       user_id: params.id as string,
       email: "alice@example.com",
     });
+  }),
+  http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(zonesResponse)),
+  http.get("http://api.test/api/users/:userId/zones", () => HttpResponse.json(userZonesResponse)),
+  http.delete("http://api.test/api/events/:eventId/staff/:userId", async ({ params }) => {
+    revokeCalls.push({ eventId: params.eventId as string, userId: params.userId as string });
+    if (revokeDelayMs) await delay(revokeDelayMs);
+    if (revokeStatus !== 204) return HttpResponse.json({ error: "revoke-boom" }, { status: revokeStatus });
+    return new HttpResponse(null, { status: 204 });
   }),
 );
 void server;
@@ -57,8 +70,7 @@ function renderCard(overrides: Partial<StaffCardProps> = {}) {
   const props: StaffCardProps = {
     user: staffUser(),
     zoneNames: [],
-    onZones: vi.fn(),
-    onRevoke: vi.fn(),
+    eventId: "evt-1",
     isAdmin: true,
     canManage: true,
     cachedToken: undefined,
@@ -78,6 +90,11 @@ describe("StaffCard — QR area + print flow", () => {
     qrTokenStatus = 200;
     qrTokenDelayMs = 0;
     qrTokenCounter = 0;
+    zonesResponse = [];
+    userZonesResponse = [];
+    revokeCalls = [];
+    revokeStatus = 200;
+    revokeDelayMs = 0;
   });
 
   describe("QR area states (admin)", () => {
@@ -289,6 +306,105 @@ describe("StaffCard — QR area + print flow", () => {
       renderCard({ user: staffUser({ has_qr_token: false }), disabled: true });
 
       expect(await screen.findByRole("button", { name: "Generate" })).toBeDisabled();
+    });
+  });
+
+  describe("Zones action", () => {
+    it("Zones is enabled for canManage (admin or manager) and opens the StaffZonesDialog for this exact user", async () => {
+      zonesResponse = [
+        { id: "z1", event_id: "evt-1", name: "Main hall", zone_type: "general", order_index: 0, is_registration_zone: true, requires_registration: false, is_active: true, created_at: "2026-01-01T00:00:00Z" },
+      ];
+      userZonesResponse = [];
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ id: "u1", email: "alice@example.com" }), isAdmin: false, canManage: true });
+
+      const zonesButton = screen.getByRole("button", { name: "Zones" });
+      expect(zonesButton).toBeEnabled();
+      await user.click(zonesButton);
+
+      expect(await screen.findByText("Zone access for alice@example.com")).toBeInTheDocument();
+      expect(screen.getByRole("switch", { name: "Main hall" })).toBeInTheDocument();
+    });
+  });
+
+  describe("Revoke action", () => {
+    it("opens a tier-1 confirm with the exact copy (email interpolated)", async () => {
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ email: "bob@example.com" }) });
+
+      await user.click(screen.getByRole("button", { name: "Revoke…" }));
+
+      expect(await screen.findByText("Revoke access?")).toBeInTheDocument();
+      expect(
+        screen.getByText("bob@example.com loses event-day access to this event. You can re-add them anytime."),
+      ).toBeInTheDocument();
+      expect(revokeCalls).toHaveLength(0);
+    });
+
+    it("confirming DELETEs /api/events/{event_id}/staff/{user_id} and invalidates STAFF_KEY(eventId) on success", async () => {
+      const user = userEvent.setup();
+      const { queryClient } = renderCard({
+        user: staffUser({ id: "u7", email: "bob@example.com" }), eventId: "evt-9",
+      });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      await user.click(screen.getByRole("button", { name: "Revoke…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+      await waitFor(() => expect(revokeCalls).toEqual([{ eventId: "evt-9", userId: "u7" }]));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: ["get", "/api/events/{event_id}/staff", { params: { path: { event_id: "evt-9" } } }],
+        }),
+      );
+      // Revoke must never invalidate this user's zones query — that would
+      // be pointless error noise for a row that's about to disappear from
+      // the list, not a real cache-correctness need (task brief).
+      expect(invalidateSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: ["get", "/api/users/{user_id}/zones", { params: { path: { user_id: "u7" } } }],
+        }),
+      );
+    });
+
+    it("keeps the confirm dialog open and shows an inline error on failure", async () => {
+      revokeStatus = 500;
+      const user = userEvent.setup();
+      renderCard({ user: staffUser({ email: "bob@example.com" }) });
+
+      await user.click(screen.getByRole("button", { name: "Revoke…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+
+      expect(await within(dialog).findByText("Couldn't revoke access. Try again.")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    it("session-ref: closing the confirm mid-flight still invalidates unconditionally but doesn't reopen a stale dialog state", async () => {
+      revokeDelayMs = 40;
+      const user = userEvent.setup();
+      const { queryClient } = renderCard({ user: staffUser({ id: "u8", email: "bob@example.com" }) });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+      await user.click(screen.getByRole("button", { name: "Revoke…" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Revoke" }));
+      // Not blocked (fire-and-forget, same as regenerate) — back out while
+      // the DELETE is still in flight.
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      await waitFor(() => expect(revokeCalls).toHaveLength(1));
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            queryKey: ["get", "/api/events/{event_id}/staff", { params: { path: { event_id: "evt-1" } } }],
+          }),
+        ),
+      );
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 });

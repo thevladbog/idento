@@ -29,6 +29,16 @@ export function STAFF_KEY(eventId: string) {
   return ["get", "/api/events/{event_id}/staff", { params: { path: { event_id: eventId } } }] as const;
 }
 
+// All users in the caller's active tenant (admin|manager only — a plain
+// staff caller gets a 403 the dialog surfaces like any other mutation
+// error). `enabled` gates the fetch to "the Add-staff dialog is actually
+// open" — AddStaffDialog's existing-mode candidate list is the only
+// consumer, and there's no reason to hold this in cache (or hit the 403 for
+// a staff-role viewer) before that dialog is ever opened.
+export function useTenantUsers(enabled: boolean) {
+  return $api.useQuery("get", "/api/users", undefined, { enabled });
+}
+
 // A single user's zone assignments across every zone they've been granted
 // (not scoped to one event) — StaffCard's per-card zones caption joins this
 // against the event's plain zones list (attendees/hooks.ts' useEventZones)
