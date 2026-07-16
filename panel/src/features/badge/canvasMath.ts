@@ -3,7 +3,39 @@
 // conversion and every position/size clamp through these functions rather
 // than re-deriving the same arithmetic inline, so drag/resize math has
 // exactly one source of truth and is fully unit-tested here in isolation.
-import type { BadgeConfig, BadgeElement } from "./templateTypes";
+import type { BadgeConfig, BadgeElement, BadgeElementType } from "./templateTypes";
+
+// UI-only fallback footprints for element types that can end up with no
+// explicit width/height in the stored template. Only `text` ever omits
+// both by design (ElementsPane's ELEMENT_DEFAULTS always sets width/height
+// for qrcode/barcode/line/box) -- these exist so a hand-edited or legacy
+// doc still renders a sane, clickable/selectable box rather than a
+// zero-size element. Several numbers deliberately match zpl.go's own
+// GENERATION-time fallbacks (qrcode 20mm, barcode height 10mm, box/line
+// width 10mm -- see generateQRCodeZPL/generateBarcodeZPL/generateLineZPL/
+// generateBoxZPL) since those are the closest available "reasonable
+// default" precedent; the rest (text, line height) are this editor's own
+// UI-only choices with no backend equivalent.
+export const DEFAULT_SIZE_MM: Record<BadgeElementType, { width: number; height: number }> = {
+  text: { width: 40, height: 8 },
+  qrcode: { width: 20, height: 20 },
+  barcode: { width: 30, height: 10 },
+  line: { width: 10, height: 1 },
+  box: { width: 10, height: 10 },
+};
+
+// One footprint rule for EVERY input path that positions or sizes an
+// element -- canvas drag, keyboard nudge (both in BadgeCanvas.tsx), and the
+// properties pane's typed X/Y/Width/Height (PropertiesPane.tsx) all resolve
+// an element's effective size through THIS helper before clamping, so a
+// width/height-less element clamps to the same bounds everywhere it can be
+// moved or resized. (Clamping a raw `width ?? 0` instead would let one
+// input path park the element's rendered box past the artboard edge that
+// another path enforces.)
+export function elementFootprint(el: Pick<BadgeElement, "type" | "width" | "height">): { width: number; height: number } {
+  const fallback = DEFAULT_SIZE_MM[el.type];
+  return { width: el.width ?? fallback.width, height: el.height ?? fallback.height };
+}
 
 /** Millimeters -> canvas pixels at the given scale (pixels per millimeter). */
 export function mmToPx(mm: number, scale: number): number {

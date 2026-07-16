@@ -3,9 +3,9 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { QrSvg } from "../staff/QrSvg";
 import {
-  clampPosition, clampSize, fitScale, mmToPx, pxToMm, resolveElementText,
+  clampPosition, clampSize, elementFootprint, fitScale, mmToPx, pxToMm, resolveElementText,
 } from "./canvasMath";
-import type { BadgeElement, BadgeElementType, BadgeTemplateDoc } from "./templateTypes";
+import type { BadgeElement, BadgeTemplateDoc } from "./templateTypes";
 
 export interface BadgeCanvasProps {
   doc: BadgeTemplateDoc;
@@ -80,29 +80,11 @@ function snapMm(mm: number): number {
 const NUDGE_MM = 0.5;
 const NUDGE_MM_SHIFT = 2;
 
-// UI-only fallback footprints for element types that can end up with no
-// explicit width/height in the stored template. Only `text` ever omits
-// both by design (ElementsPane's ELEMENT_DEFAULTS always sets width/height
-// for qrcode/barcode/line/box) -- these exist so a hand-edited or legacy
-// doc still renders a sane, clickable/selectable box rather than a
-// zero-size element. Several numbers deliberately match zpl.go's own
-// GENERATION-time fallbacks (qrcode 20mm, barcode height 10mm, box/line
-// width 10mm -- see generateQRCodeZPL/generateBarcodeZPL/generateLineZPL/
-// generateBoxZPL) since those are the closest available "reasonable
-// default" precedent; the rest (text, line height) are this editor's own
-// UI-only choices with no backend equivalent.
-const DEFAULT_SIZE_MM: Record<BadgeElementType, { width: number; height: number }> = {
-  text: { width: 40, height: 8 },
-  qrcode: { width: 20, height: 20 },
-  barcode: { width: 30, height: 10 },
-  line: { width: 10, height: 1 },
-  box: { width: 10, height: 10 },
-};
-
-function elementFootprint(el: BadgeElement): { width: number; height: number } {
-  const fallback = DEFAULT_SIZE_MM[el.type];
-  return { width: el.width ?? fallback.width, height: el.height ?? fallback.height };
-}
+// Element footprint fallbacks (DEFAULT_SIZE_MM/elementFootprint) now live
+// in canvasMath.ts, imported above -- promoted from this file's private
+// helpers so PropertiesPane's typed X/Y/Width/Height clamps share the SAME
+// footprint rule as this file's drag/nudge paths (one footprint rule; see
+// canvasMath.ts's elementFootprint doc).
 
 // 1 point = 1/72 inch = 25.4/72 mm -- used only to size a text element's
 // on-screen font from its `fontSize` (points, per templateTypes.ts/zpl.go),

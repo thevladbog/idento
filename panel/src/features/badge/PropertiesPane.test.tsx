@@ -73,6 +73,35 @@ describe("PropertiesPane", () => {
 
       expect(onUpdate).not.toHaveBeenCalled();
     });
+
+    it("clamps X for a width/height-less text element with the SAME rendered footprint the canvas uses", () => {
+      // A fresh text element carries no explicit width/height
+      // (ElementsPane's ELEMENT_DEFAULTS.text sets neither), but the canvas
+      // renders it 40x8mm (canvasMath's DEFAULT_SIZE_MM.text) and clamps
+      // drag/nudge against that footprint: max-fitting x on a 90mm board is
+      // 50. A typed X must clamp to the SAME 50 -- not 90, which a raw
+      // `width ?? 0` clamp would allow, parking the element entirely off
+      // the artboard (regression coverage: one footprint rule across ALL
+      // THREE input paths -- drag, nudge, and typed properties).
+      const { onUpdate } = renderPane({
+        element: { id: "t1", type: "text", x: 5, y: 5, text: "Hi" },
+      });
+
+      fireEvent.change(screen.getByLabelText("X (mm)"), { target: { value: "999" } });
+
+      expect(onUpdate).toHaveBeenCalledWith("t1", { x: 50 });
+    });
+
+    it("shows the rendered default footprint (not 0) as Width/Height for a footprint-defaulted element", () => {
+      renderPane({
+        element: { id: "t1", type: "text", x: 5, y: 5, text: "Hi" },
+      });
+
+      // 40x8mm: the same default the canvas renders/clamps this element
+      // with -- showing 0 would misstate what's actually on the artboard.
+      expect(screen.getByLabelText("Width (mm)")).toHaveValue(40);
+      expect(screen.getByLabelText("Height (mm)")).toHaveValue(8);
+    });
   });
 
   describe("text element", () => {

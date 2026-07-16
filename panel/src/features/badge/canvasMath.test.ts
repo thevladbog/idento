@@ -1,5 +1,5 @@
 import {
-  clampPosition, clampSize, fitScale, mmToPx, pxToMm, resolveElementText,
+  DEFAULT_SIZE_MM, clampPosition, clampSize, elementFootprint, fitScale, mmToPx, pxToMm, resolveElementText,
 } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 
@@ -84,6 +84,24 @@ describe("clampSize", () => {
 
   it("leaves an in-bounds size untouched", () => {
     expect(clampSize({ x: 0, y: 0, width: 20, height: 15 }, config90x55)).toEqual({ width: 20, height: 15 });
+  });
+});
+
+describe("elementFootprint", () => {
+  it("returns the element's own explicit width/height when both are set", () => {
+    expect(elementFootprint({ type: "box", width: 20, height: 10 })).toEqual({ width: 20, height: 10 });
+  });
+
+  it("falls back to the per-type default for a width/height-less element", () => {
+    expect(elementFootprint({ type: "text" })).toEqual({ width: 40, height: 8 });
+  });
+
+  it("mixes an explicit dimension with the per-type default for the missing one", () => {
+    expect(elementFootprint({ type: "text", width: 25 })).toEqual({ width: 25, height: 8 });
+  });
+
+  it("has a default entry for every element type", () => {
+    expect(Object.keys(DEFAULT_SIZE_MM).sort()).toEqual(["barcode", "box", "line", "qrcode", "text"]);
   });
 });
 

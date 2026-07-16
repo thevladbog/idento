@@ -3,7 +3,7 @@ import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { bindingOptions, displayBinding } from "./bindings";
-import { clampPosition, clampSize } from "./canvasMath";
+import { clampPosition, clampSize, elementFootprint } from "./canvasMath";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import { ZPL_FONTS } from "./templateTypes";
 
@@ -26,10 +26,10 @@ export interface PropertiesPaneProps {
 
 // Native <select>, styled to match `Input`'s own classes (packages/ui/src/
 // components/input.tsx) -- there is no shared `@idento/ui` Select primitive
-// yet (these are the first native selects in the codebase, per the P3.1
-// plan), so the exact Input classes are duplicated here rather than reusing
-// the Input *component* (which always renders an `<input>`, never a
-// `<select>`).
+// yet (AttendeesPage.tsx's filters and ImportWizard.tsx's column mapper
+// style their own native selects inline the same way), so the exact Input
+// classes are duplicated here rather than reusing the Input *component*
+// (which always renders an `<input>`, never a `<select>`).
 const SELECT_CLASSNAME =
   "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -97,11 +97,18 @@ export function PropertiesPane({
     // a patch that would corrupt the element's position/size.
     if (Number.isNaN(value)) return;
 
+    // elementFootprint, NOT raw element.width/height: a width/height-less
+    // element (a fresh text element) renders 40x8mm on the canvas, and its
+    // drag/nudge paths clamp against that same footprint -- clamping a
+    // typed X/Y against `width ?? 0` here would let this THIRD input path
+    // park the rendered box past the edge the other two enforce (one
+    // footprint rule; see canvasMath.ts's elementFootprint doc).
+    const footprint = elementFootprint(element!);
     const candidate = {
       x: element!.x,
       y: element!.y,
-      width: element!.width,
-      height: element!.height,
+      width: footprint.width,
+      height: footprint.height,
       [field]: value,
     };
 
@@ -121,6 +128,14 @@ export function PropertiesPane({
 
   const isTextType = element.type === "text";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
+
+  // Width/Height display the RENDERED footprint, not `width ?? 0`: for a
+  // footprint-defaulted element (a fresh text element carries no explicit
+  // width/height) the canvas draws -- and clamps against -- these default
+  // dimensions, so showing 0 would misstate what's actually on the
+  // artboard. The shown value is the rendered default until the operator
+  // explicitly sets one (the first edit dispatches it onto the element).
+  const footprint = elementFootprint(element);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-lg border border-border p-4" data-testid="badge-pane-properties">
@@ -142,13 +157,13 @@ export function PropertiesPane({
         <NumberField
           id={IDS.width}
           label={t("badgePropsWidth")}
-          value={element.width ?? 0}
+          value={footprint.width}
           onChange={(e) => handleNumberChange("width", e)}
         />
         <NumberField
           id={IDS.height}
           label={t("badgePropsHeight")}
-          value={element.height ?? 0}
+          value={footprint.height}
           onChange={(e) => handleNumberChange("height", e)}
         />
       </div>
