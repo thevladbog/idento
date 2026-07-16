@@ -1010,6 +1010,28 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 	return err
 }
 
+// IncrementAttendeePrintedCount bumps printed_count by one and returns the
+// new value (backs the attendees table's Printed pill — reconciliation #6,
+// docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md; this is a
+// counter, not a print journal). The UPDATE is deliberately id-only (no
+// `deleted_at IS NULL` guard), matching UpdateAttendee's existing precedent
+// above: by contract the caller has already established the attendee
+// exists, belongs to the caller's tenant, and is not soft-deleted (e.g. via
+// requireAttendeeOwnership, which routes through GetAttendeeByIDForTenant ->
+// GetAttendeeByID's own `deleted_at IS NULL` filter) before calling this
+// method. If the row vanishes between that check and this call (TOCTOU),
+// RETURNING matches 0 rows and QueryRow surfaces pgx.ErrNoRows, which this
+// method propagates as-is rather than fabricating a count.
+func (s *PGStore) IncrementAttendeePrintedCount(ctx context.Context, attendeeID uuid.UUID) (int, error) {
+	var newCount int
+	query := `UPDATE attendees SET printed_count = printed_count + 1, updated_at = now() WHERE id = $1 RETURNING printed_count`
+	err := s.db.QueryRow(ctx, query, attendeeID).Scan(&newCount)
+	if err != nil {
+		return 0, err
+	}
+	return newCount, nil
+}
+
 // API Keys methods
 func (s *PGStore) CreateAPIKey(ctx context.Context, apiKey *models.APIKey) error {
 	query := `INSERT INTO api_keys (id, event_id, name, key_hash, key_hash_bcrypt, key_preview, expires_at, created_at)

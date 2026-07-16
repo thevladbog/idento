@@ -121,6 +121,18 @@ type Store interface {
 	// GetAttendeeByIDForTenant scopes the attendee through its event's tenant.
 	GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uuid.UUID) (*models.Attendee, error)
 	UpdateAttendee(ctx context.Context, attendee *models.Attendee) error
+	// IncrementAttendeePrintedCount bumps printed_count by one and returns
+	// the new value (backs the attendees table's Printed pill — see
+	// reconciliation #6 in
+	// docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md; this is
+	// a counter, not a print journal). Contract: the caller must already
+	// have confirmed the attendee exists, belongs to the caller's tenant,
+	// and is not soft-deleted (e.g. via requireAttendeeOwnership, which
+	// routes through GetAttendeeByIDForTenant -> GetAttendeeByID's
+	// `deleted_at IS NULL` filter) before calling — so the UPDATE's WHERE
+	// clause is id-only, matching UpdateAttendee's existing precedent
+	// (also id-only) rather than re-adding a deleted_at guard here.
+	IncrementAttendeePrintedCount(ctx context.Context, attendeeID uuid.UUID) (int, error)
 
 	GetEventsChangedSince(ctx context.Context, tenantID uuid.UUID, since time.Time) ([]*models.Event, error)
 	GetAttendeesChangedSince(ctx context.Context, tenantID uuid.UUID, since time.Time) ([]*models.Attendee, error)
