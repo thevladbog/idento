@@ -55,6 +55,15 @@ export function createInitialWizardState(): ImportWizardState {
 
 export type StandardField = Extract<MappingTarget, { kind: "standard" }>["field"];
 
+// The 6 standard fields a CSV column can map to (Task 12's brief, verbatim
+// order) — the single source both this module's own STANDARD_FIELD_NAMES
+// set (validateMapping's collision guard, below) and ImportWizard's mapping-
+// dropdown options rely on. ImportWizard imports this back rather than
+// keeping its own duplicate literal, so the two lists can never drift.
+export const STANDARD_FIELD_KEYS: StandardField[] = [
+  "first_name", "last_name", "email", "company", "position", "code",
+];
+
 // Board 3b's default-mapping heuristic: case-insensitive substring match
 // against each header, first rule to match wins. The last_name rule is
 // checked BEFORE the first_name rule on purpose — an English "Last name"
@@ -146,7 +155,7 @@ export function dedupeByEmail(
 // overwrites the real standard field instead. Mirrored here so a mapping
 // that would trip that backend behavior is caught before import rather than
 // discovered as corrupted data afterward.
-const STANDARD_FIELD_NAMES = new Set(["first_name", "last_name", "email", "company", "position", "code"]);
+const STANDARD_FIELD_NAMES = new Set<string>(STANDARD_FIELD_KEYS);
 
 // A header is flagged when ANY of:
 //   (a) it's a `custom` target whose `name` is blank/whitespace-only,
@@ -222,25 +231,37 @@ export interface BulkPayload {
 // Builds the bulk-import payload Task 13 will submit: one attendee object
 // per (deduped) row, keyed by each mapped column's target key — the
 // standard field name for `standard` mappings, the operator-chosen name for
-// `custom` mappings. `skip`/`unset` columns contribute nothing. `headers`
-// isn't a separate parameter (matching the brief's exact signature): column
-// order is read off `Object.keys(mapping)`, which reflects header order
-// because callers always build `mapping` by iterating `state.headers` in
-// order (see computeDefaultMapping above and ImportWizard's mapping-change
-// handler, which only ever adds/overwrites existing header keys).
+// `custom` mappings. `skip`/`unset` columns contribute nothing.
+//
+// Fix (P2.1-deferred, Task 10): `headers` is now an explicit 3rd parameter,
+// iterated directly for column order — INSTEAD OF deriving it from
+// `Object.keys(mapping)`, which this function used to do. That distinction
+// matters: JS object key enumeration order hoists "array-index-like" string
+// keys (any key that round-trips through `String(Number(key))`, e.g. a
+// bare-digit CSV header like "2024") ahead of every other string key, in
+// ascending numeric order, REGARDLESS of insertion order — a documented
+// ECMAScript [[OwnPropertyKeys]] rule, not an engine quirk. A CSV whose
+// headers are `["Отдел", "2024", "Email"]` would silently have its
+// `field_schema` (and therefore every `attendees[i]` object's key order)
+// reordered to put the "2024"-mapped column first, purely because of its
+// name, with zero connection to what the operator actually chose in the
+// mapping grid. Headers absent from `mapping` (defensive only — every real
+// caller's `mapping` has one entry per header) are filtered out rather than
+// crashing the lookup.
 export function buildBulkPayload(
   rows: Record<string, string>[],
   mapping: Record<string, MappingTarget>,
+  headers: string[],
 ): BulkPayload {
-  const headers = Object.keys(mapping);
-  const columnKeys = headers.map((header) => {
+  const mappedHeaders = headers.filter((header) => header in mapping);
+  const columnKeys = mappedHeaders.map((header) => {
     const target = mapping[header];
     if (target.kind === "standard") return { header, key: target.field as string };
     if (target.kind === "custom") return { header, key: target.name };
     return null;
   });
 
-  const emailHeader = headers.find((header) => {
+  const emailHeader = mappedHeaders.find((header) => {
     const target = mapping[header];
     return target.kind === "standard" && target.field === "email";
   });

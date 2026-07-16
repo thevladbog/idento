@@ -1,0 +1,56 @@
+/*
+ * Staff QR print sheet.
+ *
+ * On screen, #qr-print-root (QrPrintSheet.tsx's portal target) stays hidden —
+ * it only ever exists to be printed, never to be seen in the normal app UI.
+ * The @media print block flips that: it hides the whole app (#root) and
+ * shows just the cards, keyed off `body[data-qr-print="1"]` so this can
+ * never accidentally affect an ordinary print of the app itself (Ctrl/Cmd+P
+ * without a QrPrintSheet mounted never sets that attribute).
+ */
+#qr-print-root {
+  display: none;
+}
+
+@media print {
+  body[data-qr-print="1"] #root {
+    display: none !important;
+  }
+
+  body[data-qr-print="1"] #qr-print-root {
+    display: block;
+  }
+
+  /*
+   * Global Constraints (docs/superpowers/plans/2026-07-16-panel-p2.2-zones-staff.md,
+   * line 23): "token classes only ... One documented exception: the QR code
+   * itself and its print-sheet backing must be literal black-on-white for
+   * scannability regardless of theme — mark with a code comment referencing
+   * this plan line." A printed badge has to scan under any lighting with any
+   * printer, in light OR dark app theme — `bg-card`/`text-foreground` would
+   * silently invert on a dark-themed viewer and print a low-contrast (or
+   * inverted, unscannable) code. Literal `#fff`/`#000` here is deliberate,
+   * not a lapse — see QrSvg.tsx's own reference to this same exception.
+   */
+  .qr-print-card {
+    break-inside: avoid;
+    background: #ffffff;
+    color: #000000;
+    border: 1px solid #000000;
+    padding: 16px;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .qr-print-svg {
+    width: 160px;
+    height: 160px;
+  }
+
+  .qr-print-email {
+    font-weight: 700;
+  }
+}

@@ -1,6 +1,7 @@
 import {
   buildBulkPayload, buildFailedRowsCsv, chunkArray, computeDefaultMapping, createInitialWizardState,
-  dedupeByEmail, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, validateMapping, type MappingTarget,
+  dedupeByEmail, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, STANDARD_FIELD_KEYS, validateMapping,
+  type MappingTarget,
 } from "./wizardState";
 
 describe("createInitialWizardState", () => {
@@ -216,7 +217,7 @@ describe("buildBulkPayload", () => {
       Имя: { kind: "standard", field: "first_name" },
       Email: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Email"]);
     expect(result.attendees).toEqual([{ first_name: "Анна", email: "a@example.com" }]);
   });
 
@@ -225,7 +226,7 @@ describe("buildBulkPayload", () => {
     const mapping: Record<string, MappingTarget> = {
       Категория: { kind: "custom", name: "Категория" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Категория"]);
     expect(result.attendees).toEqual([{ Категория: "VIP" }]);
     expect(result.field_schema).toEqual(["Категория"]);
   });
@@ -237,20 +238,64 @@ describe("buildBulkPayload", () => {
       Примечание: { kind: "skip" },
       Прочее: { kind: "unset" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Примечание", "Прочее"]);
     expect(result.attendees).toEqual([{ first_name: "Анна" }]);
     expect(result.field_schema).toEqual(["first_name"]);
   });
 
-  it("orders field_schema by the order the source columns first appear in the mapping (header order)", () => {
+  it("orders field_schema by the order columns appear in the HEADERS array (not mapping insertion order)", () => {
     const rows = [{ Компания: "Ромашка", Имя: "Анна", Email: "a@example.com" }];
     const mapping: Record<string, MappingTarget> = {
       Компания: { kind: "standard", field: "company" },
       Имя: { kind: "standard", field: "first_name" },
       Email: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Компания", "Имя", "Email"]);
     expect(result.field_schema).toEqual(["company", "first_name", "email"]);
+  });
+
+  // The actual P2.1-deferred regression: JS object key enumeration hoists
+  // "array-index-like" string keys (any key that round-trips through
+  // `String(Number(key))`, e.g. a bare-digit CSV header like "2024") ahead of
+  // every other string key, in ascending numeric order, REGARDLESS of
+  // insertion order — a real ECMAScript [[OwnPropertyKeys]] rule, not an
+  // engine quirk. `Object.keys(mapping)` for the mapping below is therefore
+  // `["2024", "Отдел", "Email"]` no matter how the object literal is
+  // written — silently reordering field_schema (and every attendee row's key
+  // order) around a column purely because of its NAME, with no connection to
+  // what the operator actually chose in the mapping grid. This test fails
+  // against the old `Object.keys(mapping)`-derived order (which would put
+  // "Year" first) and only passes once column order is read off the
+  // explicit `headers` parameter instead.
+  it("orders field_schema by the HEADERS array even when a bare-digit header would otherwise be hoisted first", () => {
+    const rows = [{ Отдел: "Sales", "2024": "42", Email: "a@example.com" }];
+    const mapping: Record<string, MappingTarget> = {
+      "2024": { kind: "custom", name: "Year" },
+      Отдел: { kind: "custom", name: "Department" },
+      Email: { kind: "standard", field: "email" },
+    };
+    const headers = ["Отдел", "2024", "Email"];
+    // Sanity-check the premise: Object.keys really does hoist "2024" first,
+    // confirming this scenario is a genuine trap, not a contrived one.
+    expect(Object.keys(mapping)).toEqual(["2024", "Отдел", "Email"]);
+
+    const result = buildBulkPayload(rows, mapping, headers);
+    expect(result.field_schema).toEqual(["Department", "Year", "email"]);
+    expect(result.attendees).toEqual([{ Department: "Sales", Year: "42", email: "a@example.com" }]);
+  });
+
+  // "filtering to mapped entries" per the task brief: a header present in
+  // `headers` but absent from `mapping` (defensive only — every real caller
+  // builds `mapping` with one entry per header) is skipped rather than
+  // crashing the lookup or producing an `undefined`-keyed attendee field.
+  it("skips a header that has no entry in mapping instead of crashing", () => {
+    const rows = [{ Имя: "Анна", Unmapped: "x" }];
+    const mapping: Record<string, MappingTarget> = {
+      Имя: { kind: "standard", field: "first_name" },
+    };
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Unmapped"]);
+    expect(result.attendees).toEqual([{ first_name: "Анна" }]);
+    expect(result.field_schema).toEqual(["first_name"]);
   });
 
   it("applies in-file dedup by whichever column is mapped to email and reports mergedDuplicates", () => {
@@ -263,7 +308,7 @@ describe("buildBulkPayload", () => {
       Имя: { kind: "standard", field: "first_name" },
       Email: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Email"]);
     expect(result.attendees).toEqual([
       { first_name: "Анна", email: "a@example.com" },
       { first_name: "Олег", email: "o@example.com" },
@@ -276,7 +321,7 @@ describe("buildBulkPayload", () => {
     const mapping: Record<string, MappingTarget> = {
       Имя: { kind: "standard", field: "first_name" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя"]);
     expect(result.attendees).toHaveLength(2);
     expect(result.mergedDuplicates).toBe(0);
   });
@@ -297,7 +342,7 @@ describe("buildBulkPayload", () => {
       Имя: { kind: "standard", field: "first_name" },
       Email: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Email"]);
     expect(result.dedupedRows).toEqual([
       { Имя: "Анна", Email: "a@example.com" },
       { Имя: "Олег", Email: "o@example.com" },
@@ -310,7 +355,7 @@ describe("buildBulkPayload", () => {
     const mapping: Record<string, MappingTarget> = {
       Имя: { kind: "standard", field: "first_name" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя"]);
     expect(result.dedupedRows).toEqual(rows);
   });
 
@@ -328,7 +373,7 @@ describe("buildBulkPayload", () => {
       Имя: { kind: "standard", field: "first_name" },
       Email: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя", "Email"]);
     // Row 2 ("Анна Dup") is dropped as a duplicate, so "Олег" survives at
     // post-dedup position 2 but its ORIGINAL file row is 3.
     expect(result.originalRowIndices).toEqual([1, 3]);
@@ -341,7 +386,7 @@ describe("buildBulkPayload", () => {
     const mapping: Record<string, MappingTarget> = {
       Имя: { kind: "standard", field: "first_name" },
     };
-    const result = buildBulkPayload(rows, mapping);
+    const result = buildBulkPayload(rows, mapping, ["Имя"]);
     expect(result.originalRowIndices).toEqual([1, 2]);
   });
 
@@ -357,11 +402,19 @@ describe("buildBulkPayload", () => {
       ColA: { kind: "standard", field: "email" },
       ColB: { kind: "standard", field: "email" },
     };
-    const result = buildBulkPayload(rows, mapping);
-    // ColB is processed after ColA (header/mapping insertion order), so its
-    // value silently wins — buildBulkPayload itself does not error or warn.
+    const result = buildBulkPayload(rows, mapping, ["ColA", "ColB"]);
+    // ColB is processed after ColA (headers order), so its value silently
+    // wins — buildBulkPayload itself does not error or warn.
     expect(result.attendees).toEqual([{ email: "second" }]);
     expect(result.field_schema).toEqual(["email"]);
+  });
+});
+
+describe("STANDARD_FIELD_KEYS", () => {
+  it("lists the 6 standard fields in the task 12 brief's verbatim order — the single source both validateMapping and ImportWizard's dropdown rely on", () => {
+    expect(STANDARD_FIELD_KEYS).toEqual([
+      "first_name", "last_name", "email", "company", "position", "code",
+    ]);
   });
 });
 

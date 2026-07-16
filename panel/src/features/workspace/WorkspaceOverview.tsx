@@ -1,7 +1,7 @@
 import {
-  Card, CardContent, CardHeader, CardTitle, Skeleton,
+  Button, Card, CardContent, CardHeader, CardTitle, Skeleton,
 } from "@idento/ui";
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { Circle, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,10 +9,9 @@ import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 type ReadinessStep = components["schemas"]["ReadinessStep"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
 
 // Same rationale as EventWorkspaceLayout.tsx: `getRouteApi` with the parent
 // layout route's string id (not an import from app/router.tsx) avoids a
@@ -36,10 +35,6 @@ const NEXT_DESCRIPTION_KEYS: Record<NextStepKey, string> = {
   equipment: "workspaceNextEquipment",
 };
 
-function zoneName(entry: EventZone | EventZoneWithStats): string {
-  return "zone" in entry ? entry.zone.name : entry.name;
-}
-
 // Board 1f §4 — the workspace index route's Overview panel: a "What's next"
 // card surfacing up to the top two outstanding readiness steps (or an
 // all-ready message), plus a 4-tile stat grid. Mounted at the index route via
@@ -62,7 +57,7 @@ export function WorkspaceOverview() {
 
   const zonesStep = stepsByKey.get("zones");
   const zonesSkipped = zonesStep?.status === "skipped";
-  const zoneNamesCaption = zonesQuery.data?.slice(0, 2).map(zoneName).join(" · ");
+  const zoneNamesCaption = zonesQuery.data?.slice(0, 2).map((entry) => zoneIdentity(entry).name).join(" · ");
 
   return (
     <div className="flex flex-col gap-5">
@@ -88,7 +83,7 @@ export function WorkspaceOverview() {
           ) : (
             <div data-testid="workspace-next-steps" className="flex flex-col gap-2">
               {nextSteps.map(({ key, step }) => (
-                <NextStepRow key={key} stepKey={key} step={step} />
+                <NextStepRow key={key} stepKey={key} step={step} eventId={eventId} />
               ))}
             </div>
           )}
@@ -137,7 +132,7 @@ export function WorkspaceOverview() {
   );
 }
 
-function NextStepRow({ stepKey, step }: { stepKey: NextStepKey; step: ReadinessStep }) {
+function NextStepRow({ stepKey, step, eventId }: { stepKey: NextStepKey; step: ReadinessStep; eventId: string }) {
   const { t } = useTranslation();
   return (
     <div className="flex items-start gap-3 rounded-md border border-border p-3">
@@ -146,14 +141,29 @@ function NextStepRow({ stepKey, step }: { stepKey: NextStepKey; step: ReadinessS
         <p className="text-body font-medium text-foreground">{t(STEP_LABEL_KEYS[step.key])}</p>
         <p className="text-caption text-muted-foreground">{t(NEXT_DESCRIPTION_KEYS[stepKey])}</p>
       </div>
-      {/* Muted, non-interactive chip — not a button/link. Every target
-          screen (Attendees/Badge/Staff/Equipment) doesn't exist yet, so this
-          mirrors the rail's always-locked, never-a-dead-link pattern
-          (WorkspaceRail's Check-in row) rather than offering a fake CTA. */}
-      <span className="inline-flex shrink-0 items-center gap-1 self-start rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
-        <Lock aria-hidden className="size-3" />
-        {t("workspaceStepComingSoon")}
-      </span>
+      {/* attendees/staff have a real screen behind them now (Tasks 2/5) —
+          real link CTAs. badge/equipment don't exist yet, so they keep the
+          muted, non-interactive chip: this mirrors the rail's
+          always-locked, never-a-dead-link pattern (WorkspaceRail's Check-in
+          row) rather than offering a fake CTA. */}
+      {stepKey === "attendees" ? (
+        <Button asChild variant="outline" size="sm" className="shrink-0 self-start">
+          <Link to="/events/$eventId/attendees" params={{ eventId }}>
+            {t("workspaceStepOpen")}
+          </Link>
+        </Button>
+      ) : stepKey === "staff" ? (
+        <Button asChild variant="outline" size="sm" className="shrink-0 self-start">
+          <Link to="/events/$eventId/staff" params={{ eventId }}>
+            {t("workspaceStepOpen")}
+          </Link>
+        </Button>
+      ) : (
+        <span className="inline-flex shrink-0 items-center gap-1 self-start rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
+          <Lock aria-hidden className="size-3" />
+          {t("workspaceStepComingSoon")}
+        </span>
+      )}
     </div>
   );
 }

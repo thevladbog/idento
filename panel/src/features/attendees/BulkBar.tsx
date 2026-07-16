@@ -2,22 +2,16 @@ import {
   Button, ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 type Attendee = components["schemas"]["Attendee"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
-
-// Same narrowing helper as AttendeesPage.tsx's zoneIdentity — useEventZones'
-// return type is a union not discriminated by any param this dialog sends.
-function zoneIdentity(entry: EventZone | EventZoneWithStats): { id: string; name: string } {
-  return "zone" in entry ? { id: entry.zone.id, name: entry.zone.name } : { id: entry.id, name: entry.name };
-}
 
 export interface BulkBarProps {
   selected: Attendee[];
@@ -210,11 +204,26 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           >
             {t("bulkAssignZone")}
           </Button>
-          {/* Deliberately locked: not a button, no click handler — the
-              badge editor this depends on doesn't exist yet. */}
-          <span className="cursor-default select-none text-caption text-background/40">
+          {/* Deliberately locked — the badge editor this depends on doesn't
+              exist yet. Unified locked-action idiom (P2.1 whole-branch
+              finding): a disabled Button with a Lock icon + visible i18n
+              label, same structural shape as AttendeeDrawer's "Reprint
+              badge" (icon + text, native `disabled` for aria-disabled
+              semantics) — not a non-interactive span. */}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled
+            aria-disabled="true"
+            className="h-auto gap-1 p-0 text-caption text-background/40 hover:bg-transparent disabled:opacity-100"
+          >
+            {/* Button's own base classes force nested <svg> to size-4
+                (`[&_svg]:size-4`, higher CSS specificity than a plain
+                `size-3` utility on the icon itself) — no size override here,
+                matching the drawer's Reprint-badge icon at the same size. */}
+            <Lock aria-hidden />
             {t("bulkPrintLocked")}
-          </span>
+          </Button>
           <Button
             type="button"
             variant="link"

@@ -11,7 +11,7 @@ type ReadinessStep = components["schemas"]["ReadinessStep"];
 export interface WorkspaceRailProps {
   eventId: string;
   readiness: EventReadinessResponse | undefined;
-  active: "overview" | "settings" | "attendees";
+  active: "overview" | "settings" | "attendees" | "zones" | "staff";
 }
 
 // Board 1f — the left-rail readiness pipeline for the event workspace. Pure,
@@ -159,15 +159,21 @@ function StepRow({
     </>
   );
 
-  // Attendees is the only readiness step with a real screen behind it so
-  // far (Task 5) — it becomes a live Link while badge/zones/staff/equipment
-  // stay exactly as they were (plain, always-locked rows) until their own
-  // screens land in later tasks.
-  if (step.key === "attendees") {
-    const isActive = active === "attendees";
+  // Attendees (Task 5 of P2.1), Zones (Task 2), and Staff (Task 5 of this
+  // phase) are the readiness steps with a real screen behind them so far —
+  // they become live Links while badge/equipment stay exactly as they were
+  // (plain, always-locked rows) until their own screens land in later tasks.
+  if (step.key === "attendees" || step.key === "zones" || step.key === "staff") {
+    const isActive = active === step.key;
+    const to =
+      step.key === "attendees"
+        ? "/events/$eventId/attendees"
+        : step.key === "zones"
+          ? "/events/$eventId/zones"
+          : "/events/$eventId/staff";
     return (
       <Link
-        to="/events/$eventId/attendees"
+        to={to}
         params={{ eventId }}
         aria-current={isActive ? "page" : undefined}
         className={cn(

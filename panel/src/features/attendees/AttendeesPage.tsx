@@ -9,11 +9,9 @@ import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
 import { ImportWizard } from "./import/ImportWizard";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 import type { AttendeesSearch } from "./searchParams";
-import type { components } from "../../shared/api/schema";
 
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
 type AttendeeStatus = NonNullable<AttendeesSearch["status"]>;
 
 // Same rationale as EventWorkspaceLayout.tsx / WorkspaceOverview.tsx:
@@ -23,14 +21,6 @@ const routeApi = getRouteApi("/_app/events/$eventId/attendees");
 
 const PER_PAGE = 50;
 const SEARCH_DEBOUNCE_MS = 250;
-
-// useEventZones' return type is a union (EventZone[] | EventZoneWithStats[])
-// per the raw API contract, not discriminated by any param this page sends
-// (Task 4 note) — narrow by checking for the `zone` wrapper field, the same
-// pattern WorkspaceOverview.tsx's `zoneName` helper already uses.
-function zoneIdentity(entry: EventZone | EventZoneWithStats): { id: string; name: string } {
-  return "zone" in entry ? { id: entry.zone.id, name: entry.zone.name } : { id: entry.id, name: entry.name };
-}
 
 // Board 1g — the attendees list/table screen: header (title + plain mono
 // total), search + Zone/Status filters, dense server-paginated table, empty

@@ -92,7 +92,7 @@ describe("EventSettingsPage", () => {
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
-  it("renders the four anchor sections and matching rail links", async () => {
+  it("renders the five anchor sections and matching rail links", async () => {
     renderAt("/events/evt-1/settings");
 
     expect(await screen.findByRole("heading", { name: "General" })).toBeInTheDocument();
@@ -100,12 +100,20 @@ describe("EventSettingsPage", () => {
     expect(document.getElementById("settings-general")).toBeInTheDocument();
     expect(document.getElementById("settings-fonts")).toBeInTheDocument();
     expect(document.getElementById("settings-api-keys")).toBeInTheDocument();
+    expect(document.getElementById("settings-fields")).toBeInTheDocument();
     expect(document.getElementById("settings-danger")).toBeInTheDocument();
 
     expect(screen.getByRole("link", { name: "General" })).toHaveAttribute("href", "#settings-general");
     expect(screen.getByRole("link", { name: "Fonts" })).toHaveAttribute("href", "#settings-fonts");
     expect(screen.getByRole("link", { name: "API keys" })).toHaveAttribute("href", "#settings-api-keys");
+    expect(screen.getByRole("link", { name: "Attendee fields" })).toHaveAttribute("href", "#settings-fields");
     expect(screen.getByRole("link", { name: "Danger zone" })).toHaveAttribute("href", "#settings-danger");
+
+    // Fields sits BETWEEN API keys and Danger zone in the rail's own DOM
+    // order, per the task brief — not just present somewhere on the page.
+    const links = screen.getAllByRole("link").map((link) => link.textContent);
+    expect(links.indexOf("API keys")).toBeLessThan(links.indexOf("Attendee fields"));
+    expect(links.indexOf("Attendee fields")).toBeLessThan(links.indexOf("Danger zone"));
   });
 
   it("always styles the danger-zone rail link as destructive, regardless of scroll position", async () => {

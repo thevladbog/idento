@@ -2,6 +2,7 @@ import { Skeleton, cn } from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { ApiKeysCard } from "./ApiKeysCard";
+import { AttendeeFieldsCard } from "./AttendeeFieldsCard";
 import { DangerZoneCard } from "./DangerZoneCard";
 import { FontsCard } from "./FontsCard";
 import { GeneralCard } from "./GeneralCard";
@@ -12,20 +13,23 @@ import { useScrollSpy } from "../../../shared/hooks/useScrollSpy";
 // layout route's string id avoids a circular import with app/router.tsx.
 const routeApi = getRouteApi("/_app/events/$eventId");
 
-const SECTION_IDS = ["settings-general", "settings-fonts", "settings-api-keys", "settings-danger"] as const;
+const SECTION_IDS = [
+  "settings-general", "settings-fonts", "settings-api-keys", "settings-fields", "settings-danger",
+] as const;
 
 const RAIL_ITEMS: { id: (typeof SECTION_IDS)[number]; labelKey: string; destructive?: boolean }[] = [
   { id: "settings-general", labelKey: "settingsGeneral" },
   { id: "settings-fonts", labelKey: "settingsFonts" },
   { id: "settings-api-keys", labelKey: "settingsApiKeys" },
+  { id: "settings-fields", labelKey: "settingsFieldsNav" },
   { id: "settings-danger", labelKey: "settingsDanger", destructive: true },
 ];
 
 // Board 6a — the event settings page: a left anchor rail (scroll-spy
 // active-highlighting via the ported useScrollSpy) beside stacked card
-// sections. All four cards — General, Fonts, API keys, Danger zone — are
-// real, fully-implemented components (reconciliation #5 in the task brief
-// narrows the board's 7-item rail down to these 4).
+// sections. General, Fonts, API keys, Attendee fields (Task 10), and Danger
+// zone are all real, fully-implemented components (reconciliation #5 in the
+// task brief narrows the board's 7-item rail down to these 5).
 export function EventSettingsPage() {
   const { t } = useTranslation();
   const { eventId } = routeApi.useParams();
@@ -79,6 +83,9 @@ export function EventSettingsPage() {
           </section>
           <section id="settings-api-keys">
             <ApiKeysCard eventId={event.id} />
+          </section>
+          <section id="settings-fields">
+            <AttendeeFieldsCard event={event} />
           </section>
           <section id="settings-danger">
             <DangerZoneCard event={event} />

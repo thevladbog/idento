@@ -9,7 +9,7 @@ import { decodeBuffer, detectEncoding, type CsvEncoding } from "./encoding";
 import { parseCsv } from "./parseCsv";
 import {
   buildBulkPayload, buildFailedRowsCsv, chunkArray, computeDefaultMapping,
-  createInitialWizardState, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, validateMapping,
+  createInitialWizardState, IMPORT_CHUNK_SIZE, mapChunkRowToAbsolute, STANDARD_FIELD_KEYS, validateMapping,
   type ImportWizardState, type MappingTarget, type RowError, type StandardField,
 } from "./wizardState";
 import { downloadCsv } from "../exportCsv";
@@ -31,7 +31,9 @@ const STANDARD_FIELD_LABEL_KEYS: Record<StandardField, string> = {
   position: "addAttendeePosition",
   code: "importFieldCode",
 };
-const STANDARD_FIELDS: StandardField[] = ["first_name", "last_name", "email", "company", "position", "code"];
+// Single source of truth: wizardState.ts's STANDARD_FIELD_KEYS (Task 10),
+// imported back here rather than kept as a second, driftable literal.
+const STANDARD_FIELDS: StandardField[] = STANDARD_FIELD_KEYS;
 
 export interface ImportWizardProps {
   eventId: string;
@@ -160,8 +162,8 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // of step 3, since state.rows/state.mapping never change once past step 2
   // — step 3's chunking logic below relies on that stability.
   const bulkPayload = React.useMemo(
-    () => buildBulkPayload(state.rows, state.mapping),
-    [state.rows, state.mapping],
+    () => buildBulkPayload(state.rows, state.mapping, state.headers),
+    [state.rows, state.mapping, state.headers],
   );
   const totalRowsAfterDedup = bulkPayload.attendees.length;
 

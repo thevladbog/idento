@@ -3,6 +3,7 @@ import {
   DropdownMenuTrigger, Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { EditAttendeeForm } from "./EditAttendeeForm";
@@ -12,21 +13,13 @@ import {
 } from "./hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { zoneIdentity, type ZoneListEntry } from "../../shared/lib/zoneIdentity";
 
 type Attendee = components["schemas"]["Attendee"];
 type AttendeeZoneAccess = components["schemas"]["AttendeeZoneAccess"];
 type MovementHistoryEntry = components["schemas"]["MovementHistoryEntry"];
-type EventZone = components["schemas"]["EventZone"];
-type EventZoneWithStats = components["schemas"]["EventZoneWithStats"];
 
 const RECENT_ACTIVITY_LIMIT = 3;
-
-// Same narrowing helper as AttendeesPage.tsx's/BulkBar.tsx's zoneIdentity —
-// useEventZones' return type is a union not discriminated by any param this
-// drawer sends.
-function zoneIdentity(entry: EventZone | EventZoneWithStats): { id: string; name: string } {
-  return "zone" in entry ? { id: entry.zone.id, name: entry.zone.name } : { id: entry.id, name: entry.name };
-}
 
 // Board 3e / task brief: times are rendered "HH:MM" pinned to UTC (same
 // rationale as EventRow.tsx/eventDates.ts — a viewer's local timezone must
@@ -169,7 +162,7 @@ interface DrawerBodyProps {
   zoneHistory: MovementHistoryEntry[] | undefined;
   zoneHistoryLoading: boolean;
   zoneHistoryError: boolean;
-  zones: (EventZone | EventZoneWithStats)[] | undefined;
+  zones: ZoneListEntry[] | undefined;
   zonesLoading: boolean;
   onClose: () => void;
   onEditBusyChange: (busy: boolean) => void;
@@ -428,8 +421,12 @@ function DrawerBody({
           {t("drawerEdit")}
         </Button>
         {/* Permanently locked — depends on the badge editor, which doesn't
-            exist yet in this phase; no future P2.1 task wires this. */}
+            exist yet in this phase; no future P2.1 task wires this. This is
+            the unified locked-action idiom (P2.1 whole-branch finding): a
+            disabled Button with a Lock icon + visible i18n label — mirrored
+            onto BulkBar's "Print badges" (Task 8). */}
         <Button type="button" variant="outline" className="flex-1" disabled aria-disabled="true">
+          <Lock aria-hidden className="size-4" />
           {t("drawerReprintLocked")}
         </Button>
       </div>
@@ -552,7 +549,8 @@ function DrawerBody({
           <ul className="flex flex-col gap-1.5">
             {recentActivity.map((entry) => (
               <li key={entry.checkin.id} className="text-caption text-muted-foreground">
-                {formatUtcHHMM(entry.checkin.checked_in_at)} — {entry.zone_name}
+                {formatUtcHHMM(entry.checkin.checked_in_at)} —{" "}
+                {entry.zone_name || t("drawerActivityUnknownZone")}
               </li>
             ))}
           </ul>
