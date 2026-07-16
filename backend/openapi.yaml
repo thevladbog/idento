@@ -1438,6 +1438,15 @@ paths:
         semantics: 0 means "no template saved yet" — the first successful
         PUT with version: 0 creates version 1; every subsequent successful
         PUT must supply the exact current version and bumps it by one.
+        Transitional mirror: the same write also mirrors template
+        verbatim into the legacy custom_fields["badgeTemplate"] key (via
+        jsonb_set, in the same statement), so the still-live legacy web
+        badge editor and any other custom_fields["badgeTemplate"] reader
+        never observe a stale value after a panel save. This mirror exists
+        only until the P5 cutover removes both sync directions
+        (this one, and UpdateEvent's existing legacy-to-column sync) —
+        badge_template/badge_template_version remain the canonical source
+        of truth throughout.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id

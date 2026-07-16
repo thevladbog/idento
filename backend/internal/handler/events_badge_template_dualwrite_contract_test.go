@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"idento/backend/internal/models"
@@ -48,6 +49,20 @@ func (s *dualWriteStore) UpdateEventBadgeTemplate(_ context.Context, _ uuid.UUID
 	}
 	s.event.BadgeTemplate = template
 	s.event.BadgeTemplateVersion++
+	// Codex round (Fix 1): model the real guarded UPDATE's jsonb_set mirror
+	// into custom_fields["badgeTemplate"] (pg_store.go's
+	// UpdateEventBadgeTemplate) — same $1 bytes, decoded into the same
+	// map[string]interface{} shape GetEvent serializes, so this fake's
+	// behavior matches production closely enough to exercise the
+	// legacy-reader coherence contract below.
+	if s.event.CustomFields == nil {
+		s.event.CustomFields = map[string]interface{}{}
+	}
+	var decoded interface{}
+	if err := json.Unmarshal(template, &decoded); err != nil {
+		return 0, err
+	}
+	s.event.CustomFields["badgeTemplate"] = decoded
 	return s.event.BadgeTemplateVersion, nil
 }
 func (s *dualWriteStore) SyncBadgeTemplateFromLegacy(_ context.Context, _ uuid.UUID, template json.RawMessage) (int, error) {
@@ -107,6 +122,67 @@ func TestContractLegacyPutMakesTemplateVisibleViaGetBadgeTemplate(t *testing.T) 
 		t.Fatalf("template missing synced content: %+v", tmpl)
 	}
 	validateResponse(t, http.MethodGet, btPath, rec)
+}
+
+// TestContractPanelSaveMirrorsIntoLegacyCustomFieldsKey is the Codex round's
+// Fix 1 contract test: a panel PUT /api/events/{id}/badge-template must make
+// the SAME template visible under custom_fields["badgeTemplate"] via a
+// subsequent GET /api/events/{id}. This is the legacy-reader coherence
+// proof — the still-live legacy web editor
+// (web/src/pages/BadgeTemplateEditorV2.tsx) and web's EventLayout.tsx /
+// EventAttendees.tsx all read custom_fields["badgeTemplate"] directly, never
+// the dedicated badge_template column, so without this mirror they'd see a
+// stale template after a panel save (and could then dual-write that stale
+// value back over the column on their own next save, discarding the panel's
+// change).
+func TestContractPanelSaveMirrorsIntoLegacyCustomFieldsKey(t *testing.T) {
+	tenantID := uuid.New()
+	event := p1Event(tenantID, "Tech Summit")
+	dw := &dualWriteStore{event: event}
+	h := New(dw)
+	e := echo.New()
+
+	btPath := badgeTemplatePath(event.ID)
+	putBody := `{"template":{"width_mm":90,"height_mm":55,"dpi":300,"elements":[{"id":"e1","type":"text","label":"Café"}]},"version":0}`
+	c, rec := newAuthedContext(e, http.MethodPut, btPath, putBody, tenantID.String(), "admin")
+	setBadgeTemplatePathParams(c, event.ID)
+	if err := h.PutBadgeTemplate(c); err != nil {
+		t.Fatalf("PutBadgeTemplate: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PutBadgeTemplate want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var putResp BadgeTemplateResponse
+	if err := jsonUnmarshalBody(rec, &putResp); err != nil {
+		t.Fatalf("unmarshal PUT response: %v", err)
+	}
+
+	eventPath := "/api/events/" + event.ID.String()
+	c, rec = newAuthedContext(e, http.MethodGet, eventPath, "", tenantID.String(), "admin")
+	c.SetPath("/api/events/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(event.ID.String())
+	if err := h.GetEvent(c); err != nil {
+		t.Fatalf("GetEvent: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GetEvent want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, eventPath, rec)
+
+	var got models.Event
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal GetEvent response: %v", err)
+	}
+
+	var wantTemplate interface{}
+	if err := json.Unmarshal(putResp.Template, &wantTemplate); err != nil {
+		t.Fatalf("unmarshal PUT response template: %v", err)
+	}
+	if !reflect.DeepEqual(got.CustomFields["badgeTemplate"], wantTemplate) {
+		t.Fatalf("GET /api/events/{id} custom_fields.badgeTemplate = %#v, want %#v (byte-equivalent to the panel's saved template — legacy reader must not see a stale value)",
+			got.CustomFields["badgeTemplate"], wantTemplate)
+	}
 }
 
 // TestContractPanelWebPanelSequenceSecondPanelSave409s is contract test (b):

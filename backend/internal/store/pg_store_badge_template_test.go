@@ -22,8 +22,12 @@ const getBadgeTemplateSQL = `SELECT badge_template, badge_template_version FROM 
 // It must also exclude soft-deleted rows (final-review Minor 6) — every
 // other events UPDATE in this file already does, and a guarded write with
 // no expectedVersion match left is otherwise the one UPDATE that could
-// "resurrect" a soft-deleted event's badge template.
-const updateBadgeTemplateSQL = `UPDATE events\s+SET badge_template = \$1, badge_template_version = badge_template_version \+ 1, updated_at = NOW\(\)\s+WHERE id = \$2 AND badge_template_version = \$3 AND deleted_at IS NULL\s+RETURNING badge_template_version`
+// "resurrect" a soft-deleted event's badge template. Codex round (Fix 1):
+// the same statement also mirrors the verbatim template bytes into the
+// legacy custom_fields["badgeTemplate"] key via jsonb_set, using the exact
+// same $1 the column gets, so the still-live legacy web editor never reads a
+// stale value after a panel save.
+const updateBadgeTemplateSQL = `UPDATE events\s+SET badge_template = \$1, badge_template_version = badge_template_version \+ 1, custom_fields = jsonb_set\(coalesce\(custom_fields, '\{\}'::jsonb\), '\{badgeTemplate\}', \$1::jsonb\), updated_at = NOW\(\)\s+WHERE id = \$2 AND badge_template_version = \$3 AND deleted_at IS NULL\s+RETURNING badge_template_version`
 
 // syncBadgeTemplateFromLegacySQL matches SyncBadgeTemplateFromLegacy's
 // UPDATE: unlike updateBadgeTemplateSQL above, this write is UNCONDITIONAL
@@ -118,6 +122,40 @@ func TestUpdateEventBadgeTemplateReturnsBumpedVersion(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestUpdateEventBadgeTemplateMirrorsSameBytesIntoLegacyKey is the Codex
+// round's Fix 1: proves the guarded UPDATE's SQL text includes the
+// jsonb_set(...) mirror into custom_fields["badgeTemplate"] (updateBadgeTemplateSQL
+// requires that fragment to be present, or ExpectQuery below won't match at
+// all), and that it is fed the exact same $1 argument as the column write —
+// WithArgs only lists the argument slice once, so a passing match proves the
+// query references $1 for both destinations (verbatim bytes, no separate
+// re-encoded copy for the legacy key).
+func TestUpdateEventBadgeTemplateMirrorsSameBytesIntoLegacyKey(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	template := json.RawMessage(`{"elements":[{"id":"e1","text":"Café \"VIP\""}],"customFont":"X"}`)
+	mock.ExpectQuery(updateBadgeTemplateSQL).
+		WithArgs([]byte(template), eventID, 7).
+		WillReturnRows(pgxmock.NewRows([]string{"badge_template_version"}).AddRow(8))
+
+	s := &PGStore{db: mock}
+	newVersion, err := s.UpdateEventBadgeTemplate(context.Background(), eventID, template, 7)
+	if err != nil {
+		t.Fatalf("UpdateEventBadgeTemplate: %v", err)
+	}
+	if newVersion != 8 {
+		t.Errorf("newVersion = %d, want 8", newVersion)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations (query text must contain the jsonb_set mirror fragment): %v", err)
 	}
 }
 
