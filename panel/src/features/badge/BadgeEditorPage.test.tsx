@@ -69,10 +69,16 @@ function buildRouter() {
 // asserted `invalidateQueries` call). The page's own `templateQuery` already
 // serves as that same kind of subscribed observer for BADGE_TEMPLATE_KEY, so
 // no separate observer component is needed for that key.
-function renderPage(extra?: ReactNode) {
+//
+// `existingQueryClient` (Codex round Fix 3): pass a QueryClient from a PRIOR
+// `renderPage()` call to simulate a real in-app "unmount this page, remount
+// it later" navigation (e.g. leave the badge route, come back) that reuses
+// the SAME cache — as opposed to the default fresh QueryClient every other
+// caller gets, which cannot observe cache continuity across an unmount.
+function renderPage(extra?: ReactNode, existingQueryClient?: QueryClient) {
   const router = buildRouter();
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const queryClient = existingQueryClient ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
     <QueryClientProvider client={queryClient}>
       {extra}
       {/* Cast, not @ts-expect-error: this test router's route shape differs
@@ -81,7 +87,7 @@ function renderPage(extra?: ReactNode) {
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  return { router, queryClient };
+  return { router, queryClient, unmount: view.unmount };
 }
 
 function ReadinessObserver({ eventId }: { eventId: string }) {
@@ -1455,4 +1461,133 @@ describe("BadgeEditorPage preview data (Task 12)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
   });
+});
+
+// Codex round: Fix 3 (seed the badge-template cache from the save's own
+// response) and Fix 4 (a captured-eventId guard on the save's onSuccess/
+// onError, so a save that settles AFTER a cross-event navigation can't act
+// on the editor of whatever event is now showing).
+describe("BadgeEditorPage save model — Codex round Fix 3/Fix 4", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    templateResponse = { template: null, version: 0 };
+    templateStatus = 200;
+    fetchCount = 0;
+    getDelayMs = 0;
+    putRequests = [];
+    putStatus = 200;
+    putDelayMs = 0;
+    readinessHitCount = 0;
+    attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
+    attendeesStatus = 200;
+    attendeesRequests = [];
+  });
+
+  it(
+    "Fix 3: seeds the badge-template cache from the PUT's own response, so a remounted editor for the " +
+      "same event doesn't wait on a slow post-save refetch",
+    async () => {
+      getDelayMs = 150; // holds back every GET, including the invalidation-triggered post-save refetch
+      templateResponse = {
+        template: { width_mm: 90, height_mm: 55, dpi: 300, elements: [{ id: "el-1", type: "text", x: 5, y: 5, text: "Hi" }] },
+        version: 3,
+      };
+      const user = userEvent.setup();
+      const { unmount, queryClient } = renderPage();
+
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user);
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(putRequests).toHaveLength(1));
+      await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saved"));
+
+      // Leave the page (e.g. navigating away) BEFORE the invalidation's own
+      // GET refetch -- held back by getDelayMs above -- has resolved.
+      unmount();
+
+      // Remount a FRESH editor instance for the SAME event, reusing the SAME
+      // QueryClient (as a real in-app navigate-away-and-back would). Without
+      // Fix 3's setQueryData seeding, this fresh mount's own
+      // `useBadgeTemplate` query would still serve the STALE pre-save cache
+      // entry (version 3, ONE element) synchronously on mount -- the slow
+      // invalidated refetch hasn't resolved yet -- rather than the
+      // just-saved version 4 with TWO elements.
+      renderPage(undefined, queryClient);
+
+      await screen.findByTestId("badge-pane-canvas");
+      // Asserted immediately (no lenient waitFor) -- with the fix this is
+      // already correct on mount, straight from the seeded cache entry; a
+      // waitFor with its default ~1s timeout would eventually see the right
+      // value regardless of the fix, once the slow refetch above resolves,
+      // and so would not actually distinguish RED from GREEN.
+      expect(screen.getAllByTestId(/^badge-canvas-element-/)).toHaveLength(2);
+      // Save stays disabled: the fresh editor's own baseline already matches
+      // what's actually stored server-side -- no false 409 on its next save.
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    },
+  );
+
+  it(
+    "Fix 4: a save that settles after the operator has navigated to a different event's editor does not " +
+      "corrupt that event's state, but its own cache invalidation still runs",
+    async () => {
+      putDelayMs = 60;
+      const user = userEvent.setup();
+      const { router, queryClient } = renderPage(<ReadinessObserver eventId="evt-1" />);
+      await waitFor(() => expect(readinessHitCount).toBe(1));
+
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user);
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      // isPending is now true (evt-1's PUT is held by putDelayMs) --
+      // shouldBlockFn's own `!saveTemplate.isPending` check means this exact
+      // navigation attempt passes straight through with NO guard dialog at
+      // all: the same deliberate "let it through mid-save" exemption
+      // BadgeEditorPage.tsx's shouldBlockFn comment documents, and precisely
+      // the race Fix 4 covers -- evt-1's save is still in flight while the
+      // operator moves to a different event entirely.
+      await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saving"));
+      await act(async () => {
+        await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+      });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+      // evt-2's own (unrelated, clean, never-saved) template is now showing.
+      // Its OWN pill still legitimately reads "Saving…" for a moment here —
+      // `saveTemplate.isPending` reflects the ONE shared mutation object
+      // (evt-1's still-in-flight PUT), not a per-event flag, and that
+      // display quirk is unrelated to what Fix 4 covers (the onSuccess/
+      // onError SIDE EFFECTS) — so the assertion below waits for the PUT to
+      // actually settle before checking the pill is gone.
+      await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+      // evt-1's PUT now settles, well after the navigation. Without the
+      // captured-eventId guard, its onSuccess would dispatch "saved" and
+      // overwrite `originalRawRef` against whatever the reducer holds NOW --
+      // evt-2's freshly-loaded doc -- falsely flipping evt-2's pill to
+      // "Saved" and corrupting evt-2's baseline, even though evt-2 was never
+      // touched.
+      await waitFor(() => expect(putRequests).toHaveLength(1));
+      await waitFor(() => expect(putRequests[0].eventId).toBe("evt-1"));
+      // Give the delayed PUT's settle-time callbacks a chance to run (and,
+      // pre-fix, misfire) before the negative assertions below.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
+
+      expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/);
+      expect(screen.queryByTestId("badge-save-state-pill")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+      // evt-1's OWN cache invalidation must still be unconditional and keyed
+      // to the CAPTURED (evt-1) id -- Fix 4 only guards the CURRENT editor's
+      // reaction, not the mutation's own cache bookkeeping. The mounted
+      // ReadinessObserver for evt-1 is a genuinely-subscribed observer (PR
+      // #70's pattern), so a real refetch bumps this count regardless of
+      // which page is currently on screen.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
+      expect(queryClient.getQueryData(["get", "/api/events/{id}/badge-template", { params: { path: { id: "evt-1" } } }]))
+        .toEqual({ template: putRequests[0].body.template, version: 1 });
+    },
+  );
 });

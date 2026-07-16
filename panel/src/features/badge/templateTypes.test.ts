@@ -1,3 +1,4 @@
+import { editorReducer, initialEditorState } from "./editorState";
 import {
   parseTemplateDoc,
   serializeTemplateDoc,
@@ -104,6 +105,63 @@ describe("parseTemplateDoc", () => {
 
     expect(doc.elements.map((el) => el.id)).toEqual(["ok"]);
   });
+
+  // Codex round Fix 6: duplicate element ids are legal in legacy docs
+  // (backend's zpl.ParseBadgeTemplate does not enforce id uniqueness), but
+  // left un-normalized they make the reducer's own id-keyed operations
+  // ambiguous or wrong — editorState.ts's "remove" filters OUT every element
+  // matching the target id (deleting BOTH copies at once instead of one),
+  // and "select"/"update"/"move"/"resize" (which all resolve by
+  // `id === action.id`) can't distinguish which copy is meant either. The
+  // FIRST occurrence keeps its original id (deterministic — and the pairing
+  // serializeTemplateDoc's own first-occurrence-wins merge already assumes,
+  // see below); every SUBSEQUENT element sharing that id gets a freshly
+  // generated id instead, so every id in a parsed doc's `elements` is unique
+  // from this point on.
+  it("normalizes duplicate element ids: the first occurrence keeps its id, subsequent duplicates get a fresh generated id", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [
+        { id: "e1", type: "text", x: 1, y: 2 },
+        { id: "e1", type: "box", x: 3, y: 4 },
+        { id: "e1", type: "line", x: 5, y: 6 }, // a THIRD duplicate, same id
+      ],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect(doc.elements).toHaveLength(3);
+    expect(doc.elements[0].id).toBe("e1");
+    expect(doc.elements[1].id).not.toBe("e1");
+    expect(doc.elements[2].id).not.toBe("e1");
+    // every id (including the two renumbered ones) is unique
+    expect(new Set(doc.elements.map((el) => el.id)).size).toBe(3);
+  });
+
+  it("lets 'remove' delete exactly the targeted duplicate, not every element that used to share its id", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [
+        { id: "e1", type: "text", x: 1, y: 2 },
+        { id: "e1", type: "box", x: 3, y: 4 },
+      ],
+    };
+    const doc = parseTemplateDoc(raw);
+    const firstId = doc.elements[0].id;
+
+    // Pre-fix, editorState.ts's "remove" filters OUT every element matching
+    // the id — with both elements still sharing "e1", this would have
+    // deleted BOTH. Post-normalization the ids are unique, so exactly one
+    // element (the targeted one) is removed.
+    const state = editorReducer(initialEditorState(doc, 1), { type: "remove", id: firstId });
+
+    expect(state.doc.elements).toHaveLength(1);
+    expect(state.doc.elements[0].id).not.toBe(firstId);
+  });
 });
 
 describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
@@ -189,13 +247,22 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(serialized).toEqual({ width_mm: 90, height_mm: 55, dpi: 300, elements: [] });
   });
 
-  it("pairs duplicate element ids first-occurrence-wins: the first element keeps its own extras, the second gets no merge partner", () => {
+  it("pairs duplicate element ids first-occurrence-wins: the first element keeps its own extras, the renumbered second gets no merge partner", () => {
     // Backend's zpl.ParseBadgeTemplate does NOT enforce id uniqueness, and
-    // legacy web templates can carry duplicate ids. Merge pairing must be
-    // deterministic: the FIRST raw element with a given id is the merge
-    // partner for the FIRST doc element with that id (and is consumed);
-    // later doc elements with the same id get no partner, so nothing is
-    // cross-inherited between same-id elements.
+    // legacy web templates can carry duplicate ids. Codex round Fix 6:
+    // parseTemplateDoc now normalizes these at PARSE time (first occurrence
+    // keeps "e1"; the second gets a fresh generated id — see the
+    // "parseTemplateDoc" describe block above) — this test proves that
+    // renumbering doesn't change serializeTemplateDoc's own merge OUTCOME
+    // one bit, consistent with its existing consume-on-use semantics: the
+    // first element's extras (customFont) still round-trip, and the second
+    // (now non-"e1") element still gets no merge partner (own typed fields
+    // only) — exactly as before the ids were made unique. `originalById`
+    // below is keyed by the RAW doc's actual ids ("e1" appears twice there),
+    // and is consumed after the first match, so the renumbered second
+    // element's new id was never going to find a partner in it regardless —
+    // only the id VALUE on the output changed, not which extras attach to
+    // which element.
     const raw = {
       width_mm: 90,
       height_mm: 55,
@@ -208,6 +275,9 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
 
     const doc = parseTemplateDoc(raw);
     expect(doc.elements).toHaveLength(2);
+    expect(doc.elements[0].id).toBe("e1");
+    const renumberedId = doc.elements[1].id;
+    expect(renumberedId).not.toBe("e1");
 
     const serialized = serializeTemplateDoc(doc, raw);
     const elements = serialized.elements as Array<Record<string, unknown>>;
@@ -215,9 +285,9 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(elements).toHaveLength(2);
     // first occurrence keeps ITS OWN extras — never the later duplicate's
     expect(elements[0]).toEqual({ id: "e1", type: "text", x: 1, y: 2, customFont: "A" });
-    // second duplicate has no merge partner: own typed fields only, no
-    // cross-inherited customFont from either raw element
-    expect(elements[1]).toEqual({ id: "e1", type: "box", x: 3, y: 4 });
+    // renumbered second has no merge partner: own typed fields only (under
+    // its NEW id), no cross-inherited customFont from either raw element
+    expect(elements[1]).toEqual({ id: renumberedId, type: "box", x: 3, y: 4 });
   });
 
   it("documents that a raw element with no string id is dropped by parse and does not reappear after serialize", () => {

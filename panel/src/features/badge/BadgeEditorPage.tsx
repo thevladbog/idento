@@ -97,6 +97,19 @@ export function BadgeEditorPage() {
   // never drift apart.
   const originalRawRef = React.useRef<unknown>(null);
 
+  // Codex round (Fix 4): mirrors the LATEST render's `eventId`, updated
+  // unconditionally on every render (not inside an effect — a `useEffect`
+  // would only catch up a render late, which is exactly the window this
+  // guards). `performSave`/`handleOverwriteConfirm`'s save callbacks capture
+  // the eventId a save was FOR at `.mutate()` time and compare it against
+  // `currentEventIdRef.current` once the request settles, to tell whether
+  // the operator has since navigated to a DIFFERENT event's editor before
+  // that happened — see those functions' own comments for why this can
+  // happen (the dirty guard deliberately lets navigation proceed during a
+  // pending save).
+  const currentEventIdRef = React.useRef(eventId);
+  currentEventIdRef.current = eventId;
+
   // Which event's template has already been loaded into the reducer. This
   // single piece of state does TWO jobs:
   //  1. (Task 6's original job, previously a plain `initializedRef` boolean
@@ -130,7 +143,7 @@ export function BadgeEditorPage() {
   }, [eventId, initialized, templateQuery.isSuccess, templateQuery.data]);
 
   // --- Save model (Task 10) ---------------------------------------------
-  const saveTemplate = useSaveTemplate(eventId);
+  const saveTemplate = useSaveTemplate();
   // Set on an ApiError.status === 409 (stale version) from the save PUT;
   // cleared once the Reload or Overwrite resolution succeeds. `state.dirty`
   // stays true underneath this the whole time (a 409 never dispatches
@@ -197,21 +210,45 @@ export function BadgeEditorPage() {
     if (saveDisabled) return;
     setSaveErrorVisible(false);
     const template = serializeTemplateDoc(state.doc, originalRawRef.current);
+    // Codex round (Fix 4): the eventId THIS save is FOR. `eventId` itself is
+    // a plain render-time binding — reading it again from inside the
+    // callbacks below wouldn't detect a LATER navigation, since a stale
+    // closure only ever sees the value from when performSave was called.
+    // `currentEventIdRef` (above) is what lets these callbacks tell "this
+    // render's eventId" from "the eventId this save was actually for".
+    const savedForEventId = eventId;
     saveTemplate.mutate(
       { params: { path: { id: eventId } }, body: { template, version: state.version } },
       {
         onSuccess: (data) => {
-          // Refresh the snapshot to the exact object just PUT — never to a
-          // later `templateQuery.data.template` (see originalRawRef above).
-          originalRawRef.current = template;
-          dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+          // Stale: the operator has navigated to a DIFFERENT event's editor
+          // since this save was kicked off (the dirty guard's
+          // `shouldBlockFn` deliberately lets navigation proceed while
+          // `saveTemplate.isPending` is true, precisely so a save doesn't
+          // trap the operator on the page — see that function's own
+          // comment). Acting on `originalRawRef`/`dispatch` now would
+          // overwrite THAT OTHER event's baseline and falsely flip ITS pill
+          // to "Saved" with THIS save's version/timestamp. useSaveTemplate.ts's
+          // own cache seeding/invalidation already ran, unconditionally,
+          // keyed to the CAPTURED (this save's actual) eventId — only these
+          // UI reactions, which always act on whatever's CURRENTLY
+          // rendered, need to no-op here.
+          if (savedForEventId === currentEventIdRef.current) {
+            // Refresh the snapshot to the exact object just PUT — never to
+            // a later `templateQuery.data.template` (see originalRawRef
+            // above).
+            originalRawRef.current = template;
+            dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+          }
           onSaved?.();
         },
         onError: (error) => {
-          if (error instanceof ApiError && error.status === 409) {
-            setConflict(true);
-          } else {
-            setSaveErrorVisible(true);
+          if (savedForEventId === currentEventIdRef.current) {
+            if (error instanceof ApiError && error.status === 409) {
+              setConflict(true);
+            } else {
+              setSaveErrorVisible(true);
+            }
           }
           onFailed?.();
         },
@@ -393,24 +430,30 @@ export function BadgeEditorPage() {
       const result = await templateQuery.refetch();
       const currentVersion = result.data?.version ?? state.version;
       const template = serializeTemplateDoc(state.doc, originalRawRef.current);
+      // Codex round (Fix 4): same captured-eventId guard as performSave —
+      // see currentEventIdRef's own comment above.
+      const savedForEventId = eventId;
       saveTemplate.mutate(
         { params: { path: { id: eventId } }, body: { template, version: currentVersion } },
         {
           onSuccess: (data) => {
-            originalRawRef.current = template;
-            dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
-            setConflict(false);
-            setOverwriteDialogOpen(false);
-            // Final-review Important 5: a PRIOR overwrite attempt that
-            // itself failed (non-409, the `else` branch below) leaves this
-            // page-level inline error line up — it must not survive a
-            // LATER, successful retry. Nothing else on this success path
-            // clears it (performSave's own success branch does, but this
-            // is the SEPARATE overwrite-retry mutation call, not a
-            // performSave call).
-            setSaveErrorVisible(false);
+            if (savedForEventId === currentEventIdRef.current) {
+              originalRawRef.current = template;
+              dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
+              setConflict(false);
+              setOverwriteDialogOpen(false);
+              // Final-review Important 5: a PRIOR overwrite attempt that
+              // itself failed (non-409, the `else` branch below) leaves this
+              // page-level inline error line up — it must not survive a
+              // LATER, successful retry. Nothing else on this success path
+              // clears it (performSave's own success branch does, but this
+              // is the SEPARATE overwrite-retry mutation call, not a
+              // performSave call).
+              setSaveErrorVisible(false);
+            }
           },
           onError: (error) => {
+            if (savedForEventId !== currentEventIdRef.current) return;
             if (error instanceof ApiError && error.status === 409) {
               // Someone saved AGAIN between our refetch and this retry —
               // stay in conflict so the user can see the banner and retry.

@@ -1,5 +1,5 @@
-import { cn } from "@idento/ui";
-import { AlertCircle, AlertTriangle, Check, Loader2, type LucideIcon } from "lucide-react";
+import { StatusPill, type StatusPillStatus } from "@idento/ui";
+import { Loader2, Pencil, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 export type SaveState = "saved" | "saving" | "dirty" | "conflict";
@@ -38,56 +38,81 @@ export interface SaveStatePillProps {
   savedAt: string | null;
 }
 
-// Board 4c's save-state pill (Task 10) — purely presentational, no data
-// fetching or mutation of its own. BadgeEditorPage.tsx owns all the state
-// this reads and passes down as props.
+// Codex round (Fix 5): rebuilt on top of @idento/ui's shared StatusPill
+// instead of a hand-rolled pill, so the badge editor's save states share the
+// exact same visual language (icon+label+color, WCAG 1.4.1) as every other
+// status pill in the panel (readiness, attendee check-in, API keys, fonts,
+// ...). No @idento/ui changes needed. Status mapping:
+//  - saved    -> "ready"       success colors; StatusPill's own default
+//                CheckCircle2 icon, unchanged.
+//  - saving   -> "empty"       muted colors, per board 4c (NOT "in_progress"
+//                — that status's warning colors belong to "dirty" below) +
+//                a Loader2 icon override, with `[&_svg]:animate-spin`
+//                re-added explicitly via `className` since StatusPill only
+//                auto-spins the icon it renders under "in_progress".
+//  - dirty    -> "in_progress" warning colors (bg-warning/10 text-warning)
+//                match the pre-existing "Unsaved changes" reading exactly +
+//                a Pencil icon override — "in_progress"'s own default icon
+//                is Loader2 (a spinner), which would visually claim a save
+//                is already IN FLIGHT; Pencil reads as "unsaved edits"
+//                instead (picked over CircleAlert/AlertCircle specifically
+//                because that's the SAME icon "conflict" already uses below
+//                — Pencil avoids the collision). StatusPill unconditionally
+//                adds `animate-spin` to WHICHEVER icon renders under
+//                "in_progress" (packages/ui/src/components/status-pill.tsx),
+//                so `[&_svg]:animate-none` is passed via `className` to
+//                cancel it — a class+element descendant selector outranks
+//                the icon's own single-class `animate-spin` on CSS
+//                specificity alone, no @idento/ui change needed (same idiom
+//                as BulkBar.tsx's `[&_svg]:size-4` override comment).
+//  - conflict -> "error"       destructive colors; StatusPill's own default
+//                AlertCircle icon (lucide's "circle-alert"), unchanged.
+// `data-state` stays on an outer wrapper `<span>` — not StatusPill's own
+// `data-status`, which carries the STATUS name ("in_progress"), not the SAVE
+// state ("dirty") — specifically so the pre-existing
+// `data-testid="badge-save-state-pill"` + `data-state="..."` test hooks
+// throughout BadgeEditorPage.test.tsx keep working untouched.
+const STATUS_BY_SAVE_STATE: Record<SaveState, StatusPillStatus> = {
+  saved: "ready",
+  saving: "empty",
+  dirty: "in_progress",
+  conflict: "error",
+};
+
 export function SaveStatePill({ dirty, isPending, conflict, savedAt }: SaveStatePillProps) {
   const { t, i18n } = useTranslation();
   const state = computeSaveState({ dirty, isPending, conflict, savedAt });
   if (state === null) return null;
 
-  let icon: LucideIcon;
-  let className: string;
   let label: string;
+  let icon: LucideIcon | undefined;
+  let className: string | undefined;
   switch (state) {
     case "saved": {
       const time = savedAt
         ? new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(new Date(savedAt))
         : "";
-      icon = Check;
-      className = "bg-success/10 text-success";
       label = t("badgeSaved", { time });
       break;
     }
     case "saving":
-      icon = Loader2;
-      className = "bg-muted text-muted-foreground";
       label = t("badgeSaving");
+      icon = Loader2;
+      className = "[&_svg]:animate-spin";
       break;
     case "dirty":
-      icon = AlertTriangle;
-      className = "bg-warning/10 text-warning";
       label = t("badgeUnsaved");
+      icon = Pencil;
+      className = "[&_svg]:animate-none";
       break;
     case "conflict":
-      icon = AlertCircle;
-      className = "bg-destructive/10 text-destructive";
       label = t("badgeConflict");
       break;
   }
 
-  const Icon = icon;
   return (
-    <span
-      data-testid="badge-save-state-pill"
-      data-state={state}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-0.5 text-caption font-medium",
-        className,
-      )}
-    >
-      <Icon aria-hidden className={cn("size-3.5 shrink-0", state === "saving" && "animate-spin")} />
-      {label}
+    <span data-testid="badge-save-state-pill" data-state={state}>
+      <StatusPill status={STATUS_BY_SAVE_STATE[state]} label={label} icon={icon} className={className} />
     </span>
   );
 }

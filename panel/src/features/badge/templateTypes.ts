@@ -128,8 +128,40 @@ export function parseTemplateDoc(raw: unknown): BadgeTemplateDoc {
   const elements = rawElements
     .map(narrowElement)
     .filter((element): element is BadgeElement => element !== null);
+  normalizeDuplicateIds(elements);
 
   return { width_mm, height_mm, dpi, elements };
+}
+
+// Codex round (Fix 6): duplicate element ids are legal in legacy docs
+// (backend's zpl.ParseBadgeTemplate does not enforce id uniqueness), but
+// left un-normalized they make the editor reducer's own id-keyed operations
+// ambiguous or wrong — editorState.ts's "remove" filters OUT every element
+// matching the target id (deleting BOTH copies at once instead of one), and
+// "select"/"update"/"move"/"resize" (which all resolve by
+// `id === action.id`) can't distinguish which copy is meant either. Mutates
+// `elements` in place (each entry's `id` only — parseTemplateDoc has just
+// freshly built both the array and each element object via `narrowElement`,
+// so nothing outside this function has seen them yet). The FIRST occurrence
+// of any id keeps it; every SUBSEQUENT element sharing that id gets a fresh
+// `crypto.randomUUID()` instead, making every id in the array unique.
+//
+// This is consistent with serializeTemplateDoc's existing merge semantics,
+// not a change to them: that function's own `originalById` map is ALREADY
+// consume-on-use (first raw occurrence wins, then removed) — a doc's second
+// duplicate-id element was ALREADY guaranteed no original merge partner (its
+// extras were already lost on save) before this fix, so renumbering it here
+// takes nothing away that a save wasn't already discarding. What changes is
+// "remove"/"select"/etc. no longer being ambiguous about WHICH element they
+// mean, which is this fix's actual point.
+function normalizeDuplicateIds(elements: BadgeElement[]): void {
+  const seenIds = new Set<string>();
+  for (const element of elements) {
+    if (seenIds.has(element.id)) {
+      element.id = crypto.randomUUID();
+    }
+    seenIds.add(element.id);
+  }
 }
 
 // Merges an edited typed doc back onto `originalRaw` (the same raw value
