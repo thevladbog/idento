@@ -225,24 +225,29 @@ export function BadgeEditorPage() {
 
   // --- Dirty guard (Task 11) ---------------------------------------------
   // `shouldBlockFn` gets `{current, next, action}` for every navigation
-  // attempt. Comparing `next.fullPath`/`current.fullPath` — the route's
-  // PATTERN (e.g. "/events/$eventId/badge"), never the resolved param
-  // values or search string — deliberately does NOT distinguish switching
-  // between two EVENTS' own badge editors (same fullPath, different
-  // `$eventId`) from a future same-event search-param change (Task 12's
-  // `?attendee=` switcher, also same fullPath): both count as "staying on
-  // this same badge route" and are never blocked. This matches the
-  // existing cross-event navigation tests above (Task 6/10's "re-seeds …",
-  // "resets … when navigating to another event", "keeps Save disabled
-  // during the window …"), which navigate directly via `router.navigate`
-  // while dirty and expect no guard interaction — only navigating to a
-  // genuinely DIFFERENT route (another workspace tab, Home, …) is guarded.
+  // attempt. Comparing `next.pathname`/`current.pathname` — the RESOLVED
+  // path (e.g. "/events/evt-1/badge"), not the route's PATTERN
+  // ("/events/$eventId/badge") — is deliberate (final-review Important 2):
+  // comparing the pattern used to also treat switching between two EVENTS'
+  // own badge editors (same pattern, different `$eventId`) as "staying on
+  // this same badge route", silently discarding in-progress edits on a
+  // cross-event nav. `pathname` still keeps the ONE exemption that pattern
+  // comparison was trying to express — a future same-event, search-param-only
+  // change (Task 12's `?attendee=` switcher) leaves `pathname` identical
+  // (only `search` differs), so it stays unblocked exactly as before. This
+  // matches the existing cross-event navigation tests above (Task 6/10's
+  // "re-seeds … (clean doc)", "resets … when navigating to another event",
+  // "keeps Save disabled during the window …"), which navigate directly via
+  // `router.navigate` on a CLEAN doc and expect no guard interaction, and
+  // the "blocks a cross-event badge->badge navigation while dirty" test,
+  // which proves the guard now DOES engage once the doc is dirty — only a
+  // clean doc (or a same-pathname change) ever passes straight through.
   // `!saveTemplate.isPending` additionally lets a navigation attempt through
   // uninterrupted while the top-bar Save button's own PUT is already in
   // flight, rather than layering the guard on top of an in-progress save.
   const resolver = useBlocker({
     shouldBlockFn: ({ current, next }) => (
-      state.dirty && !saveTemplate.isPending && next.fullPath !== current.fullPath
+      state.dirty && !saveTemplate.isPending && next.pathname !== current.pathname
     ),
     enableBeforeUnload: () => state.dirty,
     withResolver: true,
@@ -322,8 +327,26 @@ export function BadgeEditorPage() {
   // here instead of staying that component's own internal state.
   function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
-    if (!state.dirty || saveTemplate.isPending) return;
     if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen) return;
+    // Deselect-first, regardless of where focus currently is (final-review
+    // Important 4). Task 8's canvas contract (BadgeCanvas.tsx's own
+    // artboard keydown handler) only swallows Escape and deselects when the
+    // keystroke actually ORIGINATES on the artboard — it stops propagation
+    // there, so this handler never even sees that event. But a selection
+    // can persist while focus moves elsewhere (e.g. into a PropertiesPane
+    // input, or the elements pane), and pressing Escape from there bypasses
+    // the canvas's handler entirely, landing here directly. Checking
+    // `state.selectedId` here too — BEFORE the dirty check below, and
+    // unconditionally (not gated on `state.dirty`, mirroring
+    // BadgeCanvas.tsx's own unconditional deselect) — means the FIRST
+    // Escape always deselects when something is selected, no matter where
+    // focus is; only a SECOND Escape, once nothing is selected, can reach
+    // the dirty check and open the revert-guard dialog.
+    if (state.selectedId) {
+      dispatch({ type: "select", id: null });
+      return;
+    }
+    if (!state.dirty || saveTemplate.isPending) return;
     setGuardRevertOpen(true);
   }
 
@@ -378,6 +401,14 @@ export function BadgeEditorPage() {
             dispatch({ type: "saved", version: data.version, savedAt: new Date().toISOString() });
             setConflict(false);
             setOverwriteDialogOpen(false);
+            // Final-review Important 5: a PRIOR overwrite attempt that
+            // itself failed (non-409, the `else` branch below) leaves this
+            // page-level inline error line up — it must not survive a
+            // LATER, successful retry. Nothing else on this success path
+            // clears it (performSave's own success branch does, but this
+            // is the SEPARATE overwrite-retry mutation call, not a
+            // performSave call).
+            setSaveErrorVisible(false);
           },
           onError: (error) => {
             if (error instanceof ApiError && error.status === 409) {
@@ -520,6 +551,13 @@ export function BadgeEditorPage() {
         onDiscard={handleGuardDiscard}
         onKeep={handleGuardKeep}
         onSave={handleGuardSave}
+        // Final-review Important 3: `performSave` (both this dialog's Save
+        // button and the top-bar one share it) silently no-ops when
+        // `saveDisabled` is true — most notably an unresolved `conflict`.
+        // Passing the SAME page-level `saveDisabled` here means the button
+        // itself now reflects that instead of looking clickable and doing
+        // nothing.
+        saveDisabled={saveDisabled}
       />
 
       {templateQuery.isLoading ? (

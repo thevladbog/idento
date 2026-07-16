@@ -34,10 +34,21 @@ export interface GuardDialogProps {
   onDiscard: () => void;
   onKeep: () => void;
   onSave: () => void;
+  // Final-review Important 3: BadgeEditorPage's `performSave` is the ONE
+  // save path this dialog's Save/Save & leave button shares with the
+  // top-bar Save button, and it silently no-ops whenever the page's own
+  // `saveDisabled` is true (most notably: an unresolved conflict — the
+  // operator must resolve the conflict banner's Reload/Overwrite first, not
+  // save over it from inside this dialog). Without this prop the button
+  // stayed visually enabled through that and a click did nothing with no
+  // feedback at all. Deliberately separate from `busy`: Discard/Keep are
+  // NOT part of this gate, only Save is — a conflict doesn't stop the
+  // operator from discarding or staying to look at it.
+  saveDisabled: boolean;
 }
 
 export function GuardDialog({
-  open, busy, saveLabel, onDiscard, onKeep, onSave,
+  open, busy, saveLabel, onDiscard, onKeep, onSave, saveDisabled,
 }: GuardDialogProps) {
   const { t } = useTranslation();
 
@@ -72,7 +83,7 @@ export function GuardDialog({
           <Button type="button" variant="outline" disabled={busy} onClick={onKeep}>
             {t("badgeGuardKeep")}
           </Button>
-          <Button type="button" disabled={busy} onClick={onSave}>
+          <Button type="button" disabled={busy || saveDisabled} onClick={onSave}>
             {saveLabel}
           </Button>
         </div>

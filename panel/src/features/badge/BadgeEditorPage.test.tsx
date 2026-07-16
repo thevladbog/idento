@@ -311,7 +311,7 @@ describe("BadgeEditorPage", () => {
     expect(canvasAfter.textContent).not.toMatch(/100/);
   });
 
-  it("re-seeds the editor from the new event's template when navigating to another event", async () => {
+  it("re-seeds the editor from the new event's template when navigating to another event (clean doc)", async () => {
     const { router } = renderPage();
 
     const canvas = await screen.findByTestId("badge-pane-canvas");
@@ -319,11 +319,50 @@ describe("BadgeEditorPage", () => {
 
     // The refetch guard above must be scoped to ONE event — switching to a
     // different event's editor re-seeds from that event's template rather
-    // than showing evt-1's stale doc.
+    // than showing evt-1's stale doc. Doc is clean here, so the dirty guard
+    // (below) never engages and the navigation passes straight through.
     await act(async () => {
       await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
     });
 
+    await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+    expect(screen.getByTestId("badge-pane-canvas").textContent).not.toMatch(/90/);
+  });
+
+  // Final-review Important 2: `shouldBlockFn` used to compare `fullPath` --
+  // the route PATTERN ("/events/$eventId/badge"), not the resolved path --
+  // so switching from evt-1's badge editor to evt-2's own (same pattern,
+  // different `$eventId`) fell through the guard entirely while dirty,
+  // silently discarding in-progress edits. The fix compares `pathname` (the
+  // RESOLVED path) instead: "/events/evt-1/badge" -> "/events/evt-2/badge"
+  // genuinely differs, so this must now be guarded exactly like navigating
+  // to another workspace tab is (see the "dirty guard (Task 11)" describe
+  // block below) -- while a hypothetical same-event, search-param-only
+  // change (Task 12's `?attendee=` switcher) would keep the SAME pathname
+  // and stay exempt, per BadgeEditorPage.tsx's own `shouldBlockFn` comment.
+  it("blocks a cross-event badge->badge navigation while dirty; Discard proceeds and the new event's template then re-seeds the editor", async () => {
+    const user = userEvent.setup();
+    const { router } = renderPage();
+
+    const canvas = await screen.findByTestId("badge-pane-canvas");
+    expect(canvas.textContent).toMatch(/90/); // evt-1's doc
+    await addTextElement(user);
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    });
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Unsaved changes")).toBeInTheDocument();
+    // Still evt-1's doc -- the blocked navigation hasn't proceeded yet.
+    expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/90/);
+
+    await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Same refetch-guard scoping as the clean-doc test above: once the
+    // (previously blocked) navigation proceeds, the editor re-seeds from
+    // evt-2's own template rather than showing evt-1's stale doc.
     await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
     expect(screen.getByTestId("badge-pane-canvas").textContent).not.toMatch(/90/);
   });
@@ -555,28 +594,39 @@ describe("BadgeEditorPage save model (Task 10)", () => {
       await triggerConflict(user);
       expect(putRequests).toHaveLength(1);
 
-      // Someone else bumped the version meanwhile; the retry PUT should
-      // succeed this time.
+      // Final-review Important 5: a PRIOR overwrite attempt that itself
+      // failed with a non-409 leaves the page-level inline error line up
+      // (handleOverwriteConfirm's onError branch sets `saveErrorVisible`
+      // too, not just `overwriteFailed` -- see that test above). That line
+      // must not survive a LATER, successful retry.
       templateResponse = { template: { width_mm: 90, height_mm: 55, dpi: 300, elements: [] }, version: 9 };
-      putStatus = 200;
-
+      putStatus = 500;
       await user.click(screen.getByRole("button", { name: "Overwrite" }));
       const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "Confirm overwrite" }));
+      expect(await within(dialog).findByText("Couldn't save the badge template. Try again.")).toBeInTheDocument();
 
-      await waitFor(() => expect(putRequests).toHaveLength(2));
+      // Someone else bumped the version meanwhile; the retry PUT should
+      // succeed this time.
+      putStatus = 200;
+      await user.click(within(dialog).getByRole("button", { name: "Confirm overwrite" }));
+
+      await waitFor(() => expect(putRequests).toHaveLength(3));
       // Re-derived via the GET refetch (ApiError doesn't retain the 409
       // body's current_version — see BadgeEditorPage.tsx's comment), not
       // the stale local `state.version`.
-      expect(putRequests[1].body.version).toBe(9);
+      expect(putRequests[2].body.version).toBe(9);
       // The LOCAL edit (the added element) is what gets persisted, not the
       // server's `[]` — Overwrite means "my version wins".
-      expect(putRequests[1].body.template.elements).toHaveLength(1);
+      expect(putRequests[2].body.template.elements).toHaveLength(1);
 
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       expect(
         screen.queryByText("Template changed on the server — review before overwriting."),
       ).not.toBeInTheDocument();
+      // The stale inline error line from the earlier FAILED attempt must be
+      // gone too, not just the conflict banner.
+      expect(screen.queryByText("Couldn't save the badge template. Try again.")).not.toBeInTheDocument();
       const pill = await screen.findByTestId("badge-save-state-pill");
       expect(pill).toHaveAttribute("data-state", "saved");
     });
@@ -692,6 +742,16 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     });
   });
 
+  // Final-review Important 2 ripple: these three tests navigate cross-event
+  // while `state.dirty` is true (a failed save / an open conflict / a
+  // just-dirtied doc never clears `dirty`), directly awaiting
+  // `router.navigate` as if it always passed straight through. Under the
+  // OLD `fullPath` (route-pattern) comparison it did, because the pattern
+  // is the same ("/events/$eventId/badge") — the exact bug this fix closes.
+  // Under the new `pathname` comparison this is correctly guarded, so each
+  // test now navigates through a blocked `void router.navigate(...)` +
+  // Discard, same as the dedicated cross-event guard test above, before
+  // observing the post-navigation assertions the tests were already making.
   it("resets the inline save error when navigating to another event", async () => {
     putStatus = 500;
     const user = userEvent.setup();
@@ -702,9 +762,12 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Couldn't save the badge template. Try again.")).toBeInTheDocument();
 
-    await act(async () => {
-      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
     });
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+
     await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
 
     // evt-1's failure must not linger over evt-2's editor.
@@ -721,9 +784,12 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "conflict");
 
-    await act(async () => {
-      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
     });
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+
     await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
 
     // evt-1's conflict must not linger over evt-2's editor: no banner, and
@@ -744,14 +810,17 @@ describe("BadgeEditorPage save model (Task 10)", () => {
 
     // Slow down evt-2's GET so the navigation window is observable.
     getDelayMs = 60;
-    await act(async () => {
-      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
     });
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
-    // Immediately after navigating (before evt-2's template resolves),
-    // `state.dirty` still carries evt-1's stale `true` — Save must stay
-    // disabled anyway, or a click here would PUT evt-1's doc to evt-2's
-    // path (Task 6/10 handoff: the `initialized` gate).
+    // Immediately after the (now-proceeding) navigation (before evt-2's
+    // template resolves), `state.dirty` still carries evt-1's stale `true`
+    // — Save must stay disabled anyway, or a click here would PUT evt-1's
+    // doc to evt-2's path (Task 6/10 handoff: the `initialized` gate).
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
@@ -897,6 +966,35 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  // Final-review Important 3: `performSave` (the ONE save path both the
+  // top-bar Save button and this dialog's own Save/Save & leave button call)
+  // silently no-ops when `saveDisabled` is true -- and `saveDisabled`
+  // includes an unresolved `conflict`. Previously the guard dialog's Save
+  // button stayed enabled through that, so clicking it while a conflict
+  // banner was already up (e.g. the operator tried to navigate away instead
+  // of resolving it first) did nothing with no feedback at all. The button
+  // must instead render disabled, same as the exhaustive busy-gating above.
+  it("disables the guard's Save & leave button while a conflict is unresolved, instead of a silent no-op", async () => {
+    putStatus = 409;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "conflict");
+
+    act(() => {
+      void router.navigate({ to: "/events/$eventId/attendees", params: { eventId: "evt-1" } });
+    });
+    const dialog = await screen.findByRole("dialog");
+
+    expect(within(dialog).getByRole("button", { name: "Save & leave" })).toBeDisabled();
+    // Discard/Keep are NOT part of this gate — only the Save action is
+    // meaningless while a conflict sits unresolved underneath.
+    expect(within(dialog).getByRole("button", { name: "Discard changes" })).not.toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Keep editing" })).not.toBeDisabled();
+  });
+
   it("dismissing the dialog via Escape (not clicking a button) also maps to Keep editing — route unchanged, no PUT", async () => {
     const user = userEvent.setup();
     const { router } = renderPage();
@@ -972,6 +1070,36 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
       fireEvent.keyDown(artboard, { key: "Escape" }); // nothing selected now: bubbles to the page
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    });
+
+    // Final-review Important 4: Task 8's canvas contract (swallow Escape,
+    // deselect-first) only fires when the keydown actually originates ON
+    // the artboard. A selection can persist while focus moves elsewhere
+    // (e.g. into a PropertiesPane input, or — as here — the elements pane),
+    // and pressing Escape from there used to bypass the canvas's own
+    // handler entirely and go straight to `handlePageKeyDown`, which
+    // (before this fix) never checked `state.selectedId` at all — so it
+    // popped the revert-guard dialog immediately instead of deselecting
+    // first. `handlePageKeyDown` must apply the SAME deselect-first rule
+    // regardless of where focus currently is.
+    it("deselects on Escape even when focus is outside the canvas, then opens the guard on a second Escape once nothing is selected", async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const elementsPane = await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user); // adds AND selects the new element; doc is now dirty
+      expect(screen.getByTestId("badge-pane-properties")).not.toHaveTextContent(
+        "Select an element to edit its properties.",
+      );
+
+      // Focus/event origin is the ELEMENTS pane, not the canvas artboard.
+      fireEvent.keyDown(elementsPane, { key: "Escape" });
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(screen.getByTestId("badge-pane-properties")).toHaveTextContent(
+        "Select an element to edit its properties.",
+      );
+
+      fireEvent.keyDown(elementsPane, { key: "Escape" }); // nothing selected now: opens the guard
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
     });
 
