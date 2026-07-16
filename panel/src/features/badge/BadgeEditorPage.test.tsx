@@ -65,6 +65,19 @@ const server = startMswServer(
     }
     return HttpResponse.json(templateResponse);
   }),
+  // Task 7's ElementsPane needs `field_schema` (bindings.ts's
+  // bindingOptions) — stubbed here (this file only cares about page-level
+  // assembly, not ElementsPane's own binding behavior, which
+  // ElementsPane.test.tsx owns). Same fixed-shape convention as
+  // EventSettingsPage.test.tsx's own /api/events/:id stub.
+  http.get("http://api.test/api/events/:id", ({ params }) => HttpResponse.json({
+    id: params.id,
+    tenant_id: "t1",
+    name: "Partner Day",
+    field_schema: ["dietary"],
+    created_at: "",
+    updated_at: "",
+  })),
 );
 void server;
 

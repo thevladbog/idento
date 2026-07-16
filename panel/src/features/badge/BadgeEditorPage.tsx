@@ -4,8 +4,10 @@ import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { editorReducer, initialEditorState } from "./editorState";
+import { ElementsPane } from "./ElementsPane";
 import { useBadgeTemplate } from "./hooks";
 import { parseTemplateDoc } from "./templateTypes";
+import { $api } from "../../shared/api/query";
 
 // Same rationale as AttendeesPage.tsx / ZonesPage.tsx / StaffPage.tsx:
 // `getRouteApi` with the route's string id avoids a circular import with
@@ -37,6 +39,14 @@ export function BadgeEditorPage() {
   const { t } = useTranslation();
   const { eventId } = routeApi.useParams();
   const templateQuery = useBadgeTemplate(eventId);
+  // Same fetch EventSettingsPage.tsx uses to get `event` — the Elements
+  // pane needs `field_schema` to tell a recognized binding from an
+  // orphaned one (bindings.ts's bindingOptions). Deliberately NOT gated on:
+  // the pane just falls back to `[]` (standard bindings only) until this
+  // resolves or if it errors, rather than blocking the whole editor shell
+  // on a second query the way the template load already is.
+  const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
+  const fieldSchema = eventQuery.data?.field_schema ?? [];
 
   const [state, dispatch] = React.useReducer(
     editorReducer,
@@ -112,9 +122,14 @@ export function BadgeEditorPage() {
         </div>
       ) : (
         <div className="grid flex-1 grid-cols-[240px_1fr_280px] gap-4">
-          <div className="rounded-lg border border-border p-4" data-testid="badge-pane-elements">
-            <h3 className="text-body font-medium text-muted-foreground">{t("badgePaneElements")}</h3>
-          </div>
+          <ElementsPane
+            doc={state.doc}
+            selectedId={state.selectedId}
+            onSelect={(id) => dispatch({ type: "select", id })}
+            onAdd={(element) => dispatch({ type: "add", element })}
+            onRemove={(id) => dispatch({ type: "remove", id })}
+            fieldSchema={fieldSchema}
+          />
 
           <div
             className="flex flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 p-4 text-center"
