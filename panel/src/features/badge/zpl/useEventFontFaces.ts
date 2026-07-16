@@ -1,17 +1,29 @@
 // P3.2 Task 2 -- event font-faces runtime.
 //
 // Ports web/src/lib/fonts.ts:84-110's `loadEventFonts` (fetch the event's
-// fonts list -> `new FontFace(family, url(...), {weight, style})` -> `await
-// load()` -> `document.fonts.add(fontFace)`), with one deliberate fix over
-// web (plan reconciliation #9): web fires `loadEventFonts` un-awaited from a
-// `useEffect`, so a print/preview action started immediately after can (and
-// in practice sometimes does) run before the fonts have actually loaded,
-// silently rasterizing the browser's fallback glyphs into the printed
-// bitmap. This hook instead exposes an explicit, pollable `status` so a
-// generation path can `await` (or gate on) `status === "ready"` before it
-// ever calls the ZPL generator.
+// fonts list -> FontFace -> `await load()` -> `document.fonts.add(fontFace)`)
+// with TWO deliberate fixes over web:
+//
+// 1. (plan reconciliation #9) web fires `loadEventFonts` un-awaited from a
+//    `useEffect`, so a print/preview action started immediately after can
+//    (and in practice sometimes does) run before the fonts have actually
+//    loaded, silently rasterizing the browser's fallback glyphs into the
+//    printed bitmap. This hook instead exposes an explicit, pollable
+//    `status` so a generation path can `await` (or gate on) `status ===
+//    "ready"` before it ever calls the ZPL generator.
+// 2. web constructs `new FontFace(family, "url(.../api/fonts/{id}/file)")`,
+//    which makes the BROWSER fetch the font bytes itself -- an internal
+//    fetch that carries no Authorization header. But that endpoint is NOT
+//    public: it's registered inside the JWT-gated `/api` group
+//    (backend/internal/handler/handler.go:55 `api.Use(middleware.JWT())`,
+//    :159 the route itself -- its "Public font file endpoint" comment is
+//    wrong), so web's url() approach 401s against it. This hook instead
+//    fetches the bytes through the shared authenticated `api` client (the
+//    exact pattern fontCoverage.ts already uses for the same endpoint) and
+//    hands the resulting ArrayBuffer straight to the FontFace constructor
+//    (`new FontFace(family, source)` accepts BinaryData per lib.dom.d.ts).
 import * as React from "react";
-import { getApiBaseUrl } from "../../../shared/api/http";
+import { api } from "../../../shared/api/http";
 import { $api } from "../../../shared/api/query";
 import type { components } from "../../../shared/api/schema";
 
@@ -81,20 +93,34 @@ export function useEventFontFaces(eventId: string, enabled: boolean): UseEventFo
       let anyFailed = false;
 
       for (const font of loadableFonts) {
-        const fontUrl = `${getApiBaseUrl()}/api/fonts/${font.id}/file`;
         try {
-          const fontFace = new FontFace(font.family, `url(${fontUrl})`, {
+          // Authenticated bytes fetch -- NOT a url() source; see fix #2 in
+          // the module comment. Non-2xx throws ApiError via the shared
+          // client's errors middleware, landing in this font's catch below.
+          const { data } = await api.GET("/api/fonts/{id}/file", {
+            params: { path: { id: font.id } },
+            parseAs: "arrayBuffer",
+          });
+          if (cancelled) return;
+          if (!data) {
+            throw new Error(`Empty response fetching font bytes for font ${font.id}`);
+          }
+          const fontFace = new FontFace(font.family, data, {
             weight: font.weight,
             style: font.style,
           });
+          // With a BinaryData source the font is parsed at construction;
+          // load() still resolves/rejects with the parse outcome, so this
+          // await surfaces corrupt-bytes failures the same way url()
+          // network failures surfaced before.
           await fontFace.load();
           if (cancelled) return;
           document.fonts.add(fontFace);
           loadedFamilies.push(font.family);
         } catch {
-          // Per-font isolation: one font failing to load must not stop the
-          // others from being tried and added -- only flip the overall
-          // status to "error" once every font has had its chance.
+          // Per-font isolation: one font failing to fetch/parse/load must
+          // not stop the others from being tried and added -- only flip the
+          // overall status to "error" once every font has had its chance.
           anyFailed = true;
         }
       }

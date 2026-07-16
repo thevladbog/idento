@@ -28,11 +28,21 @@ function fontListItem(id: string, family: string) {
 }
 
 let fontsFetchCount = 0;
+let fileFetchCount = 0;
+
+// Arbitrary bytes -- MockFontFace never parses them; what matters is that
+// the hook fetches them THROUGH the authenticated api client and hands the
+// resulting ArrayBuffer (not a url() string) to the FontFace constructor.
+const FAKE_FONT_BYTES = new TextEncoder().encode("fake-font-bytes").buffer as ArrayBuffer;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/fonts", () => {
     fontsFetchCount += 1;
     return HttpResponse.json([fontListItem("f1", "GoodFont"), fontListItem("f2", "BadFont")]);
+  }),
+  http.get("http://api.test/api/fonts/:id/file", () => {
+    fileFetchCount += 1;
+    return HttpResponse.arrayBuffer(FAKE_FONT_BYTES);
   }),
 );
 void server;
@@ -47,11 +57,19 @@ function wrapper({ children }: { children: ReactNode }) {
 // rejects per-instance, so this mirrors the real failure shape.
 let failFamilies: Set<string>;
 let addedFaces: string[];
+// Every `source` the FontFace constructor received, in construction order --
+// the regression pin for the authenticated-bytes fix: sources must be
+// ArrayBuffers fetched through the api client, never a `url(...)` string
+// (a url() source makes the BROWSER fetch the font itself, without the
+// Authorization header the JWT-gated endpoint requires -- see the hook's
+// module comment).
+let constructedSources: unknown[];
 
 class MockFontFace {
   family: string;
-  constructor(family: string, _src: string, _descriptors?: { weight?: string; style?: string }) {
+  constructor(family: string, source: unknown, _descriptors?: { weight?: string; style?: string }) {
     this.family = family;
+    constructedSources.push(source);
   }
   load(): Promise<MockFontFace> {
     if (failFamilies.has(this.family)) {
@@ -64,6 +82,7 @@ class MockFontFace {
 function stubFontFaceApi() {
   failFamilies = new Set();
   addedFaces = [];
+  constructedSources = [];
   (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
   Object.defineProperty(document, "fonts", {
     value: { add: (face: MockFontFace) => addedFaces.push(face.family) },
@@ -83,6 +102,7 @@ describe("useEventFontFaces", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
     fontsFetchCount = 0;
+    fileFetchCount = 0;
     stubFontFaceApi();
   });
 
@@ -100,11 +120,49 @@ describe("useEventFontFaces", () => {
     expect([...addedFaces].sort()).toEqual(["BadFont", "GoodFont"]);
   });
 
+  it("constructs each FontFace from authenticated bytes (ArrayBuffer), never a url() string", async () => {
+    const { result } = renderHook(() => useEventFontFaces("evt-1", true), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+
+    // The bytes must have come through the api client (MSW handler hit once
+    // per font) and each FontFace must receive an ArrayBuffer source -- a
+    // url() string here would mean the browser fetches the font itself,
+    // WITHOUT the Authorization header, and 401s against the JWT-gated
+    // endpoint (backend/internal/handler/handler.go:55,159).
+    expect(fileFetchCount).toBe(2);
+    expect(constructedSources).toHaveLength(2);
+    for (const source of constructedSources) {
+      expect(source).toBeInstanceOf(ArrayBuffer);
+    }
+  });
+
   it("stays idle when `enabled` is false -- no fetch, no load attempt", async () => {
     renderHook(() => useEventFontFaces("evt-1", false), { wrapper });
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(fontsFetchCount).toBe(0);
+    expect(fileFetchCount).toBe(0);
     expect(addedFaces).toEqual([]);
+  });
+
+  it("loads exactly once when `enabled` flips to true after mount", async () => {
+    const { result, rerender } = renderHook(
+      ({ enabled }: { enabled: boolean }) => useEventFontFaces("evt-1", enabled),
+      { wrapper, initialProps: { enabled: false } },
+    );
+
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(result.current.status).toBe("idle");
+    expect(fontsFetchCount).toBe(0);
+
+    rerender({ enabled: true });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(fontsFetchCount).toBe(1);
+    expect(addedFaces.length).toBe(2);
+
+    // A further re-render (still enabled, same event) must not re-load.
+    rerender({ enabled: true });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(addedFaces.length).toBe(2);
   });
 
   it("isolates a failing font: overall status is 'error' but the other font is still added", async () => {
