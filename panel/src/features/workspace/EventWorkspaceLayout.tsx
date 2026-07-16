@@ -26,12 +26,13 @@ const routeApi = getRouteApi("/_app/events/$eventId");
 // matching (e.g. `useMatchRoute`): a plain suffix check is simpler and
 // doesn't tie this component's types to the exact child route objects
 // declared in router.tsx.
-function useActiveRailTab(): "overview" | "settings" | "attendees" | "zones" | "staff" {
+function useActiveRailTab(): "overview" | "settings" | "attendees" | "zones" | "staff" | "badge" {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   if (pathname.endsWith("/settings")) return "settings";
   if (pathname.endsWith("/attendees")) return "attendees";
   if (pathname.endsWith("/zones")) return "zones";
   if (pathname.endsWith("/staff")) return "staff";
+  if (pathname.endsWith("/badge")) return "badge";
   return "overview";
 }
 

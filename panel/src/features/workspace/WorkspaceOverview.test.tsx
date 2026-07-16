@@ -121,7 +121,7 @@ describe("WorkspaceOverview", () => {
     expect(screen.getByText("Everything your team needs before doors open.")).toBeInTheDocument();
   });
 
-  it("renders exactly the two not-done steps in fixed pipeline order — badge locked, staff a real CTA link", async () => {
+  it("renders exactly the two not-done steps in fixed pipeline order — badge and staff both real CTA links", async () => {
     renderOverview();
 
     const list = await screen.findByTestId("workspace-next-steps");
@@ -140,12 +140,13 @@ describe("WorkspaceOverview", () => {
     expect(badgeIndex).toBeGreaterThanOrEqual(0);
     expect(staffIndex).toBeGreaterThan(badgeIndex);
 
-    // badge has no real screen yet — stays the locked, non-interactive chip.
-    expect(within(list).getAllByText("Coming soon")).toHaveLength(1);
-    // staff has a real screen (Task 5) — renders as a genuine link CTA, not
-    // a button and not another locked chip.
-    const staffLink = within(list).getByRole("link", { name: "Open" });
-    expect(staffLink).toHaveAttribute("href", "/events/evt-1/staff");
+    // badge now has a real screen (Task 6 of this phase) — both rows render
+    // as genuine link CTAs, not buttons and not the locked chip.
+    expect(within(list).queryByText("Coming soon")).not.toBeInTheDocument();
+    const links = within(list).getAllByRole("link", { name: "Open" });
+    expect(links).toHaveLength(2);
+    expect(links[0]).toHaveAttribute("href", "/events/evt-1/badge");
+    expect(links[1]).toHaveAttribute("href", "/events/evt-1/staff");
     expect(within(list).queryAllByRole("button")).toHaveLength(0);
   });
 

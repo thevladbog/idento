@@ -11,7 +11,7 @@ type ReadinessStep = components["schemas"]["ReadinessStep"];
 export interface WorkspaceRailProps {
   eventId: string;
   readiness: EventReadinessResponse | undefined;
-  active: "overview" | "settings" | "attendees" | "zones" | "staff";
+  active: "overview" | "settings" | "attendees" | "zones" | "staff" | "badge";
 }
 
 // Board 1f — the left-rail readiness pipeline for the event workspace. Pure,
@@ -159,18 +159,21 @@ function StepRow({
     </>
   );
 
-  // Attendees (Task 5 of P2.1), Zones (Task 2), and Staff (Task 5 of this
-  // phase) are the readiness steps with a real screen behind them so far —
-  // they become live Links while badge/equipment stay exactly as they were
-  // (plain, always-locked rows) until their own screens land in later tasks.
-  if (step.key === "attendees" || step.key === "zones" || step.key === "staff") {
+  // Attendees (Task 5 of P2.1), Zones (Task 2), Staff (Task 5 of P2.2), and
+  // Badge (Task 6 of P3.1) are the readiness steps with a real screen behind
+  // them so far — they become live Links while equipment stays exactly as
+  // it was (a plain, always-locked row) until its own screen lands in a
+  // later phase.
+  if (step.key === "attendees" || step.key === "zones" || step.key === "staff" || step.key === "badge") {
     const isActive = active === step.key;
     const to =
       step.key === "attendees"
         ? "/events/$eventId/attendees"
         : step.key === "zones"
           ? "/events/$eventId/zones"
-          : "/events/$eventId/staff";
+          : step.key === "staff"
+            ? "/events/$eventId/staff"
+            : "/events/$eventId/badge";
     return (
       <Link
         to={to}

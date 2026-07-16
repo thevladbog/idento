@@ -141,20 +141,24 @@ function NextStepRow({ stepKey, step, eventId }: { stepKey: NextStepKey; step: R
         <p className="text-body font-medium text-foreground">{t(STEP_LABEL_KEYS[step.key])}</p>
         <p className="text-caption text-muted-foreground">{t(NEXT_DESCRIPTION_KEYS[stepKey])}</p>
       </div>
-      {/* attendees/staff have a real screen behind them now (Tasks 2/5) —
-          real link CTAs. badge/equipment don't exist yet, so they keep the
-          muted, non-interactive chip: this mirrors the rail's
-          always-locked, never-a-dead-link pattern (WorkspaceRail's Check-in
-          row) rather than offering a fake CTA. */}
-      {stepKey === "attendees" ? (
+      {/* attendees/staff have had a real screen behind them since Tasks 2/5,
+          and badge joins them as of Task 6 (P3.1) — all three get the real
+          link CTA. equipment has no screen yet, so it keeps the muted,
+          non-interactive chip: this mirrors the rail's always-locked,
+          never-a-dead-link pattern (WorkspaceRail's Check-in row) rather
+          than offering a fake CTA. */}
+      {stepKey === "attendees" || stepKey === "badge" || stepKey === "staff" ? (
         <Button asChild variant="outline" size="sm" className="shrink-0 self-start">
-          <Link to="/events/$eventId/attendees" params={{ eventId }}>
-            {t("workspaceStepOpen")}
-          </Link>
-        </Button>
-      ) : stepKey === "staff" ? (
-        <Button asChild variant="outline" size="sm" className="shrink-0 self-start">
-          <Link to="/events/$eventId/staff" params={{ eventId }}>
+          <Link
+            to={
+              stepKey === "attendees"
+                ? "/events/$eventId/attendees"
+                : stepKey === "badge"
+                  ? "/events/$eventId/badge"
+                  : "/events/$eventId/staff"
+            }
+            params={{ eventId }}
+          >
             {t("workspaceStepOpen")}
           </Link>
         </Button>
