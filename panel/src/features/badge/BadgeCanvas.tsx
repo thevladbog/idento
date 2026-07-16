@@ -3,17 +3,18 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { QrSvg } from "../staff/QrSvg";
 import {
-  clampPosition, clampSize, elementFootprint, fitScale, mmToPx, pxToMm, resolveElementText,
+  clampPosition, clampSize, elementFootprint, fitScale, isBindingUnresolved, mmToPx, pxToMm, resolveElementText,
 } from "./canvasMath";
 import type { BadgeElement, BadgeTemplateDoc } from "./templateTypes";
 
 export interface BadgeCanvasProps {
   doc: BadgeTemplateDoc;
   selectedId: string | null;
-  // Task 12's job to populate for real; an empty object is a valid input
-  // today (BadgeEditorPage passes `{}` until Task 12 lands) and every
+  // P3.1 Task 12: BadgeEditorPage wires this from usePreviewAttendee's
+  // `data` -- the previewed attendee's flat field map, or SAMPLE_PERSONA in
+  // sample mode. An empty object is still a valid input (any caller, any
   // element just falls back to its static `text` per resolveElementText's
-  // documented semantics -- never a crash, never a fabricated value.
+  // documented semantics -- never a crash, never a fabricated value).
   previewData: Record<string, string>;
   // Accepts `null` (not just an element id) because the canvas itself needs
   // to deselect -- both on Escape (below) and implicitly when nothing on
@@ -345,6 +346,12 @@ export function BadgeCanvas({
             scale={scale}
             selected={el.id === selectedId}
             resolvedText={resolveElementText(el, previewData)}
+            // P3.1 Task 12 (spec §6 "never invented values"): a `title`
+            // tooltip only when this element is BOUND (has a `source`) but
+            // that source resolves to nothing for the current preview --
+            // never for an unbound/static element, and never merely because
+            // the resolved text happens to be empty by static-text design.
+            missingBindingHint={isBindingUnresolved(el, previewData) ? t("badgePreviewMissing") : undefined}
             onSelect={() => selectByClick(el.id)}
             onPointerDownMove={(event) => beginMove(event, el)}
             onPointerMove={(event) => handlePointerMove(event, el)}
@@ -375,6 +382,13 @@ interface CanvasElementProps {
   scale: number;
   selected: boolean;
   resolvedText: string;
+  // P3.1 Task 12's per-element "missing binding" hint: the already-
+  // translated `badgePreviewMissing` copy, or `undefined` when this element
+  // isn't bound or its binding resolved fine -- computed by the parent
+  // (which already holds `t` and `previewData`) via canvasMath.ts's
+  // isBindingUnresolved, so this component stays presentational (just
+  // renders whatever title string, if any, it's handed).
+  missingBindingHint?: string;
   onSelect: () => void;
   onPointerDownMove: (event: React.PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -383,7 +397,7 @@ interface CanvasElementProps {
 }
 
 function CanvasElement({
-  element, scale, selected, resolvedText,
+  element, scale, selected, resolvedText, missingBindingHint,
   onSelect, onPointerDownMove, onPointerMove, onPointerUp, onCornerPointerDown,
 }: CanvasElementProps) {
   const { width, height } = elementFootprint(element);
@@ -398,6 +412,7 @@ function CanvasElement({
   return (
     <div
       data-testid={`badge-canvas-element-${element.id}`}
+      title={missingBindingHint}
       onClick={onSelect}
       onPointerDown={onPointerDownMove}
       onPointerMove={onPointerMove}

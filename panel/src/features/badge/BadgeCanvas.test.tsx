@@ -103,6 +103,37 @@ describe("BadgeCanvas", () => {
       expect(screen.getByLabelText(/approximation/i)).toBeInTheDocument();
     });
 
+    // P3.1 Task 12 (spec §6 "never invented values"): a bound element whose
+    // source resolves to nothing for the current previewData carries a
+    // `title` hint. No static `text` fallback here (ElementsPane's own
+    // default for a source-bound text element is `text: ""`), so
+    // resolveElementText's existing, unchanged fallback-to-text rule
+    // naturally renders empty too -- the hint layers on TOP of that, it
+    // doesn't change what gets rendered.
+    it("a bound element whose source is missing from previewData renders empty text and a title hint", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t3", type: "text", x: 5, y: 5, source: "dietary", text: "" }]),
+        previewData: {},
+      });
+
+      const el = screen.getByTestId("badge-canvas-element-t3");
+      expect(el).toHaveAttribute("title", "Empty for this attendee — no invented value shown.");
+      expect(el.textContent).toBe("");
+    });
+
+    it("carries no title hint when the bound source resolves (or the element is unbound)", () => {
+      renderCanvas({
+        doc: docWith([
+          { id: "t4", type: "text", x: 5, y: 5, source: "first_name", text: "fallback" },
+          { id: "t5", type: "text", x: 5, y: 20, text: "Static label" },
+        ]),
+        previewData: { first_name: "Anna" },
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-t4")).not.toHaveAttribute("title");
+      expect(screen.getByTestId("badge-canvas-element-t5")).not.toHaveAttribute("title");
+    });
+
     it("line and box: render as bordered divs", () => {
       renderCanvas({
         doc: docWith([

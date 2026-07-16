@@ -1,5 +1,6 @@
 import {
-  DEFAULT_SIZE_MM, clampPosition, clampSize, elementFootprint, fitScale, mmToPx, pxToMm, resolveElementText,
+  DEFAULT_SIZE_MM, clampPosition, clampSize, elementFootprint, fitScale, isBindingUnresolved, mmToPx, pxToMm,
+  resolveElementText,
 } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 
@@ -124,5 +125,23 @@ describe("resolveElementText", () => {
 
   it("resolves to an empty string when neither source nor text is set", () => {
     expect(resolveElementText({}, {})).toBe("");
+  });
+});
+
+describe("isBindingUnresolved", () => {
+  it("is false for an unbound element (no source at all)", () => {
+    expect(isBindingUnresolved({}, {})).toBe(false);
+  });
+
+  it("is false when the bound source resolves to a non-empty value", () => {
+    expect(isBindingUnresolved({ source: "first_name" }, { first_name: "Anna" })).toBe(false);
+  });
+
+  it("is true when the bound source's data value is an empty string", () => {
+    expect(isBindingUnresolved({ source: "dietary" }, { dietary: "" })).toBe(true);
+  });
+
+  it("is true when the bound source's data value is missing entirely", () => {
+    expect(isBindingUnresolved({ source: "dietary" }, {})).toBe(true);
   });
 });

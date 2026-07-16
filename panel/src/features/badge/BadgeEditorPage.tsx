@@ -8,9 +8,11 @@ import { editorReducer, initialEditorState } from "./editorState";
 import { ElementsPane } from "./ElementsPane";
 import { GuardDialog } from "./GuardDialog";
 import { useBadgeTemplate } from "./hooks";
+import { PreviewPicker } from "./PreviewPicker";
 import { PropertiesPane } from "./PropertiesPane";
 import { SaveStatePill } from "./SaveStatePill";
 import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
+import { usePreviewAttendee } from "./usePreviewAttendee";
 import { useSaveTemplate } from "./useSaveTemplate";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
@@ -41,6 +43,10 @@ const routeApi = getRouteApi("/_app/events/$eventId/badge");
 //    plus a page-level Escape listener, both driving the SAME `GuardDialog`
 //    in one of two modes — see `performSave`/`revertToBaseline`/`resolver`
 //    below for the one-save-path/one-dialog wiring.
+//  - the canvas's live preview data (Task 12): `usePreviewAttendee` resolves
+//    the default/switched/sample-fallback attendee once here, and both the
+//    top-bar `PreviewPicker` and `BadgeCanvas`'s `previewData` prop are fed
+//    from that SAME hook call — never re-derived independently.
 //
 // Loading -> Skeleton panes. Fetch error -> `badgeLoadError` copy (distinct
 // from the empty-state copy below) + a retry action. `template: null` (the
@@ -63,6 +69,17 @@ export function BadgeEditorPage() {
   // on a second query the way the template load already is.
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
   const fieldSchema = eventQuery.data?.field_schema ?? [];
+
+  // P3.1 Task 12: the canvas's live preview data + the top-bar switcher's
+  // state, both driven from this one hook (see usePreviewAttendee.ts for
+  // the default-first-attendee / sample-fallback / debounced-search rules).
+  const preview = usePreviewAttendee(eventId);
+  // Whether PreviewPicker's own DropdownMenu is open -- lifted up (not left
+  // as that component's internal state) specifically so handlePageKeyDown
+  // below can gate on it; see PreviewPicker.tsx's `open` prop doc comment
+  // for why a DropdownMenu needs this same treatment the Reload/Overwrite
+  // ConfirmDialogs already get.
+  const [previewPickerOpen, setPreviewPickerOpen] = React.useState(false);
 
   const [state, dispatch] = React.useReducer(
     editorReducer,
@@ -289,19 +306,24 @@ export function BadgeEditorPage() {
   // Page-level Escape listener. Task 8's canvas contract: the artboard
   // swallows Escape (stopPropagation) whenever something is selected
   // (deselect-first) and only lets it bubble here once nothing is selected.
-  // Also inert whenever a save is pending, or ANY dialog (this one, or Task
-  // 10's Reload/Overwrite conflict dialogs) is already open — without that
-  // check, React's own portal event semantics would ALSO bubble an Escape
-  // pressed to dismiss one of those OTHER dialogs up to this same handler:
-  // Radix's Escape-to-close listens on `document` natively (see
+  // Also inert whenever a save is pending, or ANY dialog (this one, Task
+  // 10's Reload/Overwrite conflict dialogs, or — Task 12 — the
+  // PreviewPicker's DropdownMenu) is already open — without that check,
+  // React's own portal event semantics would ALSO bubble an Escape pressed
+  // to dismiss one of those OTHER overlays up to this same handler: Radix's
+  // Escape-to-close listens on `document` natively (see
   // @radix-ui/react-dismissable-layer), entirely in parallel with — not
   // instead of — React's own synthetic dispatch, which still walks the
   // REACT tree across a Portal regardless of where in the real DOM it
-  // renders, so the same keystroke reaches both.
+  // renders, so the same keystroke reaches both. `previewPickerOpen` is
+  // this SAME check for a DropdownMenu (not a Dialog — no `role="dialog"`,
+  // so it isn't covered by any Dialog-specific check the OTHER guards might
+  // rely on) — see PreviewPicker.tsx's `open` prop for why it's lifted up
+  // here instead of staying that component's own internal state.
   function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
     if (!state.dirty || saveTemplate.isPending) return;
-    if (guardOpen || reloadDialogOpen || overwriteDialogOpen) return;
+    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen) return;
     setGuardRevertOpen(true);
   }
 
@@ -381,6 +403,17 @@ export function BadgeEditorPage() {
     <div className="flex h-full min-h-[420px] flex-col gap-4" onKeyDown={handlePageKeyDown}>
       <div className="flex items-center gap-3 border-b border-border pb-4">
         <h2 className="text-page-title">{t("badgeTitle")}</h2>
+        <PreviewPicker
+          mode={preview.mode}
+          attendee={preview.attendee}
+          options={preview.options}
+          search={preview.search}
+          onSearchChange={preview.setSearch}
+          onSelect={preview.setAttendee}
+          listError={preview.listError}
+          open={previewPickerOpen}
+          onOpenChange={setPreviewPickerOpen}
+        />
         <div className="flex-1" />
         <SaveStatePill dirty={state.dirty} isPending={saveTemplate.isPending} conflict={conflict} savedAt={state.savedAt} />
         <Button type="button" onClick={handleSave} disabled={saveDisabled}>
@@ -535,11 +568,7 @@ export function BadgeEditorPage() {
             <BadgeCanvas
               doc={state.doc}
               selectedId={state.selectedId}
-              // Task 12's job to populate for real -- an empty object is a
-              // valid input today; BadgeCanvas's own resolveElementText
-              // falls back to each element's static `text` when a source
-              // doesn't resolve, never fabricating a value.
-              previewData={{}}
+              previewData={preview.data}
               onSelect={(id) => dispatch({ type: "select", id })}
               onMove={(id, x, y) => dispatch({ type: "move", id, x, y })}
               onResize={(id, width, height) => dispatch({ type: "resize", id, width, height })}

@@ -111,6 +111,36 @@ let putStatus = 200;
 let putDelayMs = 0;
 let readinessHitCount = 0;
 
+// Task 12's preview data: usePreviewAttendee fires this on every render of
+// the page (not gated behind any user action), so every test in this file
+// now exercises it whether or not it cares about preview behavior --
+// default to a single-attendee envelope so pre-Task-12 tests above stay
+// unaffected (Task 12's own describe block below overrides this per test).
+const DEFAULT_ATTENDEES_RESPONSE = {
+  attendees: [{
+    id: "pv-1",
+    event_id: "evt-1",
+    first_name: "Default",
+    last_name: "Attendee",
+    email: "default@example.com",
+    company: "Acme",
+    position: "Engineer",
+    code: "PD-0001",
+    checkin_status: false,
+    printed_count: 0,
+    blocked: false,
+    packet_delivered: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  }],
+  total: 1,
+  page: 1,
+  per_page: 50,
+};
+let attendeesResponse: unknown = DEFAULT_ATTENDEES_RESPONSE;
+let attendeesStatus = 200;
+let attendeesRequests: URLSearchParams[] = [];
+
 // evt-2 always serves a fixed, visibly-different template (100 × 60 mm @
 // 203 dpi) so the cross-event navigation test below can tell the two
 // events' docs apart; every other event id serves the mutable
@@ -169,6 +199,20 @@ const server = startMswServer(
     created_at: "",
     updated_at: "",
   })),
+  // Task 12's usePreviewAttendee -- fired unconditionally on every render
+  // (both the unfiltered "default" query and the debounced-search query;
+  // see that hook's own comment on why it's two calls). Captures every
+  // request's query params (searchable via `attendeesRequests`) so the
+  // "search types through to the hook" test below can assert the debounced
+  // value actually reached the network request.
+  http.get("http://api.test/api/events/:id/attendees", ({ request }) => {
+    const url = new URL(request.url);
+    attendeesRequests.push(url.searchParams);
+    if (attendeesStatus !== 200) {
+      return HttpResponse.json({ error: "boom" }, { status: attendeesStatus });
+    }
+    return HttpResponse.json(attendeesResponse);
+  }),
 );
 void server;
 
@@ -183,6 +227,9 @@ describe("BadgeEditorPage", () => {
     putStatus = 200;
     putDelayMs = 0;
     readinessHitCount = 0;
+    attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
+    attendeesStatus = 200;
+    attendeesRequests = [];
   });
 
   it("renders the top bar title and the locked Test print / ZPL preview actions", async () => {
@@ -338,6 +385,9 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     putStatus = 200;
     putDelayMs = 0;
     readinessHitCount = 0;
+    attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
+    attendeesStatus = 200;
+    attendeesRequests = [];
   });
 
   it("shows no pill for a freshly-loaded template, and disables Save (not dirty yet)", async () => {
@@ -726,6 +776,9 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
     putDelayMs = 0;
     readinessHitCount = 0;
     lastBlockerOptions = undefined;
+    attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
+    attendeesStatus = 200;
+    attendeesRequests = [];
   });
 
   it("clean doc: navigating to another workspace tab passes straight through, no guard dialog", async () => {
@@ -988,5 +1041,171 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
       const pill = await screen.findByTestId("badge-save-state-pill");
       expect(pill).toHaveAttribute("data-state", "saved");
     });
+  });
+});
+
+// Task 12: the canvas's live preview data (usePreviewAttendee) + the
+// top-bar PreviewPicker switcher. Owns the preview-flow tests per this
+// task's brief: default-first-attendee, switching, debounced search,
+// zero-attendees/list-error sample fallback, and the per-element
+// missing-binding hint.
+describe("BadgeEditorPage preview data (Task 12)", () => {
+  const ZOE = {
+    id: "pv-zoe",
+    event_id: "evt-1",
+    first_name: "Zoe",
+    last_name: "Zephyr",
+    email: "zoe@example.com",
+    company: "Acme",
+    position: "Engineer",
+    code: "PD-0002",
+    checkin_status: false,
+    printed_count: 0,
+    blocked: false,
+    packet_delivered: false,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    custom_fields: {} as Record<string, unknown>,
+  };
+  const MAX = {
+    ...ZOE, id: "pv-max", first_name: "Max", last_name: "Muster", email: "max@example.com", code: "PD-0003",
+  };
+
+  function templateWithSourceElement(source: string, text = "fallback") {
+    return {
+      template: {
+        width_mm: 90, height_mm: 55, dpi: 300, elements: [{ id: "el-1", type: "text", x: 5, y: 5, source, text }],
+      },
+      version: 1,
+    };
+  }
+
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    templateResponse = { template: null, version: 0 };
+    templateStatus = 200;
+    fetchCount = 0;
+    getDelayMs = 0;
+    putRequests = [];
+    putStatus = 200;
+    putDelayMs = 0;
+    readinessHitCount = 0;
+    attendeesResponse = { attendees: [ZOE, MAX], total: 2, page: 1, per_page: 50 };
+    attendeesStatus = 200;
+    attendeesRequests = [];
+  });
+
+  it("defaults to the first page-1 attendee: shows their name in the picker and resolves it on the canvas", async () => {
+    templateResponse = templateWithSourceElement("first_name");
+    renderPage();
+
+    expect(await screen.findByRole("button", { name: "Zoe Zephyr" })).toBeInTheDocument();
+    expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Zoe");
+  });
+
+  it("switching via the picker updates the canvas text", async () => {
+    templateResponse = templateWithSourceElement("first_name");
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("button", { name: "Zoe Zephyr" });
+    await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+    await user.click(screen.getByRole("menuitem", { name: "Max Muster" }));
+
+    expect(await screen.findByRole("button", { name: "Max Muster" })).toBeInTheDocument();
+    expect(screen.getByTestId("badge-canvas-element-el-1")).toHaveTextContent("Max");
+  });
+
+  it("typing in the picker's search box feeds the debounced value into useAttendeesPage's `search` param", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole("button", { name: "Zoe Zephyr" });
+    attendeesRequests = [];
+    await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+    const input = screen.getByRole("searchbox", { name: "Search attendees" });
+    fireEvent.change(input, { target: { value: "max" } });
+
+    // No request fires immediately on keystroke (still debouncing).
+    expect(attendeesRequests.some((params) => params.get("search") === "max")).toBe(false);
+
+    await waitFor(
+      () => expect(attendeesRequests.some((params) => params.get("search") === "max")).toBe(true),
+      { timeout: 1000 },
+    );
+  });
+
+  it("zero attendees falls back to sample mode with the visible, labeled pill", async () => {
+    templateResponse = templateWithSourceElement("first_name");
+    attendeesResponse = { attendees: [], total: 0, page: 1, per_page: 50 };
+    renderPage();
+
+    // Preview mode is "sample" from the very first render (before the
+    // attendees query even settles -- see usePreviewAttendee's "never
+    // fabricate during the loading window" comment), so the pill/name alone
+    // don't prove the canvas pane has finished loading too -- wait on the
+    // canvas element specifically (only rendered once templateQuery
+    // resolves) before asserting its text.
+    expect(await screen.findByText("Sample data")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Анна Петрова" })).toBeInTheDocument();
+    expect(await screen.findByTestId("badge-canvas-element-el-1")).toHaveTextContent("Анна");
+    // Not the error note -- this is a genuinely empty event, not a failure.
+    expect(screen.queryByText("Couldn't load attendees — showing sample data.")).not.toBeInTheDocument();
+  });
+
+  it("a list fetch error also falls back to sample mode, but additionally shows the honesty note (error != silently-sample)", async () => {
+    templateResponse = templateWithSourceElement("first_name");
+    attendeesStatus = 500;
+    renderPage();
+
+    // Wait on the error note specifically (not just "Sample data", which is
+    // ALSO shown during the transient pre-settle loading window, before the
+    // 500 has actually landed) -- this only ever appears once the base
+    // query has genuinely settled into its error state.
+    expect(await screen.findByText("Couldn't load attendees — showing sample data.")).toBeInTheDocument();
+    expect(screen.getByText("Sample data")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Анна Петрова" })).toBeInTheDocument();
+    expect(await screen.findByTestId("badge-canvas-element-el-1")).toHaveTextContent("Анна");
+  });
+
+  it("an element bound to a custom field missing on the previewed attendee renders empty and carries the missing-binding hint", async () => {
+    // No static `text` fallback (ElementsPane's own default for a
+    // source-bound text element is `text: ""`) -- confirms the render is
+    // genuinely EMPTY, not silently substituting some other placeholder.
+    templateResponse = templateWithSourceElement("dietary", ""); // ZOE's custom_fields has no "dietary" key
+    renderPage();
+
+    const el = await screen.findByTestId("badge-canvas-element-el-1");
+    expect(el.textContent).toBe("");
+    expect(el).toHaveAttribute("title", "Empty for this attendee — no invented value shown.");
+  });
+
+  // Context note: the picker's DropdownMenu is not a Dialog, so it isn't
+  // covered by handlePageKeyDown's existing guardOpen/reloadDialogOpen/
+  // overwriteDialogOpen checks -- without also gating on `previewPickerOpen`
+  // (PreviewPicker.tsx's lifted-up `open` prop), the SAME Escape keystroke
+  // that closes the picker would also bubble up (React's synthetic dispatch
+  // walks the React tree across the portal in parallel with Radix's own
+  // native `document` dismiss listener -- see handlePageKeyDown's own
+  // comment) and incorrectly pop the dirty-changes guard too.
+  it("pressing Escape to close the open PreviewPicker dropdown does not also open the dirty-changes guard", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user); // dirty
+    expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+
+    await user.click(screen.getByRole("button", { name: "Zoe Zephyr" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+    // The dirty guard must NOT have opened for this same keystroke, and the
+    // doc is still dirty exactly as it was before (Escape here closed only
+    // the dropdown, nothing else).
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
   });
 });

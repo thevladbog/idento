@@ -143,3 +143,24 @@ export function resolveElementText(
   }
   return el.text ?? "";
 }
+
+/**
+ * True exactly when `el.source` is set but does NOT resolve for `data` --
+ * i.e. resolveElementText(el, data) is about to fall back to the static
+ * `text` for a BOUND element (an unbound element, or one whose source
+ * resolves fine, is never "missing"). P3.1 Task 12's per-element preview
+ * hint: BadgeCanvas uses this to flag the element with a `badgePreviewMissing`
+ * title tooltip so a missing custom-field value on the previewed attendee
+ * reads as "this binding has nothing to show right now", not as a genuinely
+ * blank design choice (spec §6 "never invented values" -- the flip side of
+ * that rule is also never letting a fallen-back-to-empty render pass as
+ * silently intentional).
+ */
+export function isBindingUnresolved(
+  el: Pick<BadgeElement, "source">,
+  data: Record<string, string>,
+): boolean {
+  if (!el.source) return false;
+  const value = data[el.source];
+  return value === undefined || value === "";
+}
