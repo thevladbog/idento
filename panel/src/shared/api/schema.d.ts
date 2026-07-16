@@ -220,7 +220,10 @@ export interface paths {
         };
         /** A single event scoped to the caller's active tenant */
         get: operations["getEvent"];
-        /** Full replace of an event's editable fields. Any authenticated tenant member can call this — the handler checks tenant ownership only, no role restriction. */
+        /**
+         * Full replace of an event's editable fields. Any authenticated tenant member can call this — the handler checks tenant ownership only, no role restriction.
+         * @description Dual-write (final review Critical 1, P3.1): this is also the legacy web badge editor's save path (web/src/pages/BadgeTemplateEditorV2.tsx's handleSave PUTs its template here as an object-typed custom_fields["badgeTemplate"]). After the primary event update succeeds, when the incoming custom_fields carries a badgeTemplate value that decodes as a JSON OBJECT (mirroring migration 000018's own backfill guard — a string-typed legacy value is print-broken already and is left untouched), the handler ALSO mirrors it into the dedicated badge_template column via store.SyncBadgeTemplateFromLegacy, unconditionally bumping badge_template_version. This write has no expected-version guard (the legacy PUT has no version concept), so it deliberately makes a concurrent panel badge-editor save's NEXT PUT /api/events/{id}/badge-template 409 — correct cross-editor conflict semantics, not a bug. The sync is log-and-continue: a failure there never fails this PUT itself.
+         */
         put: operations["updateEvent"];
         post?: never;
         /** Soft-delete an event (sets deleted_at; the row stays in the database). GetEvents/GetEvent already exclude soft-deleted events, so a deleted event disappears from every listing and 404s on direct fetch. */
@@ -242,6 +245,27 @@ export interface paths {
         put?: never;
         /** Generate ZPL for one attendee's badge from the event's stored badge template */
         post: operations["badgeZpl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{id}/badge-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event's badge template and its optimistic-concurrency version (P3.1) — reads the dedicated badge_template/badge_template_version columns, never the legacy custom_fields["badgeTemplate"] key. */
+        get: operations["getBadgeTemplate"];
+        /**
+         * Save the event's badge template under an optimistic-concurrency guard.
+         * @description Storage is verbatim: template is persisted as the request's raw JSON bytes, byte-for-byte — the handler validates a parsed COPY via zpl.ParseBadgeTemplate (structural/type checks only) but never re-serializes or strips unknown keys before persisting (e.g. the panel editor's customFont must survive a save untouched). version semantics: 0 means "no template saved yet" — the first successful PUT with version: 0 creates version 1; every subsequent successful PUT must supply the exact current version and bumps it by one. Transitional mirror: the same write also mirrors template verbatim into the legacy custom_fields["badgeTemplate"] key (via jsonb_set, in the same statement), so the still-live legacy web badge editor and any other custom_fields["badgeTemplate"] reader never observe a stale value after a panel save. This mirror exists only until the P5 cutover removes both sync directions (this one, and UpdateEvent's existing legacy-to-column sync) — badge_template/badge_template_version remain the canonical source of truth throughout.
+         */
+        put: operations["putBadgeTemplate"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -997,6 +1021,25 @@ export interface components {
         /** @description JSON wrapper around generated ZPL text — BadgeZPL returns c.JSON, not raw text/plain, so "zpl" is the ZPL program serialized as a JSON string value (not a Content-Type: text/plain body). */
         BadgeZplResponse: {
             zpl: string;
+        };
+        /** @description GET/PUT /api/events/{id}/badge-template response. template is the stored badge-template JSON verbatim — whatever bytes were last PUT, including any unknown/extra keys (e.g. the panel editor's customFont) — the handler never re-serializes or drops fields; it is null when the event has no template yet. version starts at 0 ("no template saved"); the first successful PUT (sent with version: 0) creates version 1, and every subsequent successful PUT bumps it by exactly one. */
+        BadgeTemplateResponse: {
+            template: {
+                [key: string]: unknown;
+            } | null;
+            version: number;
+        };
+        /** @description PUT /api/events/{id}/badge-template request body. template is persisted verbatim (byte-for-byte, from the raw request bytes) after being validated against a parsed COPY via zpl.ParseBadgeTemplate — unknown keys survive a round trip untouched. version is the caller's last-known version (0 if the event has never had a template saved); it must match the stored version exactly or the request fails with 409 (BadgeTemplateConflict). */
+        BadgeTemplatePutRequest: {
+            template: {
+                [key: string]: unknown;
+            };
+            version: number;
+        };
+        /** @description 409 body for PUT /api/events/{id}/badge-template when version no longer matches the event's stored version (optimistic concurrency — store.ErrVersionConflict). current_version is re-read via GetEventBadgeTemplate so the caller can re-fetch and retry with the correct version. */
+        BadgeTemplateConflict: {
+            error: string;
+            current_version: number;
         };
         CreateProvisioningTokenResponse: {
             token: string;
@@ -2301,6 +2344,135 @@ export interface operations {
                 };
             };
             /** @description Store failure resolving event or attendee ownership (requireEventOwnership or requireAttendeeOwnership propagates a raw store error through writeErr's fallback branch, instead of masking it as a 404). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBadgeTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description template is null and version is 0 when the event has never had a template saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadgeTemplateResponse"];
+                };
+            };
+            /** @description id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing" — no existence oracle). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or reading the badge template. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putBadgeTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BadgeTemplatePutRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved. template echoes the request's raw bytes verbatim; version is the bumped value. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadgeTemplateResponse"];
+                };
+            };
+            /** @description id is not a UUID, the body is malformed, template is missing or not a JSON object, version is missing or negative, or the parsed template fails zpl.ParseBadgeTemplate's structural checks (e.g. elements is not an array, or an element's x is not a number) — the parser's own error message is included. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing" — checked before any store call, so a deleted/foreign event never surfaces as a misleading 409). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description version does not match the event's current stored version (store.ErrVersionConflict). current_version is re-read via GetEventBadgeTemplate so the caller can retry. As of the P3.1 dual-write fix, this can also be triggered by the legacy web editor: PUT /api/events/{id} (updateEvent) unconditionally bumps badge_template_version whenever it syncs an object-typed legacy custom_fields["badgeTemplate"] — a save made there between this caller's load and its own PUT surfaces here as an ordinary version conflict, same as two panel saves racing. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BadgeTemplateConflict"];
+                };
+            };
+            /** @description Store failure resolving event ownership, re-reading the current version after a conflict, or persisting the template. */
             500: {
                 headers: {
                     [name: string]: unknown;

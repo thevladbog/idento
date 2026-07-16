@@ -551,13 +551,20 @@ func (s *PGStore) GetEventsByTenantID(ctx context.Context, tenantID uuid.UUID) (
 	return events, nil
 }
 
+// GetEventByID also scans the P3.1 badge_template/badge_template_version
+// columns (unlike GetEventsByTenantID's list query, which doesn't need them):
+// requireEventOwnership and every other event-fetch path that feeds
+// handler/badge_zpl.go and handler/readiness.go route through this method, so
+// they need the column value available on the Event without a second store
+// round-trip.
 func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event, error) {
 	var e models.Event
 	var customFieldsJSON []byte
-	query := `SELECT id, tenant_id, name, start_date, end_date, location, field_schema, custom_fields, created_at, updated_at 
+	var badgeTemplateJSON []byte
+	query := `SELECT id, tenant_id, name, start_date, end_date, location, field_schema, custom_fields, badge_template, badge_template_version, created_at, updated_at
 			  FROM events WHERE id = $1 AND deleted_at IS NULL`
 	err := s.db.QueryRow(ctx, query, id).Scan(
-		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &e.CreatedAt, &e.UpdatedAt,
+		&e.ID, &e.TenantID, &e.Name, &e.StartDate, &e.EndDate, &e.Location, &e.FieldSchema, &customFieldsJSON, &badgeTemplateJSON, &e.BadgeTemplateVersion, &e.CreatedAt, &e.UpdatedAt,
 	)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -569,6 +576,9 @@ func (s *PGStore) GetEventByID(ctx context.Context, id uuid.UUID) (*models.Event
 		if err := json.Unmarshal(customFieldsJSON, &e.CustomFields); err != nil {
 			return nil, err
 		}
+	}
+	if len(badgeTemplateJSON) > 0 && string(badgeTemplateJSON) != "null" {
+		e.BadgeTemplate = json.RawMessage(badgeTemplateJSON)
 	}
 	return &e, nil
 }
@@ -588,6 +598,133 @@ func (s *PGStore) SoftDeleteEvent(ctx context.Context, id uuid.UUID) error {
 	_, err := s.db.Exec(ctx,
 		`UPDATE events SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, id)
 	return err
+}
+
+// ErrVersionConflict is returned by UpdateEventBadgeTemplate when the
+// guarded UPDATE affects 0 rows because expectedVersion no longer matches
+// the row's current badge_template_version. By contract the caller has
+// already confirmed the event exists (e.g. via requireEventOwnership)
+// before calling, so this method treats every 0-row result as a version
+// conflict rather than trying to disambiguate "stale version" from
+// "no such event".
+var ErrVersionConflict = errors.New("badge template version conflict")
+
+// GetEventBadgeTemplate reads the dedicated badge_template/
+// badge_template_version columns (P3.1) directly — it never looks at the
+// legacy custom_fields["badgeTemplate"] key. Both "column is NULL" (no
+// template saved yet) and "no matching, non-deleted event" collapse to the
+// same (nil, 0, nil) zero value: this method never fabricates a template,
+// and never reports pgx.ErrNoRows to the caller (mirrors GetEventByID's
+// not-found idiom). Callers that need to distinguish a missing event from a
+// missing template must check existence themselves.
+func (s *PGStore) GetEventBadgeTemplate(ctx context.Context, eventID uuid.UUID) (json.RawMessage, int, error) {
+	var templateJSON []byte
+	var version int
+	query := `SELECT badge_template, badge_template_version FROM events WHERE id = $1 AND deleted_at IS NULL`
+	err := s.db.QueryRow(ctx, query, eventID).Scan(&templateJSON, &version)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, 0, nil
+		}
+		return nil, 0, err
+	}
+	if len(templateJSON) == 0 || string(templateJSON) == "null" {
+		return nil, 0, nil
+	}
+	return json.RawMessage(templateJSON), version, nil
+}
+
+// UpdateEventBadgeTemplate persists template verbatim (raw bytes, no
+// re-encoding) under an optimistic-concurrency guard: the UPDATE only
+// matches the row whose current badge_template_version equals
+// expectedVersion (AND which is not soft-deleted — final-review Minor 6:
+// every other events UPDATE in this file already excludes deleted_at IS NOT
+// NULL rows, and this guarded write was the one missing it, which would
+// otherwise let a stale-but-matching version silently "resurrect" a
+// soft-deleted event's badge template), and bumps the version by one in the
+// same statement. On success it returns the new (bumped) version via
+// RETURNING. When the guard misses — expectedVersion is stale, or the event
+// is soft-deleted — the UPDATE affects 0 rows, which QueryRow surfaces as
+// pgx.ErrNoRows; this method maps that to ErrVersionConflict. Contract: the
+// caller must already have confirmed the event exists and is not
+// soft-deleted (e.g. via requireEventOwnership) before calling — this
+// method does not re-check event existence, so a 0-row result is always
+// reported as a version conflict, never as "not found".
+//
+// Codex round (Fix 1): the same statement ALSO mirrors the verbatim
+// template bytes into the legacy custom_fields["badgeTemplate"] key via
+// jsonb_set — using the exact same $1 the column gets, atomically, in one
+// UPDATE. Without this, the still-live legacy web editor
+// (web/src/pages/BadgeTemplateEditorV2.tsx, plus web's EventLayout.tsx and
+// EventAttendees.tsx) keeps reading custom_fields["badgeTemplate"] and would
+// see a stale template after a panel save; worse, its own next legacy save
+// dual-writes (via SyncBadgeTemplateFromLegacy, called from UpdateEvent)
+// that stale value right back over the column, silently discarding the
+// panel's change. This mirror is a TRANSITIONAL measure until the P5
+// cutover removes both sync directions entirely — the badge_template
+// column + badge_template_version stays the canonical source of truth
+// throughout; custom_fields["badgeTemplate"] is kept coherent only so the
+// legacy reader isn't stale in the meantime.
+func (s *PGStore) UpdateEventBadgeTemplate(ctx context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
+	var newVersion int
+	query := `UPDATE events
+			  SET badge_template = $1, badge_template_version = badge_template_version + 1, custom_fields = jsonb_set(coalesce(custom_fields, '{}'::jsonb), '{badgeTemplate}', $1::jsonb), updated_at = NOW()
+			  WHERE id = $2 AND badge_template_version = $3 AND deleted_at IS NULL
+			  RETURNING badge_template_version`
+	err := s.db.QueryRow(ctx, query, []byte(template), eventID, expectedVersion).Scan(&newVersion)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, ErrVersionConflict
+		}
+		return 0, err
+	}
+	return newVersion, nil
+}
+
+// SyncBadgeTemplateFromLegacy mirrors an object-typed
+// custom_fields["badgeTemplate"] value — written by the legacy web editor's
+// PUT /api/events/{id} (handler/events.go's UpdateEvent) — into the
+// dedicated badge_template/badge_template_version columns, so it isn't
+// silently shadowed by effectiveBadgeTemplate's column-first rule
+// (badge_template.go) once P3.1 ships. Deliberately UNCONDITIONAL: unlike
+// UpdateEventBadgeTemplate, there is no expectedVersion parameter and no
+// optimistic-concurrency guard on the WHERE clause — the legacy PUT has no
+// version concept to supply one. The UPDATE always matches by id (and
+// excludes soft-deleted rows) and always bumps badge_template_version by
+// one on success. This is a DELIBERATE cross-editor conflict trigger: if a
+// panel operator has the badge editor open with an in-flight version, this
+// bump means their NEXT save's optimistic-concurrency check will 409 —
+// which is the correct outcome (the legacy PUT just changed the template
+// underneath them), not a bug to route around. Callers (UpdateEvent) must
+// treat any error here as log-and-continue: this method's failure must
+// never fail the legacy PUT itself, or a P3.1 rollout would regress
+// pre-P3.1 web-editor save semantics.
+//
+// Codex round (Fix 1) asymmetry note: UpdateEventBadgeTemplate's guarded
+// UPDATE mirrors its column write back into custom_fields["badgeTemplate"]
+// (jsonb_set), but this method deliberately does NOT do the reverse
+// (jsonb_set-ing badge_template's bytes back into custom_fields here). It
+// doesn't need to: this method's own `template` argument IS the current
+// custom_fields["badgeTemplate"] value — the caller (UpdateEvent) already
+// wrote it into custom_fields as part of the very same request, via the
+// ordinary event-fields UPDATE, before calling this method. Re-writing
+// custom_fields["badgeTemplate"] to the same bytes here would be a pure
+// no-op write (same source, same destination, same value) — it would only
+// add a second write to the same column custom_fields for no coherence
+// benefit, unlike UpdateEventBadgeTemplate's mirror, which writes to a
+// DIFFERENT column (custom_fields) than the one its caller (PutBadgeTemplate)
+// wrote (badge_template).
+func (s *PGStore) SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.UUID, template json.RawMessage) (int, error) {
+	var newVersion int
+	query := `UPDATE events
+			  SET badge_template = $1, badge_template_version = badge_template_version + 1, updated_at = now()
+			  WHERE id = $2 AND deleted_at IS NULL
+			  RETURNING badge_template_version`
+	err := s.db.QueryRow(ctx, query, []byte(template), eventID).Scan(&newVersion)
+	if err != nil {
+		return 0, err
+	}
+	return newVersion, nil
 }
 
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {

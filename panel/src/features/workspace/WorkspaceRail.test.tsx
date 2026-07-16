@@ -134,16 +134,30 @@ describe("WorkspaceRail", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
-  it("renders the still-locked step rows (badge/equipment) and the Check-in row as non-links, always locked", () => {
+  it("renders the still-locked equipment step row and the Check-in row as non-links, always locked", () => {
     renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
 
     const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
-    expect(linkNames.some((name) => name?.includes("Badge"))).toBe(false);
     expect(linkNames.some((name) => name?.includes("Equipment"))).toBe(false);
     expect(linkNames.some((name) => name?.includes("Check-in"))).toBe(false);
 
     expect(screen.getByText("Check-in").closest("a")).toBeNull();
     expect(screen.getByText("locked")).toBeInTheDocument();
+  });
+
+  it("renders the badge step row as a real Link (Task 6 unlock) and marks it active on the badge route", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="badge" />);
+
+    const badgeLink = screen.getByRole("link", { name: /Badge/ });
+    expect(badgeLink).toHaveAttribute("href", "/events/evt-1/badge");
+    expect(badgeLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("does not mark the badge link active when a different rail tab is active", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
+
+    const badgeLink = screen.getByRole("link", { name: /Badge/ });
+    expect(badgeLink).not.toHaveAttribute("aria-current");
   });
 
   it("renders the attendees step row as a real Link (unlike the other still-locked steps) and marks it active on the attendees route", () => {

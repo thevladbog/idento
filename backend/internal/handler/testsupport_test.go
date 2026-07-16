@@ -18,48 +18,51 @@ import (
 // any un-set method panics if called (which surfaces an unexpected dependency).
 type fakeStore struct {
 	store.Store
-	getEventByID              func(id uuid.UUID) (*models.Event, error)
-	getEventZoneByID          func(id uuid.UUID) (*models.EventZone, error)
-	createEventZone           func(zone *models.EventZone) error
-	getEventZones             func(eventID uuid.UUID) ([]*models.EventZone, error)
-	getEventZonesWithStats    func(eventID uuid.UUID) ([]*models.EventZoneWithStats, error)
-	updateEventZone           func(zone *models.EventZone) error
-	deleteEventZone           func(id uuid.UUID) error
-	createZoneAccessRule      func(rule *models.ZoneAccessRule) error
-	getZoneAccessRules        func(zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
-	bulkUpdateZoneAccessRules func(zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
-	getAttendeeByID           func(id uuid.UUID) (*models.Attendee, error)
-	getFontByID               func(id uuid.UUID) (*models.Font, error)
-	getFontsByEventID         func(eventID uuid.UUID) ([]*models.FontListItem, error)
-	createFont                func(font *models.Font) error
-	deleteFont                func(id uuid.UUID) error
-	createAPIKey              func(apiKey *models.APIKey) error
-	getUserByID               func(id uuid.UUID) (*models.User, error)
-	getUsersByTenantID        func(tenantID uuid.UUID) ([]*models.User, error)
-	getZoneStaffAssign        func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
-	checkZoneAccessAt         func(attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error)
-	createZoneScanLog         func(zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error
-	checkAttendeeZoneCheckin  func(attendeeID, zoneID uuid.UUID, date time.Time) (*models.ZoneCheckin, error)
-	createZoneCheckin         func(checkin *models.ZoneCheckin) error
-	getAttendeeByCode         func(eventID uuid.UUID, code string) (*models.Attendee, error)
-	getAttendeeZoneAccessByID func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
-	createAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
-	getAttendeeZoneAccessList func(attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error)
-	updateAttendeeZoneAccess  func(access *models.AttendeeZoneAccess) error
-	deleteAttendeeZoneAccess  func(id uuid.UUID) error
-	assignStaffToZone         func(assignment *models.StaffZoneAssignment) error
-	removeStaffFromZone       func(userID, zoneID uuid.UUID) error
-	checkZoneAccess           func(attendeeID, zoneID uuid.UUID) (bool, string, error)
-	getZoneCheckins           func(zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error)
-	getStaffZoneAssignments   func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
-	getAPIKeysByEventID       func(eventID uuid.UUID) ([]*models.APIKey, error)
-	revokeAPIKey              func(id uuid.UUID) error
-	createAttendee            func(attendee *models.Attendee) error
-	updateAttendee            func(attendee *models.Attendee) error
-	getAttendeesByEventID     func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
-	countAttendeesByEventID   func(eventID uuid.UUID) (int, error)
-	getAttendeesPage          func(eventID uuid.UUID, f store.AttendeeFilter) ([]*models.Attendee, int, error)
-	getAttendeeZoneCheckins   func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
+	getEventByID                func(id uuid.UUID) (*models.Event, error)
+	getEventZoneByID            func(id uuid.UUID) (*models.EventZone, error)
+	createEventZone             func(zone *models.EventZone) error
+	getEventZones               func(eventID uuid.UUID) ([]*models.EventZone, error)
+	getEventZonesWithStats      func(eventID uuid.UUID) ([]*models.EventZoneWithStats, error)
+	updateEventZone             func(zone *models.EventZone) error
+	deleteEventZone             func(id uuid.UUID) error
+	createZoneAccessRule        func(rule *models.ZoneAccessRule) error
+	getZoneAccessRules          func(zoneID uuid.UUID) ([]*models.ZoneAccessRule, error)
+	bulkUpdateZoneAccessRules   func(zoneID uuid.UUID, rules []*models.ZoneAccessRule) error
+	getAttendeeByID             func(id uuid.UUID) (*models.Attendee, error)
+	getFontByID                 func(id uuid.UUID) (*models.Font, error)
+	getFontsByEventID           func(eventID uuid.UUID) ([]*models.FontListItem, error)
+	createFont                  func(font *models.Font) error
+	deleteFont                  func(id uuid.UUID) error
+	createAPIKey                func(apiKey *models.APIKey) error
+	getUserByID                 func(id uuid.UUID) (*models.User, error)
+	getUsersByTenantID          func(tenantID uuid.UUID) ([]*models.User, error)
+	getZoneStaffAssign          func(zoneID uuid.UUID) ([]*models.StaffZoneAssignment, error)
+	checkZoneAccessAt           func(attendeeID, zoneID uuid.UUID, at time.Time) (bool, string, error)
+	createZoneScanLog           func(zoneID uuid.UUID, attendeeID *uuid.UUID, verdict string) error
+	checkAttendeeZoneCheckin    func(attendeeID, zoneID uuid.UUID, date time.Time) (*models.ZoneCheckin, error)
+	createZoneCheckin           func(checkin *models.ZoneCheckin) error
+	getAttendeeByCode           func(eventID uuid.UUID, code string) (*models.Attendee, error)
+	getAttendeeZoneAccessByID   func(id uuid.UUID) (*models.AttendeeZoneAccess, error)
+	createAttendeeZoneAccess    func(access *models.AttendeeZoneAccess) error
+	getAttendeeZoneAccessList   func(attendeeID uuid.UUID) ([]*models.AttendeeZoneAccess, error)
+	updateAttendeeZoneAccess    func(access *models.AttendeeZoneAccess) error
+	deleteAttendeeZoneAccess    func(id uuid.UUID) error
+	assignStaffToZone           func(assignment *models.StaffZoneAssignment) error
+	removeStaffFromZone         func(userID, zoneID uuid.UUID) error
+	checkZoneAccess             func(attendeeID, zoneID uuid.UUID) (bool, string, error)
+	getZoneCheckins             func(zoneID uuid.UUID, date time.Time) ([]*models.ZoneCheckin, error)
+	getStaffZoneAssignments     func(userID uuid.UUID) ([]*models.StaffZoneAssignment, error)
+	getAPIKeysByEventID         func(eventID uuid.UUID) ([]*models.APIKey, error)
+	revokeAPIKey                func(id uuid.UUID) error
+	createAttendee              func(attendee *models.Attendee) error
+	updateAttendee              func(attendee *models.Attendee) error
+	getAttendeesByEventID       func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
+	countAttendeesByEventID     func(eventID uuid.UUID) (int, error)
+	getAttendeesPage            func(eventID uuid.UUID, f store.AttendeeFilter) ([]*models.Attendee, int, error)
+	getAttendeeZoneCheckins     func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
+	getEventBadgeTemplate       func(eventID uuid.UUID) (json.RawMessage, int, error)
+	updateEventBadgeTemplate    func(eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
+	syncBadgeTemplateFromLegacy func(eventID uuid.UUID, template json.RawMessage) (int, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -256,6 +259,15 @@ func (f *fakeStore) GetAttendeesPage(_ context.Context, eventID uuid.UUID, filte
 }
 func (f *fakeStore) GetAttendeeZoneCheckins(_ context.Context, attendeeID uuid.UUID) ([]*models.ZoneCheckin, error) {
 	return f.getAttendeeZoneCheckins(attendeeID)
+}
+func (f *fakeStore) GetEventBadgeTemplate(_ context.Context, eventID uuid.UUID) (json.RawMessage, int, error) {
+	return f.getEventBadgeTemplate(eventID)
+}
+func (f *fakeStore) UpdateEventBadgeTemplate(_ context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
+	return f.updateEventBadgeTemplate(eventID, template, expectedVersion)
+}
+func (f *fakeStore) SyncBadgeTemplateFromLegacy(_ context.Context, eventID uuid.UUID, template json.RawMessage) (int, error) {
+	return f.syncBadgeTemplateFromLegacy(eventID, template)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {

@@ -11,6 +11,7 @@ import { ZonesPage } from "../features/zones/ZonesPage";
 import { StaffPage } from "../features/staff/StaffPage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
+import { BadgeEditorPage } from "../features/badge/BadgeEditorPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
@@ -128,6 +129,12 @@ const eventStaffRoute = createRoute({
   component: StaffPage,
 });
 
+const eventBadgeRoute = createRoute({
+  getParentRoute: () => eventWorkspaceRoute,
+  path: "/badge",
+  component: BadgeEditorPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
@@ -135,7 +142,7 @@ const routeTree = rootRoute.addChildren([
     equipmentRoute,
     organizationRoute,
     eventWorkspaceRoute.addChildren([
-      eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute,
+      eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute, eventBadgeRoute,
     ]),
   ]),
   loginRoute,

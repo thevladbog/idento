@@ -49,10 +49,15 @@ function buildRouter(initialPath: string) {
     path: "/staff",
     component: () => <div>staff content</div>,
   });
+  const badgeRoute = createRoute({
+    getParentRoute: () => workspaceRoute,
+    path: "/badge",
+    component: () => <div>badge content</div>,
+  });
   const routeTree = rootRoute.addChildren([
     appLayoutRoute.addChildren([
       homeRoute,
-      workspaceRoute.addChildren([overviewRoute, settingsRoute, attendeesRoute, zonesRoute, staffRoute]),
+      workspaceRoute.addChildren([overviewRoute, settingsRoute, attendeesRoute, zonesRoute, staffRoute, badgeRoute]),
     ]),
   ]);
   return createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [initialPath] }) });
@@ -150,6 +155,18 @@ describe("EventWorkspaceLayout", () => {
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("staff content")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Staff/ })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+  });
+
+  it("marks the rail's Badge row active and renders the badge child route's outlet content", async () => {
+    // READY_FALSE's fixture only has an "attendees" step — add a "badge"
+    // step so WorkspaceRail actually renders a Badge row to assert against.
+    readinessResponse = { ready: false, steps: [{ key: "attendees", status: "not_done" }, { key: "badge", status: "not_done" }] };
+    renderAt("/events/evt-1/badge");
+
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
+    expect(screen.getByText("badge content")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Badge/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 

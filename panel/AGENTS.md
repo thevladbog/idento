@@ -39,7 +39,14 @@ work while this rewrite runs (see root `AGENTS.md`).
   `src/shared/i18n/keyParity.test.ts` fails the suite otherwise.
 - **Theming:** light/dark only via `@idento/ui` token classes and the
   `.dark` class toggle already wired in `ThemeProvider` — never hardcode a
-  color or write `prefers-color-scheme` CSS directly in `panel/`.
+  color or write `prefers-color-scheme` CSS directly in `panel/`. Sanctioned
+  exception: physical-media surfaces (the badge canvas artboard/print
+  surfaces — `BadgeCanvas.tsx`, `QrSvg.tsx`, `features/staff/print.css`) use
+  fixed literal colors BY DESIGN, not a lapse — they represent a physical
+  medium (paper, thermal print, a printed badge) that must render
+  identically regardless of the app's theme, where a theme token would flip
+  and misrepresent it (e.g. print ink going invisible on a dark-mode-inverted
+  face); each literal carries its own rationale comment at the point of use.
 - **Verify before finishing any change here:**
   `npm test -w panel && npm run typecheck -w panel && npm run lint -w panel && npm run build -w panel`
   from the repo root.
@@ -48,9 +55,11 @@ work while this rewrite runs (see root `AGENTS.md`).
   ALL in-flight operations, not just the primary mutation — see
   `ImportWizard.tsx`'s `isStep3Busy`.
 - **Readiness invalidation:** any mutation that changes an entity count shown
-  in the workspace readiness rail (attendees, zones, staff) must also
-  invalidate `READINESS_KEY(eventId)` (`src/features/events/hooks.ts`)
-  alongside its own list key — nothing else refetches the readiness query.
+  in the workspace readiness rail (attendees, zones, staff), OR content a
+  readiness step gates on (the badge template — its "badge" step flips on
+  saved template content, not a count), must also invalidate
+  `READINESS_KEY(eventId)` (`src/features/events/hooks.ts`) alongside its own
+  list/resource key — nothing else refetches the readiness query.
 
 ## API workflow (openapi-first)
 
