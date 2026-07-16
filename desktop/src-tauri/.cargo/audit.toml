@@ -1,0 +1,14 @@
+# cargo-audit configuration for the Tauri desktop app.
+# Advisories listed here are accepted risks; each entry must say why and
+# when it can be removed.
+
+[advisories]
+ignore = [
+  # glib 0.18.5 unsoundness in `VariantStrIter` (GHSA-wrw7-89jp-8q8g).
+  # Patched only in glib >= 0.20, which is unreachable from Tauri v2: the
+  # Linux stack (gtk 0.18 / webkit2gtk 2.0) is the archived GTK3 binding
+  # line and pins glib ^0.18. The vulnerable API is not used by
+  # tauri/wry/tao or by our code. Mirrors upstream's own audit ignore
+  # (tauri-apps/tauri#12048). Remove when upgrading to Tauri v3 (GTK4).
+  "RUSTSEC-2024-0429",
+]
