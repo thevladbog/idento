@@ -12,6 +12,17 @@ export interface UseAgentPrintersResult {
   state: AgentConnectivityState;
   printers: AgentPrinter[];
   defaultPrinter: string | null;
+  // P3.2 Task 8: the agent's own CONFIGURED default (verbatim from
+  // GET /printers/default), independent of `defaultPrinter`'s "always have
+  // SOME preselection" fallback rule above -- null both while
+  // disconnected/loading AND when the agent has printers but genuinely no
+  // default configured. TestPrintDialog doesn't need this (its printer
+  // <select> is always shown regardless, so `defaultPrinter`'s convenience
+  // fallback is exactly what it wants); the drawer's Reprint confirm uses
+  // this instead to decide whether the operator needs to be ASKED at all —
+  // showing its own inline <select> only when this is null, never silently
+  // picking "first in the list" on the operator's behalf.
+  configuredDefault: string | null;
 }
 
 export const AGENT_PRINTERS_KEY = ["agent", "printers"] as const;
@@ -79,5 +90,5 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
     state = "checking";
   }
 
-  return { state, printers, defaultPrinter };
+  return { state, printers, defaultPrinter, configuredDefault };
 }

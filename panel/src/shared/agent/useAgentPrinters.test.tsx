@@ -47,7 +47,12 @@ describe("useAgentPrinters", () => {
 
   it("is disconnected and fetches nothing while disabled", () => {
     const { result } = renderHook(() => useAgentPrinters(false), { wrapper });
-    expect(result.current).toEqual({ state: "disconnected", printers: [], defaultPrinter: null });
+    expect(result.current).toEqual({
+      state: "disconnected",
+      printers: [],
+      defaultPrinter: null,
+      configuredDefault: null,
+    });
     expect(requestCounts.health).toBe(0);
   });
 
@@ -99,5 +104,23 @@ describe("useAgentPrinters", () => {
     await waitFor(() => expect(result.current.state).toBe("connected"));
     expect(result.current.printers).toEqual([]);
     expect(result.current.defaultPrinter).toBeNull();
+  });
+
+  // P3.2 Task 8: `configuredDefault` must stay the RAW agent value (null
+  // here — no default is configured) even though `defaultPrinter` applies
+  // its own "always have a preselection" fallback to the first printer.
+  // Consumers that need to know "should I ask the operator to choose"
+  // (the drawer's Reprint confirm) rely on this NOT silently inheriting
+  // the fallback the way `defaultPrinter` deliberately does.
+  it("keeps configuredDefault null (distinct from defaultPrinter's fallback) when the agent has printers but no default configured", async () => {
+    printersResponse = [
+      { name: "HP_Smart_Tank_790_series", type: "system" },
+      { name: "Network_192_168_0_245", type: "network" },
+    ];
+    defaultResponse = { default: null };
+    const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+    await waitFor(() => expect(result.current.state).toBe("connected"));
+    expect(result.current.defaultPrinter).toBe("HP_Smart_Tank_790_series");
+    expect(result.current.configuredDefault).toBeNull();
   });
 });
