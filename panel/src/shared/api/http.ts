@@ -5,12 +5,22 @@ import type { paths } from "./schema";
 
 declare global {
   interface Window {
-    __ENV__?: { API_URL?: string };
+    __ENV__?: { API_URL?: string; AGENT_URL?: string };
   }
 }
 
 export function getApiBaseUrl(): string {
   return window.__ENV__?.API_URL || import.meta.env.VITE_API_URL || "http://localhost:8008";
+}
+
+// The local print agent is a separate origin from the backend API — it's not
+// in backend/openapi.yaml and isn't fronted by `$api` (see
+// panel/src/shared/agent/agentClient.ts). Mirrors getApiBaseUrl's precedence
+// (window.__ENV__ override, else the dev-machine default), but has no
+// import.meta.env fallback since the agent has no equivalent build-time env
+// var — it's a runtime-only, same-machine service.
+export function getAgentBaseUrl(): string {
+  return window.__ENV__?.AGENT_URL || "http://localhost:12345";
 }
 
 // openapi-fetch resolves the client's `baseUrl` once, at createClient() time

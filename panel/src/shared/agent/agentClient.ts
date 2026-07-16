@@ -1,0 +1,110 @@
+import { getAgentBaseUrl } from "../api/http";
+
+// Typed fetch wrappers for the local print agent — a separate origin from
+// the backend API (NOT in backend/openapi.yaml, NOT behind `$api`; see
+// agent/openapi.yaml for the agent's own contract). Browser clients reach it
+// through the agent's Origin-allowlist fallback (agent/internal/httpauth) —
+// deliberately NO Authorization header here, mirroring web/src/lib/agent.ts.
+
+export interface AgentPrinter {
+  name: string;
+  type: "system" | "network";
+}
+
+export interface PrintRequest {
+  printer_name: string;
+  zpl: string;
+}
+
+// Reads getAgentBaseUrl() fresh on every call (not once at module load) so
+// a later window.__ENV__.AGENT_URL swap (e.g. between tests) takes effect —
+// same "read fresh each request" principle as http.ts's dynamicBaseUrl
+// middleware, just applied directly since this client has no middleware
+// layer of its own.
+function agentUrl(path: string): string {
+  return `${getAgentBaseUrl()}${path}`;
+}
+
+// The agent's error responses are plain text, not JSON (per agent/openapi.yaml's
+// "Тело всех ответов об ошибках — plain text"), so surface that text verbatim
+// in the thrown error rather than a bare status code — future callers (e.g.
+// the test-print dialog's in-dialog error message) get something a user can
+// actually read instead of "agent POST /print failed: 404".
+async function ensureOk(response: Response, context: string): Promise<Response> {
+  if (response.ok) return response;
+  const body = await response.text().catch(() => "");
+  throw new Error(body ? `${context}: ${body}` : `${context} (HTTP ${response.status})`);
+}
+
+/**
+ * Returns true only if the agent responds to GET /health within
+ * `timeoutMs` (default 2000ms, matching web/src/lib/agent.ts's
+ * checkHealth timeout — web parity). Any failure — network error, non-2xx
+ * status, or the abort firing before a response arrives — resolves to
+ * false rather than rejecting: useAgentPrinters treats "unreachable" as a
+ * normal, expected connectivity state, not an exceptional one.
+ *
+ * `timeoutMs` is an injectable override purely so tests can exercise the
+ * abort path with a short delay instead of a real 2s wait or fake-timer
+ * gymnastics around AbortController.
+ */
+async function checkHealth(timeoutMs = 2000): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(agentUrl("/health"), { signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Returns every printer the agent currently knows about (system + network). */
+async function getPrinters(): Promise<AgentPrinter[]> {
+  const response = await ensureOk(await fetch(agentUrl("/printers")), "agent GET /printers failed");
+  const data = (await response.json()) as Array<{ name: string; type?: string }>;
+  return data.map((printer) => ({
+    name: printer.name,
+    type: printer.type === "network" ? ("network" as const) : ("system" as const),
+  }));
+}
+
+/** Returns the agent's configured default printer name, or null if unset. */
+async function getDefaultPrinter(): Promise<string | null> {
+  const response = await ensureOk(
+    await fetch(agentUrl("/printers/default")),
+    "agent GET /printers/default failed",
+  );
+  const data = (await response.json()) as { default: string | null };
+  return data.default ?? null;
+}
+
+/**
+ * Sends a print job. The 200 response here is a TRANSPORT ack only — it
+ * means the agent handed the ZPL bytes to the printer's serial/network
+ * connection, NOT that the label physically printed (reconciliation #5,
+ * docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md). The
+ * response body is discarded on purpose: nothing in it upgrades this into
+ * a print confirmation, so callers must not present success copy as
+ * "printed" — see the test-print dialog's "Sent to {{printer}}" wording.
+ */
+async function print(request: PrintRequest): Promise<void> {
+  const response = await fetch(agentUrl("/print"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) —
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  await ensureOk(response, "agent POST /print failed");
+}
+
+export const agentClient = {
+  checkHealth,
+  getPrinters,
+  getDefaultPrinter,
+  print,
+};
