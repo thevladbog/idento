@@ -658,12 +658,10 @@ func TestOpenAPIContract_UnassignStaffFromEvent(t *testing.T) {
 // another staff member's event assignment — mirrors
 // TestContractAssignStaffToEvent's role gate on the sibling endpoint.
 // Like AssignStaffToEvent's own role check, the 403 is returned as an
-// *echo.HTTPError rather than written via c.JSON, so — consistent with
-// TestGenerateQRTokenNonMemberIs404's style for the same reason — this
-// asserts on the returned error directly instead of rec.Code/validateResponse
-// (calling the handler function directly here bypasses echo's central error
-// handler, which is what would normally serialize the HTTPError onto the
-// response in production).
+// *echo.HTTPError rather than written via c.JSON, so the response is
+// rendered through e.HTTPErrorHandler (as Echo would in production) before
+// validating against the spec — pinning the HTTPError branch of the 403
+// oneOf ({"message": ...}, not the Error shape).
 func TestOpenAPIContract_UnassignStaffFromEvent_Forbidden(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")
@@ -683,7 +681,8 @@ func TestOpenAPIContract_UnassignStaffFromEvent_Forbidden(t *testing.T) {
 	})
 
 	e := echo.New()
-	c, _ := newAuthedContext(e, http.MethodDelete, "/api/events/"+event.ID.String()+"/staff/"+staffUser.ID.String(), "", tenantID.String(), "staff")
+	path := "/api/events/" + event.ID.String() + "/staff/" + staffUser.ID.String()
+	c, rec := newAuthedContext(e, http.MethodDelete, path, "", tenantID.String(), "staff")
 	c.SetPath("/api/events/:event_id/staff/:user_id")
 	c.SetParamNames("event_id", "user_id")
 	c.SetParamValues(event.ID.String(), staffUser.ID.String())
@@ -699,4 +698,10 @@ func TestOpenAPIContract_UnassignStaffFromEvent_Forbidden(t *testing.T) {
 	if httpErr.Message != "Access denied" {
 		t.Fatalf("message = %v, want %q (matches AssignStaffToEvent)", httpErr.Message, "Access denied")
 	}
+
+	e.HTTPErrorHandler(err, c)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("rendered code = %d, want 403, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodDelete, path, rec)
 }

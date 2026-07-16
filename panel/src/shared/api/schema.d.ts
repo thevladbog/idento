@@ -2581,13 +2581,13 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description tenant_suspended from the tenant gate. */
+            /** @description Caller role is not admin/manager (echo.NewHTTPError → HTTPError), or tenant_suspended from the tenant gate (→ Error). */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Error"];
+                    "application/json": components["schemas"]["HTTPError"] | components["schemas"]["Error"];
                 };
             };
             /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership) — note this checks event_id only, not that user_id was ever actually assigned. */
