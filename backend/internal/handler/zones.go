@@ -309,6 +309,19 @@ func (h *Handler) AssignStaffToZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
+	// Only admin/manager may re-scope staff zone assignments — same gate as
+	// the event-staff siblings in users.go. requireZoneOwnership below is
+	// tenant scope only; without this a staff caller could assign anyone
+	// (including themself) to any zone in the tenant. Gate before ownership,
+	// so a staff caller gets 403 without touching the store.
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	if claims.Role != "admin" && claims.Role != "manager" {
+		return writeErr(c, newHTTPError(http.StatusForbidden, "Access denied"))
+	}
+
 	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {
 		return writeErr(c, err)
 	}
@@ -320,10 +333,6 @@ func (h *Handler) AssignStaffToZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 	}
 
-	claims, err := claimsFromContext(c)
-	if err != nil {
-		return writeErr(c, err)
-	}
 	assignedByID := uuid.MustParse(claims.UserID)
 
 	assignment := &models.StaffZoneAssignment{
@@ -368,6 +377,16 @@ func (h *Handler) RemoveStaffFromZone(c echo.Context) error {
 	userID, err := uuid.Parse(c.Param("user_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid user ID"})
+	}
+
+	// Only admin/manager may re-scope staff zone assignments — same gate as
+	// AssignStaffToZone above and the event-staff siblings in users.go.
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	if claims.Role != "admin" && claims.Role != "manager" {
+		return writeErr(c, newHTTPError(http.StatusForbidden, "Access denied"))
 	}
 
 	if _, _, err := h.requireZoneOwnership(c, zoneID); err != nil {

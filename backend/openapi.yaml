@@ -3033,7 +3033,9 @@ paths:
   /api/zones/{zone_id}/staff:
     post:
       operationId: assignStaffToZone
-      summary: Assign a staff member to a zone (silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING)
+      summary: >
+        Assign a staff member to a zone (admin/manager only; silently
+        no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING)
       security: [{ bearerAuth: [] }]
       parameters:
         - name: zone_id
@@ -3068,7 +3070,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "403":
-          description: tenant_suspended from the tenant gate.
+          description: >
+            Caller role is not admin/manager ("Access denied") — the gate
+            sits after the zone_id parse but before requireZoneOwnership
+            and the body bind, so a staff caller sees 403 even for a
+            foreign/missing zone or a malformed body. Rendered via writeErr
+            as the standard Error shape (contrast the event-staff siblings,
+            whose role gate uses echo's HTTPError). Or tenant_suspended
+            from the tenant gate.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -3138,9 +3147,10 @@ paths:
     delete:
       operationId: removeStaffFromZone
       summary: >
-        Remove a staff member from a zone. Idempotent — DELETE on a pair
-        that was never assigned still returns 200 (the store's DELETE
-        simply affects zero rows; there is no existence check).
+        Remove a staff member from a zone (admin/manager only). Idempotent —
+        DELETE on a pair that was never assigned still returns 200 (the
+        store's DELETE simply affects zero rows; there is no existence
+        check).
       security: [{ bearerAuth: [] }]
       parameters:
         - name: zone_id
@@ -3167,7 +3177,13 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "403":
-          description: tenant_suspended from the tenant gate.
+          description: >
+            Caller role is not admin/manager ("Access denied") — the gate
+            sits after the two UUID parses but before requireZoneOwnership,
+            so a staff caller sees 403 even for a foreign/missing zone.
+            Rendered via writeErr as the standard Error shape (contrast the
+            event-staff siblings, whose role gate uses echo's HTTPError).
+            Or tenant_suspended from the tenant gate.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

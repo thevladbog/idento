@@ -410,6 +410,21 @@ func TestContractAssignStaffToZone(t *testing.T) {
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 
+	// 403: caller's role is staff — assigning staff to zones is admin/manager
+	// only, same gate as AssignStaffToEvent. Reuses the fully-working store to
+	// prove the role gate alone rejects, not a failed lookup.
+	c, rec = newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	c.SetPath("/api/zones/:zone_id/staff")
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zone.ID.String())
+	if err := h.AssignStaffToZone(c); err != nil {
+		t.Fatalf("AssignStaffToZone (staff role): %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
 	// 404: zone does not exist.
 	hMissing := New(&fakeStore{
 		getEventZoneByID: func(uuid.UUID) (*models.EventZone, error) { return nil, nil },
@@ -535,12 +550,28 @@ func TestContractRemoveStaffFromZone(t *testing.T) {
 	})
 	e := echo.New()
 	path := "/api/zones/" + zone.ID.String() + "/staff/" + userID.String()
-	c, rec := newAuthedContext(e, http.MethodDelete, path, "", tenantID.String(), "admin")
+	// Happy path as manager — the other role the admin/manager gate admits.
+	c, rec := newAuthedContext(e, http.MethodDelete, path, "", tenantID.String(), "manager")
 	c.SetPath("/api/zones/:zone_id/staff/:user_id")
 	c.SetParamNames("zone_id", "user_id")
 	c.SetParamValues(zone.ID.String(), userID.String())
 	if err := h.RemoveStaffFromZone(c); err != nil {
 		t.Fatalf("RemoveStaffFromZone: %v", err)
+	}
+	validateResponse(t, http.MethodDelete, path, rec)
+
+	// 403: caller's role is staff — removing staff from zones is admin/manager
+	// only, same gate as UnassignStaffFromEvent. Reuses the fully-working
+	// store to prove the role gate alone rejects, not a failed lookup.
+	c, rec = newAuthedContext(e, http.MethodDelete, path, "", tenantID.String(), "staff")
+	c.SetPath("/api/zones/:zone_id/staff/:user_id")
+	c.SetParamNames("zone_id", "user_id")
+	c.SetParamValues(zone.ID.String(), userID.String())
+	if err := h.RemoveStaffFromZone(c); err != nil {
+		t.Fatalf("RemoveStaffFromZone (staff role): %v", err)
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	validateResponse(t, http.MethodDelete, path, rec)
 
