@@ -1,6 +1,5 @@
 import { Button, ConfirmDialog, Skeleton } from "@idento/ui";
 import { getRouteApi, useBlocker } from "@tanstack/react-router";
-import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { BadgeCanvas } from "./BadgeCanvas";
@@ -12,6 +11,7 @@ import { PreviewPicker } from "./PreviewPicker";
 import { PropertiesPane } from "./PropertiesPane";
 import { SaveStatePill } from "./SaveStatePill";
 import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
+import { TestPrintDialog } from "./TestPrintDialog";
 import { usePreviewAttendee } from "./usePreviewAttendee";
 import { useSaveTemplate } from "./useSaveTemplate";
 import { ZplPreviewModal } from "./ZplPreviewModal";
@@ -27,8 +27,9 @@ const routeApi = getRouteApi("/_app/events/$eventId/badge");
 // Board 4a — the badge editor's route/page shell (P3.1 Task 6, save model
 // wired in Task 10). Owns:
 //  - the editor-local top bar (title, the save-state pill, the Save button,
-//    + the right-aligned "Test print" / "ZPL preview" actions, both locked
-//    with the P2.2 disabled-Button+Lock idiom until P3.2 wires them up);
+//    + the right-aligned "Test print" (P3.2 Task 6) / "ZPL preview" (P3.2
+//    Task 5) actions -- both started out locked with the P2.2 disabled-
+//    Button+Lock idiom and are now live, each opening its own dialog);
 //  - the conflict banner (below the top bar) and its two ConfirmDialogs;
 //  - the three-pane grid hosting the Elements / Canvas / Properties regions
 //    (Tasks 7-9 replace these labeled placeholders with the real panes);
@@ -108,6 +109,11 @@ export function BadgeEditorPage() {
   // "any dialog" check -- this follows the same established pattern rather
   // than introducing a different one).
   const [zplPreviewOpen, setZplPreviewOpen] = React.useState(false);
+
+  // P3.2 Task 6: the test-print dialog's own open flag -- same
+  // lifted-up-for-handlePageKeyDown rationale as zplPreviewOpen above (this
+  // is a second, separate Radix Dialog, not a re-render of the same one).
+  const [testPrintOpen, setTestPrintOpen] = React.useState(false);
 
   const [state, dispatch] = React.useReducer(
     editorReducer,
@@ -400,14 +406,16 @@ export function BadgeEditorPage() {
   // here instead of staying that component's own internal state.
   function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
-    // `zplPreviewOpen` (P3.2 Task 5): the ZPL preview modal is a Radix
-    // Dialog, same as the Reload/Overwrite ConfirmDialogs above -- Radix's
-    // own Escape-to-close listens on `document` natively, entirely in
-    // parallel with React's synthetic dispatch (which still walks the React
-    // tree across the modal's Portal), so the SAME keystroke that closes the
-    // preview modal would also reach this handler and incorrectly pop the
-    // dirty-changes guard without this check.
-    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen || zplPreviewOpen) return;
+    // `zplPreviewOpen` (P3.2 Task 5) / `testPrintOpen` (P3.2 Task 6): both
+    // are Radix Dialogs, same as the Reload/Overwrite ConfirmDialogs above --
+    // Radix's own Escape-to-close listens on `document` natively, entirely
+    // in parallel with React's synthetic dispatch (which still walks the
+    // React tree across each modal's Portal), so the SAME keystroke that
+    // closes either dialog would also reach this handler and incorrectly
+    // pop the dirty-changes guard without this check.
+    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen || zplPreviewOpen || testPrintOpen) {
+      return;
+    }
     // Deselect-first, regardless of where focus currently is (final-review
     // Important 4). Task 8's canvas contract (BadgeCanvas.tsx's own
     // artboard keydown handler) only swallows Escape and deselects when the
@@ -544,9 +552,10 @@ export function BadgeEditorPage() {
         <Button type="button" onClick={handleSave} disabled={saveDisabled}>
           {t("badgeSave")}
         </Button>
-        <Button type="button" variant="outline" disabled aria-disabled="true">
-          <Lock aria-hidden className="size-4" />
-          {t("badgeTestPrintLocked")}
+        {/* P3.2 Task 6: unlocked -- the test-print dialog below is this
+            button's entire purpose now, so no more Lock icon/disabled. */}
+        <Button type="button" variant="outline" onClick={() => setTestPrintOpen(true)}>
+          {t("badgeTestPrint")}
         </Button>
         {/* P3.2 Task 5: unlocked -- the ZPL preview modal below is this
             button's entire purpose now, so no more Lock icon/disabled. */}
@@ -655,6 +664,19 @@ export function BadgeEditorPage() {
       <ZplPreviewModal
         open={zplPreviewOpen}
         onOpenChange={setZplPreviewOpen}
+        doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
+        config={state.doc}
+        previewData={preview.data}
+        previewName={previewName}
+        eventId={eventId}
+      />
+
+      {/* P3.2 Task 6: the SAME live-doc inputs the preview modal above gets
+          (reconciliation #13) -- test print is not a separately-derived
+          snapshot either. */}
+      <TestPrintDialog
+        open={testPrintOpen}
+        onOpenChange={setTestPrintOpen}
         doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
         config={state.doc}
         previewData={preview.data}

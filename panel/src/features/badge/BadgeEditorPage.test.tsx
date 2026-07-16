@@ -247,15 +247,16 @@ describe("BadgeEditorPage", () => {
     attendeesRequests = [];
   });
 
-  it("renders the top bar title, the locked Test print action, and the unlocked ZPL preview action", async () => {
+  it("renders the top bar title and the unlocked Test print + ZPL preview actions", async () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Badge editor" })).toBeInTheDocument();
-    const testPrint = screen.getByRole("button", { name: /Test print/ });
-    // P3.2 Task 5: ZPL preview is no longer the locked idiom -- it's a live
-    // button that opens ZplPreviewModal (see the describe block below).
+    // P3.2 Task 6 / Task 5: neither action is the locked idiom anymore --
+    // both are live buttons that open their own dialog (see the describe
+    // blocks below).
+    const testPrint = screen.getByRole("button", { name: "Test print" });
     const zplPreview = screen.getByRole("button", { name: "ZPL preview" });
-    expect(testPrint).toBeDisabled();
+    expect(testPrint).not.toBeDisabled();
     expect(zplPreview).not.toBeDisabled();
   });
 
@@ -315,6 +316,82 @@ describe("BadgeEditorPage", () => {
       expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
 
       await user.click(screen.getByRole("button", { name: "ZPL preview" }));
+      expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      // The dirty guard must NOT have opened for this same keystroke, and
+      // the doc is still dirty exactly as it was before.
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+    });
+  });
+
+  describe("Test print dialog (P3.2 Task 6)", () => {
+    // Same jsdom FontFace-less-environment concession as the ZPL preview
+    // modal's describe block above (see its own comment) -- required here
+    // too since TestPrintDialog awaits the SAME useEventFontFaces terminal
+    // status before it will let its "Print test badge" CTA go live.
+    class MockFontFace {
+      constructor(_family: string, _source: unknown, _descriptors?: { weight?: string; style?: string }) {}
+      load(): Promise<this> {
+        return Promise.resolve(this);
+      }
+    }
+
+    beforeEach(() => {
+      (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
+      Object.defineProperty(document, "fonts", {
+        value: { add: () => {} },
+        configurable: true,
+        writable: true,
+      });
+      // Runs AFTER the outer file's own `beforeEach` (nested describes run
+      // after their parent's), so this only EXTENDS window.__ENV__ with the
+      // agent origin rather than being clobbered by it. The exact
+      // connectivity/printer state doesn't matter for these page-level
+      // WIRING tests (TestPrintDialog.test.tsx owns every connectivity/
+      // print-flow behavior in detail) -- these handlers just need to exist
+      // so the dialog's useAgentPrinters probe doesn't trip this file's
+      // `onUnhandledRequest: "error"` MSW server.
+      window.__ENV__ = { ...window.__ENV__, AGENT_URL: "http://agent.test" };
+      server.use(
+        http.get("http://agent.test/health", () => new HttpResponse(null, { status: 200 })),
+        http.get("http://agent.test/printers", () => HttpResponse.json([])),
+        http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
+      );
+    });
+
+    afterEach(() => {
+      delete (globalThis as unknown as { FontFace?: unknown }).FontFace;
+      // @ts-expect-error -- test-only cleanup; real jsdom has no `fonts`.
+      delete document.fonts;
+    });
+
+    it("opens the test print dialog from the top-bar button", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByTestId("badge-pane-elements");
+      await user.click(screen.getByRole("button", { name: "Test print" }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(within(dialog).getByRole("heading", { name: "Test print" })).toBeInTheDocument();
+    });
+
+    // Same Radix-Dialog-vs-page-level-Escape-handler issue as the ZPL
+    // preview modal's own Escape test above -- without also gating on
+    // `testPrintOpen`, the SAME Escape keystroke that closes this dialog
+    // would also bubble up and incorrectly pop the dirty-changes guard.
+    it("pressing Escape to close the test print dialog does not also open the dirty-changes guard", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByTestId("badge-pane-elements");
+      await addTextElement(user); // dirty
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "dirty");
+
+      await user.click(screen.getByRole("button", { name: "Test print" }));
       expect(await screen.findByRole("dialog")).toBeInTheDocument();
 
       await user.keyboard("{Escape}");
