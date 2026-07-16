@@ -134,6 +134,25 @@ describe("BadgeCanvas", () => {
       expect(screen.getByTestId("badge-canvas-element-t5")).not.toHaveAttribute("title");
     });
 
+    // P3.2 Task 4: a customFont element gets that family in its inline
+    // style -- a VISUAL approximation only (the true print raster happens
+    // at generation, reconciliation #11), pinned as a one-line change.
+    it("text with customFont: renders with that font-family in its inline style", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, text: "Hi", customFont: "Roboto" }]),
+      });
+
+      expect(screen.getByText("Hi")).toHaveStyle({ fontFamily: "Roboto" });
+    });
+
+    it("text without customFont: no font-family style is applied", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, text: "Hi" }]),
+      });
+
+      expect(screen.getByText("Hi").style.fontFamily).toBe("");
+    });
+
     it("line and box: render as bordered divs", () => {
       renderCanvas({
         doc: docWith([

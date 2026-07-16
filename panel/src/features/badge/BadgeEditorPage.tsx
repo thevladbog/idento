@@ -14,6 +14,7 @@ import { SaveStatePill } from "./SaveStatePill";
 import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
 import { usePreviewAttendee } from "./usePreviewAttendee";
 import { useSaveTemplate } from "./useSaveTemplate";
+import { useFontCoverage } from "./zpl/fontCoverage";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
 
@@ -69,6 +70,23 @@ export function BadgeEditorPage() {
   // on a second query the way the template load already is.
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
   const fieldSchema = eventQuery.data?.field_schema ?? [];
+
+  // P3.2 Task 4: PropertiesPane's font <select> needs the event's uploaded
+  // fonts (its "Event fonts" optgroup) + their Cyrillic-coverage flags.
+  // Fetched inline here (FontsCard.tsx precedent, per the task brief) rather
+  // than threaded through some other hook -- `useFontCoverage` does its OWN
+  // internal `$api.useQuery` against this SAME query key, so TanStack Query
+  // dedupes the two into a single network fetch; this call exists purely to
+  // get the LIST (not just the coverage flags) down to the pane. Same
+  // "fetch once at the page, pass down as props" convention `fieldSchema`
+  // above already uses -- deliberately NOT gated behind `initialized`: an
+  // empty fonts list while loading just renders the built-in-only select,
+  // same honest "not ready yet" default fieldSchema's `?? []` already uses.
+  const fontsQuery = $api.useQuery("get", "/api/events/{event_id}/fonts", {
+    params: { path: { event_id: eventId } },
+  });
+  const fonts = fontsQuery.data ?? [];
+  const fontCoverage = useFontCoverage(eventId);
 
   // P3.1 Task 12: the canvas's live preview data + the top-bar switcher's
   // state, both driven from this one hook (see usePreviewAttendee.ts for
@@ -668,6 +686,8 @@ export function BadgeEditorPage() {
             element={state.doc.elements.find((element) => element.id === state.selectedId) ?? null}
             fieldSchema={fieldSchema}
             config={state.doc}
+            fonts={fonts}
+            fontCoverage={fontCoverage}
             onUpdate={(id, patch) => dispatch({ type: "update", id, patch })}
           />
         </div>

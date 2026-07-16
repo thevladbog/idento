@@ -454,7 +454,19 @@ function ElementContent({
         <span
           className="block w-full truncate leading-none"
           // Fixed ink color -- see ARTBOARD_INK's exception comment above.
-          style={{ fontSize: fontSizePx, textAlign: element.align ?? "left", color: ARTBOARD_INK }}
+          // `fontFamily: element.customFont` (P3.2 Task 4) is a VISUAL
+          // approximation only: the browser falls back to its own default
+          // glyphs until (Task 2's) font-face loading completes here, and
+          // this canvas never rasterizes at all -- the TRUE print bitmap is
+          // only ever produced by the ZPL generator/preview (reconciliation
+          // #11). `undefined` (no customFont) is a no-op key, same as any
+          // other unset style property.
+          style={{
+            fontSize: fontSizePx,
+            textAlign: element.align ?? "left",
+            color: ARTBOARD_INK,
+            fontFamily: element.customFont,
+          }}
         >
           {resolvedText}
         </span>

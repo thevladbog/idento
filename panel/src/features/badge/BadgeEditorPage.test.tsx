@@ -205,6 +205,15 @@ const server = startMswServer(
     created_at: "",
     updated_at: "",
   })),
+  // P3.2 Task 4: PropertiesPane's font <select> + useFontCoverage both need
+  // this event's uploaded fonts list -- stubbed empty here (this file only
+  // cares about page-level assembly/wiring, not the font selector's own
+  // rendering, which PropertiesPane.test.tsx owns) so BadgeEditorPage's own
+  // inline `$api.useQuery` for this endpoint (and useFontCoverage's
+  // internal one, same query key, deduped by TanStack Query) both resolve
+  // to `[]` without tripping this file's `onUnhandledRequest: "error"` MSW
+  // server.
+  http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
   // Task 12's usePreviewAttendee -- fired unconditionally on every render
   // (both the unfiltered "default" query and the debounced-search query;
   // see that hook's own comment on why it's two calls). Captures every
