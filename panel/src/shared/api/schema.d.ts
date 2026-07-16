@@ -596,7 +596,7 @@ export interface paths {
         /** All staff assigned to a zone, as raw assignment records */
         get: operations["getZoneStaff"];
         put?: never;
-        /** Assign a staff member to a zone (admin/manager only; silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING) */
+        /** Assign an existing tenant user as staff on a zone (admin/manager only; silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING) */
         post: operations["assignStaffToZone"];
         delete?: never;
         options?: never;
@@ -4385,7 +4385,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Zone does not exist, or its parent event does not exist / belongs to a different tenant (requireZoneOwnership). */
+            /** @description Zone does not exist, or its parent event does not exist / belongs to a different tenant (requireZoneOwnership). Or the target user_id has no role in the caller's active tenant ("User not found" — GetUserTenantRole returns "", covering both "user does not exist" and "user belongs to a different tenant", same uniform 404 either way; same membership check as POST /api/events/{event_id}/staff and GET /api/users/{user_id}/zones). */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -4394,7 +4394,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Store failure resolving the zone's event ownership ("Internal error", from the nested requireEventOwnership call inside requireZoneOwnership — a GetEventZoneByID failure itself is masked as 404 above), or persisting the assignment ("Failed to assign staff"). */
+            /** @description Store failure resolving the zone's event ownership ("Internal error", from the nested requireEventOwnership call inside requireZoneOwnership — a GetEventZoneByID failure itself is masked as 404 above), checking the target user's tenant membership ("Failed to verify user membership" — unlike the membership 404 above, a GetUserTenantRole error is surfaced honestly as a 500), or persisting the assignment ("Failed to assign staff"). */
             500: {
                 headers: {
                     [name: string]: unknown;

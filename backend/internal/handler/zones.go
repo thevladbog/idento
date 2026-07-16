@@ -333,6 +333,24 @@ func (h *Handler) AssignStaffToZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 	}
 
+	// The target user_id is caller-supplied and not covered by
+	// requireZoneOwnership, so verify membership in the caller's ACTIVE
+	// tenant before persisting — same check as AssignStaffToEvent and
+	// GetUserZoneAssignments. Non-members and unknown ids are the same
+	// uniform 404 (no cross-tenant existence oracle); a store failure is
+	// neither — surface it as 500 like the assignment insert below.
+	tenantID, err := tenantIDFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	role, err := h.Store.GetUserTenantRole(c.Request().Context(), req.UserID, tenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to verify user membership"})
+	}
+	if role == "" {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+	}
+
 	assignedByID := uuid.MustParse(claims.UserID)
 
 	assignment := &models.StaffZoneAssignment{

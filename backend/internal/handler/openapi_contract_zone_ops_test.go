@@ -387,8 +387,9 @@ func TestContractAssignStaffToZone(t *testing.T) {
 	zone := contractZone(event.ID)
 	staffUserID := uuid.New()
 	h := New(&fakeStore{
-		getEventZoneByID: func(uuid.UUID) (*models.EventZone, error) { return zone, nil },
-		getEventByID:     func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getEventZoneByID:  func(uuid.UUID) (*models.EventZone, error) { return zone, nil },
+		getEventByID:      func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getUserTenantRole: func(uuid.UUID, uuid.UUID) (string, error) { return "staff", nil },
 		assignStaffToZone: func(assignment *models.StaffZoneAssignment) error {
 			assignment.ID = uuid.New()
 			assignment.AssignedAt = time.Now()
@@ -441,6 +442,28 @@ func TestContractAssignStaffToZone(t *testing.T) {
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 
+	// 404: the target user has no role in the caller's active tenant —
+	// GetUserTenantRole returns "" for nonexistent users and foreign-tenant
+	// members alike, so both render as the same uniform 404 (no cross-tenant
+	// existence oracle; same membership check as GetUserZoneAssignments and
+	// AssignStaffToEvent).
+	hNotMember := New(&fakeStore{
+		getEventZoneByID:  func(uuid.UUID) (*models.EventZone, error) { return zone, nil },
+		getEventByID:      func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getUserTenantRole: func(uuid.UUID, uuid.UUID) (string, error) { return "", nil },
+	})
+	c, rec = newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
+	c.SetPath("/api/zones/:zone_id/staff")
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zone.ID.String())
+	if err := hNotMember.AssignStaffToZone(c); err != nil {
+		t.Fatalf("AssignStaffToZone (target not a member): %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
 	// 500: a raw store error resolving the zone's event ownership propagates
 	// out of the nested requireEventOwnership call inside requireZoneOwnership.
 	hOwnershipFail := New(&fakeStore{
@@ -459,10 +482,31 @@ func TestContractAssignStaffToZone(t *testing.T) {
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 
+	// 500: GetUserTenantRole itself fails while checking the target's
+	// membership — surfaced honestly as a 500, NOT folded into the uniform
+	// 404 above (same taxonomy as GetUserZoneAssignments).
+	hRoleFail := New(&fakeStore{
+		getEventZoneByID:  func(uuid.UUID) (*models.EventZone, error) { return zone, nil },
+		getEventByID:      func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getUserTenantRole: func(uuid.UUID, uuid.UUID) (string, error) { return "", errors.New("db unavailable") },
+	})
+	c, rec = newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
+	c.SetPath("/api/zones/:zone_id/staff")
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zone.ID.String())
+	if err := hRoleFail.AssignStaffToZone(c); err != nil {
+		t.Fatalf("AssignStaffToZone (membership check failure): %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+
 	// 500: Store.AssignStaffToZone itself fails.
 	hAssignFail := New(&fakeStore{
 		getEventZoneByID:  func(uuid.UUID) (*models.EventZone, error) { return zone, nil },
 		getEventByID:      func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getUserTenantRole: func(uuid.UUID, uuid.UUID) (string, error) { return "staff", nil },
 		assignStaffToZone: func(*models.StaffZoneAssignment) error { return errors.New("insert failed") },
 	})
 	c, rec = newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
