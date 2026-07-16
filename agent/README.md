@@ -71,7 +71,7 @@ go build -o idento-agent
 
 ### Авторизация
 
-Все эндпоинты, кроме `GET /health`, требуют авторизации (реализация — [internal/httpauth/httpauth.go](internal/httpauth/httpauth.go)). Запрос пропускается одним из двух способов:
+Все эндпоинты, кроме `GET /health`, `GET /docs` и `GET /openapi.yaml`, требуют авторизации (реализация — [internal/httpauth/httpauth.go](internal/httpauth/httpauth.go)). Исключённые эндпоинты read-only и не содержат секретов; их эффективная защита — привязка агента к loopback-адресу. Запрос к защищённым эндпоинтам пропускается одним из двух способов:
 
 1. **Bearer-токен** — заголовок `Authorization: Bearer <token>`. Токен генерируется автоматически при первом запуске и хранится в `~/.idento/agent_config.json` (права `0600`). Используется desktop-приложением.
 2. **Браузерный fallback (без токена)** — запрос должен идти на loopback-хост (`localhost` / `127.0.0.1`), мутации (`POST`/`PUT`/`PATCH`/`DELETE`) — с `Content-Type: application/json`, а заголовок `Origin` должен входить в allowlist. По умолчанию: `http://localhost:5173`, `http://localhost:5174`, `http://localhost:3000`; переопределяется переменной окружения `AGENT_ALLOWED_ORIGINS` (CSV) или полем `allowed_origins` в конфиге.
