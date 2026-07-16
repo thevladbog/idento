@@ -268,6 +268,20 @@ describe("AttendeeDrawer", () => {
     expect(await screen.findByText("No activity yet")).toBeInTheDocument();
   });
 
+  // Regression test: `zone_name` can come back as "" server-side (e.g. a
+  // zone deleted after the checkin was recorded). Before this fix, the
+  // entry line was built as a literal template `"HH:MM — " + zone_name`,
+  // so an empty zone_name produced a dangling "10:15 — " row with nothing
+  // after the separator — instead it must fall back to an i18n'd label.
+  it("falls back to an i18n'd label instead of a dangling separator when an activity entry's zone_name is empty", async () => {
+    zoneHistoryResponse = [historyEntry("h1", "2026-07-14T10:15:00Z", "")];
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+
+    expect(await screen.findByText("10:15 — unknown zone")).toBeInTheDocument();
+    // Proves the separator never dangles with nothing after it.
+    expect(screen.queryByText("10:15 —")).not.toBeInTheDocument();
+  });
+
   it("shows only the dashed '+ Zone' placeholder when the attendee has no allowed zone access", async () => {
     zoneAccessResponse = [];
     renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);

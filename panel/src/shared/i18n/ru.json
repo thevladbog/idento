@@ -255,6 +255,7 @@
   "drawerActivity": "Недавняя активность",
   "drawerNoActivity": "Пока нет активности",
   "drawerActivityLoadError": "Не удалось загрузить активность.",
+  "drawerActivityUnknownZone": "неизвестная зона",
   "drawerRegenerate": "Перегенерировать код…",
   "drawerDelete": "Удалить…",
   "drawerLoadError": "Не удалось загрузить данные участника.",

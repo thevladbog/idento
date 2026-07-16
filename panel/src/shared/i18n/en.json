@@ -253,6 +253,7 @@
   "drawerActivity": "Recent activity",
   "drawerNoActivity": "No activity yet",
   "drawerActivityLoadError": "Couldn't load activity.",
+  "drawerActivityUnknownZone": "unknown zone",
   "drawerRegenerate": "Regenerate code…",
   "drawerDelete": "Delete…",
   "drawerLoadError": "Couldn't load this attendee.",

@@ -549,7 +549,8 @@ function DrawerBody({
           <ul className="flex flex-col gap-1.5">
             {recentActivity.map((entry) => (
               <li key={entry.checkin.id} className="text-caption text-muted-foreground">
-                {formatUtcHHMM(entry.checkin.checked_in_at)} — {entry.zone_name}
+                {formatUtcHHMM(entry.checkin.checked_in_at)} —{" "}
+                {entry.zone_name || t("drawerActivityUnknownZone")}
               </li>
             ))}
           </ul>
