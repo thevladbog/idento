@@ -1086,6 +1086,36 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     expect(printCapture?.printer_name).toBe("Network_Printer");
   });
 
+  // Review fix (Task 8, Minor): the agent's configured default can name a
+  // printer that has since been unplugged/removed. Naming (and sending to)
+  // a printer that's no longer in the live list would be dishonest — a
+  // stale default must fall through to the inline-select path exactly as
+  // if no default were configured, preselecting a printer that actually
+  // exists.
+  it("falls through to the inline printer <select> (not the stale name) when the configured default is no longer in the live printer list", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Unplugged_Old_Printer" };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    // The choose-a-printer body + select, never the stale default's name.
+    expect(within(dialog).getByText("Choose a printer to print Ada Lovelace's badge.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Unplugged_Old_Printer/)).not.toBeInTheDocument();
+    const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
+    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+    await waitFor(() => expect(printCapture).not.toBeNull());
+    expect(printCapture?.printer_name).toBe("Zebra_ZD421");
+  });
+
   it("shows an honest no-template message linking the badge editor, and never calls the agent, when the event has no saved template", async () => {
     agentHealthOk = true;
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
@@ -1188,6 +1218,13 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     await waitFor(() => expect(printCapture).not.toBeNull());
     expect(screen.queryByText(/Couldn.t send/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
+    // Review fix (Task 8): the missing assertion that let a real defect
+    // through — the cancel bumps the session, so the in-flight print's
+    // `finally` (session-guarded) skips its own pending reset. Without an
+    // explicit reset on close, `reprintPrinting` stayed true forever and
+    // the OUTER Reprint button was stranded disabled (with no title,
+    // since the agent is still connected) until a full drawer remount.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Reprint badge" })).toBeEnabled());
   });
 
   // Distinct from the mark-printed-failure test above: here the AGENT

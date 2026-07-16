@@ -332,23 +332,35 @@ function DrawerBody({
   // late result from corrupting whatever the operator has moved on to.
   const reprintSessionRef = React.useRef(0);
 
+  // `configuredDefault` (NOT `defaultPrinter`) is the "does a real default
+  // exist" question — `defaultPrinter` always resolves to SOMETHING once
+  // any printer exists (useAgentPrinters' own "always have a preselection"
+  // fallback, meant for TestPrintDialog's always-visible select), which
+  // would otherwise make the choose-a-printer branch never fire once any
+  // printer is connected. Review fix (Minor): validated against the LIVE
+  // printer list too — the agent's configured default can name a printer
+  // that has since been unplugged/removed, and naming (or sending to) a
+  // printer that no longer exists would be dishonest; a stale default
+  // falls through to the inline-select path exactly as if none were
+  // configured. Same web-parity presence rule `defaultPrinter` itself
+  // applies inside useAgentPrinters.
+  const reprintConfiguredDefault =
+    agent.configuredDefault && agent.printers.some((printer) => printer.name === agent.configuredDefault)
+      ? agent.configuredDefault
+      : null;
+
   React.useEffect(() => {
     if (!reprintOpen) return;
-    // `configuredDefault` (NOT `defaultPrinter`) is the "does a real default
-    // exist" question — `defaultPrinter` always resolves to SOMETHING once
-    // any printer exists (useAgentPrinters' own "always have a
-    // preselection" fallback, meant for TestPrintDialog's always-visible
-    // select), which would otherwise make this branch never fire once any
-    // printer is connected. `defaultPrinter` is still the right PRESELECTION
-    // for the <select> itself below — it degrades to "first printer" in
-    // exactly this no-configured-default case.
-    if (agent.configuredDefault) return;
+    if (reprintConfiguredDefault) return;
     if (reprintPrinter && agent.printers.some((printer) => printer.name === reprintPrinter)) return;
+    // `defaultPrinter` is still the right PRESELECTION for the <select> —
+    // it degrades to "first printer" in exactly this no-(valid-)configured-
+    // default case.
     setReprintPrinter(agent.defaultPrinter);
-  }, [reprintOpen, agent.configuredDefault, agent.defaultPrinter, agent.printers, reprintPrinter]);
+  }, [reprintOpen, reprintConfiguredDefault, agent.defaultPrinter, agent.printers, reprintPrinter]);
 
   const reprintAgentDisconnected = agent.state === "disconnected";
-  const reprintTargetPrinter = agent.configuredDefault ?? reprintPrinter;
+  const reprintTargetPrinter = reprintConfiguredDefault ?? reprintPrinter;
   // Reconciliation #9 (fonts must be awaited before generation): the
   // hook's own printAttendee already awaits this internally, but gating the
   // confirm button on it too means the operator never sees a click silently
@@ -360,6 +372,15 @@ function DrawerBody({
       reprintSessionRef.current += 1;
       setReprintError(null);
       setReprintPrinter(null);
+      // Review fix (Important): the session bump above makes an in-flight
+      // print's `finally` skip ITS `setReprintPrinting(false)` (correctly —
+      // that guard exists so a stale settle can't clobber a NEWER session's
+      // pending print), so the now-dead session's pending flag must be
+      // cleared here instead. Without this, cancelling mid-print stranded
+      // `reprintPrinting` true forever, leaving the OUTER Reprint button
+      // disabled (with no explanatory title, since the agent is still
+      // connected) until a full drawer remount.
+      setReprintPrinting(false);
     }
     setReprintOpen(open);
   }
@@ -405,11 +426,11 @@ function DrawerBody({
   const reprintDescription = (
     <>
       <span className="block">
-        {agent.configuredDefault
-          ? t("drawerReprintConfirmBody", { name: fullName, printer: agent.configuredDefault })
+        {reprintConfiguredDefault
+          ? t("drawerReprintConfirmBody", { name: fullName, printer: reprintConfiguredDefault })
           : t("drawerReprintConfirmBodyChoose", { name: fullName })}
       </span>
-      {!agent.configuredDefault ? (
+      {!reprintConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
           <Label htmlFor="reprint-printer">{t("badgeTestPrintPrinterLabel")}</Label>
           <select
