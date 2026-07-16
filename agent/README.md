@@ -40,86 +40,41 @@ go build -o idento-agent
 ./idento-agent
 ```
 
-## API Endpoints
+## API
 
-### Принтеры
+Полную документацию API агент отдаёт сам:
 
-#### `GET /health`
-Проверка работоспособности агента.
+- **`GET /docs`** — интерактивная документация (Scalar UI): http://localhost:12345/docs
+- **`GET /openapi.yaml`** — OpenAPI-спецификация (источник правды — [openapi.yaml](openapi.yaml))
 
-**Response:**
-```
-Idento Agent is running
-```
+### Обзор эндпоинтов
 
-#### `GET /printers`
-Список доступных принтеров.
+| Метод | Путь | Назначение |
+|---|---|---|
+| GET | `/health` | Проверка работоспособности (без авторизации) |
+| GET | `/printers` | Список принтеров: массив `{name, type}`, `type` = `system` \| `network` |
+| POST | `/print` | Печать ZPL: `{printer_name, zpl}` (legacy-форма: `{printer_name, template, data}`) |
+| POST | `/print-pdf` | Печать PDF: `{printer_name, pdf_base64}` — только системные принтеры |
+| POST | `/printers/add` | Добавить сетевой принтер: `{name, ip, port}` |
+| POST | `/printers/remove` | Удалить сетевой принтер: `{name}` |
+| GET, POST | `/printers/default` | Получить / установить принтер по умолчанию |
+| GET | `/printers/fonts` | Справочник стандартных ZPL-шрифтов |
+| GET | `/printers/{name}/fonts` | Шрифты конкретного принтера |
+| GET | `/scanners` | Активные сканеры: массив `{name, port_name}` |
+| GET | `/scanners/ports` | Доступные COM/USB порты |
+| POST | `/scanners/add` | Добавить сканер: `{port_name}` |
+| POST | `/scanners/remove` | Удалить сканер: `{port_name}` |
+| GET | `/scan/last` | Последний отсканированный код: `{code, time}` |
+| POST | `/scan/clear` | Очистить буфер последнего скана |
 
-**Response:**
-```json
-[
-  "HP_LaserJet_Pro",
-  "Zebra_ZD420",
-  "Serial_ttyUSB0"
-]
-```
+Схемы запросов/ответов и коды ошибок — в `/docs`.
 
-#### `POST /print`
-Отправка задания на печать.
+### Авторизация
 
-**Request:**
-```json
-{
-  "printer_name": "Zebra_ZD420",
-  "template": "^XA^FO50,50^A0N,50,50^FD{{first_name}} {{last_name}}^FS^XZ",
-  "data": {
-    "first_name": "John",
-    "last_name": "Doe",
-    "company": "Acme Inc"
-  }
-}
-```
+Все эндпоинты, кроме `GET /health`, требуют авторизации (реализация — [internal/httpauth/httpauth.go](internal/httpauth/httpauth.go)). Запрос пропускается одним из двух способов:
 
-**Response:**
-```json
-{
-  "status": "printed"
-}
-```
-
-### Сканеры
-
-#### `GET /scanners`
-Список доступных сканеров.
-
-**Response:**
-```json
-[
-  "Scanner_COM3",
-  "Scanner_ttyUSB0"
-]
-```
-
-#### `GET /scan/last`
-Получить последний отсканированный код.
-
-**Response:**
-```json
-{
-  "code": "ABC123XYZ",
-  "time": "2025-12-08T17:30:45Z"
-}
-```
-
-#### `POST /scan/clear`
-Очистить последний отсканированный код.
-
-**Response:**
-```json
-{
-  "status": "cleared"
-}
-```
+1. **Bearer-токен** — заголовок `Authorization: Bearer <token>`. Токен генерируется автоматически при первом запуске и хранится в `~/.idento/agent_config.json` (права `0600`). Используется desktop-приложением.
+2. **Браузерный fallback (без токена)** — запрос должен идти на loopback-хост (`localhost` / `127.0.0.1`), мутации (`POST`/`PUT`/`PATCH`/`DELETE`) — с `Content-Type: application/json`, а заголовок `Origin` должен входить в allowlist. По умолчанию: `http://localhost:5173`, `http://localhost:5174`, `http://localhost:3000`; переопределяется переменной окружения `AGENT_ALLOWED_ORIGINS` (CSV) или полем `allowed_origins` в конфиге.
 
 ## Обнаружение оборудования
 
@@ -337,13 +292,8 @@ sudo systemctl start idento-agent
 
 ## Безопасность
 
-### CORS
-Агент настроен на прием запросов только от:
-- `http://localhost:5173` (dev web)
-- `http://localhost:5174` (dev web)
-- `http://localhost:3000` (другие локальные сервисы)
-
-Для production обновите настройки CORS в `main.go`.
+### Авторизация и CORS
+Доступ к API контролируется bearer-токеном либо Origin-allowlist для браузерных клиентов — см. раздел [Авторизация](#авторизация). CORS-заголовки используют тот же allowlist. Для production задайте свои origins через переменную окружения `AGENT_ALLOWED_ORIGINS` (CSV) или поле `allowed_origins` в `~/.idento/agent_config.json` — правки в `main.go` не требуются.
 
 ### Доступ к портам
 Убедитесь, что приложение имеет права на доступ к serial портам.
