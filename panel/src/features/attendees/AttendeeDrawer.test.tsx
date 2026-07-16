@@ -336,7 +336,12 @@ describe("AttendeeDrawer", () => {
 
     await screen.findByText("Ada Lovelace");
     expect(screen.getByRole("button", { name: "Edit details" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Reprint badge — coming with the badge editor" })).toBeDisabled();
+    const reprintButton = screen.getByRole("button", { name: "Reprint badge — coming with the badge editor" });
+    expect(reprintButton).toBeDisabled();
+    // Lock icon accompanies the text (WCAG 1.4.1) — the same structural
+    // idiom (icon + text + native disabled) unified onto BulkBar's "Print
+    // badges" locked control (Task 8).
+    expect(reprintButton.querySelector("svg")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Regenerate code…" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Delete…" })).toBeEnabled();
     // Fixture ZONE_ACCESS already grants both real event zones (z1/z2), so

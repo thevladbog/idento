@@ -3,6 +3,7 @@ import {
   DropdownMenuTrigger, Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
+import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { EditAttendeeForm } from "./EditAttendeeForm";
@@ -420,8 +421,12 @@ function DrawerBody({
           {t("drawerEdit")}
         </Button>
         {/* Permanently locked — depends on the badge editor, which doesn't
-            exist yet in this phase; no future P2.1 task wires this. */}
+            exist yet in this phase; no future P2.1 task wires this. This is
+            the unified locked-action idiom (P2.1 whole-branch finding): a
+            disabled Button with a Lock icon + visible i18n label — mirrored
+            onto BulkBar's "Print badges" (Task 8). */}
         <Button type="button" variant="outline" className="flex-1" disabled aria-disabled="true">
+          <Lock aria-hidden className="size-4" />
           {t("drawerReprintLocked")}
         </Button>
       </div>

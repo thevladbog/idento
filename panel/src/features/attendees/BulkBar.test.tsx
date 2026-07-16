@@ -141,13 +141,14 @@ describe("BulkBar", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the Print badges chip as a non-interactive, non-button element", () => {
+  it("renders Print badges as a disabled button (icon + text), matching the drawer's locked-action idiom, not a non-interactive span", () => {
     renderWithProviders(<BulkBar selected={[ADA]} eventId="evt-1" onClear={vi.fn()} />);
 
-    const chip = screen.getByText("Print badges — coming with the badge editor");
-    expect(chip.tagName).not.toBe("BUTTON");
-    expect(chip).not.toHaveAttribute("onclick");
-    expect(screen.queryByRole("button", { name: /print badges/i })).not.toBeInTheDocument();
+    const printButton = screen.getByRole("button", { name: "Print badges — coming with the badge editor" });
+    expect(printButton).toBeDisabled();
+    // Lock icon accompanies the text (WCAG 1.4.1 — icon + text, never icon
+    // alone), same structural idiom as AttendeeDrawer's "Reprint badge".
+    expect(printButton.querySelector("svg")).toBeInTheDocument();
   });
 
   describe("Assign zone", () => {

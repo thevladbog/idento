@@ -62,6 +62,21 @@ const ALL_READY = {
   ],
 };
 
+const ATTENDEES_AND_EQUIPMENT_NOT_DONE = {
+  ready: false,
+  // attendees and equipment are the two not_done steps here (badge/staff
+  // done) — exercises the CTA link for `attendees` (the other CTA key,
+  // alongside `staff` covered by TWO_NOT_DONE_READINESS above) together with
+  // the untouched locked chip for `equipment`.
+  steps: [
+    { key: "attendees", status: "not_done" },
+    { key: "badge", status: "done" },
+    { key: "zones", status: "not_done" },
+    { key: "staff", status: "done", count: 3 },
+    { key: "equipment", status: "not_done" },
+  ],
+};
+
 const ZONES_SKIPPED_READINESS = {
   ready: false,
   steps: [
@@ -106,7 +121,7 @@ describe("WorkspaceOverview", () => {
     expect(screen.getByText("Everything your team needs before doors open.")).toBeInTheDocument();
   });
 
-  it("renders exactly the two not-done steps in fixed pipeline order, each with a locked chip and no buttons", async () => {
+  it("renders exactly the two not-done steps in fixed pipeline order — badge locked, staff a real CTA link", async () => {
     renderOverview();
 
     const list = await screen.findByTestId("workspace-next-steps");
@@ -125,8 +140,24 @@ describe("WorkspaceOverview", () => {
     expect(badgeIndex).toBeGreaterThanOrEqual(0);
     expect(staffIndex).toBeGreaterThan(badgeIndex);
 
-    expect(within(list).getAllByText("Coming soon")).toHaveLength(2);
+    // badge has no real screen yet — stays the locked, non-interactive chip.
+    expect(within(list).getAllByText("Coming soon")).toHaveLength(1);
+    // staff has a real screen (Task 5) — renders as a genuine link CTA, not
+    // a button and not another locked chip.
+    const staffLink = within(list).getByRole("link", { name: "Open" });
+    expect(staffLink).toHaveAttribute("href", "/events/evt-1/staff");
     expect(within(list).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("renders the attendees CTA as a real link to /events/$eventId/attendees, leaving equipment as the locked chip", async () => {
+    readinessResponse = ATTENDEES_AND_EQUIPMENT_NOT_DONE;
+    renderOverview();
+
+    const list = await screen.findByTestId("workspace-next-steps");
+    const attendeesLink = within(list).getByRole("link", { name: "Open" });
+    expect(attendeesLink).toHaveAttribute("href", "/events/evt-1/attendees");
+    expect(within(list).getByText("Coming soon")).toBeInTheDocument();
+    expect(within(list).getByText("Connect the venue printer and run a test print.")).toBeInTheDocument();
   });
 
   it("shows the all-ready message instead of rows when ready === true", async () => {

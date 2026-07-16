@@ -89,6 +89,7 @@
   "workspaceNextStaff": "Назначьте персонал и распечатайте их QR-карты для входа.",
   "workspaceNextEquipment": "Подключите принтер на площадке и сделайте тестовую печать.",
   "workspaceStepComingSoon": "Скоро",
+  "workspaceStepOpen": "Открыть",
   "workspaceAllReady": "Всё готово — запустите регистрацию из шапки, когда откроются двери.",
   "workspaceZonesNotUsed": "Необязательно — не используется",
   "workspaceStatUnavailable": "—",
