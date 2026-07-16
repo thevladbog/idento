@@ -129,8 +129,31 @@ export function BadgeEditorPage() {
   // for the WHOLE resolution, not just the PUT sliver of it.
   const [isReloading, setIsReloading] = React.useState(false);
   const [isOverwriting, setIsOverwriting] = React.useState(false);
+  // Per-dialog failure flags (review Minor 1): while a ConfirmDialog is
+  // open it OCCLUDES the page-level inline error line behind the modal
+  // overlay, so a failed resolution must surface its reason INSIDE the
+  // dialog, right next to the re-enabled confirm button. Cleared when the
+  // dialog is (re)opened from the banner and at the start of each confirm
+  // attempt, so a retry doesn't show a stale error while in flight.
+  const [reloadFailed, setReloadFailed] = React.useState(false);
+  const [overwriteFailed, setOverwriteFailed] = React.useState(false);
   const busy = saveTemplate.isPending || isReloading || isOverwriting;
   const saveDisabled = !initialized || !state.dirty || saveTemplate.isPending || conflict;
+
+  // Review Minor 2: none of the save-flow UI state above is meaningful for
+  // any event other than the one it was produced on — a lingering conflict
+  // banner / save-error line / open confirm dialog from the previous event
+  // would misreport the NEXT event's editor state. Reset it all whenever
+  // the target event changes (the reducer itself is re-seeded by the load
+  // effect above; this covers the save-model state the reducer doesn't own).
+  React.useEffect(() => {
+    setConflict(false);
+    setSaveErrorVisible(false);
+    setReloadDialogOpen(false);
+    setOverwriteDialogOpen(false);
+    setReloadFailed(false);
+    setOverwriteFailed(false);
+  }, [eventId]);
 
   function handleSave() {
     if (saveDisabled) return;
@@ -159,9 +182,21 @@ export function BadgeEditorPage() {
   async function handleReloadConfirm() {
     if (busy) return;
     setIsReloading(true);
+    setReloadFailed(false);
     try {
       const result = await templateQuery.refetch();
-      if (!result.data) return; // refetch itself failed — stay in conflict, dialog open, let the user retry
+      // `result.isError` MUST be checked, not just `!result.data`: this
+      // query has already succeeded once (that's how the editor loaded), and
+      // react-query RETAINS the last-successful `data` when a refetch fails
+      // (status flips to 'error', data stays stale). A bare `!result.data`
+      // check would mistake that retained STALE doc for the server's current
+      // version — loading old data, clearing the conflict, and silently
+      // swallowing the failure. Instead: stay in conflict, keep the dialog
+      // open, and surface the error inside it so the user can retry/cancel.
+      if (result.isError || !result.data) {
+        setReloadFailed(true);
+        return;
+      }
       originalRawRef.current = result.data.template;
       dispatch({ type: "load", doc: parseTemplateDoc(result.data.template), version: result.data.version });
       setConflict(false);
@@ -174,6 +209,7 @@ export function BadgeEditorPage() {
   async function handleOverwriteConfirm() {
     if (busy) return;
     setIsOverwriting(true);
+    setOverwriteFailed(false);
     try {
       // The 409 that set `conflict` carried a `current_version` in its
       // response BODY, but http.ts's `errors` middleware only keeps
@@ -201,6 +237,10 @@ export function BadgeEditorPage() {
               // stay in conflict so the user can see the banner and retry.
               setConflict(true);
             } else {
+              // In-dialog (the page-level line renders behind the open
+              // modal) AND page-level, so the reason stays visible if the
+              // user then cancels out of the dialog.
+              setOverwriteFailed(true);
               setSaveErrorVisible(true);
             }
           },
@@ -236,10 +276,26 @@ export function BadgeEditorPage() {
         <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <p className="text-body text-destructive">{t("badgeConflictBody")}</p>
           <div className="flex gap-2">
-            <Button type="button" variant="outline" disabled={busy} onClick={() => setReloadDialogOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setReloadFailed(false);
+                setReloadDialogOpen(true);
+              }}
+            >
               {t("badgeConflictReload")}
             </Button>
-            <Button type="button" variant="outline" disabled={busy} onClick={() => setOverwriteDialogOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setOverwriteFailed(false);
+                setOverwriteDialogOpen(true);
+              }}
+            >
               {t("badgeConflictOverwrite")}
             </Button>
           </div>
@@ -253,7 +309,16 @@ export function BadgeEditorPage() {
           setReloadDialogOpen(open);
         }}
         title={t("badgeConflictReloadTitle")}
-        description={t("badgeConflictReloadBody")}
+        // Spans, not nested <p>s: DialogDescription renders a <p>, which
+        // only allows phrasing content. `badgeLoadError` is the same honest
+        // copy the never-loaded page state uses — here it means the reload's
+        // own refetch failed (conflict intact, nothing was replaced).
+        description={
+          <>
+            {t("badgeConflictReloadBody")}
+            {reloadFailed ? <span className="mt-2 block text-destructive">{t("badgeLoadError")}</span> : null}
+          </>
+        }
         confirmLabel={t("badgeConflictReloadConfirm")}
         cancelLabel={t("createEventCancel")}
         closeLabel={t("workspaceDialogClose")}
@@ -267,7 +332,12 @@ export function BadgeEditorPage() {
           setOverwriteDialogOpen(open);
         }}
         title={t("badgeConflictOverwriteTitle")}
-        description={t("badgeConflictOverwriteBody")}
+        description={
+          <>
+            {t("badgeConflictOverwriteBody")}
+            {overwriteFailed ? <span className="mt-2 block text-destructive">{t("badgeSaveError")}</span> : null}
+          </>
+        }
         confirmLabel={t("badgeConflictOverwriteConfirm")}
         cancelLabel={t("createEventCancel")}
         closeLabel={t("workspaceDialogClose")}
@@ -282,7 +352,15 @@ export function BadgeEditorPage() {
           <Skeleton className="h-full min-h-[320px] w-full" data-testid="badge-pane-skeleton" />
           <Skeleton className="h-full min-h-[320px] w-full" data-testid="badge-pane-skeleton" />
         </div>
-      ) : templateQuery.isError ? (
+      ) : templateQuery.isError && !initialized ? (
+        // The full-page load-error state is only for a NEVER-loaded editor
+        // (`!initialized`): once a doc has been seeded, a later FAILED
+        // refetch also flips `templateQuery.isError` to true (react-query
+        // keeps the stale `data` but sets status to 'error'), and hiding the
+        // operator's — possibly dirty — editor behind this screen would
+        // discard their working context. Those later failures surface where
+        // they happened instead: inside the conflict dialogs (reload) or on
+        // the inline `badgeSaveError` line (save).
         <div className="flex flex-1 flex-col items-start gap-2 rounded-lg border border-border p-6">
           <p className="text-body text-destructive">{t("badgeLoadError")}</p>
           <Button type="button" variant="outline" onClick={() => templateQuery.refetch()}>

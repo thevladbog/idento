@@ -500,6 +500,65 @@ describe("BadgeEditorPage save model (Task 10)", () => {
       expect(pill).toHaveAttribute("data-state", "saved");
     });
 
+    it("Reload: a FAILED refetch keeps the conflict (banner, dialog, edited doc) and surfaces the error inside the dialog instead of loading the stale cached doc", async () => {
+      const user = userEvent.setup();
+      await triggerConflict(user);
+
+      // The reload-triggered GET now fails transiently. react-query RETAINS
+      // the last-successful data (the stale v5 doc) on a failed refetch
+      // (status flips to 'error' but `data` stays), so a naive
+      // `!result.data` check would treat this failure as success and load
+      // the STALE doc as if it were the server's current version.
+      templateStatus = 500;
+
+      await user.click(screen.getByRole("button", { name: "Reload server version" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Reload" }));
+
+      // Minor 1: the failure reason is surfaced INSIDE the open dialog —
+      // a page-level inline line would render behind the modal overlay.
+      expect(await within(dialog).findByText("Couldn't load the badge template.")).toBeInTheDocument();
+
+      // Still in conflict: dialog open, banner behind it, pill unchanged,
+      // and the confirm button re-enabled for a retry.
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(
+        screen.getByText("Template changed on the server — review before overwriting."),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "conflict");
+      expect(within(dialog).getByRole("button", { name: "Reload" })).not.toBeDisabled();
+
+      // The edited doc was NOT replaced by the stale cached v5 (whose
+      // elements are empty — loading it would clear the added element and
+      // resurface the empty-state guidance), and the panes stay mounted
+      // (the full-page load-error screen is only for a never-loaded editor).
+      expect(screen.getByTestId("badge-pane-elements")).toBeInTheDocument();
+      expect(screen.queryByText("Add your first element")).not.toBeInTheDocument();
+      expect(screen.queryByText("Couldn't load the badge template.")).toBe(
+        within(dialog).getByText("Couldn't load the badge template."),
+      );
+    });
+
+    it("Overwrite: a non-409 failure surfaces the save error inside the open dialog and keeps the conflict", async () => {
+      const user = userEvent.setup();
+      await triggerConflict(user);
+
+      // The version refetch succeeds, but the retry PUT itself fails.
+      templateResponse = { template: { width_mm: 90, height_mm: 55, dpi: 300, elements: [] }, version: 9 };
+      putStatus = 500;
+
+      await user.click(screen.getByRole("button", { name: "Overwrite" }));
+      const dialog = await screen.findByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Confirm overwrite" }));
+
+      expect(await within(dialog).findByText("Couldn't save the badge template. Try again.")).toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(
+        screen.getByText("Template changed on the server — review before overwriting."),
+      ).toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "Confirm overwrite" })).not.toBeDisabled();
+    });
+
     it("Cancel on the Reload confirm dialog keeps the banner and makes no extra request", async () => {
       const user = userEvent.setup();
       await triggerConflict(user);
@@ -550,6 +609,48 @@ describe("BadgeEditorPage save model (Task 10)", () => {
       // pending state update bleeds into the next test.
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     });
+  });
+
+  it("resets the inline save error when navigating to another event", async () => {
+    putStatus = 500;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Couldn't save the badge template. Try again.")).toBeInTheDocument();
+
+    await act(async () => {
+      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    });
+    await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+
+    // evt-1's failure must not linger over evt-2's editor.
+    expect(screen.queryByText("Couldn't save the badge template. Try again.")).not.toBeInTheDocument();
+  });
+
+  it("resets the conflict banner and pill when navigating to another event", async () => {
+    putStatus = 409;
+    const user = userEvent.setup();
+    const { router } = renderPage();
+
+    await screen.findByTestId("badge-pane-elements");
+    await addTextElement(user);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "conflict");
+
+    await act(async () => {
+      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    });
+    await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+
+    // evt-1's conflict must not linger over evt-2's editor: no banner, and
+    // no pill at all (evt-2 loaded clean — not dirty, never saved).
+    expect(
+      screen.queryByText("Template changed on the server — review before overwriting."),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("badge-save-state-pill")).not.toBeInTheDocument();
   });
 
   it("keeps Save disabled during the window between navigating to a new event and that event's load finishing", async () => {
