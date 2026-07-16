@@ -596,7 +596,7 @@ export interface paths {
         /** All staff assigned to a zone, as raw assignment records */
         get: operations["getZoneStaff"];
         put?: never;
-        /** Assign a staff member to a zone (silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING) */
+        /** Assign a staff member to a zone (admin/manager only; silently no-ops on a duplicate pair — store uses ON CONFLICT DO NOTHING) */
         post: operations["assignStaffToZone"];
         delete?: never;
         options?: never;
@@ -614,7 +614,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove a staff member from a zone. Idempotent — DELETE on a pair that was never assigned still returns 200 (the store's DELETE simply affects zero rows; there is no existence check). */
+        /** Remove a staff member from a zone (admin/manager only). Idempotent — DELETE on a pair that was never assigned still returns 200 (the store's DELETE simply affects zero rows; there is no existence check). */
         delete: operations["removeStaffFromZone"];
         options?: never;
         head?: never;
@@ -4376,7 +4376,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description tenant_suspended from the tenant gate. */
+            /** @description Caller role is not admin/manager ("Access denied") — the gate sits after the zone_id parse but before requireZoneOwnership and the body bind, so a staff caller sees 403 even for a foreign/missing zone or a malformed body. Rendered via writeErr as the standard Error shape (contrast the event-staff siblings, whose role gate uses echo's HTTPError). Or tenant_suspended from the tenant gate. */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -4437,7 +4437,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description tenant_suspended from the tenant gate. */
+            /** @description Caller role is not admin/manager ("Access denied") — the gate sits after the two UUID parses but before requireZoneOwnership, so a staff caller sees 403 even for a foreign/missing zone. Rendered via writeErr as the standard Error shape (contrast the event-staff siblings, whose role gate uses echo's HTTPError). Or tenant_suspended from the tenant gate. */
             403: {
                 headers: {
                     [name: string]: unknown;
