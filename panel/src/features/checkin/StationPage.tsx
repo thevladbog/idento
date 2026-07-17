@@ -206,6 +206,7 @@ export function StationPage() {
             mode={settings.scan_input}
             enabled={scanEnabled}
             readOnly={!connection.online}
+            manualSearchEnabled={settings.manual_search_enabled}
             onCode={handleCode}
             onPickAttendee={handlePickAttendee}
           />

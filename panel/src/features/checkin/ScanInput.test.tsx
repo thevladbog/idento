@@ -53,7 +53,12 @@ const server = startMswServer(
 void server;
 
 function renderScanInput(
-  overrides: { mode?: "wedge" | "scanner" | "manual"; enabled?: boolean; readOnly?: boolean } = {},
+  overrides: {
+    mode?: "wedge" | "scanner" | "manual";
+    enabled?: boolean;
+    readOnly?: boolean;
+    manualSearchEnabled?: boolean;
+  } = {},
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onCode = vi.fn();
@@ -67,6 +72,7 @@ function renderScanInput(
       mode={overrides.mode ?? "wedge"}
       enabled={overrides.enabled ?? true}
       readOnly={overrides.readOnly}
+      manualSearchEnabled={overrides.manualSearchEnabled ?? true}
       onCode={onCode}
       onPickAttendee={onPickAttendee}
     />,
@@ -87,7 +93,7 @@ describe("ScanInput", () => {
   });
 
   it.each(["wedge", "scanner", "manual"] as const)(
-    "always renders the manual search box in %s mode",
+    "renders the manual search box in %s mode when manual_search_enabled is true (the default)",
     (mode) => {
       renderScanInput({ mode });
       expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
@@ -188,6 +194,52 @@ describe("ScanInput", () => {
       const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
       await user.type(searchBox, "Ada");
       await waitFor(() => expect(screen.getByRole("button", { name: /Ada Lovelace/ })).toBeInTheDocument());
+    });
+  });
+
+  // Final cross-task review finding -- `manual_search_enabled`
+  // (settingsTypes.ts, Task 5) previously had no consumer at all: the
+  // launch ceremony (Task 11) let the operator toggle it and persisted it,
+  // but nothing at the station read it back, so the manual search box
+  // stayed fully functional regardless of the setting's value. StationPage
+  // now threads `settings.manual_search_enabled` into ScanInput as
+  // `manualSearchEnabled`.
+  describe("manualSearchEnabled", () => {
+    it.each(["wedge", "scanner", "manual"] as const)(
+      "removes the manual search box entirely in %s mode when manualSearchEnabled is false",
+      (mode) => {
+        renderScanInput({ mode, manualSearchEnabled: false });
+        expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+      },
+    );
+
+    it("never fires a search request while disabled, even though the box can't be typed into", async () => {
+      renderScanInput({ mode: "manual", manualSearchEnabled: false });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      expect(attendeesHitCount).toBe(0);
+    });
+
+    it("does not affect the wedge scan-input mechanism -- the hidden wedge input still renders and still emits onCode", async () => {
+      const user = userEvent.setup();
+      const { onCode } = renderScanInput({ mode: "wedge", manualSearchEnabled: false });
+
+      const wedgeInput = screen.getByLabelText("Badge scanner input");
+      expect(wedgeInput).toHaveFocus();
+
+      await user.type(wedgeInput, "PD-0107{Enter}");
+
+      expect(onCode).toHaveBeenCalledTimes(1);
+      expect(onCode).toHaveBeenCalledWith("PD-0107");
+      expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    });
+
+    it("does not affect the scanner mode's own status hint", async () => {
+      renderScanInput({ mode: "scanner", manualSearchEnabled: false });
+
+      await waitFor(() =>
+        expect(screen.getByText("Waiting for a scan from the handheld scanner…")).toBeInTheDocument(),
+      );
+      expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
     });
   });
 });

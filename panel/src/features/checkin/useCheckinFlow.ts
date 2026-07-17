@@ -27,10 +27,12 @@ type AttendeeListPage = components["schemas"]["AttendeeListPage"];
 export interface UseCheckinFlowOptions {
   eventId: string;
   // The registered station this scan is happening at -- forwarded as
-  // `station_id` on the check-in call AND (on a checked_in print) as the
-  // print pipeline's `printContext.stationId`. `null` is a valid,
+  // `station_id` on the check-in call. `null` is a valid,
   // deliberately-supported "station-less" check-in (schema.d.ts's
-  // StationCheckinRequest comment).
+  // StationCheckinRequest comment). NOT forwarded to the implicit
+  // checked_in auto-print's printAttendee call (see resolveCheckin below --
+  // that call deliberately omits `printContext` entirely, since the
+  // check-in itself was already logged by stationCheckin.mutateAsync).
   stationId: string | null;
   settings: CheckinSettings;
   // The printer to send a checked_in badge to. Task 8/9's callers own
@@ -118,9 +120,20 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
     // "already_checked_in"/"blocked", regardless of settings.
     if (response.outcome === "checked_in" && settings.print_on_checkin) {
       try {
-        await printBadge.printAttendee(response.attendee, printerName, {
-          printContext: { eventId, stationId },
-        });
+        // Deliberately NO `printContext` here. This is the IMPLICIT
+        // auto-print that fulfills the check-in that just happened --
+        // `stationCheckin.mutateAsync` above already logged a `checkin` row
+        // in the same DB transaction as the state change (Task 3's
+        // CheckInAttendee). Passing `printContext` would make the backend's
+        // /printed endpoint (Task 4) log an ADDITIONAL `reprint` row for
+        // this same event, double-logging the feed for a single check-in
+        // (final cross-task review finding). Falling back to no
+        // `printContext` keeps this call on the pre-existing P3.2
+        // counter-only behavior: bumps `printed_count`, no feed row. The
+        // Recent-Scans-Rail's OWN Reprint button (RecentScansRail.tsx) is
+        // the genuine, distinct, operator-initiated reprint action and
+        // correctly keeps passing `printContext` there.
+        await printBadge.printAttendee(response.attendee, printerName);
       } catch (error) {
         // The check-in already committed server-side -- a print failure
         // here must never look like (or cause) an undone check-in. The

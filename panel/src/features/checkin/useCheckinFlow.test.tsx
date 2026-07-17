@@ -159,7 +159,7 @@ describe("useCheckinFlow", () => {
     unstubFontFaceApi();
   });
 
-  it("resolves a fresh scanned code to the checked_in (allowed) verdict and prints with the station's printContext", async () => {
+  it("resolves a fresh scanned code to the checked_in (allowed) verdict and prints WITHOUT a printContext (the checkin row was already logged by the check-in call itself)", async () => {
     const { result } = renderFlow();
 
     void result.current.submitCode(ATTENDEE.code);
@@ -177,7 +177,14 @@ describe("useCheckinFlow", () => {
 
     await waitFor(() => expect(agentPrintHitCount).toBe(1));
     await waitFor(() => expect(printedHitCount).toBe(1));
-    expect(printedBodyCapture).toEqual({ event_id: "evt-1", station_id: "st-1" });
+    // No printContext -- this is the IMPLICIT auto-print fulfilling a
+    // check-in that was already logged server-side (Task 3's
+    // CheckInAttendee), not a separate loggable reprint action (final
+    // cross-task review finding). An empty body (undefined, since the
+    // request itself carries no JSON payload) is the pre-existing P3.2
+    // counter-only shape -- see this suite's own MSW handler for
+    // POST /printed above (`raw ? JSON.parse(raw) : undefined`).
+    expect(printedBodyCapture).toBeUndefined();
   });
 
   it("shows already_checked_in for a repeat scan and never prints", async () => {

@@ -282,6 +282,31 @@ describe("StationPage", () => {
     expect(await screen.findByTestId("checkin-recent-scans-rail")).toBeInTheDocument();
   });
 
+  // Final cross-task review finding -- `settings.manual_search_enabled`
+  // previously had no consumer at the station at all: toggling "Allow
+  // manual search" off in the launch ceremony had zero effect, since
+  // StationPage never read the setting back and ScanInput always rendered
+  // the search box unconditionally. StationPage now threads
+  // `settings.manual_search_enabled` into ScanInput's `manualSearchEnabled`
+  // prop (ScanInput.test.tsx owns the exhaustive per-mode/functional
+  // coverage of the prop itself; this is the end-to-end proof the wiring
+  // from the settings response actually reaches it).
+  it("hides the manual search box when settings.manual_search_enabled is false, without affecting the wedge scan-input mechanism", async () => {
+    settingsOverride = { ...settingsOverride, manual_search_enabled: false };
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+
+    expect(screen.queryByPlaceholderText("Search by name, email, or code…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
+  });
+
+  it("shows the manual search box when settings.manual_search_enabled is true (the default)", async () => {
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+
+    expect(screen.getByPlaceholderText("Search by name, email, or code…")).toBeInTheDocument();
+  });
+
   it("a wedge scan of a known code shows the checked_in verdict card through the mapped verdictClasses", async () => {
     const user = userEvent.setup();
     renderCorrectAt("/events/evt-1/checkin?station=st-1");

@@ -40,11 +40,33 @@ export interface ScanInputProps {
   // it's simply removed outright: search results still render (whatever the
   // already-cached query returns), just without a clickable check-in CTA.
   readOnly?: boolean;
+  // Final cross-task review finding -- the check-in settings' own
+  // `manual_search_enabled` (settingsTypes.ts, Task 5) previously had no
+  // consumer at all: the launch ceremony (Task 11) let the operator toggle
+  // "Allow manual search" and persisted it, but nothing at the station ever
+  // read it back, so the manual search box stayed fully functional
+  // regardless of the setting. StationPage.tsx now threads
+  // `settings.manual_search_enabled` in here. Defaults to `true` (matching
+  // DEFAULT_CHECKIN_SETTINGS.manual_search_enabled) so any other caller/test
+  // that doesn't know about this setting keeps the box's prior always-on
+  // behavior. Deliberately independent of `mode`/`readOnly`: this setting
+  // only controls the manual TEXT SEARCH fallback below, never the
+  // wedge/scanner scan-input mechanism itself (that stays driven by `mode`/
+  // `enabled` alone, unaffected by this prop).
+  manualSearchEnabled?: boolean;
   onCode(code: string): void;
   onPickAttendee(attendee: Attendee): void;
 }
 
-export function ScanInput({ eventId, mode, enabled, readOnly = false, onCode, onPickAttendee }: ScanInputProps) {
+export function ScanInput({
+  eventId,
+  mode,
+  enabled,
+  readOnly = false,
+  manualSearchEnabled = true,
+  onCode,
+  onPickAttendee,
+}: ScanInputProps) {
   const { t } = useTranslation();
   const { degraded, wedgeInputProps } = useScanInput({ mode, onCode, enabled });
 
@@ -66,12 +88,16 @@ export function ScanInput({ eventId, mode, enabled, readOnly = false, onCode, on
   // `enabled: hasQuery` (Task 7's addition to useAttendeesPage) skips the
   // request entirely while the search box is empty — mounting the station
   // shouldn't dump the roster's first page before the operator has typed
-  // anything.
+  // anything. `&& manualSearchEnabled` -- final cross-task review finding:
+  // the search box itself is unmounted below when this setting is off, but
+  // this also belt-and-suspenders-guards the request itself against firing
+  // for anything that could still reach `debouncedSearch` (e.g. this prop
+  // flipping false mid-typing) while the setting is disabled.
   const searchQuery = useAttendeesPage(eventId, {
     page: 1,
     perPage: SEARCH_RESULTS_LIMIT,
     search: debouncedSearch,
-    enabled: hasQuery,
+    enabled: hasQuery && manualSearchEnabled,
   });
 
   const results = hasQuery ? (searchQuery.data?.attendees ?? []) : [];
@@ -104,60 +130,74 @@ export function ScanInput({ eventId, mode, enabled, readOnly = false, onCode, on
 
       {mode === "manual" ? <p className="text-body text-muted-foreground">{t("checkinScanManualHint")}</p> : null}
 
-      <div className="flex flex-col gap-2">
-        <Input
-          type="search"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-          placeholder={t("checkinManualSearchPlaceholder")}
-          aria-label={t("checkinManualSearchPlaceholder")}
-        />
+      {/* Final cross-task review finding -- gated on
+          `manual_search_enabled` (threaded from StationPage.tsx as
+          `manualSearchEnabled`), same one-conditional-block-per-affordance
+          pattern as the wedge/scanner/manual hints above: when the operator
+          has turned "Allow manual search" off (LaunchCeremony.tsx), this
+          entire text-search fallback -- box, results, hints -- is removed
+          outright rather than merely disabled, so the setting actually has
+          an effect instead of staying inert. Deliberately independent of
+          `mode`: the wedge/scanner scan-input mechanism above is untouched
+          by this setting either way. */}
+      {manualSearchEnabled ? (
+        <div className="flex flex-col gap-2">
+          <Input
+            type="search"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder={t("checkinManualSearchPlaceholder")}
+            aria-label={t("checkinManualSearchPlaceholder")}
+          />
 
-        {results.length > 0 ? (
-          <ul className="flex flex-col gap-1 rounded-md border border-border">
-            {results.map((attendee) => {
-              const content = (
-                <>
-                  <span className="text-body text-foreground">
-                    {attendee.first_name} {attendee.last_name}
-                  </span>
-                  <span className="text-caption text-muted-foreground">
-                    {attendee.email} · {attendee.code}
-                  </span>
-                </>
-              );
-              // No check-in CTA at all while offline (this task's brief:
-              // "look someone up, no check-in button") -- a plain,
-              // non-interactive row, not a disabled button (a disabled
-              // button would still imply "there's an action here, just
-              // temporarily blocked", which isn't the story: this station
-              // genuinely can't check anyone in from a stale, cached
-              // roster while offline).
-              return readOnly ? (
-                <li key={attendee.id} data-testid="checkin-search-result-readonly">
-                  <div className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left">{content}</div>
-                </li>
-              ) : (
-                <li key={attendee.id}>
-                  <button
-                    type="button"
-                    onClick={() => pick(attendee)}
-                    className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted"
-                  >
-                    {content}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : null}
+          {results.length > 0 ? (
+            <ul className="flex flex-col gap-1 rounded-md border border-border">
+              {results.map((attendee) => {
+                const content = (
+                  <>
+                    <span className="text-body text-foreground">
+                      {attendee.first_name} {attendee.last_name}
+                    </span>
+                    <span className="text-caption text-muted-foreground">
+                      {attendee.email} · {attendee.code}
+                    </span>
+                  </>
+                );
+                // No check-in CTA at all while offline (this task's brief:
+                // "look someone up, no check-in button") -- a plain,
+                // non-interactive row, not a disabled button (a disabled
+                // button would still imply "there's an action here, just
+                // temporarily blocked", which isn't the story: this station
+                // genuinely can't check anyone in from a stale, cached
+                // roster while offline).
+                return readOnly ? (
+                  <li key={attendee.id} data-testid="checkin-search-result-readonly">
+                    <div className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left">{content}</div>
+                  </li>
+                ) : (
+                  <li key={attendee.id}>
+                    <button
+                      type="button"
+                      onClick={() => pick(attendee)}
+                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted"
+                    >
+                      {content}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
 
-        {results.length > 0 && readOnly ? (
-          <p className="text-caption text-muted-foreground">{t("checkinManualSearchReadOnlyHint")}</p>
-        ) : null}
+          {results.length > 0 && readOnly ? (
+            <p className="text-caption text-muted-foreground">{t("checkinManualSearchReadOnlyHint")}</p>
+          ) : null}
 
-        {showNoMatches ? <p className="text-caption text-muted-foreground">{t("checkinManualSearchNoMatches")}</p> : null}
-      </div>
+          {showNoMatches ? (
+            <p className="text-caption text-muted-foreground">{t("checkinManualSearchNoMatches")}</p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
