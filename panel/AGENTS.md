@@ -37,6 +37,19 @@ work while this rewrite runs (see root `AGENTS.md`).
 - **i18n:** every user-facing string is a `react-i18next` key, added to
   **both** `src/shared/i18n/en.json` and `ru.json` in the same change.
   `src/shared/i18n/keyParity.test.ts` fails the suite otherwise.
+  Key prefixes name the surface that owns the copy (`badgeTestPrint*`,
+  `drawerReprint*`, `bulkPrint*`); copy genuinely shared across surfaces
+  uses a neutral prefix instead (`printPrinterLabel`, `printNoPrinters`,
+  `printSentTo`). Don't reference another surface's prefixed key — rename
+  it to the neutral prefix first.
+- **Physical-output dialogs share ONE dismissal convention:** while a print/
+  send is in flight, EVERY dismiss path (X, Escape, outside-click, Cancel) is
+  inert until the operation settles, with a visible hint explaining that a
+  send can't be recalled. The agent's `/print` 200 is a transport ack only —
+  a "cancelled" print can still emerge from the printer, so dismissing
+  mid-send hides physical output and invites double prints. See
+  `TestPrintDialog.tsx`, `AttendeeDrawer.tsx` (reprint), `BulkBar.tsx`
+  (bulk print); don't invent a per-surface variant.
 - **Theming:** light/dark only via `@idento/ui` token classes and the
   `.dark` class toggle already wired in `ThemeProvider` — never hardcode a
   color or write `prefers-color-scheme` CSS directly in `panel/`. Sanctioned

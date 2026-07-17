@@ -172,7 +172,14 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
     // narrowing.
     const rawWidthMM = typeof raw.width_mm === "number" && raw.width_mm > 0 ? raw.width_mm : 50;
     const rawHeightMM = typeof raw.height_mm === "number" && raw.height_mm > 0 ? raw.height_mm : 30;
-    const rawDpi = typeof raw.dpi === "number" && raw.dpi > 0 ? raw.dpi : 203;
+    // dpi mirrors the backend even more literally than width/height (which
+    // stay float64 there): ParseBadgeTemplate casts with Go's int(d) —
+    // truncation toward zero — BEFORE its <= 0 fallback check, so a
+    // pathological fractional dpi must truncate first (203.7 -> 203) and
+    // only then fall back (0.9 -> 0 -> 203), or this path's ZPL diverges
+    // from what the backend's own generator would emit for the same doc.
+    const truncatedDpi = typeof raw.dpi === "number" ? Math.trunc(raw.dpi) : 0;
+    const rawDpi = truncatedDpi > 0 ? truncatedDpi : 203;
     const config: BadgeConfig = { width_mm: rawWidthMM, height_mm: rawHeightMM, dpi: rawDpi };
     const elements = Array.isArray(raw.elements) ? (raw.elements as RawBadgeElement[]) : [];
 

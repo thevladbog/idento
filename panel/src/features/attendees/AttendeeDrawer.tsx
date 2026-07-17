@@ -14,6 +14,7 @@ import {
 } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
 import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -453,6 +454,16 @@ function DrawerBody({
         setReprintError({ kind: "missing-font", families: error.families });
         return;
       }
+      // Follow-up batch item 2: a timed-out send is not a PROVEN failure —
+      // the abort only cancelled our wait, the agent may have received the
+      // job and the badge may still emerge. The generic branch below would
+      // show the client-authored (non-i18n) message verbatim AND read like
+      // a plain failure, inviting an immediate double print — dedicated
+      // honest copy instead.
+      if (error instanceof AgentPrintTimeoutError) {
+        setReprintError({ kind: "generic", message: t("drawerReprintTimeout") });
+        return;
+      }
       setReprintError({
         kind: "generic",
         message: error instanceof Error ? error.message : t("drawerReprintError"),
@@ -471,7 +482,7 @@ function DrawerBody({
       </span>
       {!reprintConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
-          <Label htmlFor="reprint-printer">{t("badgeTestPrintPrinterLabel")}</Label>
+          <Label htmlFor="reprint-printer">{t("printPrinterLabel")}</Label>
           <select
             id="reprint-printer"
             className={REPRINT_SELECT_CLASSNAME}
@@ -480,7 +491,7 @@ function DrawerBody({
             onChange={(event) => setReprintPrinter(event.target.value)}
           >
             {agent.printers.length === 0 ? (
-              <option value="">{t("badgeTestPrintNoPrinters")}</option>
+              <option value="">{t("printNoPrinters")}</option>
             ) : (
               agent.printers.map((printer) => (
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
@@ -488,6 +499,13 @@ function DrawerBody({
             )}
           </select>
         </span>
+      ) : null}
+      {reprintPrinting ? (
+        // Follow-up batch item 4: dismissal is locked while the send is in
+        // flight (Fix 2) — this line explains WHY the disabled Cancel isn't
+        // a broken button, and heads off the "closing would have stopped
+        // it" assumption. Transport-ack truth: a send can't be recalled.
+        <span className="mt-2 block">{t("drawerReprintNoCancelHint")}</span>
       ) : null}
       {printBadge.fontsStatus === "error" ? (
         <span className="mt-2 block text-warning">{t("badgeFontsNotReady")}</span>
@@ -685,7 +703,7 @@ function DrawerBody({
         <span className={reprintSent.warning ? "text-caption text-warning" : "text-caption text-muted-foreground"}>
           {reprintSent.warning
             ? t("drawerReprintMarkPrintedWarning", { printer: reprintSent.printer })
-            : t("badgeTestPrintSent", { printer: reprintSent.printer })}
+            : t("printSentTo", { printer: reprintSent.printer })}
         </span>
       ) : null}
 

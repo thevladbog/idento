@@ -427,11 +427,23 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
                 tally stays visible, stacked above the error. `done` counts
                 completed attempts (the short-circuited attendee never bumps
                 it); genuine failures among them are subtracted, so `sent`
-                is only ever badges that actually went out. */}
-            {t("bulkPrintPartialBeforeNoTemplate", {
-              sent: printProgress.done - printFailedCount,
-              total: printProgress.total,
-            })}
+                is only ever badges that actually went out. Follow-up batch
+                item 5: with failures in the mix, the plain tally leaves the
+                remainder ambiguous (failed? never reached?), so the
+                with-failures variant splits failed (attempted, send
+                rejected) from never-attempted (loop stopped first:
+                total - done, which includes the short-circuited attendee). */}
+            {printFailedCount > 0
+              ? t("bulkPrintPartialBeforeNoTemplateWithFailures", {
+                  sent: printProgress.done - printFailedCount,
+                  total: printProgress.total,
+                  failed: printFailedCount,
+                  notAttempted: printProgress.total - printProgress.done,
+                })
+              : t("bulkPrintPartialBeforeNoTemplate", {
+                  sent: printProgress.done - printFailedCount,
+                  total: printProgress.total,
+                })}
           </span>
         ) : null
       ) : printMissingFontFamilies ? (
@@ -457,7 +469,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       ) : null}
       {!printConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
-          <Label htmlFor="bulk-print-printer">{t("badgeTestPrintPrinterLabel")}</Label>
+          <Label htmlFor="bulk-print-printer">{t("printPrinterLabel")}</Label>
           <select
             id="bulk-print-printer"
             className={PRINT_SELECT_CLASSNAME}
@@ -466,7 +478,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
             onChange={(event) => setPrinterSelection(event.target.value)}
           >
             {agent.printers.length === 0 ? (
-              <option value="">{t("badgeTestPrintNoPrinters")}</option>
+              <option value="">{t("printNoPrinters")}</option>
             ) : (
               agent.printers.map((printer) => (
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
@@ -475,6 +487,14 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           </select>
         </span>
       ) : null}
+      {printing ? (
+        // Follow-up batch item 4: every dismiss path is inert while the
+        // batch runs (see handlePrintOpenChange), but the shared
+        // ConfirmDialog's Cancel button still LOOKS clickable — without
+        // this line a click on it reads as a broken button, or worse, as a
+        // successful cancel. Transport-ack truth: a send can't be recalled.
+        <span className="mt-2 block">{t("bulkPrintNoCancelHint")}</span>
+      ) : null}
       {printBadge.fontsStatus === "error" ? (
         <span className="mt-2 block text-warning">{t("badgeFontsNotReady")}</span>
       ) : null}
@@ -482,7 +502,15 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         <span className="mt-2 block text-warning">{t("bulkPrintMarkWarn", { count: printMarkWarnCount })}</span>
       ) : null}
       {printNoTemplate ? (
-        <span className="mt-2 block text-destructive">{t("bulkPrintNoTemplate")}</span>
+        <span className="mt-2 block text-destructive">
+          {/* Follow-up batch item 5: with done > 0 the event demonstrably
+              HAD a template (badges were generated from it this batch), so
+              "doesn't have a badge template YET" would misread — the
+              softened became-unavailable copy shows instead. done === 0
+              keeps the original copy: nothing was ever generated, so
+              "no template yet" is the honest description. */}
+          {printProgress && printProgress.done > 0 ? t("bulkPrintTemplateGone") : t("bulkPrintNoTemplate")}
+        </span>
       ) : null}
       {printMissingFontFamilies ? (
         <span className="mt-2 block text-destructive">
@@ -639,7 +667,16 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         confirmLabel={t("bulkPrintConfirm")}
         cancelLabel={t("createEventCancel")}
         closeLabel={t("workspaceDialogClose")}
-        confirmDisabled={printing || !printTargetPrinter || agent.state !== "connected" || printFontsBlocking}
+        // `printProgress !== null` (not just `printing`): once a batch has
+        // SETTLED on its final tally, confirm must not silently re-enable —
+        // a second click would re-run the whole batch over the same
+        // selection (double print). A settled session is closed with the
+        // dialog (handlePrintOpenChange resets printProgress); re-running
+        // requires an explicit close + reopen.
+        confirmDisabled={
+          printing || printProgress !== null || !printTargetPrinter
+          || agent.state !== "connected" || printFontsBlocking
+        }
         onConfirm={() => void handleConfirmPrintBadges()}
       />
     </>

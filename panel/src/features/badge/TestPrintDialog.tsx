@@ -225,7 +225,7 @@ export function TestPrintDialog({
         <AgentStatus state={agentStatusState} title={t(agentStatusTitleKey)} />
 
         <div className="flex flex-col gap-2">
-          <Label htmlFor="test-print-printer">{t("badgeTestPrintPrinterLabel")}</Label>
+          <Label htmlFor="test-print-printer">{t("printPrinterLabel")}</Label>
           <select
             id="test-print-printer"
             className={SELECT_CLASSNAME}
@@ -234,7 +234,7 @@ export function TestPrintDialog({
             onChange={(event) => setSelectedPrinter(event.target.value)}
           >
             {agent.printers.length === 0 ? (
-              <option value="">{t("badgeTestPrintNoPrinters")}</option>
+              <option value="">{t("printNoPrinters")}</option>
             ) : (
               agent.printers.map((printer) => (
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
@@ -255,7 +255,7 @@ export function TestPrintDialog({
           <p className="text-body text-destructive" role="alert">{generation.message}</p>
         ) : null}
         {printError ? <p className="text-body text-destructive" role="alert">{printError}</p> : null}
-        {sentTo ? <p className="text-body text-success">{t("badgeTestPrintSent", { printer: sentTo })}</p> : null}
+        {sentTo ? <p className="text-body text-success">{t("printSentTo", { printer: sentTo })}</p> : null}
         {/* Reachability-gated CTA idiom (spec §7.3): disabled, never a
             silent no-op, with a visible reason -- not just a hover-only
             tooltip (WCAG 1.4.1: this must be discoverable without relying

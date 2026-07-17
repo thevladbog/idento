@@ -10,7 +10,7 @@
 // test against the installed opentype.js@2.0.0 before writing this file), so
 // the base64-fixture fallback the brief allows for was not needed.
 import * as opentype from "opentype.js";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { createElement, type ReactNode } from "react";
@@ -104,6 +104,13 @@ const CYR_BYTES = buildFont(CYRILLIC_SAMPLE);
 const LATIN_BYTES = buildFont("ABCDEFG");
 const GARBAGE_BYTES = new TextEncoder().encode("garbage, not a font").buffer;
 
+// Per-font-id fetch counter — lets the staleTime test below prove a
+// RESOLVED font's bytes are never re-fetched (and so never re-parsed) on
+// window refocus, per id rather than as one aggregate that the errored
+// garbage font (which TanStack legitimately retries on refocus — an error
+// query has no fresh data for staleTime to protect) would muddy.
+let fontFileHits: Record<string, number> = {};
+
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/fonts", () => {
     return HttpResponse.json([
@@ -113,7 +120,9 @@ const server = startMswServer(
     ]);
   }),
   http.get("http://api.test/api/fonts/:id/file", ({ params }) => {
-    switch (params.id) {
+    const id = params.id as string;
+    fontFileHits[id] = (fontFileHits[id] ?? 0) + 1;
+    switch (id) {
       case "font-cyr":
         return HttpResponse.arrayBuffer(CYR_BYTES);
       case "font-latin":
@@ -135,6 +144,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("useFontCoverage", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
+    fontFileHits = {};
   });
 
   it("resolves true/false/undefined per font -- never a false positive for an unparseable file", async () => {
@@ -149,5 +159,36 @@ describe("useFontCoverage", () => {
     // assert it stays `undefined` forever -- never collapses to `false`.
     await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
     expect(result.current["font-garbage"]).toBeUndefined();
+  });
+
+  // Follow-up batch item 3: font bytes are immutable per id (an uploaded
+  // font is never edited in place — a change is a new upload with a new id),
+  // so a window refocus must not re-fetch AND re-parse every resolved event
+  // font (the default staleTime of 0 marked them instantly stale, so every
+  // refocus re-downloaded and re-ran opentype.parse over each one).
+  it("does not re-fetch (or re-parse) a resolved font's bytes on window refocus — bytes per id are immutable", async () => {
+    const { result } = renderHook(() => useFontCoverage("evt-1"), { wrapper });
+    await waitFor(() => {
+      expect(result.current["font-cyr"]).toBe(true);
+      expect(result.current["font-latin"]).toBe(false);
+    });
+    expect(fontFileHits["font-cyr"]).toBe(1);
+    expect(fontFileHits["font-latin"]).toBe(1);
+
+    // Simulate the tab losing and regaining focus via TanStack's own focus
+    // seam (jsdom can't produce a real visibilitychange round-trip).
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    // Give any (incorrect) refocus refetch a chance to fire before
+    // asserting its absence.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(fontFileHits["font-cyr"]).toBe(1);
+    expect(fontFileHits["font-latin"]).toBe(1);
+
+    // Restore the default "track real focus events" behavior for other tests.
+    focusManager.setFocused(undefined);
   });
 });
