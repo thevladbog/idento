@@ -464,6 +464,20 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CheckinActionRow" }
       required: [actions]
+    MarkAttendeePrintedRequest:
+      type: object
+      description: >
+        POST /api/attendees/{attendee_id}/printed's OPTIONAL request body
+        (P4.1 Task 4). Both fields are optional and independent of each
+        other; event_id is what actually gates the reprint-logging
+        behavior — station_id is only meaningful (recorded on the feed
+        row) when event_id is also present. Absent entirely (or an absent/
+        empty body) is the pre-existing back-compat path: counter-only,
+        no checkin_actions row (the badge-editor's bulk print sends no
+        body at all).
+      properties:
+        event_id: { type: string, format: uuid, nullable: true }
+        station_id: { type: string, format: uuid, nullable: true }
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -3117,7 +3131,7 @@ paths:
       operationId: markAttendeePrinted
       summary: >
         Increment an attendee's printed_count by one and return the new
-        count. No request body. [Plan-time reconciliation #6,
+        count. [Plan-time reconciliation #6,
         docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md]
         printed_count had NO write path anywhere before this endpoint (no
         handler field, no endpoint, no client bump) — the attendees table's
@@ -3126,13 +3140,31 @@ paths:
         successful agent print. It is deliberately NOT a print journal (no
         per-print audit rows, no dedupe/job-status tracking) — the spec's
         "server-side print journal is out of scope" clause targets
-        audit/dedupe journals, not this pre-existing counter.
+        audit/dedupe journals, not this pre-existing counter. P4.1 Task 4
+        adds an OPTIONAL request body: when event_id is present, after the
+        counter increment succeeds, the handler ALSO inserts a
+        checkin_actions ('reprint') feed row via store.InsertCheckinAction
+        — this is how the station's recent-scans rail picks up a reprint.
+        A body-less call (the pre-existing badge-editor bulk print path)
+        stays counter-only, unchanged. The body is parsed leniently: unknown
+        fields are ignored and a syntactically-malformed JSON body is
+        treated the same as no body at all (the counter still increments) —
+        the ONLY 400 this body can trigger is a present event_id/station_id
+        value that isn't a valid UUID string. Reprint-logging failures
+        (e.g. a transient store error resolving staffUserID from claims)
+        never fail this endpoint — the counter has already committed by
+        the time logging is attempted, so it is treated as best-effort.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: attendee_id
           in: path
           required: true
           schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarkAttendeePrintedRequest" }
       responses:
         "200":
           description: printed_count incremented by one; response carries the new value.
@@ -3144,7 +3176,9 @@ paths:
                   printed_count: { type: integer }
                 required: [printed_count]
         "400":
-          description: attendee_id is not a UUID.
+          description: >
+            attendee_id is not a UUID, or the optional body's event_id/
+            station_id is present but not a valid UUID string.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

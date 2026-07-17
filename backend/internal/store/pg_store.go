@@ -910,6 +910,50 @@ func scanAttendeeByEmailJoinRow(row pgx.Row) (*models.Attendee, error) {
 	return &a, nil
 }
 
+// checkinActionInsertSQL is the single INSERT shared by CheckInAttendee's
+// 'checkin' row, UndoCheckin's 'undo' row, and the standalone
+// InsertCheckinAction Store method's 'reprint' row (P4.1 Task 4
+// extraction) — action is a bind parameter so all three call sites run
+// byte-for-byte the same statement.
+const checkinActionInsertSQL = `INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, $4, $5)`
+
+// checkinActionExecutor is the minimal subset of dbConn/pgx.Tx needed to run
+// checkinActionInsertSQL — satisfied by both *pgxpool.Pool (via PGStore.db,
+// InsertCheckinAction's standalone path used by the /printed reprint
+// endpoint, which is NOT inside any existing transaction) and pgx.Tx (the
+// open transaction CheckInAttendee/UndoCheckin already hold), so the exact
+// same insert runs either standalone or nested inside an existing
+// transaction. pgx.Tx does not implement dbConn itself (it has no Close
+// method), which is why this is its own narrower interface rather than
+// reusing dbConn.
+type checkinActionExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+// insertCheckinAction is the shared implementation behind
+// PGStore.InsertCheckinAction, CheckInAttendee's 'checkin' row, and
+// UndoCheckin's 'undo' row (P4.1 Tasks 3-4) — one INSERT statement, one
+// place it's issued from. CheckInAttendee/UndoCheckin call this directly
+// with their own open tx (never through the InsertCheckinAction Store
+// method, which always runs against the pool) so the feed row commits
+// atomically with the state-changing UPDATE in the SAME transaction.
+func insertCheckinAction(ctx context.Context, exec checkinActionExecutor, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
+	_, err := exec.Exec(ctx, checkinActionInsertSQL, eventID, attendeeID, stationID, action, staffUserID)
+	return err
+}
+
+// InsertCheckinAction records one checkin_actions feed row standalone,
+// against the pool (P4.1 Task 4) — used by the /printed endpoint's reprint
+// logging, which happens as its own store call AFTER
+// IncrementAttendeePrintedCount's guarded UPDATE has already committed, not
+// nested inside it (there is no shared transaction to join). Contract: the
+// caller has already resolved staffUserID (e.g. from JWT claims) and
+// validated stationID, when non-nil, belongs to the same event — this
+// method does not re-validate either.
+func (s *PGStore) InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
+	return insertCheckinAction(ctx, s.db, eventID, attendeeID, action, stationID, staffUserID)
+}
+
 // CheckInAttendee performs one station's single-scan check-in idempotently
 // (P4.1 Task 3) — see the Store interface doc for the full outcome
 // contract. This is the zero-double-checkin guarantee at the source,
@@ -945,9 +989,7 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 		if staffEmail != "" {
 			a.CheckedInByEmail = &staffEmail
 		}
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, 'checkin', $4)`,
-			eventID, attendeeID, stationID, staffUserID); err != nil {
+		if err := insertCheckinAction(ctx, tx, eventID, attendeeID, "checkin", stationID, staffUserID); err != nil {
 			return "", nil, err
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -1003,9 +1045,7 @@ func (s *PGStore) UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID
 		RETURNING ` + checkinAttendeeColumnsSQL
 	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, attendeeID, eventID))
 	if err == nil {
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, 'undo', $4)`,
-			eventID, attendeeID, stationID, staffUserID); err != nil {
+		if err := insertCheckinAction(ctx, tx, eventID, attendeeID, "undo", stationID, staffUserID); err != nil {
 			return nil, err
 		}
 		if err := tx.Commit(ctx); err != nil {

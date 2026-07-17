@@ -193,6 +193,22 @@ type Store interface {
 	// first (created_at DESC).
 	GetCheckinActions(ctx context.Context, eventID uuid.UUID, limit int) ([]CheckinActionRow, error)
 
+	// InsertCheckinAction records one checkin_actions feed row (P4.1 Task
+	// 4) — the single shared write path behind CheckInAttendee's 'checkin'
+	// row, UndoCheckin's 'undo' row, and the /printed endpoint's 'reprint'
+	// row. Called standalone (against the pool, not any existing
+	// transaction) by the reprint endpoint, since printed_count's
+	// increment and this insert are two separate store calls, not one
+	// atomic operation — CheckInAttendee/UndoCheckin do NOT call this
+	// method themselves; they run the same underlying insert directly
+	// against their own open tx so the feed row commits atomically with
+	// the state-changing UPDATE. Contract: the caller has already resolved
+	// staffUserID and validated a non-nil stationID belongs to the same
+	// event — this method does not re-validate either, and never fails
+	// the caller's primary operation (attendee_printed.go treats a
+	// failure here as best-effort/non-fatal).
+	InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
+
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,

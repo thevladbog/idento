@@ -73,6 +73,7 @@ type fakeStore struct {
 	checkInAttendee               func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error)
 	undoCheckin                   func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error)
 	getCheckinActions             func(eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error)
+	insertCheckinAction           func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -308,6 +309,9 @@ func (f *fakeStore) UndoCheckin(_ context.Context, eventID, attendeeID uuid.UUID
 }
 func (f *fakeStore) GetCheckinActions(_ context.Context, eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error) {
 	return f.getCheckinActions(eventID, limit)
+}
+func (f *fakeStore) InsertCheckinAction(_ context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
+	return f.insertCheckinAction(eventID, attendeeID, action, stationID, staffUserID)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {

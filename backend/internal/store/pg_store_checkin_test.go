@@ -453,9 +453,16 @@ const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, 
 // scoped to one attendee id within eventID.
 const checkInAttendeeFallbackSelectSQL = `SELECT\s+a\.id, a\.event_id, a\.first_name, a\.last_name, a\.email, a\.company, a\.position, a\.code,\s+a\.checkin_status, a\.checked_in_at, a\.checked_in_by, a\.checked_in_device_number, a\.checked_in_point_name, a\.printed_count, a\.custom_fields,\s+a\.blocked, a\.block_reason, a\.created_at, a\.updated_at,\s+u\.email as checked_in_by_email\s+FROM attendees a\s+LEFT JOIN users u ON a\.checked_in_by = u\.id\s+WHERE a\.id = \$1 AND a\.event_id = \$2 AND a\.deleted_at IS NULL`
 
-// checkinActionsInsertCheckinSQL matches the feed row CheckInAttendee
-// inserts on the "checked_in" outcome, in the SAME transaction.
-const checkinActionsInsertCheckinSQL = `INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id\) VALUES \(\$1, \$2, \$3, 'checkin', \$4\)`
+// checkinActionsInsertSQL matches the feed row INSERT shared by
+// CheckInAttendee ('checkin'), UndoCheckin ('undo'), and the standalone
+// InsertCheckinAction Store method (P4.1 Task 4 extraction) — action is now
+// a bind parameter ($4) rather than baked into the SQL text per call site,
+// so all three call sites run the exact same statement.
+const checkinActionsInsertSQL = `INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id\) VALUES \(\$1, \$2, \$3, \$4, \$5\)`
+
+// checkinActionsInsertCheckinSQL is retained as an alias so the "checked_in"
+// tests below read the same as before the P4.1 Task 4 extraction.
+const checkinActionsInsertCheckinSQL = checkinActionsInsertSQL
 
 // TestCheckInAttendeeFreshAttendeeChecksInAndLogsFeedRow proves the exact
 // guarded-UPDATE SQL, that a 1-row RETURNING result yields outcome
@@ -481,7 +488,7 @@ func TestCheckInAttendeeFreshAttendeeChecksInAndLogsFeedRow(t *testing.T) {
 			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
 				true, &now, &staffID, nil, &stationName, 0, nil, false, nil, now, now))
 	mock.ExpectExec(checkinActionsInsertCheckinSQL).
-		WithArgs(eventID, attendeeID, &stationID, staffID).
+		WithArgs(eventID, attendeeID, &stationID, "checkin", staffID).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -524,7 +531,7 @@ func TestCheckInAttendeeNoStationLeavesPointNameNull(t *testing.T) {
 			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
 				true, &now, &staffID, nil, nil, 0, nil, false, nil, now, now))
 	mock.ExpectExec(checkinActionsInsertCheckinSQL).
-		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), staffID).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "checkin", staffID).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -635,9 +642,10 @@ const undoCheckinUpdateSQL = `UPDATE attendees\s+SET checkin_status = false, che
 // non-joined — an undone/never-checked-in attendee has no email to show).
 const undoCheckinFallbackSelectSQL = `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at FROM attendees WHERE id = \$1 AND event_id = \$2 AND deleted_at IS NULL`
 
-// checkinActionsInsertUndoSQL matches the feed row UndoCheckin inserts on a
-// genuine clear, in the SAME transaction.
-const checkinActionsInsertUndoSQL = `INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id\) VALUES \(\$1, \$2, \$3, 'undo', \$4\)`
+// checkinActionsInsertUndoSQL is retained as an alias so the "undo" test
+// below reads the same as before the P4.1 Task 4 extraction — it's the
+// SAME shared SQL as checkinActionsInsertSQL (see its doc comment).
+const checkinActionsInsertUndoSQL = checkinActionsInsertSQL
 
 // TestUndoCheckinClearsAndLogsFeedRow proves the exact guarded-UPDATE SQL
 // (checkin_status = true guard) and that a 1-row result inserts an 'undo'
@@ -659,7 +667,7 @@ func TestUndoCheckinClearsAndLogsFeedRow(t *testing.T) {
 			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
 				false, nil, nil, nil, nil, 0, nil, false, nil, now, now))
 	mock.ExpectExec(checkinActionsInsertUndoSQL).
-		WithArgs(eventID, attendeeID, &stationID, staffID).
+		WithArgs(eventID, attendeeID, &stationID, "undo", staffID).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 	mock.ExpectCommit()
 
@@ -843,6 +851,84 @@ func TestListCheckinStationsNoneRegisteredReturnsEmpty(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("len(got) = %d, want 0", len(got))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// --- Task 4: InsertCheckinAction (shared with CheckInAttendee/UndoCheckin) ---
+
+// TestInsertCheckinActionIssuesExactInsert proves the standalone Store
+// method (used by the reprint endpoint, which is NOT inside any existing
+// transaction) issues the exact same SQL as the tx-scoped inserts inside
+// CheckInAttendee/UndoCheckin above, with action passed as a bind
+// parameter.
+func TestInsertCheckinActionIssuesExactInsert(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, stationID, staffID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	mock.ExpectExec(checkinActionsInsertSQL).
+		WithArgs(eventID, attendeeID, &stationID, "reprint", staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	s := &PGStore{db: mock}
+	if err := s.InsertCheckinAction(context.Background(), eventID, attendeeID, "reprint", &stationID, staffID); err != nil {
+		t.Fatalf("InsertCheckinAction: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestInsertCheckinActionNilStationInsertsNullStation proves a nil
+// stationID (a station-less reprint) is passed through as NULL, not the
+// zero-value UUID — mirroring CheckInAttendee's station-less test above.
+func TestInsertCheckinActionNilStationInsertsNullStation(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	mock.ExpectExec(checkinActionsInsertSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "reprint", staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	s := &PGStore{db: mock}
+	if err := s.InsertCheckinAction(context.Background(), eventID, attendeeID, "reprint", nil, staffID); err != nil {
+		t.Fatalf("InsertCheckinAction: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestInsertCheckinActionPropagatesStoreError proves a failing INSERT
+// surfaces its error rather than being swallowed by the store layer — it's
+// the HANDLER's job (attendee_printed.go) to decide reprint-logging
+// failures are best-effort/non-fatal, not this method's.
+func TestInsertCheckinActionPropagatesStoreError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	wantErr := errors.New("boom")
+	mock.ExpectExec(checkinActionsInsertSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "reprint", staffID).
+		WillReturnError(wantErr)
+
+	s := &PGStore{db: mock}
+	if err := s.InsertCheckinAction(context.Background(), eventID, attendeeID, "reprint", nil, staffID); err == nil {
+		t.Fatal("InsertCheckinAction: want error, got nil")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
