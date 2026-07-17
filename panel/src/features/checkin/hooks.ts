@@ -51,7 +51,7 @@ export function useSaveCheckinSettings(eventId: string) {
   const queryClient = useQueryClient();
   return $api.useMutation("put", "/api/events/{id}/checkin-settings", {
     onSuccess: (data) => {
-      queryClient.setQueryData(CHECKIN_SETTINGS_KEY(eventId), parseCheckinSettings(data.settings));
+      queryClient.setQueryData(CHECKIN_SETTINGS_KEY(eventId), data);
       void queryClient.invalidateQueries({ queryKey: CHECKIN_SETTINGS_KEY(eventId) });
     },
   });

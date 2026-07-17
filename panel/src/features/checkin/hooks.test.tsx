@@ -234,6 +234,83 @@ describe("checkin hooks", () => {
 
       await waitFor(() => expect(settingsGetCount).toBe(2));
     });
+
+    it("seeds a mounted useCheckinSettings observer with the just-saved values immediately on success — not DEFAULT_CHECKIN_SETTINGS", async () => {
+      // Regression test: onSuccess must seed the cache with the raw {settings}
+      // envelope (matching what GET/PUT actually return), not the
+      // already-`select`-ed CheckinSettings object. If it re-shapes the
+      // response before calling setQueryData, useCheckinSettings' own
+      // `select: (data) => parseCheckinSettings(data.settings)` re-runs
+      // against that wrongly-shaped raw value immediately, `data.settings` is
+      // `undefined`, and parseCheckinSettings(undefined) falls back to
+      // DEFAULT_CHECKIN_SETTINGS — a visible flash of hard-coded defaults
+      // right after the operator saved something else, self-correcting only
+      // once the invalidateQueries refetch resolves.
+      //
+      // To observe that in-between moment deterministically, this test
+      // overrides the GET handler so the SECOND request (the refetch that
+      // invalidateQueries kicks off) resolves after a delay — long enough
+      // that we can assert on the read hook's data while that refetch is
+      // still in flight, un-masked by its result. Without the delay, MSW's
+      // near-instant mock response lets the refetch complete before this
+      // assertion runs, which would hide the bug (the correct refetched data
+      // would overwrite whatever setQueryData wrote first).
+      //
+      // Also note: the render callback below explicitly destructures `data`
+      // (rather than returning the whole query result object untouched).
+      // TanStack Query's tracked-properties optimization only re-renders
+      // observers for fields actually read during a render; if `data` is
+      // never read there, the observer won't re-render on a data-only
+      // update and `result.current` would look permanently frozen at its
+      // first successful value — regardless of whether this bug is fixed.
+      let refetchGetCount = 0;
+      server.use(
+        http.get("http://api.test/api/events/:id/checkin-settings", async () => {
+          refetchGetCount += 1;
+          settingsGetCount += 1;
+          if (refetchGetCount > 1) {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          return HttpResponse.json({ settings: currentSettings });
+        }),
+      );
+
+      const { Wrapper } = makeWrapper();
+      const { result: readResult } = renderHook(
+        () => {
+          const query = useCheckinSettings("evt-1");
+          return { isSuccess: query.isSuccess, data: query.data };
+        },
+        { wrapper: Wrapper },
+      );
+      await waitFor(() => expect(readResult.current.isSuccess).toBe(true));
+      expect(settingsGetCount).toBe(1);
+
+      const { result: saveResult } = renderHook(() => useSaveCheckinSettings("evt-1"), { wrapper: Wrapper });
+      saveResult.current.mutate({
+        params: { path: { id: "evt-1" } },
+        body: {
+          settings: {
+            print_on_checkin: false,
+            verdict_auto_dismiss_sec: 8,
+            scan_input: "manual",
+            manual_search_enabled: false,
+          },
+        },
+      });
+      await waitFor(() => expect(saveResult.current.isSuccess).toBe(true));
+
+      // The refetch has been kicked off (refetchGetCount is already 2) but is
+      // still artificially delayed — it has NOT resolved yet, so this
+      // assertion is exercising only the synchronous setQueryData seed.
+      expect(refetchGetCount).toBe(2);
+      expect(readResult.current.data).toEqual({
+        print_on_checkin: false,
+        verdict_auto_dismiss_sec: 8,
+        scan_input: "manual",
+        manual_search_enabled: false,
+      });
+    });
   });
 
   describe("CHECKIN_SETTINGS_KEY", () => {
