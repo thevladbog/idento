@@ -1,18 +1,25 @@
 import {
-  Button, ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle,
+  Button, ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle, Label,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
-import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
+import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
+import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 type Attendee = components["schemas"]["Attendee"];
+
+// Native <select>, styled to match TestPrintDialog.tsx's/AttendeeDrawer.tsx's
+// own SELECT_CLASSNAME (duplicated per-file on purpose -- see those files'
+// own comments: there's no shared @idento/ui Select primitive yet).
+const PRINT_SELECT_CLASSNAME =
+  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 export interface BulkBarProps {
   selected: Attendee[];
@@ -68,6 +75,84 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
 
   const assignZone = $api.useMutation("post", "/api/attendees/{attendee_id}/zone-access");
   const deleteAttendeeMutation = $api.useMutation("delete", "/api/attendees/{id}");
+
+  // Bulk print (P3.2 Task 9): built entirely on usePrintBadge (the same
+  // generate -> agent print -> mark-printed -> invalidate flow the drawer's
+  // Reprint button uses), sequentially over the page-scoped `selected` array.
+  //
+  // Reachability adjudication (task brief): unlike TestPrintDialog's
+  // `useAgentPrinters(open)` (gated on ITS OWN dialog being open), this
+  // mirrors AttendeeDrawer's `useAgentPrinters(true)` — enabled unconditionally
+  // whenever BulkBar itself is mounted, not gated on the print dialog's own
+  // open state. The OUTER "Print badges" button needs to know connectivity to
+  // decide whether it's even clickable at all (same §7.3 reachability-gated
+  // idiom as the drawer), and BulkBar only ever mounts when there's an active
+  // selection — a selection already implies intent to act on it, so keeping
+  // the connectivity probe enabled (one fetch on mount + a refetch on window
+  // focus; the hook has NO polling interval) for as long as the bar is
+  // visible is an acceptable cost — the same tradeoff the drawer already
+  // makes.
+  const agent = useAgentPrinters(true);
+  const printBadge = usePrintBadge(eventId);
+
+  const [printOpen, setPrintOpen] = React.useState(false);
+  // Only meaningful (and only ever rendered) when the agent has NO configured
+  // default printer — same inline <select> idiom as the drawer's Reprint
+  // confirm.
+  const [printerSelection, setPrinterSelection] = React.useState<string | null>(null);
+  const [printing, setPrinting] = React.useState(false);
+  const [printProgress, setPrintProgress] = React.useState<Progress | null>(null);
+  // Genuine send/agent failures — counted separately from `printProgress.done`
+  // (attempts), same attempt-vs-success honesty rule as assign/delete above.
+  const [printFailedCount, setPrintFailedCount] = React.useState(0);
+  // Soft counter: attendees whose SEND succeeded but whose printed-count bump
+  // (MarkPrintedError) failed — counted as SENT, never as failed, but
+  // surfaced as its own non-destructive warning line (never conflated with a
+  // genuine send failure).
+  const [printMarkWarnCount, setPrintMarkWarnCount] = React.useState(0);
+  // No-template short-circuit: the loop stops at whichever attendee FIRST
+  // observes a missing template — usePrintBadge re-fetches the template PER
+  // printAttendee call (staleTime 0), so this can fire MID-batch (template
+  // deleted in another tab while the batch is printing), not just on
+  // attendee #1. A missing template fails identically for every remaining
+  // attendee, so there's no point repeating the failure. Review fix
+  // (Important): badges already sent before the short-circuit stay counted —
+  // the readout below renders the partial tally ALONGSIDE the no-template
+  // message, so an operator never mistakes "no template" for "nothing was
+  // printed" and re-runs (double-prints) a partially-sent selection.
+  const [printNoTemplate, setPrintNoTemplate] = React.useState(false);
+  // PR #74 review round Fix 8: same short-circuit treatment as
+  // `printNoTemplate` above -- a template referencing a customFont family no
+  // uploaded font backs is EVENT-level (not attendee-specific), so it fails
+  // identically for every remaining attendee. `families` (not just a
+  // boolean) so the readout can name exactly which font(s) are missing.
+  const [printMissingFontFamilies, setPrintMissingFontFamilies] = React.useState<string[] | null>(null);
+  const printSessionRef = React.useRef(0);
+
+  // Same "validated against the LIVE printer list" rule as the drawer's
+  // `reprintConfiguredDefault` — the agent's configured default can name a
+  // printer that's since been unplugged/removed.
+  const printConfiguredDefault =
+    agent.configuredDefault && agent.printers.some((printer) => printer.name === agent.configuredDefault)
+      ? agent.configuredDefault
+      : null;
+
+  React.useEffect(() => {
+    if (!printOpen) return;
+    if (printConfiguredDefault) return;
+    if (printerSelection && agent.printers.some((printer) => printer.name === printerSelection)) return;
+    setPrinterSelection(agent.defaultPrinter);
+  }, [printOpen, printConfiguredDefault, agent.defaultPrinter, agent.printers, printerSelection]);
+
+  const printTargetPrinter = printConfiguredDefault ?? printerSelection;
+  const printAgentDisconnected = agent.state === "disconnected";
+  // Reconciliation #9 (fonts must be awaited before generation): checked/
+  // awaited ONCE before the loop starts (the hook's own per-call await inside
+  // `printAttendee` makes every subsequent call in the batch cheap once this
+  // has settled) — gating the confirm button on it means the operator never
+  // sees the batch silently "hang" on the first attendee waiting on a fonts
+  // fetch that just hasn't settled yet.
+  const printFontsBlocking = printBadge.fontsStatus !== "ready" && printBadge.fontsStatus !== "error";
 
   function handleAssignOpenChange(open: boolean) {
     if (!open) {
@@ -193,8 +278,219 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     }
   }
 
+  function handlePrintOpenChange(open: boolean) {
+    if (!open) {
+      // Exhaustive busy-gating, same as assign/delete above — but with a
+      // sharper rationale here: a cancelled/failed-looking print may still
+      // emerge from the printer (the agent's `/print` response is a
+      // TRANSPORT ack only, never a print confirmation — see agentClient.ts).
+      // Aborting mid-batch wouldn't just leave an unclear split of "printed
+      // vs not", it could leave PHYSICAL badges coming out of the printer
+      // with no record of which attendees they belonged to. The loop is
+      // deliberately not abortable in v1 — dismissal stays blocked until it
+      // settles on its own.
+      if (printing) return;
+      printSessionRef.current += 1;
+      setPrintProgress(null);
+      setPrintFailedCount(0);
+      setPrintMarkWarnCount(0);
+      setPrintNoTemplate(false);
+      setPrintMissingFontFamilies(null);
+      setPrinterSelection(null);
+    }
+    setPrintOpen(open);
+  }
+
+  async function handleConfirmPrintBadges() {
+    const printerName = printTargetPrinter;
+    if (!printerName) return;
+    const sessionId = printSessionRef.current;
+    const total = selected.length;
+    setPrinting(true);
+    setPrintProgress({ done: 0, total });
+    setPrintFailedCount(0);
+    setPrintMarkWarnCount(0);
+    setPrintNoTemplate(false);
+    setPrintMissingFontFamilies(null);
+    let attemptedAny = false;
+    let failedCount = 0;
+    let markWarnCount = 0;
+    let noTemplate = false;
+    let missingFontFamilies: string[] | null = null;
+
+    for (let i = 0; i < selected.length; i++) {
+      // Unreachable via the UI while `printing` blocks dismissal above —
+      // kept as defense-in-depth, same as assign/delete's own loops.
+      if (printSessionRef.current !== sessionId) break;
+      try {
+        // `skipInvalidate: true` -- this batch invalidates ATTENDEES_LIST_KEY
+        // exactly ONCE after the whole loop below, instead of once per
+        // attendee (cheap dedupe over a page-scoped, <=50-attendee
+        // selection). Detail keys are deliberately skipped entirely in bulk
+        // (never invalidated here, unlike the drawer's single-print path) --
+        // the table view is what refreshes after a bulk action, and no
+        // single attendee's detail drawer is open during a multi-select
+        // batch print.
+        await printBadge.printAttendee(selected[i], printerName, { skipInvalidate: true });
+        attemptedAny = true;
+      } catch (error) {
+        if (error instanceof NoTemplateError) {
+          // Pre-send failure: the event has no saved template (either from
+          // the start, or deleted mid-batch -- printAttendee re-fetches the
+          // template per call), so every remaining attendee would fail in
+          // exactly the same way. Short-circuit the whole loop rather than
+          // repeating the identical failure (and identical progress-readout
+          // churn) for the rest of the selection. Progress deliberately NOT
+          // bumped for this attendee -- nothing was sent for them -- so
+          // `printProgress.done` keeps the honest count of completed
+          // attempts for the partial-tally readout below.
+          noTemplate = true;
+          break;
+        }
+        // PR #74 review round Fix 8: same pre-send, whole-batch short-
+        // circuit as NoTemplateError above -- a missing customFont is a
+        // property of the TEMPLATE (event-level), not this attendee, so it
+        // fails identically for every remaining one too. Progress
+        // deliberately NOT bumped for this attendee, same rationale.
+        if (error instanceof MissingFontError) {
+          missingFontFamilies = error.families;
+          break;
+        }
+        attemptedAny = true;
+        if (error instanceof MarkPrintedError) {
+          // The SEND succeeded -- counted as sent, never as failed, but
+          // flagged via the soft warning counter below.
+          markWarnCount += 1;
+        } else {
+          failedCount += 1;
+        }
+      }
+      if (printSessionRef.current === sessionId) {
+        setPrintProgress({ done: i + 1, total });
+        setPrintFailedCount(failedCount);
+        setPrintMarkWarnCount(markWarnCount);
+      }
+    }
+
+    if (attemptedAny) {
+      // Cache correctness: at least one send genuinely reached the agent
+      // (and possibly the server-side printed-count bump), so this runs
+      // unconditionally -- same rationale as assign/delete above. Skipped
+      // entirely when `noTemplate` short-circuited on the very first
+      // attendee: nothing was ever attempted, so there's nothing to refresh.
+      await queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+    }
+    if (printSessionRef.current !== sessionId) return;
+    setPrinting(false);
+    if (noTemplate) setPrintNoTemplate(true);
+    if (missingFontFamilies) setPrintMissingFontFamilies(missingFontFamilies);
+    // Deliberately does not auto-close on completion (matches Assign zone's
+    // convention, not Delete's) -- the final honest tally (sent vs failed,
+    // plus the soft mark-warn line) is the confirmation the operator reads
+    // before closing it themselves.
+  }
+
   const zones = (zonesQuery.data ?? []).map(zoneIdentity);
   const count = selected.length;
+
+  // Once the batch has settled (no longer printing) with at least one
+  // genuine failure, the readout switches from the plain "x of y sent" copy
+  // to the honest with-failures breakdown -- same idiom as
+  // bulkAssignZoneDoneWithFailures above. Suppressed while `printNoTemplate`
+  // is set -- the loop never ran to completion, so a completion-shaped
+  // "x of y sent" tally would misrepresent a batch that stopped early; the
+  // dedicated partial-tally branch below (rendered alongside the
+  // no-template message) reports whatever WAS sent instead. Same suppression
+  // for `printMissingFontFamilies` (PR #74 review round Fix 8) -- an
+  // event-level short-circuit exactly like `printNoTemplate`, so it gets the
+  // SAME "don't show the completion-shaped tally" treatment.
+  const printDoneReadout = !printing && printProgress && !printNoTemplate && !printMissingFontFamilies ? (
+    printFailedCount > 0
+      ? t("bulkPrintDoneWithFailures", {
+          sent: printProgress.total - printFailedCount,
+          total: printProgress.total,
+          failed: printFailedCount,
+        })
+      : t("bulkPrintDone", { sent: printProgress.total - printFailedCount, total: printProgress.total })
+  ) : null;
+
+  const printDescription = (
+    <>
+      {printNoTemplate ? (
+        printProgress && printProgress.done > 0 ? (
+          <span className="block">
+            {/* Review fix (Important): the template can vanish MID-batch
+                (per-call re-fetch), after real badges have already been
+                sent. Hiding those sends behind the no-template message alone
+                would invite the operator to re-run the same selection after
+                restoring the template and double-print them -- the partial
+                tally stays visible, stacked above the error. `done` counts
+                completed attempts (the short-circuited attendee never bumps
+                it); genuine failures among them are subtracted, so `sent`
+                is only ever badges that actually went out. */}
+            {t("bulkPrintPartialBeforeNoTemplate", {
+              sent: printProgress.done - printFailedCount,
+              total: printProgress.total,
+            })}
+          </span>
+        ) : null
+      ) : printMissingFontFamilies ? (
+        // PR #74 review round Fix 8: same partial-tally-stays-visible
+        // treatment as the no-template branch above -- badges already sent
+        // before a missing-font short-circuit must not be hidden behind the
+        // error, or an operator could re-run the selection and double-print
+        // them once the template is fixed.
+        printProgress && printProgress.done > 0 ? (
+          <span className="block">
+            {t("bulkPrintPartialBeforeMissingFont", {
+              sent: printProgress.done - printFailedCount,
+              total: printProgress.total,
+            })}
+          </span>
+        ) : null
+      ) : printTargetPrinter ? (
+        <span className="block">
+          {printing && printProgress
+            ? t("bulkPrintProgress", { done: printProgress.done, total: printProgress.total })
+            : printDoneReadout ?? t("bulkPrintSummary", { count, printer: printTargetPrinter })}
+        </span>
+      ) : null}
+      {!printConfiguredDefault ? (
+        <span className="mt-2 flex flex-col gap-2">
+          <Label htmlFor="bulk-print-printer">{t("badgeTestPrintPrinterLabel")}</Label>
+          <select
+            id="bulk-print-printer"
+            className={PRINT_SELECT_CLASSNAME}
+            value={printerSelection ?? ""}
+            disabled={agent.printers.length === 0 || printing}
+            onChange={(event) => setPrinterSelection(event.target.value)}
+          >
+            {agent.printers.length === 0 ? (
+              <option value="">{t("badgeTestPrintNoPrinters")}</option>
+            ) : (
+              agent.printers.map((printer) => (
+                <option key={printer.name} value={printer.name}>{printer.name}</option>
+              ))
+            )}
+          </select>
+        </span>
+      ) : null}
+      {printBadge.fontsStatus === "error" ? (
+        <span className="mt-2 block text-warning">{t("badgeFontsNotReady")}</span>
+      ) : null}
+      {!printing && printMarkWarnCount > 0 ? (
+        <span className="mt-2 block text-warning">{t("bulkPrintMarkWarn", { count: printMarkWarnCount })}</span>
+      ) : null}
+      {printNoTemplate ? (
+        <span className="mt-2 block text-destructive">{t("bulkPrintNoTemplate")}</span>
+      ) : null}
+      {printMissingFontFamilies ? (
+        <span className="mt-2 block text-destructive">
+          {t("bulkPrintMissingFont", { families: printMissingFontFamilies.join(", ") })}
+        </span>
+      ) : null}
+    </>
+  );
 
   return (
     <>
@@ -210,25 +506,26 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           >
             {t("bulkAssignZone")}
           </Button>
-          {/* Deliberately locked — the badge editor this depends on doesn't
-              exist yet. Unified locked-action idiom (P2.1 whole-branch
-              finding): a disabled Button with a Lock icon + visible i18n
-              label, same structural shape as AttendeeDrawer's "Reprint
-              badge" (icon + text, native `disabled` for aria-disabled
-              semantics) — not a non-interactive span. */}
+          {/* Live now (P3.2 Task 9) — the badge editor exists, so the OLD
+              permanent lock is retired. Reachability-gated instead (spec
+              §7.3 idiom, same as the drawer's Reprint button): disabled +
+              a native `title` tooltip whenever the agent isn't connected,
+              never a silent no-op. No Lock icon here — that idiom is
+              reserved for features that don't exist yet; this one exists,
+              it's just temporarily unreachable. */}
           <Button
             type="button"
-            variant="ghost"
-            disabled
-            aria-disabled="true"
-            className="h-auto gap-1 p-0 text-caption text-background/40 hover:bg-transparent disabled:opacity-100"
+            variant="link"
+            className="h-auto p-0 text-caption text-background/70 hover:text-background hover:no-underline"
+            disabled={agent.state !== "connected" || printing}
+            aria-disabled={agent.state !== "connected" || printing}
+            title={printAgentDisconnected ? t("bulkPrintUnreachable") : undefined}
+            onClick={() => {
+              setPrintNoTemplate(false);
+              setPrintOpen(true);
+            }}
           >
-            {/* Button's own base classes force nested <svg> to size-4
-                (`[&_svg]:size-4`, higher CSS specificity than a plain
-                `size-3` utility on the icon itself) — no size override here,
-                matching the drawer's Reprint-badge icon at the same size. */}
-            <Lock aria-hidden />
-            {t("bulkPrintLocked")}
+            {t("bulkPrint")}
           </Button>
           <Button
             type="button"
@@ -332,6 +629,18 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         typedConfirmationLabel={t("bulkDeleteConfirmLabel", { count })}
         confirmDisabled={deleting}
         onConfirm={() => void handleConfirmDelete()}
+      />
+
+      <ConfirmDialog
+        open={printOpen}
+        onOpenChange={handlePrintOpenChange}
+        title={t("bulkPrintConfirmTitle")}
+        description={printDescription}
+        confirmLabel={t("bulkPrintConfirm")}
+        cancelLabel={t("createEventCancel")}
+        closeLabel={t("workspaceDialogClose")}
+        confirmDisabled={printing || !printTargetPrinter || agent.state !== "connected" || printFontsBlocking}
+        onConfirm={() => void handleConfirmPrintBadges()}
       />
     </>
   );

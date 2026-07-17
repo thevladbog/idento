@@ -988,6 +988,19 @@ func (s *PGStore) GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uui
 	return attendee, nil
 }
 
+// UpdateAttendee persists every attendee field EXCEPT printed_count.
+// printed_count is intentionally excluded from this UPDATE's column list:
+// this method always writes back a full in-memory *models.Attendee that was
+// loaded (often well) before the call, so its PrintedCount field can be
+// stale by the time the write lands. A PATCH that loaded count=0, then lost
+// a race with a concurrent print (which increments count to 1 via
+// IncrementAttendeePrintedCount), would otherwise write the stale 0 back and
+// silently erase the increment. IncrementAttendeePrintedCount's own guarded
+// `UPDATE ... SET printed_count = printed_count + 1 ... RETURNING
+// printed_count` is the sole writer of this column; every other codepath
+// (handlers/attendees.go, handlers/sync.go, handlers/zones.go,
+// handlers/attendee_codes.go) must go through it instead of round-tripping
+// the value here.
 func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error
@@ -999,15 +1012,50 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 	}
 	query := `UPDATE attendees SET
 			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5, code = $6,
-			  checkin_status = $7, checked_in_at = $8, checked_in_by = $9, checked_in_device_number = $10, checked_in_point_name = $11, printed_count = $12, blocked = $13,
-			  block_reason = $14, custom_fields = $15, deleted_at = $16, updated_at = NOW()
-			  WHERE id = $17`
+			  checkin_status = $7, checked_in_at = $8, checked_in_by = $9, checked_in_device_number = $10, checked_in_point_name = $11, blocked = $12,
+			  block_reason = $13, custom_fields = $14, deleted_at = $15, updated_at = NOW()
+			  WHERE id = $16`
 	_, err = s.db.Exec(ctx, query,
 		attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
-		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
+		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.Blocked,
 		attendee.BlockReason, customFieldsJSON, attendee.DeletedAt, attendee.ID,
 	)
 	return err
+}
+
+// ErrAttendeeNotFound is returned by IncrementAttendeePrintedCount when its
+// guarded UPDATE matches 0 rows. By contract the caller has already
+// confirmed the attendee exists, belongs to the caller's tenant, and is not
+// soft-deleted (via requireAttendeeOwnership) before calling — so this
+// sentinel is reachable ONLY via the soft-delete race: the ownership
+// pre-check passes, a concurrent DELETE /api/attendees/{id} sets deleted_at,
+// and the UPDATE's `deleted_at IS NULL` guard then matches nothing. Handlers
+// map it to the house 404 masking ("Attendee not found"), identical to
+// requireAttendeeOwnership's own wording.
+var ErrAttendeeNotFound = errors.New("attendee not found")
+
+// IncrementAttendeePrintedCount bumps printed_count by one and returns the
+// new value (backs the attendees table's Printed pill — reconciliation #6,
+// docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md; this is a
+// counter, not a print journal). The UPDATE carries a `deleted_at IS NULL`
+// guard (matching UpdateEventBadgeTemplate's guard above — same race
+// class): the caller's requireAttendeeOwnership pre-check can pass and a
+// concurrent soft-delete land before this UPDATE executes; without the
+// guard, an id-only UPDATE would still increment and 200 for a gone
+// attendee. When the guard misses (0 rows), QueryRow surfaces
+// pgx.ErrNoRows, which this method maps to the exported ErrAttendeeNotFound
+// sentinel — never a fabricated count.
+func (s *PGStore) IncrementAttendeePrintedCount(ctx context.Context, attendeeID uuid.UUID) (int, error) {
+	var newCount int
+	query := `UPDATE attendees SET printed_count = printed_count + 1, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING printed_count`
+	err := s.db.QueryRow(ctx, query, attendeeID).Scan(&newCount)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return 0, ErrAttendeeNotFound
+		}
+		return 0, err
+	}
+	return newCount, nil
 }
 
 // API Keys methods

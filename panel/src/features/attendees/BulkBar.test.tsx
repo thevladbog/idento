@@ -4,11 +4,39 @@ import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { BulkBar } from "./BulkBar";
-import { ATTENDEES_LIST_KEY } from "./hooks";
+import { ATTENDEES_LIST_KEY, useAttendeesPage } from "./hooks";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 import type { components } from "../../shared/api/schema";
+
+// Task 9 (P3.2): every BulkBar instance now ALSO mounts useAgentPrinters(true)
+// (the reachability-gated "Print badges" button) and usePrintBadge's own
+// useBadgeTemplate/useEventFontFaces calls -- all unconditional, regardless
+// of whether any given test cares about printing. Same jsdom FontFace stub
+// AttendeeDrawer.test.tsx uses for its own reprint flow (jsdom implements
+// neither `FontFace` nor `document.fonts` -- see useEventFontFaces.ts's own
+// comment): without it, fontsStatus is stuck on "idle" forever and the print
+// dialog's confirm button would never enable.
+class MockFontFace {
+  family: string;
+  constructor(family: string, _source: unknown, _descriptors?: { weight?: string; style?: string }) {
+    this.family = family;
+  }
+  load(): Promise<MockFontFace> {
+    return Promise.resolve(this);
+  }
+}
+function stubFontFaceApi() {
+  (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
+  Object.defineProperty(document, "fonts", { value: { add: () => {} }, configurable: true, writable: true });
+}
+function unstubFontFaceApi() {
+  delete (globalThis as unknown as { FontFace?: unknown }).FontFace;
+  // @ts-expect-error -- test-only cleanup of the jsdom `document.fonts` stub;
+  // real jsdom has no `fonts` property to restore.
+  delete document.fonts;
+}
 
 // Genuinely subscribed observer for GET /api/events/:id/readiness — same
 // ReadinessObserver pattern as AddAttendeeDialog.test.tsx: mounting a real
@@ -18,6 +46,16 @@ import type { components } from "../../shared/api/schema";
 // made.
 function ReadinessObserver({ eventId }: { eventId: string }) {
   useEventReadiness(eventId);
+  return null;
+}
+
+// Same pattern, for GET /api/events/:eventId/attendees — proves the bulk
+// print loop's ONE post-loop invalidateQueries call for ATTENDEES_LIST_KEY
+// produces a real, OBSERVABLE refetch (via `listHitCount`), and — just as
+// importantly — that it happens exactly ONCE per batch, not once per
+// attendee (the whole point of `skipInvalidate: true` per call).
+function AttendeesListObserver({ eventId }: { eventId: string }) {
+  useAttendeesPage(eventId, { page: 1 });
   return null;
 }
 
@@ -45,6 +83,7 @@ function makeAttendee(overrides: Partial<Attendee> = {}): Attendee {
 
 const ADA = makeAttendee({ id: "a1" });
 const BOB = makeAttendee({ id: "a2", first_name: "Bob", last_name: "Noll" });
+const CAROL = makeAttendee({ id: "a3", first_name: "Carol", last_name: "Reyes" });
 
 let zoneAccessCalls: { attendeeId: string; body: unknown }[] = [];
 let zoneAccessStatusOverride: number | null = null;
@@ -63,6 +102,42 @@ let deleteStatusOverride: number | null = null;
 let deleteDelayMs = 0;
 let deleteFailFor: Set<string> = new Set();
 let readinessHitCount = 0;
+let listHitCount = 0;
+
+// Task 9 (P3.2) bulk-print fixtures below.
+const TEMPLATE_DOC = {
+  width_mm: 90,
+  height_mm: 55,
+  dpi: 300,
+  elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+};
+let templateResponse: { template: Record<string, unknown> | null; version: number } = {
+  template: TEMPLATE_DOC,
+  version: 1,
+};
+// Disconnected by default (matches every OTHER test in this file, which
+// doesn't care about printing) — individual print tests flip this to true.
+let agentHealthOk = false;
+let printersResponse: Array<{ name: string; type: string }> = [];
+let defaultPrinterResponse: { default: string | null } = { default: null };
+let printCalls: Array<{ printer_name: string; zpl: string }> = [];
+let printHitCount = 0;
+// 1-based call index to fail (simulates ONE attendee's agent send failing
+// mid-batch) — the /print request body carries no attendee id (only
+// printer_name/zpl), so failing by SEQUENCE POSITION is what lets a test
+// target "the second attendee's send" deterministically, since the loop is
+// proven sequential (never Promise.all) elsewhere in this file already.
+let printFailOnIndex: number | null = null;
+let printDelayMs = 0;
+let markPrintedHitCount = 0;
+let markPrintedFailOnIndex: number | null = null;
+// Simulates the badge template being DELETED mid-batch (e.g. in another
+// tab): once this many /print sends have been handled, the badge-template
+// endpoint starts returning {template: null}. usePrintBadge re-fetches the
+// template PER printAttendee call (staleTime 0), and the loop is strictly
+// sequential, so mutating the fixture inside the Nth /print handler
+// deterministically makes attendee N+1's template fetch come back null.
+let templateNullAfterPrints: number | null = null;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:id/readiness", () => {
@@ -120,6 +195,38 @@ const server = startMswServer(
     }
     return HttpResponse.json({ message: "deleted" });
   }),
+  http.get("http://api.test/api/events/:eventId/attendees", () => {
+    listHitCount += 1;
+    return HttpResponse.json({ attendees: [], total: 0, page: 1, per_page: 50 });
+  }),
+  // Task 9 additions below -- badge-template/fonts/agent/mark-printed, same
+  // shape as AttendeeDrawer.test.tsx's own Task 8 fixtures.
+  http.get("http://api.test/api/events/:id/badge-template", () => HttpResponse.json(templateResponse)),
+  http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
+  http.post("http://api.test/api/attendees/:attendeeId/printed", () => {
+    markPrintedHitCount += 1;
+    if (markPrintedFailOnIndex !== null && markPrintedHitCount === markPrintedFailOnIndex) {
+      return HttpResponse.json({ error: "boom" }, { status: 500 });
+    }
+    return HttpResponse.json({ printed_count: markPrintedHitCount });
+  }),
+  http.get("http://agent.test/health", () =>
+    agentHealthOk ? new HttpResponse(null, { status: 200 }) : HttpResponse.error()),
+  http.get("http://agent.test/printers", () => HttpResponse.json(printersResponse)),
+  http.get("http://agent.test/printers/default", () => HttpResponse.json(defaultPrinterResponse)),
+  http.post("http://agent.test/print", async ({ request }) => {
+    printHitCount += 1;
+    const body = (await request.json()) as { printer_name: string; zpl: string };
+    printCalls.push(body);
+    if (templateNullAfterPrints !== null && printHitCount >= templateNullAfterPrints) {
+      templateResponse = { template: null, version: 0 };
+    }
+    if (printDelayMs) await delay(printDelayMs);
+    if (printFailOnIndex !== null && printHitCount === printFailOnIndex) {
+      return new HttpResponse("printer offline", { status: 500 });
+    }
+    return HttpResponse.json({ status: "printed" });
+  }),
 );
 void server;
 
@@ -131,7 +238,7 @@ function renderWithProviders(ui: ReactNode) {
 
 describe("BulkBar", () => {
   beforeEach(() => {
-    window.__ENV__ = { API_URL: "http://api.test" };
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
     zoneAccessCalls = [];
     zoneAccessStatusOverride = null;
     zoneAccessFailFor = new Set();
@@ -143,6 +250,23 @@ describe("BulkBar", () => {
     deleteDelayMs = 0;
     deleteFailFor = new Set();
     readinessHitCount = 0;
+    listHitCount = 0;
+    templateResponse = { template: TEMPLATE_DOC, version: 1 };
+    agentHealthOk = false;
+    printersResponse = [];
+    defaultPrinterResponse = { default: null };
+    printCalls = [];
+    printHitCount = 0;
+    printFailOnIndex = null;
+    printDelayMs = 0;
+    markPrintedHitCount = 0;
+    markPrintedFailOnIndex = null;
+    templateNullAfterPrints = null;
+    stubFontFaceApi();
+  });
+
+  afterEach(() => {
+    unstubFontFaceApi();
   });
 
   it("shows the selected count and a divider before the action list", async () => {
@@ -159,14 +283,261 @@ describe("BulkBar", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it("renders Print badges as a disabled button (icon + text), matching the drawer's locked-action idiom, not a non-interactive span", () => {
-    renderWithProviders(<BulkBar selected={[ADA]} eventId="evt-1" onClear={vi.fn()} />);
+  describe("Print badges", () => {
+    it("renders Print badges disabled with a title when the local print agent is unreachable", async () => {
+      renderWithProviders(<BulkBar selected={[ADA]} eventId="evt-1" onClear={vi.fn()} />);
 
-    const printButton = screen.getByRole("button", { name: "Print badges — coming with the badge editor" });
-    expect(printButton).toBeDisabled();
-    // Lock icon accompanies the text (WCAG 1.4.1 — icon + text, never icon
-    // alone), same structural idiom as AttendeeDrawer's "Reprint badge".
-    expect(printButton.querySelector("svg")).toBeInTheDocument();
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      // Wait for the FINAL "disconnected" state (not the transient
+      // "checking" one) before asserting the title — both states render the
+      // button disabled, but only "disconnected" sets the tooltip.
+      await waitFor(() => expect(printButton).toHaveAttribute("title", "Can't reach the local print agent."));
+      expect(printButton).toBeDisabled();
+    });
+
+    it("enables Print badges once the agent is reachable", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      renderWithProviders(<BulkBar selected={[ADA]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      expect(printButton).not.toHaveAttribute("title");
+    });
+
+    it("names the configured default printer in a count summary, sends sequentially, marks each printed, invalidates the attendees list exactly ONCE, and stays open on the final honest tally", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      const user = userEvent.setup();
+      renderWithProviders(
+        <>
+          <AttendeesListObserver eventId="evt-1" />
+          <BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />
+        </>,
+      );
+      await waitFor(() => expect(listHitCount).toBe(1));
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      expect(within(dialog).getByText("2 badges to Zebra_ZD421")).toBeInTheDocument();
+      expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
+
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      expect(printCalls.every((call) => call.printer_name === "Zebra_ZD421")).toBe(true);
+      await waitFor(() => expect(markPrintedHitCount).toBe(2));
+
+      // Honest final tally — no failures, so the plain "sent" copy shows.
+      expect(await within(dialog).findByText("2 of 2 sent")).toBeInTheDocument();
+      // Stays open (same idiom as Assign zone): the operator reads the tally
+      // and dismisses it themselves rather than it vanishing on them.
+      expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
+
+      // Exactly ONE list refetch for the whole batch (skipInvalidate per call
+      // + one explicit invalidate after the loop), not one per attendee.
+      await waitFor(() => expect(listHitCount).toBe(2));
+    });
+
+    it("continues past a failed attendee send, counting sent-vs-failed honestly instead of aborting the batch", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      printFailOnIndex = 1; // ADA's send (first in sequence) fails; BOB's still fires.
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      // Both attendees were attempted despite the first failing.
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      expect(await within(dialog).findByText("1 of 2 sent — 1 failed")).toBeInTheDocument();
+      // The plain (dishonest, implies-full-success) readout is gone.
+      expect(within(dialog).queryByText(/^2 of 2 sent$/)).not.toBeInTheDocument();
+    });
+
+    it("counts a MarkPrintedError attendee as SENT (not failed) and shows the soft mark-warn message", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      markPrintedFailOnIndex = 1; // ADA's send succeeds; only her printed-count bump fails.
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      // Counted as fully sent — the send itself succeeded for both.
+      expect(await within(dialog).findByText("2 of 2 sent")).toBeInTheDocument();
+      // ...but with a soft, non-destructive warning for the one attendee
+      // whose printed-count bump failed after the send already went out.
+      expect(within(dialog).getByText("1 sent but not recorded")).toBeInTheDocument();
+    });
+
+    it("short-circuits the whole loop — never attempting the remaining attendees — when the event has no badge template", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      templateResponse = { template: null, version: 0 };
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      expect(await within(dialog).findByText("This event doesn't have a badge template yet.")).toBeInTheDocument();
+      // Never even reached the agent — a template-less event fails
+      // identically for every attendee, so there's no point trying the rest.
+      expect(printCalls).toHaveLength(0);
+      expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
+    });
+
+    // PR #74 review round Fix 8: a template referencing a customFont family
+    // no uploaded font backs is EVENT-level, not attendee-level -- it fails
+    // identically for every attendee in the batch, so (same rationale as the
+    // no-template short-circuit above) the loop stops at the first one
+    // rather than repeating the identical failure for the rest.
+    it("short-circuits the whole loop — never attempting the remaining attendees — when the template references a customFont with no matching uploaded font", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      templateResponse = {
+        template: {
+          width_mm: 90,
+          height_mm: 55,
+          dpi: 300,
+          elements: [
+            {
+              id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+              customFont: "Brand Sans",
+            },
+          ],
+        },
+        version: 1,
+      };
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      expect(await within(dialog).findByText(/Font Brand Sans is missing/)).toBeInTheDocument();
+      // Never even reached the agent -- same "no point trying the rest"
+      // rationale as the no-template case.
+      expect(printCalls).toHaveLength(0);
+      expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
+    });
+
+    it("shows the partial sent tally ALONGSIDE the no-template message when the template vanishes mid-batch (double-print honesty)", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      // The template exists for the first two attendees' per-call fetches,
+      // then vanishes (deleted in another tab) before the third's —
+      // usePrintBadge re-fetches the template PER printAttendee call
+      // (staleTime 0), so the NoTemplateError short-circuit can fire
+      // MID-batch, not just on attendee #1.
+      templateNullAfterPrints = 2;
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB, CAROL]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      // Two sends genuinely happened before the short-circuit; the third
+      // attendee was never attempted.
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      expect(await within(dialog).findByText("This event doesn't have a badge template yet.")).toBeInTheDocument();
+      // The already-sent badges must NOT be hidden by the no-template
+      // message — an operator who saw only "no template" would re-run the
+      // same selection after restoring the template and double-print these
+      // two physical badges.
+      expect(within(dialog).getByText("2 of 3 sent before the template became unavailable")).toBeInTheDocument();
+      expect(printCalls).toHaveLength(2);
+      expect(markPrintedHitCount).toBe(2);
+    });
+
+    it("shows an inline printer select (no configured default), preselects the first printer, and sends to whichever is chosen", async () => {
+      agentHealthOk = true;
+      printersResponse = [
+        { name: "Zebra_ZD421", type: "system" },
+        { name: "Network_Printer", type: "network" },
+      ];
+      defaultPrinterResponse = { default: null };
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+
+      const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
+      await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+      await user.selectOptions(select, "Network_Printer");
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      await waitFor(() => expect(printCalls).toHaveLength(1));
+      expect(printCalls[0].printer_name).toBe("Network_Printer");
+    });
+
+    it("cannot be dismissed via the X close button or Escape while the batch is genuinely running, but becomes dismissable once it settles", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      printDelayMs = 40;
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      // First send in flight (delayed) — the X close button and Escape are
+      // both no-ops while genuinely running: a cancelled/failed-looking print
+      // may still emerge from the printer (transport ack only), so aborting
+      // mid-batch would leave untracked physical output with no record of
+      // which attendees were actually sent.
+      await waitFor(() => expect(printCalls).toHaveLength(1));
+      await user.click(within(dialog).getByRole("button", { name: "Close" }));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // The batch continues regardless — both sends still fire (the blocked
+      // dismissal did not silently stop the loop).
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+
+      // Once the batch genuinely settles, the dialog becomes dismissable
+      // again (post-loop close allowed).
+      await waitFor(() => expect(screen.queryByText(/2 of 2 sent/)).toBeInTheDocument());
+      await user.click(within(dialog).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
   });
 
   describe("Assign zone", () => {

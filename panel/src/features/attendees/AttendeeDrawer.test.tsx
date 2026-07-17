@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
@@ -8,6 +9,47 @@ import { useAttendeesPage } from "./hooks";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
+
+// Task 8 (P3.2): every AttendeeDrawer instance now ALSO mounts
+// useAgentPrinters(true) (the reachability-gated Reprint button) and
+// usePrintBadge's own useBadgeTemplate/useEventFontFaces calls -- all
+// unconditional, regardless of whether any given test cares about
+// printing. MSW's `onUnhandledRequest: "error"` (test/msw.ts) means EVERY
+// test in this file needs these endpoints mocked, not just the reprint-
+// specific describe block below.
+class MockFontFace {
+  family: string;
+  constructor(family: string, _source: unknown, _descriptors?: { weight?: string; style?: string }) {
+    this.family = family;
+  }
+  load(): Promise<MockFontFace> {
+    return Promise.resolve(this);
+  }
+}
+function stubFontFaceApi() {
+  (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
+  Object.defineProperty(document, "fonts", { value: { add: () => {} }, configurable: true, writable: true });
+}
+function unstubFontFaceApi() {
+  delete (globalThis as unknown as { FontFace?: unknown }).FontFace;
+  // @ts-expect-error -- test-only cleanup of the jsdom `document.fonts`
+  // stub; real jsdom has no `fonts` property to restore.
+  delete document.fonts;
+}
+
+let templateResponse: { template: Record<string, unknown> | null; version: number } = { template: null, version: 0 };
+// Disconnected by default (matches the OLD permanently-locked button's
+// "generally not clickable" baseline for every test that doesn't care about
+// printing) -- individual reprint tests flip this to true.
+let agentHealthOk = false;
+let printersResponse: Array<{ name: string; type: string }> = [];
+let defaultPrinterResponse: { default: string | null } = { default: null };
+let printCapture: { printer_name: string; zpl: string } | null = null;
+let printHitCount = 0;
+let printStatus = 200;
+let printDelayMs = 0;
+let markPrintedStatus = 200;
+let markPrintedHitCount = 0;
 
 const ADA = {
   id: "a1",
@@ -149,11 +191,44 @@ const server = startMswServer(
     zoneAccessResponse = zoneAccessResponse.filter((row) => row.id !== params.id);
     return HttpResponse.json({ message: "deleted" });
   }),
+  // Task 8 additions below -- badge-template/fonts/agent/mark-printed.
+  http.get("http://api.test/api/events/:id/badge-template", () => HttpResponse.json(templateResponse)),
+  http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
+  http.post("http://api.test/api/attendees/:attendeeId/printed", () => {
+    markPrintedHitCount += 1;
+    if (markPrintedStatus !== 200) return HttpResponse.json({ error: "boom" }, { status: markPrintedStatus });
+    return HttpResponse.json({ printed_count: markPrintedHitCount });
+  }),
+  http.get("http://agent.test/health", () =>
+    agentHealthOk ? new HttpResponse(null, { status: 200 }) : HttpResponse.error()),
+  http.get("http://agent.test/printers", () => HttpResponse.json(printersResponse)),
+  http.get("http://agent.test/printers/default", () => HttpResponse.json(defaultPrinterResponse)),
+  http.post("http://agent.test/print", async ({ request }) => {
+    printHitCount += 1;
+    printCapture = (await request.json()) as { printer_name: string; zpl: string };
+    if (printDelayMs) await delay(printDelayMs);
+    if (printStatus !== 200) return new HttpResponse("printer offline", { status: printStatus });
+    return HttpResponse.json({ status: "printed" });
+  }),
 );
 void server;
 
+// Task 8: the drawer's no-badge-template reprint message links to the badge
+// editor route, which needs a router context to resolve. Same minimal
+// single-route harness as WorkspaceRail.test.tsx (this suite exercises the
+// drawer's own rendering, not routing — no need for a route tree matching
+// the real app's shape).
+const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
+
 function renderWithProviders(ui: ReactNode, queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
-  return { queryClient, ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>) };
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <RouterContextProvider router={testRouter}>{ui}</RouterContextProvider>
+      </QueryClientProvider>,
+    ),
+  };
 }
 
 // Same ListObserver pattern as DangerZoneCard.test.tsx: keeps the attendees
@@ -187,9 +262,26 @@ function createGate() {
   return { promise, resolve };
 }
 
+// Shared Task 8 reset, called from BOTH describe blocks' beforeEach (every
+// test in this file mounts the reachability-gated Reprint button + its
+// underlying usePrintBadge hook now, not just the reprint-specific tests).
+function resetTask8State() {
+  templateResponse = { template: null, version: 0 };
+  agentHealthOk = false;
+  printersResponse = [];
+  defaultPrinterResponse = { default: null };
+  printCapture = null;
+  printHitCount = 0;
+  printStatus = 200;
+  printDelayMs = 0;
+  markPrintedStatus = 200;
+  markPrintedHitCount = 0;
+  stubFontFaceApi();
+}
+
 describe("AttendeeDrawer", () => {
   beforeEach(() => {
-    window.__ENV__ = { API_URL: "http://api.test" };
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
     attendeeResponse = ADA;
     attendeeStatus = 200;
     attendeeGetHitCount = 0;
@@ -209,6 +301,11 @@ describe("AttendeeDrawer", () => {
     removeZoneAccessCount = 0;
     lastRemovedZoneAccessId = undefined;
     readinessHitCount = 0;
+    resetTask8State();
+  });
+
+  afterEach(() => {
+    unstubFontFaceApi();
   });
 
   it("shows a single whole-body skeleton while the attendee is loading, not the real sections", async () => {
@@ -362,17 +459,18 @@ describe("AttendeeDrawer", () => {
     expect(screen.queryByText(/10:15 — VIP lounge/)).not.toBeInTheDocument();
   });
 
-  it("renders Edit details, Regenerate code…, and Delete… as enabled controls, and permanently disables Reprint badge (Task 9)", async () => {
+  it("renders Edit details, Regenerate code…, and Delete… as enabled controls; Reprint badge is reachability-gated disabled with a title while the agent is unreachable (Task 8)", async () => {
     renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
 
     await screen.findByText("Ada Lovelace");
     expect(screen.getByRole("button", { name: "Edit details" })).toBeEnabled();
-    const reprintButton = screen.getByRole("button", { name: "Reprint badge — coming with the badge editor" });
-    expect(reprintButton).toBeDisabled();
-    // Lock icon accompanies the text (WCAG 1.4.1) — the same structural
-    // idiom (icon + text + native disabled) unified onto BulkBar's "Print
-    // badges" locked control (Task 8).
-    expect(reprintButton.querySelector("svg")).toBeInTheDocument();
+    // Reachability-gated idiom (spec §7.3), not the OLD permanent lock: the
+    // button text no longer says "coming with the badge editor" — it's a
+    // real feature now, just disabled because the fixture's default agent
+    // state (resetTask8State) is disconnected.
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeDisabled());
+    expect(reprintButton).toHaveAttribute("title", "Can't reach the local print agent.");
     expect(screen.getByRole("button", { name: "Regenerate code…" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Delete…" })).toBeEnabled();
     // Fixture ZONE_ACCESS already grants both real event zones (z1/z2), so
@@ -403,7 +501,7 @@ describe("AttendeeDrawer", () => {
 
 describe("AttendeeDrawer — Task 9 mutations", () => {
   beforeEach(() => {
-    window.__ENV__ = { API_URL: "http://api.test" };
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
     attendeeResponse = ADA;
     attendeeStatus = 200;
     attendeeGetHitCount = 0;
@@ -423,6 +521,11 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     removeZoneAccessCount = 0;
     lastRemovedZoneAccessId = undefined;
     readinessHitCount = 0;
+    resetTask8State();
+  });
+
+  afterEach(() => {
+    unstubFontFaceApi();
   });
 
   it("edit details PATCHes only the changed field", async () => {
@@ -883,5 +986,318 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await waitFor(() => expect(deleteAttendeeCount).toBe(1));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
+  });
+});
+
+describe("AttendeeDrawer — Task 8 reprint", () => {
+  const TEMPLATE_DOC = {
+    width_mm: 90,
+    height_mm: 55,
+    dpi: 300,
+    elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+  };
+
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
+    attendeeResponse = ADA;
+    attendeeStatus = 200;
+    attendeeGetHitCount = 0;
+    zoneAccessResponse = ZONE_ACCESS;
+    zoneAccessStatus = 200;
+    zoneHistoryResponse = ZONE_HISTORY;
+    zoneHistoryStatus = 200;
+    listHitCount = 0;
+    readinessHitCount = 0;
+    resetTask8State();
+    // Every reprint test in this block needs a real saved template — the
+    // no-template case below overrides it back to null explicitly.
+    templateResponse = { template: TEMPLATE_DOC, version: 1 };
+  });
+
+  afterEach(() => {
+    unstubFontFaceApi();
+  });
+
+  it("names the agent's default printer in the confirm dialog (no <select>), sends on confirm, marks the attendee printed, and refetches the list + detail (pill data)", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />
+      </>,
+    );
+    await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    expect(within(dialog).getByText("Print Ada Lovelace's badge on Zebra_ZD421?")).toBeInTheDocument();
+    expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    await waitFor(() => expect(printCapture).not.toBeNull());
+    expect(printCapture?.printer_name).toBe("Zebra_ZD421");
+    // Resolved `first_name` binding ("Ada"), not the element's literal
+    // fallback text ("Guest") -- proves attendeeToPreviewData actually fed
+    // the generator.
+    expect(printCapture?.zpl).toContain("^FDAda^FS");
+    await waitFor(() => expect(markPrintedHitCount).toBe(1));
+
+    // Dialog closes and the drawer shows the transport-honest "sent" line.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
+    expect(await screen.findByText("Sent to Zebra_ZD421")).toBeInTheDocument();
+
+    // Pill data (list + detail) refetches via invalidation.
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
+    await waitFor(() => expect(attendeeGetHitCount).toBeGreaterThan(1));
+  });
+
+  it("shows an inline printer <select> (no default configured), preselects the first printer, and sends to whichever printer is chosen", async () => {
+    agentHealthOk = true;
+    printersResponse = [
+      { name: "Zebra_ZD421", type: "system" },
+      { name: "Network_Printer", type: "network" },
+    ];
+    defaultPrinterResponse = { default: null };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    expect(within(dialog).getByText("Choose a printer to print Ada Lovelace's badge.")).toBeInTheDocument();
+    const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
+    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+
+    await user.selectOptions(select, "Network_Printer");
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    await waitFor(() => expect(printCapture).not.toBeNull());
+    expect(printCapture?.printer_name).toBe("Network_Printer");
+  });
+
+  // Review fix (Task 8, Minor): the agent's configured default can name a
+  // printer that has since been unplugged/removed. Naming (and sending to)
+  // a printer that's no longer in the live list would be dishonest — a
+  // stale default must fall through to the inline-select path exactly as
+  // if no default were configured, preselecting a printer that actually
+  // exists.
+  it("falls through to the inline printer <select> (not the stale name) when the configured default is no longer in the live printer list", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Unplugged_Old_Printer" };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    // The choose-a-printer body + select, never the stale default's name.
+    expect(within(dialog).getByText("Choose a printer to print Ada Lovelace's badge.")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Unplugged_Old_Printer/)).not.toBeInTheDocument();
+    const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
+    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+    await waitFor(() => expect(printCapture).not.toBeNull());
+    expect(printCapture?.printer_name).toBe("Zebra_ZD421");
+  });
+
+  it("shows an honest no-template message linking the badge editor, and never calls the agent, when the event has no saved template", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    templateResponse = { template: null, version: 0 };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    expect(await within(dialog).findByText(/doesn.t have a badge template yet/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Open the badge editor" })).toHaveAttribute(
+      "href",
+      "/events/evt-1/badge",
+    );
+    expect(printCapture).toBeNull();
+    // Stays open on this error — same "keeps the confirm dialog open with an
+    // inline error" idiom as the regenerate/delete dialogs.
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+  });
+
+  // PR #74 review round Fix 8: the template references a customFont family
+  // this event has no matching uploaded font for (this file's fonts
+  // endpoint always returns `[]` — see line ~196 above) — the honest,
+  // typed MissingFontError must block BEFORE any agent call, surfacing a
+  // named-family message, never a silent wrong-font send.
+  it("shows an honest missing-font message and never calls the agent when the template references a customFont with no matching uploaded font", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    templateResponse = {
+      template: {
+        width_mm: 90,
+        height_mm: 55,
+        dpi: 300,
+        elements: [
+          {
+            id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+            customFont: "Brand Sans",
+          },
+        ],
+      },
+      version: 1,
+    };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    expect(await within(dialog).findByText(/Font Brand Sans is missing/)).toBeInTheDocument();
+    expect(printCapture).toBeNull();
+    expect(printHitCount).toBe(0);
+    expect(markPrintedHitCount).toBe(0);
+    // Stays open on this error — same idiom as the no-template case above.
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+  });
+
+  it("shows a soft, non-destructive warning (not the harsh failure copy) when mark-printed fails after a successful send", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    markPrintedStatus = 500;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    await waitFor(() => expect(printCapture).not.toBeNull());
+    // The send genuinely happened -- dialog closes exactly like the happy
+    // path, never treated as a full failure.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
+    // Exactly one send -- the downstream mark-printed failure never retries
+    // (or repeats) it.
+    expect(printHitCount).toBe(1);
+    expect(
+      await screen.findByText("Sent to Zebra_ZD421, but the printed count couldn't be updated."),
+    ).toBeInTheDocument();
+  });
+
+  it("disables the confirm button while a print is in flight, and the dialog closes once it resolves", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    printDelayMs = 40;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    const confirmButton = within(dialog).getByRole("button", { name: "Print" });
+    await user.click(confirmButton);
+
+    await waitFor(() => expect(confirmButton).toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
+  });
+
+  // PR #74 review round Fix 2: cancel-during-pending is no longer a race to
+  // win — Cancel (and every other dismiss path) is now INERT while printing,
+  // matching TestPrintDialog's convention. A cancel attempt made DURING the
+  // print must be a flat no-op (dialog stays open, print keeps running); the
+  // outcome (here, a genuine send failure) must render in the still-open
+  // dialog; and only THEN does Cancel actually work.
+  it("ignores a Cancel click made during a pending print — the dialog stays open, shows the outcome, and only then can be closed", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    printStatus = 500;
+    printDelayMs = 50;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    // The Cancel click lands WHILE the (delayed) print is still in flight —
+    // must be entirely ignored: dialog stays open, no early close.
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+
+    // The send genuinely fails (agent-level 500) once the delay elapses —
+    // the dialog is STILL open (never dismissed above) and now shows the
+    // honest failure copy, never a silently-swallowed error.
+    expect(await within(dialog).findByText(/printer offline/)).toBeInTheDocument();
+    expect(printCapture).not.toBeNull();
+
+    // Printing has resolved (failed) — Cancel is live again, and now closes
+    // the dialog for real.
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled());
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument(),
+    );
+    // The OUTER Reprint button is not left stranded disabled.
+    expect(screen.getByRole("button", { name: "Reprint badge" })).toBeEnabled();
+  });
+
+  // Distinct from the mark-printed-failure test above: here the AGENT
+  // itself rejects (the send never happened at all), so this must show the
+  // full failure copy — the agent's own verbatim error text (same
+  // "error instanceof Error ? error.message : fallback" idiom TestPrintDialog
+  // uses) — never the softened "sent, but..." warning, and never a "printed"
+  // claim.
+  it("shows the agent's own error text and keeps the dialog open when the send itself fails (not a mark-printed failure)", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    printStatus = 404;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    expect(await within(dialog).findByText(/printer offline/)).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+    expect(markPrintedHitCount).toBe(0);
+    expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
   });
 });

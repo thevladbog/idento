@@ -29,6 +29,18 @@ export interface BadgeElement {
   rotation?: 0 | 90 | 180 | 270;
   fontFamily?: string;
   maxLines?: number;
+  // P3.2 Task 4: promoted from an extras-passthrough (an unknown key that
+  // only survived via serializeTemplateDoc's raw merge, see that function's
+  // own comment) to a first-class typed field — reconciliation #11 of the
+  // P3.2 plan. web's own client-side ZPL generator reads this per-element
+  // (a font family name matching one of the event's uploaded fonts) and
+  // prefers it over `fontFamily`'s ZPL bitmap code when rasterizing text
+  // (Cyrillic/custom-font text is never drawn with a native ZPL font).
+  // Promoting it to a typed field means the editor's font <select>
+  // (PropertiesPane.tsx) can now dispatch a typed `{customFont}` patch and
+  // have that EDIT actually propagate on save — see serializeTemplateDoc's
+  // own comment for the one behavior change this causes.
+  customFont?: string;
 }
 
 export interface BadgeTemplateDoc extends BadgeConfig {
@@ -100,6 +112,7 @@ function narrowElement(raw: unknown): BadgeElement | null {
   }
   if (typeof raw.fontFamily === "string") element.fontFamily = raw.fontFamily;
   if (typeof raw.maxLines === "number") element.maxLines = raw.maxLines;
+  if (typeof raw.customFont === "string") element.customFont = raw.customFont;
   return element;
 }
 
@@ -113,9 +126,14 @@ function narrowElement(raw: unknown): BadgeElement | null {
 // convenience. It never mutates or drops data from the server's response:
 // callers must keep the original `raw` argument around (e.g. in query
 // state) and pass it as serializeTemplateDoc's `originalRaw` so unknown
-// top-level keys and per-element extras (like the web editor's
-// `customFont`) survive a load -> edit -> save round trip untouched — see
-// serializeTemplateDoc below (reconciliation #4).
+// top-level keys and any still-untyped per-element extras survive a load ->
+// edit -> save round trip untouched — see serializeTemplateDoc below
+// (reconciliation #4). `customFont` USED to be the canonical example of such
+// an extra; P3.2 Task 4 promoted it to a typed BadgeElement field (see that
+// field's own comment) — it's still preserved across an UNTOUCHED round
+// trip, but is no longer merely a passthrough: a typed EDIT to it now
+// propagates on serialize (reconciliation #11), unlike a genuinely unknown
+// key, which this narrowing still never reads or writes at all.
 export function parseTemplateDoc(raw: unknown): BadgeTemplateDoc {
   if (!isPlainObject(raw)) {
     return { ...NEW_DOC_DEFAULT, elements: [] };
@@ -171,12 +189,23 @@ function normalizeDuplicateIds(elements: BadgeElement[]): void {
 //  - Top-level extras: originalRaw's own keys are spread first, then
 //    overwritten by the four known BadgeConfig/elements keys from `doc` —
 //    any other key on originalRaw (e.g. a future top-level flag) survives.
-//  - Per-element extras (e.g. `customFont`): each edited element is matched
-//    to the original raw element with the same `id`, and the ORIGINAL
-//    element's keys are spread first, then overwritten by the edited
-//    element's typed fields. A newly-added element (no id match in
-//    originalRaw, e.g. the editor just created it) has nothing to merge and
-//    serializes as just its own fields.
+//  - Per-element extras (any key `narrowElement` doesn't yet know about):
+//    each edited element is matched to the original raw element with the
+//    same `id`, and the ORIGINAL element's keys are spread first, then
+//    overwritten by the edited element's typed fields. A newly-added
+//    element (no id match in originalRaw, e.g. the editor just created it)
+//    has nothing to merge and serializes as just its own fields.
+//  - `customFont` (reconciliation #11): now a TYPED field (see
+//    BadgeElement's own comment), so it's part of "the edited element's
+//    typed fields" above, not a surviving extra anymore. This is a
+//    deliberate, narrow behavior change: an edit to `customFont` (e.g. the
+//    Properties font <select> dispatching `{customFont: family}` or
+//    `{customFont: undefined}`) now OVERWRITES whatever value the original
+//    raw element carried, exactly like any other typed field (x, fontSize,
+//    ...) always has. An UNTOUCHED element's `customFont` still round-trips
+//    unchanged — its typed value is simply identical to the original's,
+//    so the merge's outcome looks the same as the old passthrough even
+//    though the mechanism differs.
 //
 // Returns a plain object (not BadgeTemplateDoc) since the merged result may
 // carry unknown keys beyond the typed shape — this is exactly what gets

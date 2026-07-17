@@ -1,6 +1,5 @@
 import { Button, ConfirmDialog, Skeleton } from "@idento/ui";
 import { getRouteApi, useBlocker } from "@tanstack/react-router";
-import { Lock } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { BadgeCanvas } from "./BadgeCanvas";
@@ -12,8 +11,11 @@ import { PreviewPicker } from "./PreviewPicker";
 import { PropertiesPane } from "./PropertiesPane";
 import { SaveStatePill } from "./SaveStatePill";
 import { parseTemplateDoc, serializeTemplateDoc } from "./templateTypes";
+import { TestPrintDialog } from "./TestPrintDialog";
 import { usePreviewAttendee } from "./usePreviewAttendee";
 import { useSaveTemplate } from "./useSaveTemplate";
+import { ZplPreviewModal } from "./ZplPreviewModal";
+import { useFontCoverage } from "./zpl/fontCoverage";
 import { ApiError } from "../../shared/api/ApiError";
 import { $api } from "../../shared/api/query";
 
@@ -25,8 +27,9 @@ const routeApi = getRouteApi("/_app/events/$eventId/badge");
 // Board 4a — the badge editor's route/page shell (P3.1 Task 6, save model
 // wired in Task 10). Owns:
 //  - the editor-local top bar (title, the save-state pill, the Save button,
-//    + the right-aligned "Test print" / "ZPL preview" actions, both locked
-//    with the P2.2 disabled-Button+Lock idiom until P3.2 wires them up);
+//    + the right-aligned "Test print" (P3.2 Task 6) / "ZPL preview" (P3.2
+//    Task 5) actions -- both started out locked with the P2.2 disabled-
+//    Button+Lock idiom and are now live, each opening its own dialog);
 //  - the conflict banner (below the top bar) and its two ConfirmDialogs;
 //  - the three-pane grid hosting the Elements / Canvas / Properties regions
 //    (Tasks 7-9 replace these labeled placeholders with the real panes);
@@ -70,6 +73,23 @@ export function BadgeEditorPage() {
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
   const fieldSchema = eventQuery.data?.field_schema ?? [];
 
+  // P3.2 Task 4: PropertiesPane's font <select> needs the event's uploaded
+  // fonts (its "Event fonts" optgroup) + their Cyrillic-coverage flags.
+  // Fetched inline here (FontsCard.tsx precedent, per the task brief) rather
+  // than threaded through some other hook -- `useFontCoverage` does its OWN
+  // internal `$api.useQuery` against this SAME query key, so TanStack Query
+  // dedupes the two into a single network fetch; this call exists purely to
+  // get the LIST (not just the coverage flags) down to the pane. Same
+  // "fetch once at the page, pass down as props" convention `fieldSchema`
+  // above already uses -- deliberately NOT gated behind `initialized`: an
+  // empty fonts list while loading just renders the built-in-only select,
+  // same honest "not ready yet" default fieldSchema's `?? []` already uses.
+  const fontsQuery = $api.useQuery("get", "/api/events/{event_id}/fonts", {
+    params: { path: { event_id: eventId } },
+  });
+  const fonts = fontsQuery.data ?? [];
+  const fontCoverage = useFontCoverage(eventId);
+
   // P3.1 Task 12: the canvas's live preview data + the top-bar switcher's
   // state, both driven from this one hook (see usePreviewAttendee.ts for
   // the default-first-attendee / sample-fallback / debounced-search rules).
@@ -80,6 +100,20 @@ export function BadgeEditorPage() {
   // for why a DropdownMenu needs this same treatment the Reload/Overwrite
   // ConfirmDialogs already get.
   const [previewPickerOpen, setPreviewPickerOpen] = React.useState(false);
+
+  // P3.2 Task 5: the ZPL preview modal's own open flag -- same "lifted up so
+  // handlePageKeyDown can gate on it" rationale as previewPickerOpen above,
+  // since this modal is a Radix Dialog too (a Dialog IS covered by
+  // handlePageKeyDown's guardOpen-style role="dialog" checks in spirit, but
+  // those checks are each their OWN dedicated open flag, not a generic
+  // "any dialog" check -- this follows the same established pattern rather
+  // than introducing a different one).
+  const [zplPreviewOpen, setZplPreviewOpen] = React.useState(false);
+
+  // P3.2 Task 6: the test-print dialog's own open flag -- same
+  // lifted-up-for-handlePageKeyDown rationale as zplPreviewOpen above (this
+  // is a second, separate Radix Dialog, not a re-render of the same one).
+  const [testPrintOpen, setTestPrintOpen] = React.useState(false);
 
   const [state, dispatch] = React.useReducer(
     editorReducer,
@@ -174,6 +208,17 @@ export function BadgeEditorPage() {
   const [overwriteFailed, setOverwriteFailed] = React.useState(false);
   const busy = saveTemplate.isPending || isReloading || isOverwriting;
   const saveDisabled = !initialized || !state.dirty || saveTemplate.isPending || conflict;
+  // PR #74 review round Fix 1: Test print / ZPL preview must share Save's
+  // `initialized` gate (the SAME event-navigation-window rationale as
+  // `initializedForEventId` above) -- between navigating to a new event and
+  // that event's template resolving, `state.doc` still holds the PREVIOUS
+  // event's doc, so either action would otherwise test-print/ZPL-preview
+  // the wrong event's badge. `templateQuery.isLoading` is included
+  // explicitly (rather than relying on `!initialized` alone) so a
+  // background refetch of the SAME event (window refocus, another
+  // operator's save) also disables both buttons for its duration, even
+  // though `initialized` itself doesn't flip false for that case.
+  const printActionsDisabled = !initialized || templateQuery.isLoading;
 
   // Review Minor 2: none of the save-flow UI state above is meaningful for
   // any event other than the one it was produced on — a lingering conflict
@@ -320,6 +365,14 @@ export function BadgeEditorPage() {
   const guardOpen = resolver.status === "blocked" || guardRevertOpen;
   const guardSaveLabel = resolver.status === "blocked" ? t("badgeGuardSave") : t("badgeGuardSaveStay");
 
+  // P3.2 Task 5: the ZPL preview modal's header caption -- the same
+  // attendee/sample distinction PreviewPicker already shows in the top bar,
+  // spelled out as a plain name string (the modal has no access to the raw
+  // `Attendee` object's own display logic, so this derives it once here).
+  const previewName = preview.mode === "attendee" && preview.attendee
+    ? `${preview.attendee.first_name} ${preview.attendee.last_name}`.trim()
+    : t("badgePreviewSample");
+
   function handleGuardDiscard() {
     if (resolver.status === "blocked") {
       resolver.proceed();
@@ -364,7 +417,16 @@ export function BadgeEditorPage() {
   // here instead of staying that component's own internal state.
   function handlePageKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "Escape") return;
-    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen) return;
+    // `zplPreviewOpen` (P3.2 Task 5) / `testPrintOpen` (P3.2 Task 6): both
+    // are Radix Dialogs, same as the Reload/Overwrite ConfirmDialogs above --
+    // Radix's own Escape-to-close listens on `document` natively, entirely
+    // in parallel with React's synthetic dispatch (which still walks the
+    // React tree across each modal's Portal), so the SAME keystroke that
+    // closes either dialog would also reach this handler and incorrectly
+    // pop the dirty-changes guard without this check.
+    if (guardOpen || reloadDialogOpen || overwriteDialogOpen || previewPickerOpen || zplPreviewOpen || testPrintOpen) {
+      return;
+    }
     // Deselect-first, regardless of where focus currently is (final-review
     // Important 4). Task 8's canvas contract (BadgeCanvas.tsx's own
     // artboard keydown handler) only swallows Escape and deselects when the
@@ -501,13 +563,18 @@ export function BadgeEditorPage() {
         <Button type="button" onClick={handleSave} disabled={saveDisabled}>
           {t("badgeSave")}
         </Button>
-        <Button type="button" variant="outline" disabled aria-disabled="true">
-          <Lock aria-hidden className="size-4" />
-          {t("badgeTestPrintLocked")}
+        {/* P3.2 Task 6: unlocked -- the test-print dialog below is this
+            button's entire purpose now, so no more Lock icon. PR #74 review
+            round Fix 1: still gated on `printActionsDisabled` (see its own
+            comment above) during the event-navigation/refetch window. */}
+        <Button type="button" variant="outline" onClick={() => setTestPrintOpen(true)} disabled={printActionsDisabled}>
+          {t("badgeTestPrint")}
         </Button>
-        <Button type="button" variant="outline" disabled aria-disabled="true">
-          <Lock aria-hidden className="size-4" />
-          {t("badgeZplPreviewLocked")}
+        {/* P3.2 Task 5: unlocked -- the ZPL preview modal below is this
+            button's entire purpose now, so no more Lock icon. PR #74 review
+            round Fix 1: same `printActionsDisabled` gate as Test print. */}
+        <Button type="button" variant="outline" onClick={() => setZplPreviewOpen(true)} disabled={printActionsDisabled}>
+          {t("badgeZplPreview")}
         </Button>
       </div>
 
@@ -603,6 +670,34 @@ export function BadgeEditorPage() {
         saveDisabled={saveDisabled}
       />
 
+      {/* P3.2 Task 5: generates from serializeTemplateDoc(state.doc,
+          originalRawRef.current) + preview.data -- the SAME "the exact thing
+          that would be saved, previewed against the same attendee the canvas
+          shows" inputs (plan reconciliation #13), not a separately-derived
+          snapshot. */}
+      <ZplPreviewModal
+        open={zplPreviewOpen}
+        onOpenChange={setZplPreviewOpen}
+        doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
+        config={state.doc}
+        previewData={preview.data}
+        previewName={previewName}
+        eventId={eventId}
+      />
+
+      {/* P3.2 Task 6: the SAME live-doc inputs the preview modal above gets
+          (reconciliation #13) -- test print is not a separately-derived
+          snapshot either. */}
+      <TestPrintDialog
+        open={testPrintOpen}
+        onOpenChange={setTestPrintOpen}
+        doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
+        config={state.doc}
+        previewData={preview.data}
+        previewName={previewName}
+        eventId={eventId}
+      />
+
       {templateQuery.isLoading ? (
         <div className="grid flex-1 grid-cols-[240px_1fr_280px] gap-4">
           <Skeleton className="h-full min-h-[320px] w-full" data-testid="badge-pane-skeleton" />
@@ -668,6 +763,8 @@ export function BadgeEditorPage() {
             element={state.doc.elements.find((element) => element.id === state.selectedId) ?? null}
             fieldSchema={fieldSchema}
             config={state.doc}
+            fonts={fonts}
+            fontCoverage={fontCoverage}
             onUpdate={(id, patch) => dispatch({ type: "update", id, patch })}
           />
         </div>

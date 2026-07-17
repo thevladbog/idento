@@ -88,6 +88,34 @@ describe("parseTemplateDoc", () => {
     expect(rawEl.mysteryField).toBe("???");
   });
 
+  // P3.2 Task 4: customFont is now a typed field (reconciliation #11 of the
+  // P3.2 plan) — narrowElement reads it exactly like fontFamily/maxLines/etc.
+  it("narrows a raw element's customFont into the typed doc", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "e1", type: "text", x: 1, y: 2, customFont: "TT0003M_" }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect(doc.elements[0].customFont).toBe("TT0003M_");
+  });
+
+  it("leaves customFont absent (no key at all, not merely undefined) when the raw element doesn't carry one", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "e1", type: "text", x: 1, y: 2 }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect("customFont" in doc.elements[0]).toBe(false);
+  });
+
   it("skips elements that don't structurally match (missing id/type/x/y) from the typed view", () => {
     const raw = {
       width_mm: 90,
@@ -184,6 +212,14 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(serialized.dpi).toBe(300);
   });
 
+  // P3.2 Task 4 / reconciliation #11: customFont is now a TYPED field (see
+  // templateTypes.ts's own BadgeElement/serializeTemplateDoc comments) — this
+  // test still passes UNMODIFIED because neither element's customFont is
+  // itself edited here (only e1's x changes), so the typed value narrowed at
+  // parse time is identical to the original raw value: an UNTOUCHED
+  // customFont still round-trips exactly like it did as a passthrough extra.
+  // The NEW behavior (an EDITED customFont propagating, overwriting the
+  // original) is covered by the two tests directly below this one.
   it("preserves a per-element customFont key across load -> edit -> serialize, matched by element id", () => {
     const raw = {
       width_mm: 90,
@@ -210,6 +246,60 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(e1?.x).toBe(9); // the edit took effect
     expect(e2?.customFont).toBe("ARIAL.TTF");
     expect(e2?.x).toBe(5); // untouched element unchanged
+  });
+
+  // Reconciliation #11's actual behavior change, pinned: before this task,
+  // BadgeElement didn't declare `customFont` at all, so a typed patch could
+  // never target it — only the ORIGINAL raw value ever survived a save,
+  // even if some other, out-of-band process had changed it. Now that it's a
+  // typed field, an editor patch that sets it flows through the SAME
+  // `{...originalElement, ...element}` merge every other typed field
+  // (x, fontSize, fontFamily, ...) already uses, so the edit wins.
+  it("propagates an EDITED customFont on serialize -- typed fields overwrite the original (reconciliation #11)", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "e1", type: "text", x: 1, y: 2, customFont: "OldFont" }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+    const edited: BadgeTemplateDoc = {
+      ...doc,
+      elements: doc.elements.map((el) => (el.id === "e1" ? { ...el, customFont: "NewFont" } : el)),
+    };
+    const serialized = serializeTemplateDoc(edited, raw);
+    const elements = serialized.elements as Array<Record<string, unknown>>;
+
+    expect(elements.find((el) => el.id === "e1")?.customFont).toBe("NewFont");
+    // the raw object itself is untouched (serializeTemplateDoc never mutates its `originalRaw` argument)
+    expect((raw.elements[0] as Record<string, unknown>).customFont).toBe("OldFont");
+  });
+
+  // PropertiesPane's native-code selection dispatches `{customFont:
+  // undefined, fontFamily: code}` (Task 4) -- this proves that patch
+  // actually clears customFont on serialize rather than the merge falling
+  // back to the original raw value (which an `undefined`-valued key could,
+  // in principle, be mistaken for "absent" and skipped).
+  it("clears customFont on serialize when a patch explicitly sets it to undefined (native-code selection semantics)", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "e1", type: "text", x: 1, y: 2, fontFamily: "0", customFont: "OldFont" }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+    const edited: BadgeTemplateDoc = {
+      ...doc,
+      elements: doc.elements.map((el) => (el.id === "e1" ? { ...el, customFont: undefined, fontFamily: "A" } : el)),
+    };
+    const serialized = serializeTemplateDoc(edited, raw);
+    const elements = serialized.elements as Array<Record<string, unknown>>;
+    const e1 = elements.find((el) => el.id === "e1");
+
+    expect(e1?.customFont).toBeUndefined();
+    expect(e1?.fontFamily).toBe("A");
   });
 
   it("does not mutate the original raw object passed in", () => {
@@ -247,22 +337,24 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(serialized).toEqual({ width_mm: 90, height_mm: 55, dpi: 300, elements: [] });
   });
 
-  it("pairs duplicate element ids first-occurrence-wins: the first element keeps its own extras, the renumbered second gets no merge partner", () => {
+  it("pairs duplicate element ids first-occurrence-wins: the first element keeps its own extras, the renumbered second keeps its own typed fields", () => {
     // Backend's zpl.ParseBadgeTemplate does NOT enforce id uniqueness, and
     // legacy web templates can carry duplicate ids. Codex round Fix 6:
     // parseTemplateDoc now normalizes these at PARSE time (first occurrence
     // keeps "e1"; the second gets a fresh generated id — see the
     // "parseTemplateDoc" describe block above) — this test proves that
     // renumbering doesn't change serializeTemplateDoc's own merge OUTCOME
-    // one bit, consistent with its existing consume-on-use semantics: the
-    // first element's extras (customFont) still round-trip, and the second
-    // (now non-"e1") element still gets no merge partner (own typed fields
-    // only) — exactly as before the ids were made unique. `originalById`
-    // below is keyed by the RAW doc's actual ids ("e1" appears twice there),
-    // and is consumed after the first match, so the renumbered second
-    // element's new id was never going to find a partner in it regardless —
-    // only the id VALUE on the output changed, not which extras attach to
-    // which element.
+    // for a genuinely-unknown extra, while pinning the ONE thing that DOES
+    // now differ because of P3.2 Task 4 / reconciliation #11: `customFont`
+    // is a TYPED field, so it no longer depends on `originalById`'s
+    // first-occurrence-wins merge pairing at all — `parseTemplateDoc`
+    // narrows it straight off EACH raw element (including the second
+    // duplicate) at parse time, independent of which one later "wins" the
+    // id-merge lookup below. Before this task, the second (unlinked)
+    // duplicate's customFont was silently DROPPED on save (no merge
+    // partner, no typed field to carry it) — that data-loss caveat is gone
+    // now that customFont travels with the element itself, not with its
+    // raw merge partner.
     const raw = {
       width_mm: 90,
       height_mm: 55,
@@ -285,9 +377,9 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     expect(elements).toHaveLength(2);
     // first occurrence keeps ITS OWN extras — never the later duplicate's
     expect(elements[0]).toEqual({ id: "e1", type: "text", x: 1, y: 2, customFont: "A" });
-    // renumbered second has no merge partner: own typed fields only (under
-    // its NEW id), no cross-inherited customFont from either raw element
-    expect(elements[1]).toEqual({ id: renumberedId, type: "box", x: 3, y: 4 });
+    // renumbered second keeps ITS OWN typed customFont ("B") — carried by
+    // the typed field itself, no merge partner required anymore.
+    expect(elements[1]).toEqual({ id: renumberedId, type: "box", x: 3, y: 4, customFont: "B" });
   });
 
   it("documents that a raw element with no string id is dropped by parse and does not reappear after serialize", () => {

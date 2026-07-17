@@ -2,10 +2,16 @@ import { Button, Input, Label, cn } from "@idento/ui";
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { bindingOptions, displayBinding } from "./bindings";
 import { clampPosition, clampSize, elementFootprint } from "./canvasMath";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import { ZPL_FONTS } from "./templateTypes";
+import type { components } from "../../shared/api/schema";
+
+// Same alias FontsCard.tsx / useEventFontFaces.ts use for this exact schema
+// type (GET /api/events/{event_id}/fonts's per-item shape).
+type FontListItem = components["schemas"]["FontListItem"];
 
 export interface PropertiesPaneProps {
   // `null` when nothing is selected (ElementsPane/BadgeCanvas both allow a
@@ -21,7 +27,31 @@ export interface PropertiesPaneProps {
   // artboard bounds BadgeCanvas's own drag/resize/nudge paths already
   // enforce -- one clamp rule, never re-derived here.
   config: BadgeConfig;
+  // P3.2 Task 4: the event's uploaded fonts (BadgeEditorPage's own inline
+  // `$api.useQuery("get", "/api/events/{event_id}/fonts", ...)`, mirroring
+  // the SAME "fetch once at the page, pass down" convention `fieldSchema`
+  // already uses) -- the font <select>'s "Event fonts" optgroup lists one
+  // option per FAMILY here (weight/style variants of the same family
+  // collapse to the first occurrence -- see `fontsByFamily` below), keyed
+  // by id, valued by `family`.
+  fonts: FontListItem[];
+  // P3.2 Task 2's `useFontCoverage(eventId)` result, passed straight
+  // through -- `true`/`false`/`undefined` (still loading or unparseable)
+  // per font id, rendered as a coverage flag appended to that font's option
+  // label. Never re-derived here; this pane only renders what it's handed.
+  fontCoverage: Record<string, boolean | undefined>;
   onUpdate: (id: string, patch: Partial<BadgeElement>) => void;
+}
+
+// Appends a translated Cyrillic-coverage flag to an event font's option
+// label -- `coverage === undefined` (still loading, or the font failed to
+// parse) deliberately adds NO flag text at all, never a false ✓ or ✗ (same
+// honesty rule fontCoverage.ts's own `useFontCoverage` documents: undefined
+// must never collapse to a guess).
+function fontOptionLabel(family: string, coverage: boolean | undefined, t: TFunction): string {
+  if (coverage === true) return `${family} (${t("badgeFontCoverageYes")})`;
+  if (coverage === false) return `${family} (${t("badgeFontCoverageNo")})`;
+  return family;
 }
 
 // Native <select>, styled to match `Input`'s own classes (packages/ui/src/
@@ -68,7 +98,7 @@ const IDS = {
 // keystroke/click is independently undoable-in-principle and mirrors
 // editorState.ts's "update" action shape (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
-  element, fieldSchema, config, onUpdate,
+  element, fieldSchema, config, fonts, fontCoverage, onUpdate,
 }: PropertiesPaneProps) {
   const { t } = useTranslation();
 
@@ -126,8 +156,77 @@ export function PropertiesPane({
     patch({ source: value === "" ? undefined : value });
   }
 
+  // P3.2 Task 4: the font <select> now mixes native ZPL codes (option value
+  // = code, e.g. "A") with event-font family names (option value = family,
+  // e.g. "Roboto") in one flat list. Telling them apart on change is a
+  // membership check against the FIXED native-code set, never a lookup
+  // against `fonts` -- a native code is selected precisely when it's one of
+  // ZPL_FONTS's six codes, regardless of whether some uploaded font also
+  // happens to share that literal family name (an unlikely, out-of-scope
+  // collision). Selecting a native code clears `customFont` (web parity:
+  // an element renders with AT MOST one of the two font mechanisms active
+  // at generation time -- see generateZpl.ts's own customFont-wins rule).
+  // Selecting an event font leaves `fontFamily` untouched entirely: it's
+  // simply not read by the generator once `customFont` is set, so there is
+  // nothing useful to overwrite it with.
+  function handleFontChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    const value = event.target.value;
+    const isNativeCode = ZPL_FONTS.some((font) => font.code === value);
+    if (isNativeCode) {
+      patch({ customFont: undefined, fontFamily: value });
+    } else {
+      patch({ customFont: value });
+    }
+  }
+
   const isTextType = element.type === "text";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
+
+  // Trim-aware "is customFont actually set?" -- the SAME rule generation
+  // applies (generateZpl.ts's raster gate `customFont && customFont.trim()`
+  // at :152 and its native-font command at :199): an empty or whitespace-only
+  // customFont is NOT set. web's own editor legitimately persists
+  // `customFont: ""` (BadgeTemplateEditorV2.tsx:801-804 writes its free-text
+  // field verbatim), so a bare `??`/truthy check here would disagree with
+  // what actually prints -- `{fontFamily: "B", customFont: ""}` prints with
+  // B, and the select must say so, not silently sit on the first option.
+  const trimmedCustomFont = element.customFont?.trim() ? element.customFont : undefined;
+  // The font matching the element's (effectively set) customFont, if any --
+  // used to decide whether customFont names a font that's since been
+  // DELETED from the event (no match: the "missing font" branch below).
+  const customFontMatch = trimmedCustomFont
+    ? fonts.find((font) => font.family === trimmedCustomFont)
+    : undefined;
+  // A customFont naming a family that's no longer in `fonts` -- the
+  // uploaded font was deleted after this element was configured to use it.
+  // Rendered as a disabled, honestly-labeled option (never silently
+  // dropped or substituted) so the select's `value` still matches a real
+  // `<option>` (a controlled <select> whose value matches NO option falls
+  // back to showing the first option instead, which would misrepresent
+  // what's actually saved on the element) -- still selectable AWAY from via
+  // any other (enabled) option in the list.
+  const missingFontFamily = trimmedCustomFont && !customFontMatch ? trimmedCustomFont : undefined;
+  // customFont set (matched or missing) always wins the select's displayed
+  // value over fontFamily -- mirrors generateZpl.ts's own "customFont wins
+  // at generation" precedence (reconciliation #11).
+  const fontSelectValue = trimmedCustomFont ?? element.fontFamily ?? "0";
+
+  // One option per FAMILY, first occurrence wins: the backend's uniqueness
+  // constraint is family+weight+style, so a family can legitimately appear
+  // several times in `fonts` (Roboto normal + Roboto bold). customFont
+  // stores only the family -- two options sharing a value would be
+  // duplicate <option value>s (the browser always resolves the FIRST, and
+  // React warns) -- so weight/style variants deliberately collapse here.
+  // The raster canvas picks the concrete face at draw time via the
+  // element's own bold flag + the browser's font matching, never via this
+  // list; the collapsed option carries the FIRST variant's coverage flag
+  // (variants subset from the same upstream family in practice).
+  const seenFamilies = new Set<string>();
+  const fontsByFamily = fonts.filter((font) => {
+    if (seenFamilies.has(font.family)) return false;
+    seenFamilies.add(font.family);
+    return true;
+  });
 
   // Width/Height display the RENDERED footprint, not `width ?? 0`: for a
   // footprint-defaulted element (a fresh text element carries no explicit
@@ -205,14 +304,35 @@ export function PropertiesPane({
             <select
               id={IDS.font}
               className={SELECT_CLASSNAME}
-              value={element.fontFamily ?? "0"}
-              onChange={(e) => patch({ fontFamily: e.target.value })}
+              value={fontSelectValue}
+              onChange={handleFontChange}
             >
-              {ZPL_FONTS.map(({ code, labelKey }) => (
-                <option key={code} value={code}>
-                  {t(labelKey)}
+              {/* Built-in bitmap/scalable ZPL fonts -- Latin only (reconciliation #2). */}
+              <optgroup label={t("badgeFontsBuiltinNoCyr")}>
+                {ZPL_FONTS.map(({ code, labelKey }) => (
+                  <option key={code} value={code}>
+                    {t(labelKey)}
+                  </option>
+                ))}
+              </optgroup>
+              {/* A customFont naming a font that's been deleted since -- an
+                  honest, disabled placeholder so the select's value still
+                  matches a real option instead of silently falling back to
+                  the first one in the list. */}
+              {missingFontFamily && (
+                <option value={missingFontFamily} disabled>
+                  {t("badgeFontMissing", { family: missingFontFamily })}
                 </option>
-              ))}
+              )}
+              {fontsByFamily.length > 0 && (
+                <optgroup label={t("badgeFontsEventGroup")}>
+                  {fontsByFamily.map((font) => (
+                    <option key={font.id} value={font.family}>
+                      {fontOptionLabel(font.family, fontCoverage[font.id], t)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 

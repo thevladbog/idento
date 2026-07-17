@@ -501,6 +501,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/attendees/{attendee_id}/printed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Increment an attendee's printed_count by one and return the new count. No request body. [Plan-time reconciliation #6, docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md] printed_count had NO write path anywhere before this endpoint (no handler field, no endpoint, no client bump) — the attendees table's Printed pill was decorative. This is the minimal increment so the pill becomes real once the panel's print flow calls it after a successful agent print. It is deliberately NOT a print journal (no per-print audit rows, no dedupe/job-status tracking) — the spec's "server-side print journal is out of scope" clause targets audit/dedupe journals, not this pre-existing counter. */
+        post: operations["markAttendeePrinted"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/{event_id}/zones": {
         parameters: {
             query?: never;
@@ -3605,6 +3622,66 @@ export interface operations {
                 };
             };
             /** @description Store failure resolving attendee ownership ("Internal error"), or persisting the update ("Failed to update attendee"). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    markAttendeePrinted: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attendee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description printed_count incremented by one; response carries the new value. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        printed_count: number;
+                    };
+                };
+            };
+            /** @description attendee_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Attendee does not exist, or belongs to a different tenant (requireAttendeeOwnership) — or the ownership pre-check passed but a concurrent soft-delete landed before the guarded UPDATE ran (the increment's `deleted_at IS NULL` guard matched 0 rows; store.ErrAttendeeNotFound). All three are masked identically: "gone" is indistinguishable from "never existed". */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving attendee ownership ("Internal error"), or an unexpected store failure persisting the increment ("Failed to update printed count") — a 0-row increment (attendee soft-deleted mid-request) is 404, not 500. */
             500: {
                 headers: {
                     [name: string]: unknown;

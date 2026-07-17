@@ -2523,6 +2523,67 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/attendees/{attendee_id}/printed:
+    post:
+      operationId: markAttendeePrinted
+      summary: >
+        Increment an attendee's printed_count by one and return the new
+        count. No request body. [Plan-time reconciliation #6,
+        docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md]
+        printed_count had NO write path anywhere before this endpoint (no
+        handler field, no endpoint, no client bump) — the attendees table's
+        Printed pill was decorative. This is the minimal increment so the
+        pill becomes real once the panel's print flow calls it after a
+        successful agent print. It is deliberately NOT a print journal (no
+        per-print audit rows, no dedupe/job-status tracking) — the spec's
+        "server-side print journal is out of scope" clause targets
+        audit/dedupe journals, not this pre-existing counter.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: attendee_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: printed_count incremented by one; response carries the new value.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  printed_count: { type: integer }
+                required: [printed_count]
+        "400":
+          description: attendee_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Attendee does not exist, or belongs to a different tenant
+            (requireAttendeeOwnership) — or the ownership pre-check passed
+            but a concurrent soft-delete landed before the guarded UPDATE
+            ran (the increment's `deleted_at IS NULL` guard matched 0 rows;
+            store.ErrAttendeeNotFound). All three are masked identically:
+            "gone" is indistinguishable from "never existed".
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving attendee ownership ("Internal error"),
+            or an unexpected store failure persisting the increment
+            ("Failed to update printed count") — a 0-row increment
+            (attendee soft-deleted mid-request) is 404, not 500.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{event_id}/zones:
     post:
       operationId: createEventZone

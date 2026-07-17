@@ -1,9 +1,28 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { PropertiesPane, type PropertiesPaneProps } from "./PropertiesPane";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
+import type { components } from "../../shared/api/schema";
 import "../../shared/i18n";
 
+type FontListItem = components["schemas"]["FontListItem"];
+
 const CONFIG: BadgeConfig = { width_mm: 90, height_mm: 55, dpi: 300 };
+
+// Same fixture shape FontsCard.test.tsx / fontCoverage.test.ts use for
+// FontListItem -- only the fields this pane actually reads (id, family) vary
+// meaningfully across the two fixtures below.
+function fontListItem(id: string, family: string): FontListItem {
+  return {
+    id,
+    name: family,
+    family,
+    weight: "normal",
+    style: "normal",
+    format: "truetype",
+    size: 1024,
+    created_at: "2026-01-01T00:00:00Z",
+  };
+}
 
 function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
   const onUpdate = vi.fn();
@@ -11,6 +30,8 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
     element: null,
     fieldSchema: [],
     config: CONFIG,
+    fonts: [],
+    fontCoverage: {},
     onUpdate,
     ...overrides,
   };
@@ -182,6 +203,8 @@ describe("PropertiesPane", () => {
             element={{ ...textElement, source: undefined }}
             fieldSchema={[]}
             config={CONFIG}
+            fonts={[]}
+            fontCoverage={{}}
             onUpdate={onUpdate}
           />,
         );
@@ -211,6 +234,152 @@ describe("PropertiesPane", () => {
           "D · 24 pt",
           "E · 28 pt",
         ]);
+      });
+
+      // P3.2 Task 4: event fonts in an "Event fonts" optgroup, coverage
+      // flags carried in the option TEXT (native <option> can't hold a
+      // component) -- ✓/no-Cyr per font, and no flag at all while coverage
+      // is still undefined (never a guessed flag).
+      describe("event fonts", () => {
+        const FONTS = [
+          { id: "font-cyr", family: "CyrFont" },
+          { id: "font-latin", family: "LatinFont" },
+          { id: "font-loading", family: "LoadingFont" },
+        ].map((f) => fontListItem(f.id, f.family));
+
+        it("lists the built-in group plus an Event fonts group with coverage-flagged labels", () => {
+          renderPane({
+            element: textElement,
+            fonts: FONTS,
+            fontCoverage: { "font-cyr": true, "font-latin": false },
+          });
+
+          const select = screen.getByLabelText("Font");
+          const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+          expect(options).toEqual([
+            "Scalable (0)",
+            "A · 12 pt",
+            "B · 14 pt",
+            "C · 18 pt",
+            "D · 24 pt",
+            "E · 28 pt",
+            "CyrFont (✓ Cyr)",
+            "LatinFont (no Cyr)",
+            "LoadingFont", // coverage undefined (still loading/unparseable) -- no flag text at all
+          ]);
+
+          const optgroups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.getAttribute("label"));
+          expect(optgroups).toEqual(["Built-in ZPL — Latin only", "Event fonts"]);
+        });
+
+        it("selecting an event font patches {customFont: family}, leaving fontFamily untouched", () => {
+          const { onUpdate } = renderPane({ element: textElement, fonts: FONTS, fontCoverage: {} });
+
+          fireEvent.change(screen.getByLabelText("Font"), { target: { value: "CyrFont" } });
+
+          expect(onUpdate).toHaveBeenCalledWith("e1", { customFont: "CyrFont" });
+        });
+
+        it("selecting a native code clears customFont and sets fontFamily to that code", () => {
+          const { onUpdate } = renderPane({
+            element: { ...textElement, customFont: "CyrFont" },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          fireEvent.change(screen.getByLabelText("Font"), { target: { value: "A" } });
+
+          expect(onUpdate).toHaveBeenCalledWith("e1", { customFont: undefined, fontFamily: "A" });
+        });
+
+        it("selects the event-font option (over fontFamily) when customFont is set", () => {
+          renderPane({
+            element: { ...textElement, fontFamily: "A", customFont: "LatinFont" },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          expect(screen.getByLabelText("Font")).toHaveValue("LatinFont");
+        });
+
+        // Trim-aware precedence, matching generation exactly: generateZpl.ts
+        // only honors customFont when `customFont && customFont.trim()` is
+        // truthy (its raster gate at :152 and native-font command at :199),
+        // and web's own editor legitimately persists `customFont: ""`
+        // (BadgeTemplateEditorV2.tsx:801-804 writes the free-text field
+        // verbatim). A bare `??` here treated "" as SET, silently showing
+        // "Scalable (0)" while the printer used fontFamily "B" -- the select
+        // must show what actually prints.
+        it("shows the fontFamily code (not the first option) when customFont is an empty string", () => {
+          renderPane({
+            element: { ...textElement, fontFamily: "B", customFont: "" },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          expect(screen.getByLabelText("Font")).toHaveValue("B");
+        });
+
+        it("treats a whitespace-only customFont as unset too (no missing-font option, fontFamily wins)", () => {
+          renderPane({
+            element: { ...textElement, fontFamily: "C", customFont: "   " },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          const select = screen.getByLabelText("Font");
+          expect(select).toHaveValue("C");
+          // No phantom "missing font" placeholder for a blank value.
+          expect(
+            Array.from(select.querySelectorAll("option")).some((o) => o.textContent?.includes("font removed")),
+          ).toBe(false);
+        });
+
+        it("renders a disabled 'missing font' option when customFont names a font no longer in the list", () => {
+          renderPane({
+            element: { ...textElement, customFont: "DeletedFont" },
+            fonts: FONTS,
+            fontCoverage: {},
+          });
+
+          const select = screen.getByLabelText("Font");
+          expect(select).toHaveValue("DeletedFont");
+          const missingOption = Array.from(select.querySelectorAll("option")).find(
+            (o) => (o as HTMLOptionElement).value === "DeletedFont",
+          ) as HTMLOptionElement;
+          expect(missingOption).toBeDefined();
+          expect(missingOption.disabled).toBe(true);
+          expect(missingOption.textContent).toBe("DeletedFont (font removed)");
+        });
+
+        // The backend's uniqueness constraint is family+weight+style, so one
+        // family can appear several times in the fonts list (e.g. Roboto
+        // normal + Roboto bold). customFont stores only the FAMILY, so two
+        // options with the same value would be duplicate <option value>s --
+        // the optgroup dedupes by family, first occurrence wins.
+        it("dedupes same-family weight/style variants into ONE option (first occurrence's coverage flag)", () => {
+          renderPane({
+            element: textElement,
+            fonts: [
+              fontListItem("font-reg", "Roboto"),
+              { ...fontListItem("font-bold", "Roboto"), weight: "bold" },
+            ],
+            fontCoverage: { "font-reg": true, "font-bold": false },
+          });
+
+          const select = screen.getByLabelText("Font");
+          const eventGroup = select.querySelector('optgroup[label="Event fonts"]');
+          const options = Array.from(eventGroup?.querySelectorAll("option") ?? []).map((o) => o.textContent);
+          expect(options).toEqual(["Roboto (✓ Cyr)"]);
+        });
+
+        it("renders no Event fonts group at all when the event has no uploaded fonts", () => {
+          renderPane({ element: textElement, fonts: [], fontCoverage: {} });
+
+          const select = screen.getByLabelText("Font");
+          const optgroups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.getAttribute("label"));
+          expect(optgroups).toEqual(["Built-in ZPL — Latin only"]);
+        });
       });
     });
 
