@@ -15,6 +15,7 @@ import { BadgeEditorPage } from "../features/badge/BadgeEditorPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { StationPage } from "../features/checkin/StationPage";
 import { checkinStationBeforeLoad, validateCheckinStationSearch } from "../features/checkin/searchParams";
+import { LaunchCeremony } from "../features/checkin/LaunchCeremony";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -154,6 +155,21 @@ const eventCheckinRoute = createRoute({
   component: StationPage,
 });
 
+// P4.1 Task 11 -- the launch ceremony. Same TOP-LEVEL, sibling-of-
+// eventWorkspaceRoute registration as eventCheckinRoute above (mirrored
+// deliberately, per this task's own brief: reuse Task 8's routing pattern
+// rather than re-deriving it) -- registered directly under
+// protectedLayoutRoute.addChildren, NOT nested inside
+// eventWorkspaceRoute.addChildren, so `/events/$eventId/checkin/launch`
+// renders rail-less too (this is where an operator confirms the event/
+// station/settings/printer BEFORE eventCheckinRoute's `?station=` guard
+// (searchParams.ts's checkinStationBeforeLoad) ever redirects here).
+const eventCheckinLaunchRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/events/$eventId/checkin/launch",
+  component: LaunchCeremony,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
@@ -164,6 +180,7 @@ const routeTree = rootRoute.addChildren([
       eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute, eventBadgeRoute,
     ]),
     eventCheckinRoute,
+    eventCheckinLaunchRoute,
   ]),
   loginRoute,
   registerRoute,

@@ -182,20 +182,13 @@ describe("EventWorkspaceLayout", () => {
     expect(button).toBeDisabled();
   });
 
-  it("enables the launch-check-in button and opens the coming-soon dialog when the event is ready", async () => {
+  it("enables the launch-check-in button as a real link to the launch ceremony when the event is ready", async () => {
     readinessResponse = READY_TRUE;
     renderAt("/events/evt-1");
 
     await screen.findByRole("heading", { name: "Partner Day — Autumn" });
-    const button = await screen.findByRole("button", { name: "Launch check-in" });
-    expect(button).toBeEnabled();
-
-    button.click();
-
-    expect(await screen.findByText("Launch ceremony arrives with the check-in station")).toBeInTheDocument();
-    expect(
-      screen.getByText("Confirming the event, loading station settings and the printer check land in a later update."),
-    ).toBeInTheDocument();
+    const link = await screen.findByRole("link", { name: "Launch check-in" });
+    expect(link).toHaveAttribute("href", "/events/evt-1/checkin/launch");
   });
 
   it("renders the load-error message and a back-Home link when the event fetch fails", async () => {

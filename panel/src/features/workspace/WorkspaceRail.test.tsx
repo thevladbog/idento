@@ -134,15 +134,28 @@ describe("WorkspaceRail", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
-  it("renders the still-locked equipment step row and the Check-in row as non-links, always locked", () => {
+  it("renders the still-locked equipment step row as a non-link (no screen behind it yet)", () => {
     renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
 
     const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
     expect(linkNames.some((name) => name?.includes("Equipment"))).toBe(false);
-    expect(linkNames.some((name) => name?.includes("Check-in"))).toBe(false);
+  });
 
+  it("renders the Check-in row as a locked non-link when the event isn't ready", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={ZONES_SKIPPED_READINESS} active="overview" />);
+
+    const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
+    expect(linkNames.some((name) => name?.includes("Check-in"))).toBe(false);
     expect(screen.getByText("Check-in").closest("a")).toBeNull();
     expect(screen.getByText("locked")).toBeInTheDocument();
+  });
+
+  it("renders the Check-in row as a real Link to the launch ceremony (P4.1 Task 11 unlock) once the event is ready", () => {
+    renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
+
+    const checkinLink = screen.getByRole("link", { name: /Check-in/ });
+    expect(checkinLink).toHaveAttribute("href", "/events/evt-1/checkin/launch");
+    expect(screen.queryByText("locked")).not.toBeInTheDocument();
   });
 
   it("renders the badge step row as a real Link (Task 6 unlock) and marks it active on the badge route", () => {

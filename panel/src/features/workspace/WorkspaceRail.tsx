@@ -86,13 +86,30 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
 
       <Separator />
 
-      {/* Check-in is always shown locked in the rail regardless of `ready` —
-          the actionable unlock lives on the workspace header button (Task 2). */}
-      <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body text-muted-foreground">
-        <Lock aria-hidden className="size-3.5 shrink-0" />
-        <span className="flex-1">{t("workspaceCheckin")}</span>
-        <span>{t("workspaceCheckinLocked")}</span>
-      </div>
+      {/* P4.1 Task 11 -- the pinned launch-ceremony CTA at the rail's own
+          bottom (board 1f), mirroring the attendees/zones/staff/badge rows'
+          own lock->Link unlock idiom (StepRow below): locked (Lock icon +
+          discoverable "locked" text, non-interactive) while `!ready`,
+          becoming a real Link to the ceremony once the event IS ready. This
+          route is a rail-less TOP-LEVEL sibling (app/router.tsx's
+          eventCheckinLaunchRoute), so it's never the rail's own "active"
+          tab -- navigating here always leaves this rail behind entirely. */}
+      {readiness !== undefined && readiness.ready === true ? (
+        <Link
+          to="/events/$eventId/checkin/launch"
+          params={{ eventId }}
+          className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body hover:bg-muted"
+        >
+          <span aria-hidden className="size-3.5 shrink-0" />
+          {t("workspaceCheckin")}
+        </Link>
+      ) : (
+        <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body text-muted-foreground">
+          <Lock aria-hidden className="size-3.5 shrink-0" />
+          <span className="flex-1">{t("workspaceCheckin")}</span>
+          <span>{t("workspaceCheckinLocked")}</span>
+        </div>
+      )}
 
       <Link
         to="/events/$eventId/settings"
