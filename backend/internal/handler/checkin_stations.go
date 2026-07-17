@@ -9,6 +9,7 @@ import (
 	"idento/backend/internal/store"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -68,8 +69,14 @@ func (h *Handler) RegisterCheckinStation(c echo.Context) error {
 	}
 
 	if req.ZoneID != nil {
+		// A non-existent zone_id surfaces pgx.ErrNoRows from the store (it
+		// does not normalize no-rows to (nil, nil)) — fold that into the
+		// same 400 "not found" branch as a real row belonging to a
+		// different event (checkins_override.go / checkins_batch.go
+		// precedent), while still surfacing a genuine unexpected DB error
+		// as 500.
 		zone, err := h.Store.GetEventZoneByID(c.Request().Context(), *req.ZoneID)
-		if err != nil {
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to verify zone"})
 		}
 		if zone == nil || zone.EventID != eventID {

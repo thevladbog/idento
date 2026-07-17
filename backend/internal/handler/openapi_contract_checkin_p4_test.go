@@ -12,6 +12,7 @@ import (
 	"idento/backend/internal/store"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/labstack/echo/v4"
 )
 
@@ -522,7 +523,12 @@ func TestOpenAPIContract_RegisterCheckinStation_UnknownZone400(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")
 	h := newCheckinStationHandler(event,
-		func(uuid.UUID) (*models.EventZone, error) { return nil, nil },
+		// The real PGStore.GetEventZoneByID does not normalize a no-rows
+		// result to (nil, nil) — it surfaces the raw pgx.ErrNoRows from
+		// Scan. Matching that contract here is what makes this test
+		// actually exercise the "unknown zone" code path instead of the
+		// unrelated "found a nil zone" path.
+		func(uuid.UUID) (*models.EventZone, error) { return nil, pgx.ErrNoRows },
 		func(uuid.UUID, string, *uuid.UUID) (*models.CheckinStation, error) {
 			t.Fatalf("UpsertCheckinStation should not be called for an unknown zone")
 			return nil, nil
