@@ -74,6 +74,8 @@ AGENT_ALLOWED_ORIGINS=http://your-host,http://your-host:80 <path-to-agent-binary
 
 (Comma-separated, exact origins — scheme + host + port, no trailing slash. See `agent/README.md` for the config-file equivalent if you're not setting it via environment variable.)
 
+The customer panel (`panel/`) talks to the same local agent the same way, directly from the browser — no backend proxy. Its build reads the agent's base URL from a `PUBLIC_AGENT_URL` env var (analogous to `PUBLIC_API_URL`, substituted into `panel/env.js.template` at container start); if left unset it falls back to the agent's own default, `http://localhost:12345`. Whichever origin you serve the panel from must be added to `AGENT_ALLOWED_ORIGINS` exactly like the web UI's origin above — the dev Vite ports (`5173`/`5174`) are already in the agent's default allowlist, but any other on-prem host/port needs to be added explicitly.
+
 ## Troubleshooting
 
 - **Nothing responds after `docker compose up -d`:** check `docker compose logs backend` and `docker compose logs web` for startup errors — a missing/invalid `.env` value is the most common cause (look for a message naming the specific variable).
