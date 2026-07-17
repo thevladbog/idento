@@ -10,6 +10,13 @@ export interface UseAttendeesPageOptions {
   search?: string;
   zone?: string;
   status?: AttendeeStatus;
+  // P4.1 Task 7: lets a caller (ScanInput.tsx's manual-search fallback)
+  // skip firing the request at all — e.g. while its search box is still
+  // empty, so mounting the check-in station doesn't dump the first page of
+  // the whole roster before the operator has typed anything. Optional and
+  // defaults to `true` — every pre-existing caller (AttendeesPage.tsx etc.)
+  // is unaffected.
+  enabled?: boolean;
 }
 
 const DEFAULT_PER_PAGE = 50;
@@ -36,7 +43,7 @@ export function useAttendeesPage(eventId: string, opts: UseAttendeesPageOptions)
     // (oneOf, discriminated by presence of page/per_page). This hook always
     // sends page/per_page, so the response is always the envelope in
     // practice — narrow the type accordingly.
-    { select: (data) => data as AttendeeListPage },
+    { select: (data) => data as AttendeeListPage, enabled: opts.enabled ?? true },
   );
 }
 

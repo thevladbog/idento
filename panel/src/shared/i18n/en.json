@@ -553,5 +553,12 @@
   "staffZonesDialogLoadError": "Couldn't load zones for this staff member.",
   "staffZonesDialogEmpty": "This event has no zones yet.",
   "staffZonesToggleError": "Couldn't update zone access. Try again.",
-  "staffZonesDialogHint": "Changes save immediately."
+  "staffZonesDialogHint": "Changes save immediately.",
+  "checkinScanWedgeHint": "Scan a badge to check in.",
+  "checkinScanWedgeInputLabel": "Badge scanner input",
+  "checkinScanScannerHint": "Waiting for a scan from the handheld scanner…",
+  "checkinScanScannerDegradedHint": "Can't reach the handheld scanner — use manual search below.",
+  "checkinScanManualHint": "Look up an attendee by name, email, or code below.",
+  "checkinManualSearchPlaceholder": "Search by name, email, or code…",
+  "checkinManualSearchNoMatches": "No matching attendees."
 }

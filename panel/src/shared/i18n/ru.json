@@ -555,5 +555,12 @@
   "staffZonesDialogLoadError": "Не удалось загрузить зоны для этого сотрудника.",
   "staffZonesDialogEmpty": "В этом мероприятии пока нет зон.",
   "staffZonesToggleError": "Не удалось обновить доступ к зоне. Попробуйте ещё раз.",
-  "staffZonesDialogHint": "Изменения сохраняются сразу."
+  "staffZonesDialogHint": "Изменения сохраняются сразу.",
+  "checkinScanWedgeHint": "Отсканируйте бейдж, чтобы зарегистрировать участника.",
+  "checkinScanWedgeInputLabel": "Поле ввода сканера бейджей",
+  "checkinScanScannerHint": "Ожидание скана с ручного сканера…",
+  "checkinScanScannerDegradedHint": "Не удаётся подключиться к ручному сканеру — используйте поиск вручную ниже.",
+  "checkinScanManualHint": "Найдите участника по имени, email или коду ниже.",
+  "checkinManualSearchPlaceholder": "Поиск по имени, email или коду…",
+  "checkinManualSearchNoMatches": "Участники не найдены."
 }
