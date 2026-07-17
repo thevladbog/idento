@@ -17,6 +17,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { TestPrintDialog, type TestPrintDialogProps } from "./TestPrintDialog";
+import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -248,6 +249,40 @@ describe("TestPrintDialog", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/printer not found/);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
+  });
+
+  // Same rationale as AttendeeDrawer.test.tsx's may-still-print timeout
+  // test: a timed-out send is NOT a proven failure — the abort only
+  // cancelled the client's wait; the agent may have received the job, so
+  // the badge can still emerge. The generic branch's verbatim
+  // `error.message` would leak the client-authored (non-i18n) English
+  // message AND read like a plain failure, inviting a double print — the
+  // typed error maps to the shared honest copy instead.
+  it("shows honest may-still-print timeout copy (not the raw error message) when the send times out", async () => {
+    const user = userEvent.setup();
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultResponse = { default: "Zebra_ZD421" };
+    const printSpy = vi
+      .spyOn(agentClient, "print")
+      .mockRejectedValue(new AgentPrintTimeoutError(30_000));
+    try {
+      renderDialog();
+
+      const sendButton = await waitForSendEnabled();
+      await user.click(sendButton);
+
+      expect(
+        await screen.findByText(
+          "The print agent didn't respond. The badge may still print — check the printer before retrying.",
+        ),
+      ).toBeInTheDocument();
+      // Never the raw client-authored message, and never a "sent" claim.
+      expect(screen.queryByText(/produced no response/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    } finally {
+      printSpy.mockRestore();
+    }
   });
 
   // PR #75 review finding: dismissal is fully locked while a print is in

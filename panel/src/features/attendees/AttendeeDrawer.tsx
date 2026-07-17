@@ -461,7 +461,7 @@ function DrawerBody({
       // a plain failure, inviting an immediate double print — dedicated
       // honest copy instead.
       if (error instanceof AgentPrintTimeoutError) {
-        setReprintError({ kind: "generic", message: t("drawerReprintTimeout") });
+        setReprintError({ kind: "generic", message: t("printAgentTimeout") });
         return;
       }
       setReprintError({
