@@ -342,6 +342,7 @@
   "bulkPrintDoneWithFailures": "{{sent}} of {{total}} sent — {{failed}} failed",
   "bulkPrintMarkWarn": "{{count}} sent but not recorded",
   "bulkPrintNoTemplate": "This event doesn't have a badge template yet.",
+  "bulkPrintPartialBeforeNoTemplate": "{{sent}} of {{total}} sent before the template became unavailable",
   "bulkClear": "Clear",
   "addAttendeeTitle": "New attendee",
   "addAttendeeFirstName": "First name",

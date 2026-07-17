@@ -344,6 +344,7 @@
   "bulkPrintDoneWithFailures": "Отправлено {{sent}} из {{total}} — ошибок: {{failed}}",
   "bulkPrintMarkWarn": "Отправлено: {{count}}, но не удалось обновить счётчик печати.",
   "bulkPrintNoTemplate": "У этого мероприятия ещё нет шаблона бейджа.",
+  "bulkPrintPartialBeforeNoTemplate": "Отправлено {{sent}} из {{total}}, прежде чем шаблон стал недоступен",
   "bulkClear": "Очистить",
   "addAttendeeTitle": "Новый участник",
   "addAttendeeFirstName": "Имя",

@@ -87,9 +87,11 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // open state. The OUTER "Print badges" button needs to know connectivity to
   // decide whether it's even clickable at all (same §7.3 reachability-gated
   // idiom as the drawer), and BulkBar only ever mounts when there's an active
-  // selection — a selection already implies intent to act on it, so polling
-  // the agent for as long as the bar is visible is an acceptable cost (same
-  // one-extra-poll-target tradeoff the drawer already makes).
+  // selection — a selection already implies intent to act on it, so keeping
+  // the connectivity probe enabled (one fetch on mount + a refetch on window
+  // focus; the hook has NO polling interval) for as long as the bar is
+  // visible is an acceptable cost — the same tradeoff the drawer already
+  // makes.
   const agent = useAgentPrinters(true);
   const printBadge = usePrintBadge(eventId);
 
@@ -108,9 +110,16 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // surfaced as its own non-destructive warning line (never conflated with a
   // genuine send failure).
   const [printMarkWarnCount, setPrintMarkWarnCount] = React.useState(0);
-  // Pre-send short-circuit: the event has no saved badge template, so every
-  // attendee would fail identically — the loop stops after the FIRST attempt
-  // rather than repeating the same failure for the rest of the selection.
+  // No-template short-circuit: the loop stops at whichever attendee FIRST
+  // observes a missing template — usePrintBadge re-fetches the template PER
+  // printAttendee call (staleTime 0), so this can fire MID-batch (template
+  // deleted in another tab while the batch is printing), not just on
+  // attendee #1. A missing template fails identically for every remaining
+  // attendee, so there's no point repeating the failure. Review fix
+  // (Important): badges already sent before the short-circuit stay counted —
+  // the readout below renders the partial tally ALONGSIDE the no-template
+  // message, so an operator never mistakes "no template" for "nothing was
+  // printed" and re-runs (double-prints) a partially-sent selection.
   const [printNoTemplate, setPrintNoTemplate] = React.useState(false);
   const printSessionRef = React.useRef(0);
 
@@ -317,10 +326,15 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         attemptedAny = true;
       } catch (error) {
         if (error instanceof NoTemplateError) {
-          // Pre-send failure: the event has no saved template at all, so
-          // every remaining attendee would fail in exactly the same way --
-          // short-circuit the whole loop rather than repeating the identical
-          // failure (and identical progress-readout churn) 49 more times.
+          // Pre-send failure: the event has no saved template (either from
+          // the start, or deleted mid-batch -- printAttendee re-fetches the
+          // template per call), so every remaining attendee would fail in
+          // exactly the same way. Short-circuit the whole loop rather than
+          // repeating the identical failure (and identical progress-readout
+          // churn) for the rest of the selection. Progress deliberately NOT
+          // bumped for this attendee -- nothing was sent for them -- so
+          // `printProgress.done` keeps the honest count of completed
+          // attempts for the partial-tally readout below.
           noTemplate = true;
           break;
         }
@@ -363,10 +377,11 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // Once the batch has settled (no longer printing) with at least one
   // genuine failure, the readout switches from the plain "x of y sent" copy
   // to the honest with-failures breakdown -- same idiom as
-  // bulkAssignZoneDoneWithFailures above. Suppressed entirely while
-  // `printNoTemplate` is set: the loop short-circuited before anything was
-  // genuinely attempted, so a "sent" tally here would be dishonest (there
-  // is no partial success to report).
+  // bulkAssignZoneDoneWithFailures above. Suppressed while `printNoTemplate`
+  // is set -- the loop never ran to completion, so a completion-shaped
+  // "x of y sent" tally would misrepresent a batch that stopped early; the
+  // dedicated partial-tally branch below (rendered alongside the
+  // no-template message) reports whatever WAS sent instead.
   const printDoneReadout = !printing && printProgress && !printNoTemplate ? (
     printFailedCount > 0
       ? t("bulkPrintDoneWithFailures", {
@@ -379,7 +394,25 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
 
   const printDescription = (
     <>
-      {printNoTemplate ? null : printTargetPrinter ? (
+      {printNoTemplate ? (
+        printProgress && printProgress.done > 0 ? (
+          <span className="block">
+            {/* Review fix (Important): the template can vanish MID-batch
+                (per-call re-fetch), after real badges have already been
+                sent. Hiding those sends behind the no-template message alone
+                would invite the operator to re-run the same selection after
+                restoring the template and double-print them -- the partial
+                tally stays visible, stacked above the error. `done` counts
+                completed attempts (the short-circuited attendee never bumps
+                it); genuine failures among them are subtracted, so `sent`
+                is only ever badges that actually went out. */}
+            {t("bulkPrintPartialBeforeNoTemplate", {
+              sent: printProgress.done - printFailedCount,
+              total: printProgress.total,
+            })}
+          </span>
+        ) : null
+      ) : printTargetPrinter ? (
         <span className="block">
           {printing && printProgress
             ? t("bulkPrintProgress", { done: printProgress.done, total: printProgress.total })

@@ -83,6 +83,7 @@ function makeAttendee(overrides: Partial<Attendee> = {}): Attendee {
 
 const ADA = makeAttendee({ id: "a1" });
 const BOB = makeAttendee({ id: "a2", first_name: "Bob", last_name: "Noll" });
+const CAROL = makeAttendee({ id: "a3", first_name: "Carol", last_name: "Reyes" });
 
 let zoneAccessCalls: { attendeeId: string; body: unknown }[] = [];
 let zoneAccessStatusOverride: number | null = null;
@@ -130,6 +131,13 @@ let printFailOnIndex: number | null = null;
 let printDelayMs = 0;
 let markPrintedHitCount = 0;
 let markPrintedFailOnIndex: number | null = null;
+// Simulates the badge template being DELETED mid-batch (e.g. in another
+// tab): once this many /print sends have been handled, the badge-template
+// endpoint starts returning {template: null}. usePrintBadge re-fetches the
+// template PER printAttendee call (staleTime 0), and the loop is strictly
+// sequential, so mutating the fixture inside the Nth /print handler
+// deterministically makes attendee N+1's template fetch come back null.
+let templateNullAfterPrints: number | null = null;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:id/readiness", () => {
@@ -210,6 +218,9 @@ const server = startMswServer(
     printHitCount += 1;
     const body = (await request.json()) as { printer_name: string; zpl: string };
     printCalls.push(body);
+    if (templateNullAfterPrints !== null && printHitCount >= templateNullAfterPrints) {
+      templateResponse = { template: null, version: 0 };
+    }
     if (printDelayMs) await delay(printDelayMs);
     if (printFailOnIndex !== null && printHitCount === printFailOnIndex) {
       return new HttpResponse("printer offline", { status: 500 });
@@ -250,6 +261,7 @@ describe("BulkBar", () => {
     printDelayMs = 0;
     markPrintedHitCount = 0;
     markPrintedFailOnIndex = null;
+    templateNullAfterPrints = null;
     stubFontFaceApi();
   });
 
@@ -394,6 +406,38 @@ describe("BulkBar", () => {
       // identically for every attendee, so there's no point trying the rest.
       expect(printCalls).toHaveLength(0);
       expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
+    });
+
+    it("shows the partial sent tally ALONGSIDE the no-template message when the template vanishes mid-batch (double-print honesty)", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      // The template exists for the first two attendees' per-call fetches,
+      // then vanishes (deleted in another tab) before the third's —
+      // usePrintBadge re-fetches the template PER printAttendee call
+      // (staleTime 0), so the NoTemplateError short-circuit can fire
+      // MID-batch, not just on attendee #1.
+      templateNullAfterPrints = 2;
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB, CAROL]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      // Two sends genuinely happened before the short-circuit; the third
+      // attendee was never attempted.
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      expect(await within(dialog).findByText("This event doesn't have a badge template yet.")).toBeInTheDocument();
+      // The already-sent badges must NOT be hidden by the no-template
+      // message — an operator who saw only "no template" would re-run the
+      // same selection after restoring the template and double-print these
+      // two physical badges.
+      expect(within(dialog).getByText("2 of 3 sent before the template became unavailable")).toBeInTheDocument();
+      expect(printCalls).toHaveLength(2);
+      expect(markPrintedHitCount).toBe(2);
     });
 
     it("shows an inline printer select (no configured default), preselects the first printer, and sends to whichever is chosen", async () => {
