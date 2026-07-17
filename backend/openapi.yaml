@@ -325,6 +325,50 @@ components:
         settings:
           $ref: "#/components/schemas/CheckinSettings"
       required: [settings]
+    CheckinStation:
+      type: object
+      description: >
+        A registered check-in station (P4.1 Task 2) — distinct from the
+        mobile-track Station (zone/kiosk devices): a checkin_station is
+        name-scoped per event (UNIQUE(event_id, name)) and optionally
+        bound to a zone. last_seen_at is refreshed by POST
+        /api/events/{event_id}/checkin-stations/{id}/heartbeat.
+      properties:
+        id: { type: string, format: uuid }
+        event_id: { type: string, format: uuid }
+        name: { type: string }
+        zone_id: { type: string, format: uuid, nullable: true }
+        last_seen_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+      required: [id, event_id, name, last_seen_at, created_at]
+    CheckinStationRegisterRequest:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin-stations request body. name
+        identifies the station (UNIQUE per event) — registering the SAME
+        name again is an upsert: zone_id is replaced (even back to null)
+        and last_seen_at refreshed, never a duplicate row. zone_id, when
+        present, must belong to the same event (400 otherwise).
+      properties:
+        name: { type: string, minLength: 1 }
+        zone_id: { type: string, format: uuid, nullable: true }
+      required: [name]
+    CheckinStationResponse:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin-stations' response envelope —
+        station is the registered (or re-registered) row.
+      properties:
+        station: { $ref: "#/components/schemas/CheckinStation" }
+      required: [station]
+    CheckinStationListResponse:
+      type: object
+      description: GET /api/events/{event_id}/checkin-stations' response envelope.
+      properties:
+        stations:
+          type: array
+          items: { $ref: "#/components/schemas/CheckinStation" }
+      required: [stations]
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -1653,6 +1697,141 @@ paths:
           description: >
             Store failure resolving event ownership or persisting check-in
             settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkin-stations:
+    post:
+      operationId: registerCheckinStation
+      summary: >
+        Register (or re-register) a named check-in station for an event
+        (P4.1 Task 2). Registering the SAME name again is an upsert — the
+        same station id is returned, zone_id is replaced by whatever this
+        call submits (even back to null), and last_seen_at is refreshed;
+        it never creates a duplicate row.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckinStationRegisterRequest" }
+      responses:
+        "200":
+          description: Registered (or re-registered) station.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinStationResponse" }
+        "400":
+          description: >
+            event_id is not a UUID, the body is malformed, name is missing
+            or empty, or zone_id is present but does not belong to this
+            event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing" — checked
+            before any store call).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership, verifying zone_id, or
+            persisting the station.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      operationId: listCheckinStations
+      summary: List every check-in station registered for an event (P4.1 Task 2).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Registered stations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinStationListResponse" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving event ownership or listing stations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkin-stations/{id}/heartbeat:
+    post:
+      operationId: heartbeatCheckinStation
+      summary: >
+        Refresh a check-in station's last_seen_at (P4.1 Task 2) — polled
+        periodically by a running station so the panel can show
+        online/offline state (a later task).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204":
+          description: last_seen_at refreshed. No body.
+        "400":
+          description: event_id or id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist / belongs to a different tenant, or the
+            station id does not exist / belongs to a different event
+            (store.ErrCheckinStationNotFound — both collapse to the same
+            404, no existence oracle).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving event ownership or updating the station.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

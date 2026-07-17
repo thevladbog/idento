@@ -769,6 +769,84 @@ func (s *PGStore) UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, 
 	return err
 }
 
+// ErrCheckinStationNotFound is returned by HeartbeatCheckinStation when its
+// guarded UPDATE matches 0 rows — either the station id doesn't exist at
+// all, or it belongs to a different event than the caller's eventID (the
+// `AND event_id = $2` guard is what makes a foreign station id 404 rather
+// than silently heartbeating someone else's station). Handlers map it to
+// the house 404, never a fabricated success.
+var ErrCheckinStationNotFound = errors.New("check-in station not found")
+
+// UpsertCheckinStation registers a check-in station scoped to eventID
+// (P4.1 Task 2). A fresh name inserts a new row (last_seen_at defaults to
+// now() from the column default); re-registering the SAME name is
+// idempotent via ON CONFLICT (event_id, name) DO UPDATE — the SAME row/id
+// is returned, with zone_id replaced by the newly-submitted value (even
+// back to NULL) and last_seen_at refreshed, rather than erroring or
+// creating a duplicate row. Contract: the caller must already have
+// confirmed the event exists and, when zoneID is non-nil, that it belongs
+// to the SAME event (e.g. via requireEventOwnership + GetEventZoneByID) —
+// this method does not re-validate either.
+func (s *PGStore) UpsertCheckinStation(ctx context.Context, eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error) {
+	var st models.CheckinStation
+	query := `INSERT INTO checkin_stations (event_id, name, zone_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (event_id, name) DO UPDATE SET zone_id = EXCLUDED.zone_id, last_seen_at = now()
+		RETURNING id, event_id, name, zone_id, last_seen_at, created_at`
+	err := s.db.QueryRow(ctx, query, eventID, name, zoneID).
+		Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// HeartbeatCheckinStation refreshes a station's last_seen_at, scoped to
+// eventID so a station id belonging to a different event can never be
+// touched (the same tenant-isolation shape as
+// UpdateCheckinSettings/IncrementAttendeePrintedCount's guards, just on a
+// foreign-event axis instead of soft-delete). On 0 rows (unknown id, or an
+// id that belongs to a different event) this returns
+// ErrCheckinStationNotFound.
+func (s *PGStore) HeartbeatCheckinStation(ctx context.Context, eventID, stationID uuid.UUID) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE checkin_stations SET last_seen_at = now() WHERE id = $1 AND event_id = $2`,
+		stationID, eventID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrCheckinStationNotFound
+	}
+	return nil
+}
+
+// ListCheckinStations returns every station registered for eventID,
+// ordered by name for a deterministic listing (stations have no natural
+// display order otherwise).
+func (s *PGStore) ListCheckinStations(ctx context.Context, eventID uuid.UUID) ([]*models.CheckinStation, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT id, event_id, name, zone_id, last_seen_at, created_at FROM checkin_stations WHERE event_id = $1 ORDER BY name`,
+		eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stations []*models.CheckinStation
+	for rows.Next() {
+		var st models.CheckinStation
+		if err := rows.Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt); err != nil {
+			return nil, err
+		}
+		stations = append(stations, &st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stations, nil
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

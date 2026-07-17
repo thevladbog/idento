@@ -117,6 +117,26 @@ type Store interface {
 	// idiom as SoftDeleteEvent.
 	UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error
 
+	// UpsertCheckinStation registers a check-in station (P4.1 Task 2): a
+	// fresh (event_id, name) pair inserts a new row; re-registering the
+	// SAME name is idempotent — ON CONFLICT (event_id, name) DO UPDATE
+	// replaces zone_id (even back to nil) and refreshes last_seen_at,
+	// returning the SAME row/id rather than creating a duplicate. Contract:
+	// the caller must already have confirmed the event exists (e.g. via
+	// requireEventOwnership) and, when zoneID is non-nil, that it belongs
+	// to the SAME event (e.g. via GetEventZoneByID) — this method does not
+	// re-validate either.
+	UpsertCheckinStation(ctx context.Context, eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error)
+	// HeartbeatCheckinStation refreshes a station's last_seen_at, scoped to
+	// eventID so a station id belonging to a different event can never be
+	// touched. On 0 rows (unknown id, or an id that belongs to a different
+	// event) this returns the exported ErrCheckinStationNotFound sentinel —
+	// handlers map it to a 404, never a fabricated success.
+	HeartbeatCheckinStation(ctx context.Context, eventID, stationID uuid.UUID) error
+	// ListCheckinStations returns every station registered for eventID,
+	// ordered by name for a deterministic listing.
+	ListCheckinStations(ctx context.Context, eventID uuid.UUID) ([]*models.CheckinStation, error)
+
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,
