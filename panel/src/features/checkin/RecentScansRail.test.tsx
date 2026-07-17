@@ -444,4 +444,71 @@ describe("RecentScansRail", () => {
       expect(screen.getByRole("dialog", { name: "Undo check-in" })).toBe(dialog);
     });
   });
+
+  // Regression test for a task-9 review finding: `anyMutationPending`
+  // (reprintPrinting || undoCheckin.isPending) is still false while a
+  // dialog is merely OPEN but not yet confirmed, so the per-row trigger
+  // buttons -- gated only on that flag -- previously let a user open BOTH
+  // dialog types at once (e.g. open row A's Reprint dialog, then click row
+  // B's still-enabled Undo trigger), each confirmable independently against
+  // its own pending flag. That could fire a reprint and an undo
+  // concurrently, potentially against the SAME attendee. The fix gates the
+  // trigger buttons on `reprintTarget !== null || undoTarget !== null` too,
+  // so once either dialog is open (confirmed or not), no other row's
+  // trigger can open a second, competing dialog.
+  describe("Dialog mutual exclusion", () => {
+    beforeEach(() => stubFontFaceApi());
+    afterEach(() => unstubFontFaceApi());
+
+    it("disables every other row's Undo trigger while a Reprint dialog is open but not yet confirmed", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      const user = userEvent.setup();
+      renderRail("st-1");
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      const reprintButtonRow0 = within(rows[0]).getByRole("button", { name: "Reprint" });
+      await waitFor(() => expect(reprintButtonRow0).toBeEnabled());
+      await user.click(reprintButtonRow0);
+      await screen.findByRole("dialog", { name: "Reprint badge" });
+
+      // Neither mutation has actually started (reprintPrinting is still
+      // false -- the dialog is idle, unconfirmed) -- yet row 1's Undo
+      // trigger must already be disabled, since confirming it would open a
+      // second, independent dialog concurrently with the open Reprint one.
+      // Radix marks the rest of the page `aria-hidden` while its Dialog is
+      // open, so `{ hidden: true }` is needed here to still query the
+      // (inert-to-screen-readers, but still DOM-present) row underneath.
+      const undoButtonRow1 = within(rows[1]).getByRole("button", { name: "Undo", hidden: true });
+      expect(undoButtonRow1).toBeDisabled();
+    });
+
+    it("disables every other row's Reprint trigger while an Undo dialog is open but not yet confirmed", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      const user = userEvent.setup();
+      renderRail("st-1");
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      // Confirm the agent has already finished its own reachability check
+      // (Reprint enabled) BEFORE opening the Undo dialog, so the later
+      // "disabled" assertion is caused by the Undo dialog being open, not
+      // by Reprint's reachability check simply not having resolved yet.
+      const reprintButtonRow1 = within(rows[1]).getByRole("button", { name: "Reprint" });
+      await waitFor(() => expect(reprintButtonRow1).toBeEnabled());
+
+      const undoButtonRow0 = within(rows[0]).getByRole("button", { name: "Undo" });
+      await user.click(undoButtonRow0);
+      await screen.findByRole("dialog", { name: "Undo check-in" });
+
+      // undoCheckin.isPending is still false here (unconfirmed) -- row 1's
+      // Reprint trigger must already be disabled for the same reason as
+      // above, in the opposite direction. Radix marks the rest of the page
+      // `aria-hidden` while its Dialog is open, so `{ hidden: true }` is
+      // needed here to still query the row underneath.
+      expect(within(rows[1]).getByRole("button", { name: "Reprint", hidden: true })).toBeDisabled();
+    });
+  });
 });

@@ -265,6 +265,24 @@ export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
   // ---------------------------------------------------------------------
 
   const anyMutationPending = reprintPrinting || undoCheckin.isPending;
+  // A dialog is "open" (reprintTarget/undoTarget set) well before its own
+  // mutation actually starts -- an idle, unconfirmed dialog leaves
+  // anyMutationPending false. Gating the list-level trigger buttons on
+  // anyMutationPending alone therefore let a user open BOTH dialog types at
+  // once (e.g. open row A's Reprint dialog, then click row B's still-enabled
+  // Undo trigger) and confirm each independently, since each dialog's own
+  // confirm button is only gated on its OWN pending flag -- firing a reprint
+  // and an undo concurrently, potentially against the same attendee. Gating
+  // every trigger on "some dialog is already open" as well closes that gap:
+  // once either dialog is showing, no row's Reprint/Undo trigger can open a
+  // second, competing dialog, so the two dialog types (and, as a side
+  // effect, two same-type dialogs targeting different rows) are fully
+  // mutually exclusive. That in turn makes gating the confirm buttons on the
+  // OTHER dialog's open-state unnecessary (defense in depth would be
+  // redundant): the only place reprintTarget/undoTarget are ever set to a
+  // row is these trigger onClick handlers, so once one is non-null the other
+  // can never become non-null until its own dialog fully closes.
+  const anyDialogOpen = reprintTarget !== null || undoTarget !== null;
 
   const reprintDescription = reprintTarget ? (
     <>
@@ -361,8 +379,8 @@ export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={agent.state !== "connected" || anyMutationPending}
-                  aria-disabled={agent.state !== "connected" || anyMutationPending}
+                  disabled={agent.state !== "connected" || anyMutationPending || anyDialogOpen}
+                  aria-disabled={agent.state !== "connected" || anyMutationPending || anyDialogOpen}
                   title={reprintAgentDisconnected ? t("checkinRailReprintUnreachable") : undefined}
                   onClick={() => {
                     setReprintError(null);
@@ -375,7 +393,7 @@ export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={anyMutationPending}
+                  disabled={anyMutationPending || anyDialogOpen}
                   onClick={() => {
                     setUndoError(false);
                     setUndoTarget(row);
