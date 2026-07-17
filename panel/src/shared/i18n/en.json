@@ -376,7 +376,7 @@
   "drawerReprintOpenEditor": "Open the badge editor",
   "drawerReprintError": "Couldn't send the badge to the printer. Try again.",
   "printNoCancelHint": "Sending can't be cancelled — a badge already sent to the printer will still print.",
-  "drawerReprintTimeout": "The print agent didn't respond. The badge may still print — check the printer before retrying.",
+  "printAgentTimeout": "The print agent didn't respond. The badge may still print — check the printer before retrying.",
   "drawerReprintMarkPrintedWarning": "Sent to {{printer}}, but the printed count couldn't be updated.",
   "drawerZoneAccess": "Zone access",
   "drawerAddZone": "+ Zone",

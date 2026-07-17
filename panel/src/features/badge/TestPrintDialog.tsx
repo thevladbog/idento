@@ -18,7 +18,7 @@ import {
 } from "@idento/ui";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { agentClient } from "../../shared/agent/agentClient";
+import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, RasterUnavailableError } from "./zpl/canvasRasterizer";
@@ -196,6 +196,16 @@ export function TestPrintDialog({
       // bulk ATTENDEE print flows (P3.2 Tasks 8/9), never this one.
     } catch (error) {
       if (mySession !== sessionRef.current) return;
+      // A timed-out send is NOT a proven failure: the abort only cancelled
+      // OUR wait, the agent may have received the job and the badge may
+      // still emerge (agentClient.ts's own warning). The verbatim branch
+      // below would leak the client-authored (non-i18n) message AND read
+      // like a plain failure, inviting a double print — shared honest copy
+      // instead (same handling as AttendeeDrawer's reprint).
+      if (error instanceof AgentPrintTimeoutError) {
+        setPrintError(t("printAgentTimeout"));
+        return;
+      }
       // The agent's error responses are plain text (agentClient.ts's own
       // comment) -- surface that text verbatim rather than a generic
       // message, same "error instanceof X ? error.message : fallback"
