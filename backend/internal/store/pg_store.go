@@ -988,6 +988,19 @@ func (s *PGStore) GetAttendeeByIDForTenant(ctx context.Context, id, tenantID uui
 	return attendee, nil
 }
 
+// UpdateAttendee persists every attendee field EXCEPT printed_count.
+// printed_count is intentionally excluded from this UPDATE's column list:
+// this method always writes back a full in-memory *models.Attendee that was
+// loaded (often well) before the call, so its PrintedCount field can be
+// stale by the time the write lands. A PATCH that loaded count=0, then lost
+// a race with a concurrent print (which increments count to 1 via
+// IncrementAttendeePrintedCount), would otherwise write the stale 0 back and
+// silently erase the increment. IncrementAttendeePrintedCount's own guarded
+// `UPDATE ... SET printed_count = printed_count + 1 ... RETURNING
+// printed_count` is the sole writer of this column; every other codepath
+// (handlers/attendees.go, handlers/sync.go, handlers/zones.go,
+// handlers/attendee_codes.go) must go through it instead of round-tripping
+// the value here.
 func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error
@@ -999,12 +1012,12 @@ func (s *PGStore) UpdateAttendee(ctx context.Context, attendee *models.Attendee)
 	}
 	query := `UPDATE attendees SET
 			  first_name = $1, last_name = $2, email = $3, company = $4, position = $5, code = $6,
-			  checkin_status = $7, checked_in_at = $8, checked_in_by = $9, checked_in_device_number = $10, checked_in_point_name = $11, printed_count = $12, blocked = $13,
-			  block_reason = $14, custom_fields = $15, deleted_at = $16, updated_at = NOW()
-			  WHERE id = $17`
+			  checkin_status = $7, checked_in_at = $8, checked_in_by = $9, checked_in_device_number = $10, checked_in_point_name = $11, blocked = $12,
+			  block_reason = $13, custom_fields = $14, deleted_at = $15, updated_at = NOW()
+			  WHERE id = $16`
 	_, err = s.db.Exec(ctx, query,
 		attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
-		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
+		attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.Blocked,
 		attendee.BlockReason, customFieldsJSON, attendee.DeletedAt, attendee.ID,
 	)
 	return err

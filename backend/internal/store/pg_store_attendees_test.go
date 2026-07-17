@@ -207,7 +207,7 @@ func TestUpdateAttendee_PersistsCode(t *testing.T) {
 	mock.ExpectExec(`UPDATE attendees SET[\s\S]*code = \$6`).
 		WithArgs(
 			attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
-			attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.PrintedCount, attendee.Blocked,
+			attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.Blocked,
 			attendee.BlockReason, []byte(nil), attendee.DeletedAt, attendee.ID,
 		).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
@@ -218,6 +218,57 @@ func TestUpdateAttendee_PersistsCode(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// UpdateAttendee must never round-trip printed_count. Every caller
+// (attendees.go, sync.go, zones.go, attendee_codes.go) loads a full
+// *models.Attendee, mutates unrelated fields (name/email/checkin/etc.), and
+// writes the whole struct back. If a concurrent print incremented
+// printed_count via IncrementAttendeePrintedCount between this caller's read
+// and its write, the loaded attendee.PrintedCount is stale — writing it back
+// would silently undo the increment. This test simulates exactly that: the
+// in-memory attendee carries a stale PrintedCount (42, standing in for
+// "whatever was true when we loaded, before a print landed"), and pins that
+// UpdateAttendee's UPDATE neither contains a printed_count assignment nor
+// binds the stale value as an argument at any position — i.e., the column is
+// entirely absent from this write path, so IncrementAttendeePrintedCount's
+// guarded increment is the sole writer of printed_count.
+func TestUpdateAttendee_DoesNotRoundTripPrintedCount(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	attendee := &models.Attendee{
+		ID:           uuid.New(),
+		FirstName:    "Jane",
+		LastName:     "Doe",
+		Email:        "jane@example.com",
+		Company:      "Acme",
+		Position:     "Eng",
+		Code:         "CODE-1",
+		PrintedCount: 42, // stale value loaded before a concurrent print landed
+	}
+
+	// No occurrence of "printed_count" anywhere in the matched SQL, and the
+	// bound args list is exactly the 16 non-printed_count fields (stale 42
+	// must not appear at any position).
+	mock.ExpectExec(`^UPDATE attendees SET\s+first_name = \$1, last_name = \$2, email = \$3, company = \$4, position = \$5, code = \$6,\s+checkin_status = \$7, checked_in_at = \$8, checked_in_by = \$9, checked_in_device_number = \$10, checked_in_point_name = \$11, blocked = \$12,\s+block_reason = \$13, custom_fields = \$14, deleted_at = \$15, updated_at = NOW\(\)\s+WHERE id = \$16$`).
+		WithArgs(
+			attendee.FirstName, attendee.LastName, attendee.Email, attendee.Company, attendee.Position, attendee.Code,
+			attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy, attendee.CheckedInDeviceNumber, attendee.CheckedInPointName, attendee.Blocked,
+			attendee.BlockReason, []byte(nil), attendee.DeletedAt, attendee.ID,
+		).
+		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+	s := &PGStore{db: mock}
+	if err := s.UpdateAttendee(context.Background(), attendee); err != nil {
+		t.Fatalf("UpdateAttendee: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations (printed_count leaked into the UPDATE): %v", err)
 	}
 }
 
