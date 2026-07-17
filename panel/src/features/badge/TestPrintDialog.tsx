@@ -23,6 +23,7 @@ import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, RasterUnavailableError } from "./zpl/canvasRasterizer";
 import { generateZpl, type RawBadgeElement } from "./zpl/generateZpl";
+import { collectMissingCustomFonts } from "./zpl/missingFonts";
 import { useEventFontFaces } from "./zpl/useEventFontFaces";
 
 export interface TestPrintDialogProps {
@@ -79,6 +80,19 @@ export function TestPrintDialog({
 
     let cancelled = false;
     setGeneration({ status: "loading" });
+
+    // PR #74 review round Fix 8: checked BEFORE generation ever starts --
+    // `fontFaces.status` is already terminal at this point (the guard
+    // above), so `fontFaces.families` reflects the FINAL loaded set. A
+    // customFont with no matching uploaded font must block the send here,
+    // never silently reach generateZpl's raster branch (which would
+    // substitute the browser's fallback font and rasterize a wrong-but-
+    // legible bitmap with no error at all -- see missingFonts.ts).
+    const missingFamilies = collectMissingCustomFonts(elements, fontFaces.families);
+    if (missingFamilies.length > 0) {
+      setGeneration({ status: "error", message: t("badgeTestPrintMissingFont", { families: missingFamilies.join(", ") }) });
+      return;
+    }
 
     async function run() {
       try {

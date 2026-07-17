@@ -1,6 +1,7 @@
 import {
-  Avatar, AvatarFallback, Button, ConfirmDialog, DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuTrigger, Label, Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
+  Avatar, AvatarFallback, Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Label,
+  Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -12,7 +13,7 @@ import {
   useAttendeeZoneHistory, useEventZones,
 } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
-import { MarkPrintedError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -312,7 +313,14 @@ function DrawerBody({
   const [reprintPrinter, setReprintPrinter] = React.useState<string | null>(null);
   const [reprintPrinting, setReprintPrinting] = React.useState(false);
   const [reprintError, setReprintError] = React.useState<
-    { kind: "no-template" } | { kind: "generic"; message: string } | null
+    | { kind: "no-template" }
+    // PR #74 review round Fix 8: distinct from "generic" so the honest,
+    // named-family `drawerReprintMissingFont` copy renders instead of
+    // MissingFontError's own bare `Error#message` (which the "generic"
+    // branch would otherwise show verbatim).
+    | { kind: "missing-font"; families: string[] }
+    | { kind: "generic"; message: string }
+    | null
   >(null);
   // Transient post-close status line (same idiom as `justSaved` below) —
   // `warning: true` is the MarkPrintedError soft-warning case: the badge
@@ -323,13 +331,17 @@ function DrawerBody({
   const reprintSentTimeoutRef = React.useRef<number | undefined>(undefined);
   React.useEffect(() => () => window.clearTimeout(reprintSentTimeoutRef.current), []);
   // Session-ref cancel-race guard — same idiom as regenerateSessionRef/
-  // deleteSessionRef below: bumped on every close so a print that
+  // deleteSessionRef below: bumped on every genuine close so a print that
   // resolves/rejects AFTER the dialog session it was started in has ended
-  // can never write its result into a later session's state. Unlike
-  // TestPrintDialog, dismissal is never BLOCKED while printing (matching
-  // this drawer's OWN regenerate/delete convention, not TestPrintDialog's) —
-  // the send continues in the background and this guard is what keeps its
-  // late result from corrupting whatever the operator has moved on to.
+  // can never write its result into a later session's state. PR #74 review
+  // round Fix 2: dismissal IS now blocked while printing (superseding the
+  // earlier "never blocked, matching this drawer's own regenerate/delete
+  // convention" choice — see handleReprintOpenChange below) for cross-
+  // surface consistency with TestPrintDialog, which has always blocked
+  // dismissal mid-print. This ref stays as defense-in-depth for a parent
+  // forcing `open` closed directly (same rationale as TestPrintDialog's own
+  // sessionRef comment), not as the primary guard against a mid-print
+  // close anymore.
   const reprintSessionRef = React.useRef(0);
 
   // `configuredDefault` (NOT `defaultPrinter`) is the "does a real default
@@ -367,22 +379,42 @@ function DrawerBody({
   // "hang" mid-flight waiting on a fonts fetch that just hasn't settled yet.
   const reprintFontsBlocking = printBadge.fontsStatus !== "ready" && printBadge.fontsStatus !== "error";
 
+  // PR #74 review round Fix 2: wraps the `onOpenChange` prop for EVERY
+  // dismiss path Radix's Dialog routes through it (X close button, Escape,
+  // overlay/outside click, and the Cancel button below) — same idiom as
+  // AddAttendeeDialog.tsx's/TestPrintDialog.tsx's own `handleOpenChange`.
+  // While a print is genuinely in flight, a close attempt is a flat no-op:
+  // the send continues in the background and the dialog stays open until it
+  // settles, so the operator always sees the outcome (sent / soft warning /
+  // failure) rather than being able to dismiss the dialog mid-flight and
+  // lose track of whether the badge was actually sent. This supersedes the
+  // earlier "dismissal is never blocked" choice (this drawer's own
+  // regenerate/delete convention) specifically for reprint, for consistency
+  // with TestPrintDialog's identical mid-print lock.
   function handleReprintOpenChange(open: boolean) {
+    if (!open && reprintPrinting) return;
     if (!open) {
       reprintSessionRef.current += 1;
       setReprintError(null);
       setReprintPrinter(null);
-      // Review fix (Important): the session bump above makes an in-flight
-      // print's `finally` skip ITS `setReprintPrinting(false)` (correctly —
-      // that guard exists so a stale settle can't clobber a NEWER session's
-      // pending print), so the now-dead session's pending flag must be
-      // cleared here instead. Without this, cancelling mid-print stranded
-      // `reprintPrinting` true forever, leaving the OUTER Reprint button
-      // disabled (with no explanatory title, since the agent is still
-      // connected) until a full drawer remount.
+      // `reprintPrinting` is already false whenever this branch runs now
+      // (the guard above bails out while it's true) — kept as defense-in-
+      // depth for a parent forcing `open` closed directly, same rationale
+      // as TestPrintDialog's own sessionRef comment.
       setReprintPrinting(false);
     }
     setReprintOpen(open);
+  }
+
+  // Same idiom as AddAttendeeDialog.tsx's/TestPrintDialog.tsx's own
+  // `preventDialogDismiss` — Radix's DismissableLayer calls this BEFORE
+  // `onOpenChange` for Escape/outside-click/focus-outside, so preventing
+  // the default here (in addition to the guarded `handleReprintOpenChange`
+  // above) stops the keystroke/click from also bubbling to any OTHER
+  // page-level handler (e.g. the drawer's own Sheet) while a print is in
+  // flight, not just from closing this dialog.
+  function preventReprintDialogDismiss(e: Event) {
+    if (reprintPrinting) e.preventDefault();
   }
 
   async function handleReprintConfirm() {
@@ -412,6 +444,13 @@ function DrawerBody({
       }
       if (error instanceof NoTemplateError) {
         setReprintError({ kind: "no-template" });
+        return;
+      }
+      // PR #74 review round Fix 8: pre-send failure (usePrintBadge throws
+      // this BEFORE any agent call) — named-family message, never the
+      // generic fallback below.
+      if (error instanceof MissingFontError) {
+        setReprintError({ kind: "missing-font", families: error.families });
         return;
       }
       setReprintError({
@@ -456,6 +495,14 @@ function DrawerBody({
       {reprintError?.kind === "no-template" ? (
         <span className="mt-2 block text-destructive">
           {t("drawerReprintNoTemplate")}{" "}
+          <Link to="/events/$eventId/badge" params={{ eventId }} className="underline">
+            {t("drawerReprintOpenEditor")}
+          </Link>
+        </span>
+      ) : null}
+      {reprintError?.kind === "missing-font" ? (
+        <span className="mt-2 block text-destructive">
+          {t("drawerReprintMissingFont", { families: reprintError.families.join(", ") })}{" "}
           <Link to="/events/$eventId/badge" params={{ eventId }} className="underline">
             {t("drawerReprintOpenEditor")}
           </Link>
@@ -841,19 +888,46 @@ function DrawerBody({
         }}
       />
 
-      <ConfirmDialog
-        open={reprintOpen}
-        onOpenChange={handleReprintOpenChange}
-        title={t("drawerReprintConfirmTitle")}
-        description={reprintDescription}
-        confirmLabel={t("drawerReprintConfirm")}
-        cancelLabel={t("createEventCancel")}
-        closeLabel={t("workspaceDialogClose")}
-        confirmDisabled={
-          reprintPrinting || !reprintTargetPrinter || agent.state !== "connected" || reprintFontsBlocking
-        }
-        onConfirm={() => void handleReprintConfirm()}
-      />
+      {/* PR #74 review round Fix 2: hand-built (not the shared ConfirmDialog)
+          so this dialog can block ALL dismiss paths while printing, the same
+          way TestPrintDialog.tsx/AddAttendeeDialog.tsx do — ConfirmDialog
+          itself has no onEscapeKeyDown/onPointerDownOutside/onInteractOutside/
+          hideClose passthrough, and every OTHER ConfirmDialog in this file
+          (regenerate/delete) genuinely doesn't need this, so the shared
+          component's public API is left alone. */}
+      <Dialog open={reprintOpen} onOpenChange={handleReprintOpenChange}>
+        <DialogContent
+          closeLabel={t("workspaceDialogClose")}
+          hideClose={reprintPrinting}
+          onEscapeKeyDown={preventReprintDialogDismiss}
+          onPointerDownOutside={preventReprintDialogDismiss}
+          onInteractOutside={preventReprintDialogDismiss}
+        >
+          <DialogHeader>
+            <DialogTitle>{t("drawerReprintConfirmTitle")}</DialogTitle>
+            <DialogDescription>{reprintDescription}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={reprintPrinting}
+              onClick={() => handleReprintOpenChange(false)}
+            >
+              {t("createEventCancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                reprintPrinting || !reprintTargetPrinter || agent.state !== "connected" || reprintFontsBlocking
+              }
+              onClick={() => void handleReprintConfirm()}
+            >
+              {t("drawerReprintConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

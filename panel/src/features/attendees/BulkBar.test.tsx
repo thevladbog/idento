@@ -408,6 +408,45 @@ describe("BulkBar", () => {
       expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
     });
 
+    // PR #74 review round Fix 8: a template referencing a customFont family
+    // no uploaded font backs is EVENT-level, not attendee-level -- it fails
+    // identically for every attendee in the batch, so (same rationale as the
+    // no-template short-circuit above) the loop stops at the first one
+    // rather than repeating the identical failure for the rest.
+    it("short-circuits the whole loop — never attempting the remaining attendees — when the template references a customFont with no matching uploaded font", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      templateResponse = {
+        template: {
+          width_mm: 90,
+          height_mm: 55,
+          dpi: 300,
+          elements: [
+            {
+              id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+              customFont: "Brand Sans",
+            },
+          ],
+        },
+        version: 1,
+      };
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      expect(await within(dialog).findByText(/Font Brand Sans is missing/)).toBeInTheDocument();
+      // Never even reached the agent -- same "no point trying the rest"
+      // rationale as the no-template case.
+      expect(printCalls).toHaveLength(0);
+      expect(screen.getByRole("dialog", { name: "Print badges" })).toBe(dialog);
+    });
+
     it("shows the partial sent tally ALONGSIDE the no-template message when the template vanishes mid-batch (double-print honesty)", async () => {
       agentHealthOk = true;
       printersResponse = [{ name: "Zebra_ZD421", type: "system" }];

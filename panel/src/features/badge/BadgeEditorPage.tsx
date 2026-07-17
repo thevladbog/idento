@@ -208,6 +208,17 @@ export function BadgeEditorPage() {
   const [overwriteFailed, setOverwriteFailed] = React.useState(false);
   const busy = saveTemplate.isPending || isReloading || isOverwriting;
   const saveDisabled = !initialized || !state.dirty || saveTemplate.isPending || conflict;
+  // PR #74 review round Fix 1: Test print / ZPL preview must share Save's
+  // `initialized` gate (the SAME event-navigation-window rationale as
+  // `initializedForEventId` above) -- between navigating to a new event and
+  // that event's template resolving, `state.doc` still holds the PREVIOUS
+  // event's doc, so either action would otherwise test-print/ZPL-preview
+  // the wrong event's badge. `templateQuery.isLoading` is included
+  // explicitly (rather than relying on `!initialized` alone) so a
+  // background refetch of the SAME event (window refocus, another
+  // operator's save) also disables both buttons for its duration, even
+  // though `initialized` itself doesn't flip false for that case.
+  const printActionsDisabled = !initialized || templateQuery.isLoading;
 
   // Review Minor 2: none of the save-flow UI state above is meaningful for
   // any event other than the one it was produced on — a lingering conflict
@@ -553,13 +564,16 @@ export function BadgeEditorPage() {
           {t("badgeSave")}
         </Button>
         {/* P3.2 Task 6: unlocked -- the test-print dialog below is this
-            button's entire purpose now, so no more Lock icon/disabled. */}
-        <Button type="button" variant="outline" onClick={() => setTestPrintOpen(true)}>
+            button's entire purpose now, so no more Lock icon. PR #74 review
+            round Fix 1: still gated on `printActionsDisabled` (see its own
+            comment above) during the event-navigation/refetch window. */}
+        <Button type="button" variant="outline" onClick={() => setTestPrintOpen(true)} disabled={printActionsDisabled}>
           {t("badgeTestPrint")}
         </Button>
         {/* P3.2 Task 5: unlocked -- the ZPL preview modal below is this
-            button's entire purpose now, so no more Lock icon/disabled. */}
-        <Button type="button" variant="outline" onClick={() => setZplPreviewOpen(true)}>
+            button's entire purpose now, so no more Lock icon. PR #74 review
+            round Fix 1: same `printActionsDisabled` gate as Test print. */}
+        <Button type="button" variant="outline" onClick={() => setZplPreviewOpen(true)} disabled={printActionsDisabled}>
           {t("badgeZplPreview")}
         </Button>
       </div>

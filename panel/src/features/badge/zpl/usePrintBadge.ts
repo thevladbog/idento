@@ -20,6 +20,7 @@ import { useBadgeTemplate } from "../hooks";
 import { attendeeToPreviewData } from "../usePreviewAttendee";
 import type { BadgeConfig } from "../templateTypes";
 import { generateZpl, type RawBadgeElement } from "./generateZpl";
+import { collectMissingCustomFonts } from "./missingFonts";
 import { rasterizeText } from "./canvasRasterizer";
 import { useEventFontFaces } from "./useEventFontFaces";
 import { ATTENDEES_LIST_KEY, ATTENDEE_DETAIL_KEY } from "../../attendees/hooks";
@@ -49,6 +50,25 @@ export class MarkPrintedError extends Error {
   constructor() {
     super("The badge was sent, but the printed count couldn't be updated.");
     this.name = "MarkPrintedError";
+  }
+}
+
+/**
+ * PR #74 review round Fix 8. Thrown BEFORE generation (no agent call, no
+ * printed_count bump) when the template references one or more customFont
+ * families the event has no matching uploaded font for -- see
+ * `collectMissingCustomFonts` (missingFonts.ts) for why generateZpl's raster
+ * branch can't detect this itself (the browser silently substitutes a
+ * fallback font and rasterizes THAT, producing a wrong-but-legible bitmap
+ * with no error). `families` carries every distinct missing family so
+ * callers can name them all in their own surface-specific message.
+ */
+export class MissingFontError extends Error {
+  readonly families: string[];
+  constructor(families: string[]) {
+    super(`Missing font(s): ${families.join(", ")}`);
+    this.name = "MissingFontError";
+    this.families = families;
   }
 }
 
@@ -155,6 +175,15 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
     const rawDpi = typeof raw.dpi === "number" && raw.dpi > 0 ? raw.dpi : 203;
     const config: BadgeConfig = { width_mm: rawWidthMM, height_mm: rawHeightMM, dpi: rawDpi };
     const elements = Array.isArray(raw.elements) ? (raw.elements as RawBadgeElement[]) : [];
+
+    // PR #74 review round Fix 8: checked AFTER fonts have reached a terminal
+    // status (so `fontFaces.families` reflects the FINAL loaded set, not a
+    // still-loading partial one) but BEFORE generation/the agent call --
+    // a genuinely wrong badge (a customFont silently substituted with the
+    // browser's fallback) must never reach a physical printer.
+    const missingFamilies = collectMissingCustomFonts(elements, fontFaces.families);
+    if (missingFamilies.length > 0) throw new MissingFontError(missingFamilies);
+
     const data = attendeeToPreviewData(attendee);
     const zpl = await generateZpl(config, elements, data, { rasterizeText });
 

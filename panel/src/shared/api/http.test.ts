@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./ApiError";
-import { api } from "./http";
+import { api, getAgentBaseUrl } from "./http";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -50,5 +50,37 @@ describe("api client middleware", () => {
       new Response("gateway timeout", { status: 504, statusText: "Gateway Timeout" }),
     );
     await expect(api.GET("/api/me")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+// PR #74 review round Fix 5: agentClient.ts builds request URLs by plain
+// string concatenation (`${getAgentBaseUrl()}${path}`, path already
+// leading-slashed) -- an AGENT_URL configured WITH a trailing slash (an easy
+// operator typo, or a value copy-pasted from a browser address bar) used to
+// produce a double-slash ("http://agent.test//print") that most HTTP
+// servers/routers treat as a distinct, unmatched path from "/print".
+describe("getAgentBaseUrl", () => {
+  afterEach(() => {
+    window.__ENV__ = undefined;
+  });
+
+  it("strips a trailing slash from a configured AGENT_URL", () => {
+    window.__ENV__ = { AGENT_URL: "http://agent.test/" };
+    expect(getAgentBaseUrl()).toBe("http://agent.test");
+  });
+
+  it("strips multiple trailing slashes", () => {
+    window.__ENV__ = { AGENT_URL: "http://agent.test///" };
+    expect(getAgentBaseUrl()).toBe("http://agent.test");
+  });
+
+  it("leaves an already-clean AGENT_URL untouched", () => {
+    window.__ENV__ = { AGENT_URL: "http://agent.test" };
+    expect(getAgentBaseUrl()).toBe("http://agent.test");
+  });
+
+  it("falls back to the dev-machine default when unset", () => {
+    window.__ENV__ = undefined;
+    expect(getAgentBaseUrl()).toBe("http://localhost:12345");
   });
 });

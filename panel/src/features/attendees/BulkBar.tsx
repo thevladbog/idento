@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
-import { MarkPrintedError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -121,6 +121,12 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // message, so an operator never mistakes "no template" for "nothing was
   // printed" and re-runs (double-prints) a partially-sent selection.
   const [printNoTemplate, setPrintNoTemplate] = React.useState(false);
+  // PR #74 review round Fix 8: same short-circuit treatment as
+  // `printNoTemplate` above -- a template referencing a customFont family no
+  // uploaded font backs is EVENT-level (not attendee-specific), so it fails
+  // identically for every remaining attendee. `families` (not just a
+  // boolean) so the readout can name exactly which font(s) are missing.
+  const [printMissingFontFamilies, setPrintMissingFontFamilies] = React.useState<string[] | null>(null);
   const printSessionRef = React.useRef(0);
 
   // Same "validated against the LIVE printer list" rule as the drawer's
@@ -289,6 +295,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       setPrintFailedCount(0);
       setPrintMarkWarnCount(0);
       setPrintNoTemplate(false);
+      setPrintMissingFontFamilies(null);
       setPrinterSelection(null);
     }
     setPrintOpen(open);
@@ -304,10 +311,12 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     setPrintFailedCount(0);
     setPrintMarkWarnCount(0);
     setPrintNoTemplate(false);
+    setPrintMissingFontFamilies(null);
     let attemptedAny = false;
     let failedCount = 0;
     let markWarnCount = 0;
     let noTemplate = false;
+    let missingFontFamilies: string[] | null = null;
 
     for (let i = 0; i < selected.length; i++) {
       // Unreachable via the UI while `printing` blocks dismissal above —
@@ -338,6 +347,15 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           noTemplate = true;
           break;
         }
+        // PR #74 review round Fix 8: same pre-send, whole-batch short-
+        // circuit as NoTemplateError above -- a missing customFont is a
+        // property of the TEMPLATE (event-level), not this attendee, so it
+        // fails identically for every remaining one too. Progress
+        // deliberately NOT bumped for this attendee, same rationale.
+        if (error instanceof MissingFontError) {
+          missingFontFamilies = error.families;
+          break;
+        }
         attemptedAny = true;
         if (error instanceof MarkPrintedError) {
           // The SEND succeeded -- counted as sent, never as failed, but
@@ -365,6 +383,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     if (printSessionRef.current !== sessionId) return;
     setPrinting(false);
     if (noTemplate) setPrintNoTemplate(true);
+    if (missingFontFamilies) setPrintMissingFontFamilies(missingFontFamilies);
     // Deliberately does not auto-close on completion (matches Assign zone's
     // convention, not Delete's) -- the final honest tally (sent vs failed,
     // plus the soft mark-warn line) is the confirmation the operator reads
@@ -381,8 +400,11 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // is set -- the loop never ran to completion, so a completion-shaped
   // "x of y sent" tally would misrepresent a batch that stopped early; the
   // dedicated partial-tally branch below (rendered alongside the
-  // no-template message) reports whatever WAS sent instead.
-  const printDoneReadout = !printing && printProgress && !printNoTemplate ? (
+  // no-template message) reports whatever WAS sent instead. Same suppression
+  // for `printMissingFontFamilies` (PR #74 review round Fix 8) -- an
+  // event-level short-circuit exactly like `printNoTemplate`, so it gets the
+  // SAME "don't show the completion-shaped tally" treatment.
+  const printDoneReadout = !printing && printProgress && !printNoTemplate && !printMissingFontFamilies ? (
     printFailedCount > 0
       ? t("bulkPrintDoneWithFailures", {
           sent: printProgress.total - printFailedCount,
@@ -407,6 +429,20 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
                 it); genuine failures among them are subtracted, so `sent`
                 is only ever badges that actually went out. */}
             {t("bulkPrintPartialBeforeNoTemplate", {
+              sent: printProgress.done - printFailedCount,
+              total: printProgress.total,
+            })}
+          </span>
+        ) : null
+      ) : printMissingFontFamilies ? (
+        // PR #74 review round Fix 8: same partial-tally-stays-visible
+        // treatment as the no-template branch above -- badges already sent
+        // before a missing-font short-circuit must not be hidden behind the
+        // error, or an operator could re-run the selection and double-print
+        // them once the template is fixed.
+        printProgress && printProgress.done > 0 ? (
+          <span className="block">
+            {t("bulkPrintPartialBeforeMissingFont", {
               sent: printProgress.done - printFailedCount,
               total: printProgress.total,
             })}
@@ -447,6 +483,11 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       ) : null}
       {printNoTemplate ? (
         <span className="mt-2 block text-destructive">{t("bulkPrintNoTemplate")}</span>
+      ) : null}
+      {printMissingFontFamilies ? (
+        <span className="mt-2 block text-destructive">
+          {t("bulkPrintMissingFont", { families: printMissingFontFamilies.join(", ") })}
+        </span>
       ) : null}
     </>
   );

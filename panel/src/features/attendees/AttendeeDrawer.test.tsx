@@ -1142,6 +1142,47 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
   });
 
+  // PR #74 review round Fix 8: the template references a customFont family
+  // this event has no matching uploaded font for (this file's fonts
+  // endpoint always returns `[]` — see line ~196 above) — the honest,
+  // typed MissingFontError must block BEFORE any agent call, surfacing a
+  // named-family message, never a silent wrong-font send.
+  it("shows an honest missing-font message and never calls the agent when the template references a customFont with no matching uploaded font", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    templateResponse = {
+      template: {
+        width_mm: 90,
+        height_mm: 55,
+        dpi: 300,
+        elements: [
+          {
+            id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+            customFont: "Brand Sans",
+          },
+        ],
+      },
+      version: 1,
+    };
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+    expect(await within(dialog).findByText(/Font Brand Sans is missing/)).toBeInTheDocument();
+    expect(printCapture).toBeNull();
+    expect(printHitCount).toBe(0);
+    expect(markPrintedHitCount).toBe(0);
+    // Stays open on this error — same idiom as the no-template case above.
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+  });
+
   it("shows a soft, non-destructive warning (not the harsh failure copy) when mark-printed fails after a successful send", async () => {
     agentHealthOk = true;
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
@@ -1189,11 +1230,13 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
   });
 
-  // Cancel-during-pending race, mirroring the regenerate/delete dialogs' own
-  // equivalent tests: the print is still in flight when Cancel is clicked.
-  // The late response must not surface an error once the dialog session has
-  // moved on.
-  it("does not surface an error if the confirm dialog is cancelled before a pending print resolves", async () => {
+  // PR #74 review round Fix 2: cancel-during-pending is no longer a race to
+  // win — Cancel (and every other dismiss path) is now INERT while printing,
+  // matching TestPrintDialog's convention. A cancel attempt made DURING the
+  // print must be a flat no-op (dialog stays open, print keeps running); the
+  // outcome (here, a genuine send failure) must render in the still-open
+  // dialog; and only THEN does Cancel actually work.
+  it("ignores a Cancel click made during a pending print — the dialog stays open, shows the outcome, and only then can be closed", async () => {
     agentHealthOk = true;
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
     defaultPrinterResponse = { default: "Zebra_ZD421" };
@@ -1208,23 +1251,27 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     await user.click(reprintButton);
     const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
     await user.click(within(dialog).getByRole("button", { name: "Print" }));
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
+    // The Cancel click lands WHILE the (delayed) print is still in flight —
+    // must be entirely ignored: dialog stays open, no early close.
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+
+    // The send genuinely fails (agent-level 500) once the delay elapses —
+    // the dialog is STILL open (never dismissed above) and now shows the
+    // honest failure copy, never a silently-swallowed error.
+    expect(await within(dialog).findByText(/printer offline/)).toBeInTheDocument();
+    expect(printCapture).not.toBeNull();
+
+    // Printing has resolved (failed) — Cancel is live again, and now closes
+    // the dialog for real.
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeEnabled());
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument(),
     );
-    // The request DID complete in the background (proves this is a real
-    // cancel-race guard, not a coincidence of the request never finishing).
-    await waitFor(() => expect(printCapture).not.toBeNull());
-    expect(screen.queryByText(/Couldn.t send/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
-    // Review fix (Task 8): the missing assertion that let a real defect
-    // through — the cancel bumps the session, so the in-flight print's
-    // `finally` (session-guarded) skips its own pending reset. Without an
-    // explicit reset on close, `reprintPrinting` stayed true forever and
-    // the OUTER Reprint button was stranded disabled (with no title,
-    // since the agent is still connected) until a full drawer remount.
-    await waitFor(() => expect(screen.getByRole("button", { name: "Reprint badge" })).toBeEnabled());
+    // The OUTER Reprint button is not left stranded disabled.
+    expect(screen.getByRole("button", { name: "Reprint badge" })).toBeEnabled();
   });
 
   // Distinct from the mark-printed-failure test above: here the AGENT

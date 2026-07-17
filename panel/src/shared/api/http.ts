@@ -19,8 +19,20 @@ export function getApiBaseUrl(): string {
 // (window.__ENV__ override, else the dev-machine default), but has no
 // import.meta.env fallback since the agent has no equivalent build-time env
 // var — it's a runtime-only, same-machine service.
+//
+// PR #74 review round Fix 5: agentClient.ts builds every request URL by
+// plain string concatenation (`${getAgentBaseUrl()}${path}`, `path` already
+// leading-slashed) rather than a URL constructor, so a configured AGENT_URL
+// carrying a trailing slash (an easy operator typo, or a value copy-pasted
+// straight from a browser address bar) used to produce a double slash --
+// "http://agent.test//print" -- a path most HTTP servers/routers treat as
+// distinct from (and therefore never match to) "/print". Stripping any
+// trailing slash(es) here, once, keeps every call site's simple
+// concatenation correct without each of them needing to know about this.
 export function getAgentBaseUrl(): string {
-  return window.__ENV__?.AGENT_URL || "http://localhost:12345";
+  const configured = window.__ENV__?.AGENT_URL;
+  if (!configured) return "http://localhost:12345";
+  return configured.replace(/\/+$/, "");
 }
 
 // openapi-fetch resolves the client's `baseUrl` once, at createClient() time

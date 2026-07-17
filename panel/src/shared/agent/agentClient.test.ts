@@ -113,5 +113,20 @@ describe("agentClient", () => {
       await agentClient.print({ printer_name: "HP_Smart_Tank_790_series", zpl: "^XA^XZ" });
       expect(capturedContentType).toBe("application/json");
     });
+
+    // PR #74 review round Fix 5: a trailing slash on AGENT_URL (an easy
+    // operator typo/copy-paste) used to produce "http://agent.test//print"
+    // (getAgentBaseUrl + "/print" by plain string concatenation) -- a
+    // DIFFERENT path from the agent's actual "/print" route as far as most
+    // HTTP servers/routers are concerned. This MSW server has
+    // `onUnhandledRequest: "error"` (startMswServer's default), so a
+    // request that actually lands on "//print" instead of "/print" fails
+    // this test outright rather than silently mismatching.
+    it("hits /print (not //print) when AGENT_URL is configured with a trailing slash", async () => {
+      window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test/" };
+      await expect(
+        agentClient.print({ printer_name: "HP_Smart_Tank_790_series", zpl: "^XA^XZ" }),
+      ).resolves.toBeUndefined();
+    });
   });
 });

@@ -25,10 +25,11 @@ const server = startMswServer(
     return HttpResponse.json(defaultResponse);
   }),
 );
-// startMswServer's return value only matters for its listen/reset/close
-// lifecycle side effects (registered via beforeAll/afterEach/afterAll) —
-// this file never needs server.use() for per-test overrides, unlike
-// agentClient.test.ts.
+// startMswServer's return value matters for its listen/reset/close
+// lifecycle side effects (registered via beforeAll/afterEach/afterAll), and
+// (PR #74 review round Fix 7) for the one test below that needs a per-test
+// `server.use()` override -- a single endpoint failing independently of the
+// mutable response variables above (which all resolve 200).
 void server;
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -122,5 +123,36 @@ describe("useAgentPrinters", () => {
     await waitFor(() => expect(result.current.state).toBe("connected"));
     expect(result.current.defaultPrinter).toBe("HP_Smart_Tank_790_series");
     expect(result.current.configuredDefault).toBeNull();
+  });
+
+  // PR #74 review round Fix 7: GET /printers/default used to be
+  // `Promise.all`'d alongside GET /printers, so its failure (agent
+  // implements /printers but errors on /printers/default -- a genuinely
+  // observed real-agent quirk, not hypothetical) rejected the WHOLE query,
+  // reporting the agent as fully "disconnected" even though the printer
+  // list itself loaded fine and printing via an explicit choice is still
+  // perfectly usable. The default lookup's failure must degrade to
+  // `configuredDefault: null` (same shape as "no default configured") --
+  // never take down connectivity/the printer list with it.
+  it("degrades to configuredDefault: null (not disconnected) when only the default-printer lookup fails", async () => {
+    printersResponse = [
+      { name: "HP_Smart_Tank_790_series", type: "system" },
+      { name: "Network_192_168_0_245", type: "network" },
+    ];
+    server.use(
+      http.get("http://agent.test/printers/default", () => new HttpResponse(null, { status: 500 })),
+    );
+
+    const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+    await waitFor(() => expect(result.current.state).toBe("connected"));
+    expect(result.current.printers).toEqual([
+      { name: "HP_Smart_Tank_790_series", type: "system" },
+      { name: "Network_192_168_0_245", type: "network" },
+    ]);
+    expect(result.current.configuredDefault).toBeNull();
+    // `defaultPrinter` still falls back to the first printer -- the
+    // operator isn't left with no preselection just because the agent
+    // couldn't report ITS OWN configured default.
+    expect(result.current.defaultPrinter).toBe("HP_Smart_Tank_790_series");
   });
 });

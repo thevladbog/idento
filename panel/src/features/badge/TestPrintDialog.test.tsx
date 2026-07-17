@@ -205,6 +205,36 @@ describe("TestPrintDialog", () => {
     expect(await screen.findByText("Sent to Zebra_ZD421")).toBeInTheDocument();
   });
 
+  // PR #74 review round Fix 8: a customFont family with no matching
+  // uploaded font (this file's fonts endpoint always returns `[]`) must
+  // block the send BEFORE the agent is ever called -- generateZpl's raster
+  // branch wouldn't detect this itself (the browser silently substitutes a
+  // fallback font), so this is a pre-generation check, same as
+  // usePrintBadge.ts's MissingFontError for the drawer/bulk surfaces.
+  it("blocks the send and shows a named-family missing-font message when the doc references a customFont with no matching uploaded font", async () => {
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultResponse = { default: "Zebra_ZD421" };
+    const docWithMissingFont = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [
+        {
+          id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+          customFont: "Brand Sans",
+        },
+      ],
+    };
+    renderDialog({ doc: docWithMissingFont });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Font Brand Sans is missing/);
+    expect(screen.getByRole("button", { name: "Print test badge" })).toBeDisabled();
+    // Give any (incorrect) async agent call a chance to fire before
+    // asserting its absence.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(printCapture).toBeNull();
+  });
+
   it("keeps the dialog open and shows the agent's own error text when the print fails", async () => {
     const user = userEvent.setup();
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];

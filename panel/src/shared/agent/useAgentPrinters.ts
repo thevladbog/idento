@@ -40,11 +40,26 @@ async function fetchAgentPrinters(): Promise<AgentPrintersData> {
     // below maps to state "disconnected".
     throw new Error("agent unreachable");
   }
-  const [printers, configuredDefault] = await Promise.all([
+  // PR #74 review round Fix 7: GET /printers and GET /printers/default used
+  // to be `Promise.all`'d together, so the DEFAULT lookup failing (agent
+  // implements /printers but errors on /printers/default) rejected this
+  // WHOLE query — reporting the agent as fully disconnected even though the
+  // printer list itself loaded fine and printing via an explicit choice is
+  // still perfectly usable. `Promise.allSettled` keeps both requests
+  // concurrent (no latency regression) while letting them fail
+  // independently: the printer list is essential (its rejection still
+  // fails this function, surfacing as "disconnected" same as before) but
+  // the configured default is a convenience on top of it, so its failure
+  // degrades to `configuredDefault: null` — the exact same shape as
+  // "genuinely no default configured" — rather than taking connectivity
+  // down with it.
+  const [printersResult, configuredDefaultResult] = await Promise.allSettled([
     agentClient.getPrinters(),
     agentClient.getDefaultPrinter(),
   ]);
-  return { printers, configuredDefault };
+  if (printersResult.status === "rejected") throw printersResult.reason;
+  const configuredDefault = configuredDefaultResult.status === "fulfilled" ? configuredDefaultResult.value : null;
+  return { printers: printersResult.value, configuredDefault };
 }
 
 /**

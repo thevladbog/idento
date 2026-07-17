@@ -28,6 +28,7 @@ import { rasterizeText, rasterizeTextToBitmap, RasterUnavailableError } from "./
 import {
   generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, type RawBadgeElement,
 } from "./zpl/generateZpl";
+import { collectMissingCustomFonts } from "./zpl/missingFonts";
 import { useEventFontFaces } from "./zpl/useEventFontFaces";
 
 // Physical-media exception (panel/AGENTS.md's documented class -- same
@@ -168,6 +169,15 @@ export function ZplPreviewModal({
   }
 
   const fontsWarning = fontFaces.status === "error";
+  // PR #74 review round Fix 8: distinct from `fontsWarning` above -- that
+  // one covers a fonts-LIST/individual-font LOAD failure; this covers a
+  // customFont the template references that was never uploaded for this
+  // event in the first place (so there's nothing that could have "failed
+  // to load" -- the family simply doesn't exist). Unlike the drawer/bulk/
+  // test-print SEND surfaces (usePrintBadge.ts's MissingFontError), this is
+  // WARN-only: a preview rendering a fallback glyph on-screen is honest
+  // enough for review; only a PHYSICAL print must be blocked.
+  const missingFontFamilies = collectMissingCustomFonts(elements, fontFaces.families);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -207,6 +217,11 @@ export function ZplPreviewModal({
         </div>
 
         {fontsWarning ? <p className="text-body text-warning">{t("badgeFontsNotReady")}</p> : null}
+        {missingFontFamilies.length > 0 ? (
+          <p className="text-body text-warning">
+            {t("badgePreviewMissingFont", { families: missingFontFamilies.join(", ") })}
+          </p>
+        ) : null}
 
         {generation.status === "error" ? (
           // Never a silently empty tab (plan Task 5 interface note): the

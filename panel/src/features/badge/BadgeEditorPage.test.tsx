@@ -253,11 +253,50 @@ describe("BadgeEditorPage", () => {
     expect(await screen.findByRole("heading", { name: "Badge editor" })).toBeInTheDocument();
     // P3.2 Task 6 / Task 5: neither action is the locked idiom anymore --
     // both are live buttons that open their own dialog (see the describe
-    // blocks below).
+    // blocks below). Wait for the elements pane first (PR #74 review round
+    // Fix 1: both buttons are now gated on `initialized`, same as Save --
+    // proof the template has actually loaded for THIS event before
+    // asserting they're enabled).
+    await screen.findByTestId("badge-pane-elements");
     const testPrint = screen.getByRole("button", { name: "Test print" });
     const zplPreview = screen.getByRole("button", { name: "ZPL preview" });
     expect(testPrint).not.toBeDisabled();
     expect(zplPreview).not.toBeDisabled();
+  });
+
+  // PR #74 review round Fix 1: Test print / ZPL preview used to stay live
+  // through the SAME event-navigation window Task 10's `initialized` gate
+  // was introduced to close for Save (see BadgeEditorPage.tsx's
+  // `initializedForEventId` comment) -- between navigating to a new event
+  // and that event's template resolving, `state.doc` still holds the
+  // PREVIOUS event's doc, so a click on either button here would test-print
+  // or ZPL-preview the wrong event's badge. Both must share Save's exact
+  // gate: `!initialized || templateQuery.isLoading`.
+  it("disables Test print and ZPL preview during the window between navigating to a new event and that event's load finishing", async () => {
+    const { router } = renderPage();
+
+    await screen.findByTestId("badge-pane-elements");
+    expect(screen.getByRole("button", { name: "Test print" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "ZPL preview" })).not.toBeDisabled();
+
+    // Slow down evt-2's GET so the navigation window is observable (same
+    // technique as the Save-gating test in the save-model describe block
+    // below).
+    getDelayMs = 60;
+    await act(async () => {
+      await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+    });
+
+    // Immediately after navigating (before evt-2's template resolves), both
+    // actions must be disabled -- clicking either now would act on evt-1's
+    // stale doc under evt-2's route.
+    expect(screen.getByRole("button", { name: "Test print" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ZPL preview" })).toBeDisabled();
+
+    await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+    // Once evt-2 has loaded, both re-enable.
+    expect(screen.getByRole("button", { name: "Test print" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "ZPL preview" })).not.toBeDisabled();
   });
 
   describe("ZPL preview modal (P3.2 Task 5)", () => {

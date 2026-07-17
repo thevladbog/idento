@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
-import { MarkPrintedError, NoTemplateError, usePrintBadge } from "./usePrintBadge";
+import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "./usePrintBadge";
 import { mmToDots } from "./generateZpl";
 import { useAttendeeDetail } from "../../attendees/hooks";
 import { useAttendeesPage } from "../../attendees/hooks";
@@ -267,6 +267,46 @@ describe("usePrintBadge", () => {
     expect(printCapture?.zpl).toContain(`^LL${mmToDots(30, 300)}`);
     expect(printCapture?.zpl).not.toMatch(/NaN/);
     expect(printHitCount).toBe(1);
+  });
+
+  // PR #74 review round Fix 8: a template can reference a customFont family
+  // no uploaded font backs (deleted after the template was saved, or hand-
+  // edited into a typo) -- generateZpl's raster branch wouldn't detect this
+  // itself (the browser silently substitutes a fallback font and rasterizes
+  // THAT), so this check runs BEFORE generation and must produce NO agent
+  // call and NO printed-count bump at all.
+  it("throws a typed MissingFontError (no agent call, no printed_count) when the template references a customFont the event has no matching font for", async () => {
+    templateResponse = {
+      template: {
+        width_mm: 90,
+        height_mm: 55,
+        dpi: 300,
+        elements: [
+          {
+            id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest",
+            customFont: "Brand Sans",
+          },
+        ],
+      },
+      version: 1,
+    };
+    // The fonts list stays [] (this file's default MSW handler) -- no
+    // uploaded font named "Brand Sans" exists for this event.
+    const { result } = renderPrintBadge();
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    let caught: unknown;
+    try {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(MissingFontError);
+    expect((caught as MissingFontError).families).toEqual(["Brand Sans"]);
+    expect(printCapture).toBeNull();
+    expect(printHitCount).toBe(0);
+    expect(markPrintedHitCount).toBe(0);
   });
 
   it("skips invalidation for this call when skipInvalidate is set (Task 9's bulk loop dedupe)", async () => {

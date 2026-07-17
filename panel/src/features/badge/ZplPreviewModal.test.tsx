@@ -269,4 +269,32 @@ describe("ZplPreviewModal", () => {
     const pre = await findGeneratedPre();
     expect(pre.textContent).toBe(LATIN_EXPECTED_ZPL);
   });
+
+  // PR #74 review round Fix 8: unlike the drawer/bulk/test-print SEND
+  // surfaces (which must hard-block on a missing customFont — see
+  // usePrintBadge.ts's MissingFontError), the PREVIEW modal only WARNS —
+  // it's on-screen review, not a physical print, so rendering a fallback
+  // glyph here is honest enough. This is a NEW, more specific warning than
+  // the generic `badgeFontsNotReady` line above (that one covers a fonts-
+  // LIST/individual-font LOAD failure; this one covers a customFont that
+  // was never even uploaded for this event in the first place).
+  it("shows a missing-custom-font warning (without blocking the preview) when a text element references a customFont with no matching uploaded font", async () => {
+    const docWithMissingFont = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, text: "Hi", customFont: "Brand Sans" }],
+    };
+    renderModal({ doc: docWithMissingFont });
+
+    expect(await screen.findByText(
+      "Font Brand Sans is missing — this preview may use fallback glyphs.",
+    )).toBeInTheDocument();
+    // A WARNING, never a block: the dialog stays fully usable (both view-
+    // toggle buttons present) -- contrast with MissingFontError's hard
+    // block on the drawer/bulk/test-print surfaces, which never even reach
+    // generation.
+    expect(screen.getByRole("button", { name: "ZPL code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rendered" })).toBeInTheDocument();
+  });
 });
