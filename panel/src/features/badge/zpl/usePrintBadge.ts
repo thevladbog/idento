@@ -79,6 +79,16 @@ export interface PrintAttendeeOptions {
   // here skips THIS call's own invalidation; the bulk dialog is responsible
   // for firing its own single invalidateQueries call after the loop.
   skipInvalidate?: boolean;
+  // P4.1 Task 4 extended POST /attendees/{id}/printed with an OPTIONAL
+  // {event_id, station_id} body: when event_id is present, the handler logs
+  // a checkin_actions ('reprint') row after the counter increment succeeds
+  // -- this is how the check-in station's recent-scans rail (Task 9) picks
+  // up a reprint. Absent entirely (the default, every P3.1/P3.2 caller
+  // unchanged by this task) is the pre-existing back-compat path: counter-
+  // only, no feed row. `stationId` is independently nullable (a station-less
+  // print context is valid per schema.d.ts's MarkAttendeePrintedRequest) --
+  // it's only meaningful server-side when `eventId` is also present.
+  printContext?: { eventId: string; stationId: string | null };
 }
 
 export interface UsePrintBadgeResult {
@@ -202,7 +212,19 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
     // like the print itself failed.
     let markPrintedFailed = false;
     try {
-      await markPrinted.mutateAsync({ params: { path: { attendee_id: attendee.id } } });
+      // No `printContext` -> no `body` key at all (not `body: undefined`),
+      // so a caller that never passes it (every P3.1/P3.2 surface, unchanged
+      // by this task) sends the exact same request it always did -- the
+      // backend's back-compat path (attendee_printed.go) is keyed on the
+      // body being genuinely absent, not merely empty-valued.
+      if (opts.printContext) {
+        await markPrinted.mutateAsync({
+          params: { path: { attendee_id: attendee.id } },
+          body: { event_id: opts.printContext.eventId, station_id: opts.printContext.stationId },
+        });
+      } else {
+        await markPrinted.mutateAsync({ params: { path: { attendee_id: attendee.id } } });
+      }
     } catch {
       markPrintedFailed = true;
     }
