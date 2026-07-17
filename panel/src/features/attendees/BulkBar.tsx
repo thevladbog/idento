@@ -8,6 +8,7 @@ import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
 import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -110,6 +111,13 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // surfaced as its own non-destructive warning line (never conflated with a
   // genuine send failure).
   const [printMarkWarnCount, setPrintMarkWarnCount] = React.useState(0);
+  // PR #75 review finding: a timed-out send (AgentPrintTimeoutError) is NOT
+  // a proven failure — the abort cancels only the client's wait; the agent
+  // may have received the job, so the badge can still emerge. Counted as
+  // neither sent nor failed: its own may-still-print warning line, so the
+  // failed tally never invites re-running an attendee whose badge may
+  // already be printing.
+  const [printTimeoutCount, setPrintTimeoutCount] = React.useState(0);
   // No-template short-circuit: the loop stops at whichever attendee FIRST
   // observes a missing template — usePrintBadge re-fetches the template PER
   // printAttendee call (staleTime 0), so this can fire MID-batch (template
@@ -294,6 +302,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       setPrintProgress(null);
       setPrintFailedCount(0);
       setPrintMarkWarnCount(0);
+      setPrintTimeoutCount(0);
       setPrintNoTemplate(false);
       setPrintMissingFontFamilies(null);
       setPrinterSelection(null);
@@ -310,11 +319,13 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     setPrintProgress({ done: 0, total });
     setPrintFailedCount(0);
     setPrintMarkWarnCount(0);
+    setPrintTimeoutCount(0);
     setPrintNoTemplate(false);
     setPrintMissingFontFamilies(null);
     let attemptedAny = false;
     let failedCount = 0;
     let markWarnCount = 0;
+    let timeoutCount = 0;
     let noTemplate = false;
     let missingFontFamilies: string[] | null = null;
 
@@ -361,6 +372,10 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           // The SEND succeeded -- counted as sent, never as failed, but
           // flagged via the soft warning counter below.
           markWarnCount += 1;
+        } else if (error instanceof AgentPrintTimeoutError) {
+          // Unconfirmed, not failed: the badge may still emerge (see the
+          // counter's doc comment above) -- never folded into failedCount.
+          timeoutCount += 1;
         } else {
           failedCount += 1;
         }
@@ -369,6 +384,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         setPrintProgress({ done: i + 1, total });
         setPrintFailedCount(failedCount);
         setPrintMarkWarnCount(markWarnCount);
+        setPrintTimeoutCount(timeoutCount);
       }
     }
 
@@ -404,14 +420,20 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // for `printMissingFontFamilies` (PR #74 review round Fix 8) -- an
   // event-level short-circuit exactly like `printNoTemplate`, so it gets the
   // SAME "don't show the completion-shaped tally" treatment.
+  // `sent` excludes timeouts as well as failures (PR #75 review finding):
+  // a timed-out send was never confirmed, so claiming it as "sent" would be
+  // as dishonest as calling it failed — it gets its own warning line below.
   const printDoneReadout = !printing && printProgress && !printNoTemplate && !printMissingFontFamilies ? (
     printFailedCount > 0
       ? t("bulkPrintDoneWithFailures", {
-          sent: printProgress.total - printFailedCount,
+          sent: printProgress.total - printFailedCount - printTimeoutCount,
           total: printProgress.total,
           failed: printFailedCount,
         })
-      : t("bulkPrintDone", { sent: printProgress.total - printFailedCount, total: printProgress.total })
+      : t("bulkPrintDone", {
+          sent: printProgress.total - printFailedCount - printTimeoutCount,
+          total: printProgress.total,
+        })
   ) : null;
 
   const printDescription = (
@@ -435,13 +457,13 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
                 total - done, which includes the short-circuited attendee). */}
             {printFailedCount > 0
               ? t("bulkPrintPartialBeforeNoTemplateWithFailures", {
-                  sent: printProgress.done - printFailedCount,
+                  sent: printProgress.done - printFailedCount - printTimeoutCount,
                   total: printProgress.total,
                   failed: printFailedCount,
                   notAttempted: printProgress.total - printProgress.done,
                 })
               : t("bulkPrintPartialBeforeNoTemplate", {
-                  sent: printProgress.done - printFailedCount,
+                  sent: printProgress.done - printFailedCount - printTimeoutCount,
                   total: printProgress.total,
                 })}
           </span>
@@ -455,7 +477,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         printProgress && printProgress.done > 0 ? (
           <span className="block">
             {t("bulkPrintPartialBeforeMissingFont", {
-              sent: printProgress.done - printFailedCount,
+              sent: printProgress.done - printFailedCount - printTimeoutCount,
               total: printProgress.total,
             })}
           </span>
@@ -500,6 +522,9 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       ) : null}
       {!printing && printMarkWarnCount > 0 ? (
         <span className="mt-2 block text-warning">{t("bulkPrintMarkWarn", { count: printMarkWarnCount })}</span>
+      ) : null}
+      {!printing && printTimeoutCount > 0 ? (
+        <span className="mt-2 block text-warning">{t("bulkPrintTimeoutWarn", { count: printTimeoutCount })}</span>
       ) : null}
       {printNoTemplate ? (
         <span className="mt-2 block text-destructive">

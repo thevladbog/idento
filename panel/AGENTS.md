@@ -40,8 +40,8 @@ work while this rewrite runs (see root `AGENTS.md`).
   Key prefixes name the surface that owns the copy (`badgeTestPrint*`,
   `drawerReprint*`, `bulkPrint*`); copy genuinely shared across surfaces
   uses a neutral prefix instead (`printPrinterLabel`, `printNoPrinters`,
-  `printSentTo`). Don't reference another surface's prefixed key — rename
-  it to the neutral prefix first.
+  `printSentTo`, `printNoCancelHint`). Don't reference another surface's
+  prefixed key — rename it to the neutral prefix first.
 - **Physical-output dialogs share ONE dismissal convention:** while a print/
   send is in flight, EVERY dismiss path (X, Escape, outside-click, Cancel) is
   inert until the operation settles, with a visible hint explaining that a

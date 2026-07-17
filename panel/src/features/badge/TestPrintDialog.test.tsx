@@ -250,6 +250,36 @@ describe("TestPrintDialog", () => {
     expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
   });
 
+  // PR #75 review finding: dismissal is fully locked while a print is in
+  // flight (the test below), but without an explanation the disabled Cancel
+  // reads as a broken button — panel/AGENTS.md's physical-output dialog
+  // convention requires the visible can't-be-recalled hint on EVERY print
+  // surface, and this one lacked it.
+  it("explains, while the send is in flight, that it can't be cancelled and an already-sent badge will still print", async () => {
+    const user = userEvent.setup();
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultResponse = { default: "Zebra_ZD421" };
+    printDelayMs = 40;
+    renderDialog();
+
+    const sendButton = await waitForSendEnabled();
+    // Not shown before the send starts — nothing is in flight yet.
+    expect(
+      screen.queryByText("Sending can't be cancelled — a badge already sent to the printer will still print."),
+    ).not.toBeInTheDocument();
+    await user.click(sendButton);
+
+    expect(
+      await screen.findByText("Sending can't be cancelled — a badge already sent to the printer will still print."),
+    ).toBeInTheDocument();
+
+    // Gone again once the send settles on the transport-honest result.
+    expect(await screen.findByText("Sent to Zebra_ZD421")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Sending can't be cancelled — a badge already sent to the printer will still print."),
+    ).not.toBeInTheDocument();
+  });
+
   it("blocks dismissal while a print is in flight, and never surfaces a stale result after a forced close + reopen", async () => {
     const user = userEvent.setup();
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];

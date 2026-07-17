@@ -505,7 +505,7 @@ function DrawerBody({
         // flight (Fix 2) — this line explains WHY the disabled Cancel isn't
         // a broken button, and heads off the "closing would have stopped
         // it" assumption. Transport-ack truth: a send can't be recalled.
-        <span className="mt-2 block">{t("drawerReprintNoCancelHint")}</span>
+        <span className="mt-2 block">{t("printNoCancelHint")}</span>
       ) : null}
       {printBadge.fontsStatus === "error" ? (
         <span className="mt-2 block text-warning">{t("badgeFontsNotReady")}</span>

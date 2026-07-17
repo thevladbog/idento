@@ -256,6 +256,14 @@ export function TestPrintDialog({
         ) : null}
         {printError ? <p className="text-body text-destructive" role="alert">{printError}</p> : null}
         {sentTo ? <p className="text-body text-success">{t("printSentTo", { printer: sentTo })}</p> : null}
+        {printing ? (
+          // PR #75 review finding: dismissal is locked while sending (see
+          // handleOpenChange/preventDialogDismiss above) — this explains WHY
+          // the disabled Cancel isn't a broken button. Transport-ack truth:
+          // a send can't be recalled (panel/AGENTS.md's physical-output
+          // dialog convention; same shared copy as the drawer's reprint).
+          <p className="text-caption text-muted-foreground">{t("printNoCancelHint")}</p>
+        ) : null}
         {/* Reachability-gated CTA idiom (spec §7.3): disabled, never a
             silent no-op, with a visible reason -- not just a hover-only
             tooltip (WCAG 1.4.1: this must be discoverable without relying

@@ -5,6 +5,7 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { BulkBar } from "./BulkBar";
 import { ATTENDEES_LIST_KEY, useAttendeesPage } from "./hooks";
+import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -577,6 +578,49 @@ describe("BulkBar", () => {
       await user.click(printButton);
       const reopened = await screen.findByRole("dialog", { name: "Print badges" });
       await waitFor(() => expect(within(reopened).getByRole("button", { name: "Print" })).toBeEnabled());
+    });
+
+    // PR #75 review finding: a timed-out send is NOT a proven failure — the
+    // abort cancels only the client's wait; the agent may have received the
+    // job, so the badge can still emerge. Counting it in the "N failed"
+    // tally invited re-running an attendee whose badge may already be
+    // printing (double print). Timeouts get their own may-still-print
+    // warning line, excluded from both the sent AND failed counts.
+    it("counts a timed-out send separately from hard failures — may-still-print warning, never part of the failed tally", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      // ADA's send times out (spy); BOB's flows through to MSW and succeeds.
+      const realPrint = agentClient.print;
+      const printSpy = vi
+        .spyOn(agentClient, "print")
+        .mockImplementationOnce(() => Promise.reject(new AgentPrintTimeoutError(30_000)))
+        .mockImplementation(realPrint);
+      try {
+        const user = userEvent.setup();
+        renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+        const printButton = await screen.findByRole("button", { name: "Print badges" });
+        await waitFor(() => expect(printButton).toBeEnabled());
+        await user.click(printButton);
+        const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+        await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+        // BOB's send genuinely reached the agent.
+        await waitFor(() => expect(printCalls).toHaveLength(1));
+        // Settled tally: the timed-out attendee is neither sent nor failed.
+        expect(await within(dialog).findByText("1 of 2 sent")).toBeInTheDocument();
+        expect(within(dialog).queryByText(/failed/)).not.toBeInTheDocument();
+        expect(
+          within(dialog).getByText(
+            "1 timed out — those badges may still print; check the printer before re-running",
+          ),
+        ).toBeInTheDocument();
+        // Only BOB's confirmed send was recorded.
+        expect(markPrintedHitCount).toBe(1);
+      } finally {
+        printSpy.mockRestore();
+      }
     });
 
     // Follow-up batch item 4: while the batch is running, every dismiss
