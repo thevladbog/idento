@@ -520,3 +520,15 @@ Parity verdict from final review: the port held discipline -- ONLY divergence fo
 Follow-up batch triaged (chip to file): bulk re-confirm guard (settled tally re-click = double print footgun), agent print() timeout (wedged SendRaw freezes unclosable modal), coverage staleTime Infinity, cancel-doesnt-suppress-send hint, bulk readout failed-vs-never-attempted split + mixed-composition test, "template yet" copy, Go int-truncation DPI nit, elements-missing-x/y NaN corner (pre-existing, undocumented shape), i18n cross-prefix reuse of badgeTestPrint* keys (sanctioned or rename to agent*).
 === PANEL P3.2 ALL 11 TASKS + FINAL REVIEW COMPLETE — HEAD=407787a, READY TO MERGE, proceeding to finishing-a-development-branch ===
 === PANEL P3.2 PR OPEN — https://github.com/thevladbog/idento/pull/74 (branch panel/p3.2-print-truth, HEAD=7178e94). 54 files > CodeRabbit free 50-file limit (will skip; on-demand checkbox available); @codex review triggered. Phase exit gate: run docs/superpowers/checklists/p3-printed-matrix.md on a real Zebra post-merge and record results here. Awaiting review rounds before merge. ===
+=== PANEL P3.2 — CODEX REVIEW ROUND (PR #74) — HEAD=9feb40b ===
+CodeRabbit skipped again (54 files); Codex: 8 findings (1 P1, 7 P2) — ALL EIGHT verified real and fixed (commits a98a28b backend + 9feb40b panel):
+1. (P2) editor Test-print/ZPL-preview buttons openable during the event-navigation stale-doc window -> gated on !initialized||isLoading (same as Save).
+2. (P1) reprint dialog dismissible mid-print — SUPERSEDES our Task 8 fix-round choice: TestPrintDialog blocked dismissal, drawer did not (cross-surface inconsistency) and hiding a physical print outcome = double-print risk; reprint confirm rebuilt on raw Dialog with all dismiss paths inert while printing. ALSO moots item 4 (cancel-hint) of follow-up chip task_3dbbdd28.
+3. (P2) stale "ready" fonts status across eventId change (same coincidence-unreachable class as the P3.1 fullPath trap) -> idle reset effect.
+4. (P2) once-per-event font guard never loaded NEWLY UPLOADED fonts (selector showed them, raster printed fallback silently) -> loaded-signature guard with delta reloads.
+5. (P2) trailing-slash AGENT_URL -> //print -> 301 -> POST-becomes-GET -> getAgentBaseUrl strips trailing slashes.
+6. (P2) UpdateAttendee round-tripped printed_count (full-row write racing a print reverted the counter) -> column REMOVED from that UPDATE; increment endpoint is the sole writer; pgxmock pin.
+7. (P2) /printers/default failure rejected the whole printers query -> allSettled degrade to configuredDefault:null.
+8. (P2) deleted customFont printed browser fallback silently with counter bump -> shared collectMissingCustomFonts + typed MissingFontError blocks drawer/bulk/test-print pre-send; preview warns only.
+All 8 threads replied + resolved. 924/924 panel, 345 backend (one pre-existing unrelated main.go staticcheck note).
+LESSON: physical-output dialogs get ONE dismissal convention (block-while-sending) — per-surface local conventions drift; codify in panel/AGENTS.md next doc pass.
