@@ -727,6 +727,48 @@ func (s *PGStore) SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.
 	return newVersion, nil
 }
 
+// GetCheckinSettings reads the dedicated events.checkin_settings JSONB
+// column (P4.1) directly. Both "column is NULL" (no settings saved yet)
+// and "no matching, non-deleted event" collapse to the same (nil, nil)
+// zero value — mirrors GetEventBadgeTemplate's not-found idiom: this
+// method never fabricates a settings object, and never reports
+// pgx.ErrNoRows to the caller. Callers that need to distinguish a missing
+// event from missing settings must check existence themselves (e.g.
+// requireEventOwnership).
+func (s *PGStore) GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (json.RawMessage, error) {
+	var settingsJSON []byte
+	query := `SELECT checkin_settings FROM events WHERE id = $1 AND deleted_at IS NULL`
+	err := s.db.QueryRow(ctx, query, eventID).Scan(&settingsJSON)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(settingsJSON) == 0 || string(settingsJSON) == "null" {
+		return nil, nil
+	}
+	return json.RawMessage(settingsJSON), nil
+}
+
+// UpdateCheckinSettings persists settings verbatim (raw bytes, no
+// re-encoding) — no optimistic-concurrency version, unlike
+// UpdateEventBadgeTemplate: check-in settings are operator-only config
+// with no concurrent-editor conflict class to guard against. The UPDATE
+// nevertheless carries a `deleted_at IS NULL` guard (same race class as
+// UpdateEventBadgeTemplate/IncrementAttendeePrintedCount): the caller's
+// requireEventOwnership pre-check can pass and a concurrent soft-delete
+// land before this UPDATE executes. Contract: the caller must already
+// have confirmed the event exists before calling — a 0-row result (the
+// soft-delete race) is a silent no-op here, the same idiom as
+// SoftDeleteEvent (there is no version/sentinel to report a miss with).
+func (s *PGStore) UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error {
+	_, err := s.db.Exec(ctx,
+		`UPDATE events SET checkin_settings = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`,
+		[]byte(settings), eventID)
+	return err
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

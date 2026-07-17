@@ -283,6 +283,48 @@ components:
         current_version: { type: integer }
       required: [error, current_version]
       additionalProperties: false
+    CheckinSettings:
+      type: object
+      description: >
+        Per-event check-in station configuration (P4.1) — operator-only,
+        no optimistic-concurrency version (unlike BadgeTemplateResponse):
+        check-in settings have no concurrent-editor conflict class to
+        guard against. Stored verbatim in events.checkin_settings JSONB.
+      properties:
+        print_on_checkin: { type: boolean }
+        verdict_auto_dismiss_sec: { type: integer, minimum: 1, maximum: 30 }
+        scan_input: { type: string, enum: [wedge, scanner, manual] }
+        manual_search_enabled: { type: boolean }
+      required:
+        [
+          print_on_checkin,
+          verdict_auto_dismiss_sec,
+          scan_input,
+          manual_search_enabled,
+        ]
+      additionalProperties: false
+    CheckinSettingsResponse:
+      type: object
+      description: >
+        GET/PUT /api/events/{id}/checkin-settings response. settings is
+        the stored check-in settings verbatim — whatever object was last
+        PUT — and is null when the event has never had settings saved.
+      properties:
+        settings:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CheckinSettings"
+      required: [settings]
+    CheckinSettingsPutRequest:
+      type: object
+      description: >
+        PUT /api/events/{id}/checkin-settings request body. settings is
+        persisted verbatim (byte-for-byte, from the raw request bytes)
+        after being validated against the CheckinSettings shape.
+      properties:
+        settings:
+          $ref: "#/components/schemas/CheckinSettings"
+      required: [settings]
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -1508,6 +1550,109 @@ paths:
           description: >
             Store failure resolving event ownership, re-reading the
             current version after a conflict, or persisting the template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{id}/checkin-settings:
+    get:
+      operationId: getCheckinSettings
+      summary: >
+        The event's check-in station settings (P4.1) — reads the dedicated
+        events.checkin_settings column. Consumed by Task 2+ (station
+        registration) and the panel's check-in settings UI.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: settings is null when the event has never had settings saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinSettingsResponse" }
+        "400":
+          description: id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing" — no
+            existence oracle).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership or reading check-in
+            settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: putCheckinSettings
+      summary: Save the event's check-in station settings.
+      description: >
+        Storage is verbatim: settings is persisted as the request's raw
+        JSON bytes, byte-for-byte — the handler validates a parsed COPY
+        against the CheckinSettings shape (all four fields required,
+        unknown fields rejected) but never re-serializes before
+        persisting. Unlike PUT /api/events/{id}/badge-template, there is
+        no optimistic-concurrency version: check-in settings are
+        operator-only config with no concurrent-editor conflict class to
+        guard against.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckinSettingsPutRequest" }
+      responses:
+        "200":
+          description: Saved. settings echoes the request's raw bytes verbatim.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinSettingsResponse" }
+        "400":
+          description: >
+            id is not a UUID, the body is malformed, settings is missing,
+            or the parsed settings fail the CheckinSettings shape (a
+            required field is missing, verdict_auto_dismiss_sec is outside
+            1..30, scan_input is not one of wedge/scanner/manual, or an
+            unknown field is present).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing" — checked
+            before any store call).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving event ownership or persisting check-in
+            settings.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

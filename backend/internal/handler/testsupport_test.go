@@ -64,6 +64,8 @@ type fakeStore struct {
 	getEventBadgeTemplate         func(eventID uuid.UUID) (json.RawMessage, int, error)
 	updateEventBadgeTemplate      func(eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
 	syncBadgeTemplateFromLegacy   func(eventID uuid.UUID, template json.RawMessage) (int, error)
+	getCheckinSettings            func(eventID uuid.UUID) (json.RawMessage, error)
+	updateCheckinSettings         func(eventID uuid.UUID, settings json.RawMessage) error
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -272,6 +274,12 @@ func (f *fakeStore) UpdateEventBadgeTemplate(_ context.Context, eventID uuid.UUI
 }
 func (f *fakeStore) SyncBadgeTemplateFromLegacy(_ context.Context, eventID uuid.UUID, template json.RawMessage) (int, error) {
 	return f.syncBadgeTemplateFromLegacy(eventID, template)
+}
+func (f *fakeStore) GetCheckinSettings(_ context.Context, eventID uuid.UUID) (json.RawMessage, error) {
+	return f.getCheckinSettings(eventID)
+}
+func (f *fakeStore) UpdateCheckinSettings(_ context.Context, eventID uuid.UUID, settings json.RawMessage) error {
+	return f.updateCheckinSettings(eventID, settings)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {

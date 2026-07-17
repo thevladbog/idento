@@ -98,6 +98,25 @@ type Store interface {
 	// on error rather than failing the legacy PUT itself.
 	SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.UUID, template json.RawMessage) (int, error)
 
+	// GetCheckinSettings reads the dedicated events.checkin_settings JSONB
+	// column (P4.1). Returns (nil, nil) when the column is NULL (no
+	// settings saved yet) or when no matching, non-deleted event exists —
+	// it never fabricates a settings object, mirroring
+	// GetEventBadgeTemplate's not-found idiom. Callers needing to
+	// distinguish "no settings" from "no such event" must check existence
+	// themselves (e.g. via requireEventOwnership).
+	GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (json.RawMessage, error)
+	// UpdateCheckinSettings persists settings verbatim (raw bytes, no
+	// re-encoding) under a `deleted_at IS NULL` guard — the same race-class
+	// guard as UpdateEventBadgeTemplate/IncrementAttendeePrintedCount, but
+	// with no optimistic-concurrency version: check-in settings are
+	// operator-only config with no concurrent-editor conflict class to
+	// guard against. Contract: the caller must already have confirmed the
+	// event exists (e.g. via requireEventOwnership) before calling; a
+	// 0-row result (the soft-delete race) is a silent no-op, the same
+	// idiom as SoftDeleteEvent.
+	UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error
+
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,

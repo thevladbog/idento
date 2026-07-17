@@ -78,6 +78,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/events/:id/badge-zpl", h.BadgeZPL)
 	api.GET("/events/:id/badge-template", h.GetBadgeTemplate)
 	api.PUT("/events/:id/badge-template", h.PutBadgeTemplate)
+	api.GET("/events/:id/checkin-settings", h.GetCheckinSettings)
+	api.PUT("/events/:id/checkin-settings", h.PutCheckinSettings)
 	api.GET("/events/:id/readiness", h.GetEventReadiness)
 	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
