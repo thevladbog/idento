@@ -847,6 +847,223 @@ func (s *PGStore) ListCheckinStations(ctx context.Context, eventID uuid.UUID) ([
 	return stations, nil
 }
 
+// GetCheckinStationByID looks up a single check-in station by id (P4.1
+// Task 3). Mirrors GetEventZoneByID: a no-match surfaces the raw
+// pgx.ErrNoRows rather than a normalized (nil, nil) — callers distinguish
+// "unknown id" from "found" via errors.Is(err, pgx.ErrNoRows).
+func (s *PGStore) GetCheckinStationByID(ctx context.Context, id uuid.UUID) (*models.CheckinStation, error) {
+	var st models.CheckinStation
+	query := `SELECT id, event_id, name, zone_id, last_seen_at, created_at FROM checkin_stations WHERE id = $1`
+	err := s.db.QueryRow(ctx, query, id).Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// checkinAttendeeColumnsSQL is the plain (non-joined) attendee column list
+// (in scan order) shared by CheckInAttendee's and UndoCheckin's guarded
+// UPDATE ... RETURNING clauses — the same 19 columns as
+// GetAttendeeByID/GetAttendeeByCode. It deliberately excludes
+// checked_in_by_email: attendees has no such COLUMN — that field is always
+// derived from users.email via checked_in_by (see attendeeListColumnsSQL),
+// never persisted, so a RETURNING clause can't produce it.
+const checkinAttendeeColumnsSQL = `id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+
+// scanCheckinAttendeeRow scans one row shaped by checkinAttendeeColumnsSQL
+// into a fresh *models.Attendee, unmarshaling custom_fields.
+func scanCheckinAttendeeRow(row pgx.Row) (*models.Attendee, error) {
+	var a models.Attendee
+	var customFieldsJSON []byte
+	if err := row.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code,
+		&a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName,
+		&a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
+		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
+			return nil, err
+		}
+	}
+	return &a, nil
+}
+
+// scanAttendeeByEmailJoinRow scans one row shaped by attendeeListColumnsSQL
+// (the LEFT JOIN ... users u ON a.checked_in_by = u.id shape, including the
+// joined checked_in_by_email) from a pgx.Row — unlike scanAttendeeRow, which
+// takes pgx.Rows (the pgx.Rows.Scan and pgx.Row.Scan signatures match, but
+// QueryRow's pgx.Row does not satisfy the pgx.Rows interface, so it can't be
+// passed to scanAttendeeRow directly).
+func scanAttendeeByEmailJoinRow(row pgx.Row) (*models.Attendee, error) {
+	var a models.Attendee
+	var customFieldsJSON []byte
+	if err := row.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code,
+		&a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName,
+		&a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
+		return nil, err
+	}
+	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
+		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
+			return nil, err
+		}
+	}
+	return &a, nil
+}
+
+// CheckInAttendee performs one station's single-scan check-in idempotently
+// (P4.1 Task 3) — see the Store interface doc for the full outcome
+// contract. This is the zero-double-checkin guarantee at the source,
+// mirroring ApplyBatchCheckin's guarded-UPDATE pattern (pg_store_batch.go)
+// but with a RETURNING clause so the full row comes back in the same round
+// trip as the write.
+func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Printf("rollback check-in: %v", rbErr)
+		}
+	}()
+
+	var pointName *string
+	if stationName != "" {
+		pointName = &stationName
+	}
+
+	updateQuery := `UPDATE attendees
+		SET checkin_status = true, checked_in_at = now(), checked_in_by = $1, checked_in_point_name = $2, updated_at = now()
+		WHERE id = $3 AND event_id = $4 AND checkin_status = false AND deleted_at IS NULL
+		RETURNING ` + checkinAttendeeColumnsSQL
+	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, staffUserID, pointName, attendeeID, eventID))
+	if err == nil {
+		// This call's own guarded UPDATE won the race — it just wrote
+		// checked_in_by = staffUserID, so its email IS staffEmail (the
+		// caller resolved it, e.g. via GetUserByID, before calling here).
+		// There is no checked_in_by_email COLUMN to read it back from.
+		if staffEmail != "" {
+			a.CheckedInByEmail = &staffEmail
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, 'checkin', $4)`,
+			eventID, attendeeID, stationID, staffUserID); err != nil {
+			return "", nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return "", nil, err
+		}
+		return "checked_in", a, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, err
+	}
+
+	// 0 rows: either the attendee is already checked in (by this or another
+	// staff member/station), or it's genuinely missing (soft-deleted, or
+	// doesn't belong to eventID) — the fallback SELECT below (joined to
+	// users, same shape as attendeeListColumnsSQL/scanAttendeeRow)
+	// distinguishes the two and, for the former, returns the ORIGINAL
+	// first-scan metadata untouched.
+	selectQuery := `SELECT` + attendeeListColumnsSQL + `
+		FROM attendees a
+		LEFT JOIN users u ON a.checked_in_by = u.id
+		WHERE a.id = $1 AND a.event_id = $2 AND a.deleted_at IS NULL`
+	existing, err := scanAttendeeByEmailJoinRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil, ErrAttendeeNotFound
+		}
+		return "", nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", nil, err
+	}
+	return "already_checked_in", existing, nil
+}
+
+// UndoCheckin clears a check-in idempotently (P4.1 Task 3) — see the Store
+// interface doc for the full outcome contract. Fixes the legacy
+// UpdateAttendeeHandler path's incomplete clear, which never touched
+// checked_in_point_name.
+func (s *PGStore) UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Printf("rollback undo check-in: %v", rbErr)
+		}
+	}()
+
+	updateQuery := `UPDATE attendees
+		SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_point_name = NULL, updated_at = now()
+		WHERE id = $1 AND event_id = $2 AND checkin_status = true AND deleted_at IS NULL
+		RETURNING ` + checkinAttendeeColumnsSQL
+	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, attendeeID, eventID))
+	if err == nil {
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, 'undo', $4)`,
+			eventID, attendeeID, stationID, staffUserID); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return a, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	// 0 rows: either already not checked in (idempotent no-op — no feed
+	// row), or genuinely missing.
+	selectQuery := `SELECT ` + checkinAttendeeColumnsSQL + ` FROM attendees WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL`
+	existing, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAttendeeNotFound
+		}
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+// GetCheckinActions returns the newest `limit` rows of an event's
+// check-in/undo/reprint feed (P4.1 Task 3), joined to a slim attendee
+// projection — backs the station's recent-scans rail.
+func (s *PGStore) GetCheckinActions(ctx context.Context, eventID uuid.UUID, limit int) ([]CheckinActionRow, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT ca.id, ca.action, ca.station_id, ca.created_at, a.id, a.first_name, a.last_name, a.code
+		FROM checkin_actions ca
+		JOIN attendees a ON ca.attendee_id = a.id
+		WHERE ca.event_id = $1
+		ORDER BY ca.created_at DESC
+		LIMIT $2`, eventID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []CheckinActionRow
+	for rows.Next() {
+		var row CheckinActionRow
+		if err := rows.Scan(&row.ID, &row.Action, &row.StationID, &row.CreatedAt,
+			&row.Attendee.ID, &row.Attendee.FirstName, &row.Attendee.LastName, &row.Attendee.Code); err != nil {
+			return nil, err
+		}
+		actions = append(actions, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return actions, nil
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

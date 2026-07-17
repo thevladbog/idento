@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 )
 
@@ -374,6 +375,455 @@ func TestListCheckinStationsReturnsRegistered(t *testing.T) {
 
 // TestListCheckinStationsNoneRegisteredReturnsEmpty proves an event with
 // no stations yet gets a nil/empty slice, not an error.
+// getCheckinStationByIDSQL matches GetCheckinStationByID's exact SELECT
+// (P4.1 Task 3).
+const getCheckinStationByIDSQL = `SELECT id, event_id, name, zone_id, last_seen_at, created_at FROM checkin_stations WHERE id = \$1`
+
+func TestGetCheckinStationByIDFound(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	stationID := uuid.New()
+	eventID := uuid.New()
+	now := time.Now()
+	mock.ExpectQuery(getCheckinStationByIDSQL).
+		WithArgs(stationID).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "event_id", "name", "zone_id", "last_seen_at", "created_at"}).
+			AddRow(stationID, eventID, "Main Entrance", nil, now, now))
+
+	s := &PGStore{db: mock}
+	got, err := s.GetCheckinStationByID(context.Background(), stationID)
+	if err != nil {
+		t.Fatalf("GetCheckinStationByID: %v", err)
+	}
+	if got.ID != stationID || got.EventID != eventID {
+		t.Errorf("got=%+v, want id=%s event_id=%s", got, stationID, eventID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestGetCheckinStationByIDUnknownSurfacesRawErrNoRows proves an unknown id
+// is NOT normalized to (nil, nil) — unlike GetCheckinSettings, this mirrors
+// GetEventZoneByID's contract, which handlers rely on (see
+// RegisterCheckinStation's "unknown zone" 400 branch) to distinguish
+// "doesn't exist" from "found nil".
+func TestGetCheckinStationByIDUnknownSurfacesRawErrNoRows(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	stationID := uuid.New()
+	mock.ExpectQuery(getCheckinStationByIDSQL).
+		WithArgs(stationID).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "event_id", "name", "zone_id", "last_seen_at", "created_at"}))
+
+	s := &PGStore{db: mock}
+	_, err = s.GetCheckinStationByID(context.Background(), stationID)
+	if !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("err = %v, want pgx.ErrNoRows", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// checkinAttendeeReturningColumns is checkinAttendeeColumnsSQL's names, in
+// scan order (no checked_in_by_email — see pg_store.go's doc on why).
+var checkinAttendeeReturningColumns = []string{
+	"id", "event_id", "first_name", "last_name", "email", "company", "position", "code",
+	"checkin_status", "checked_in_at", "checked_in_by", "checked_in_device_number", "checked_in_point_name",
+	"printed_count", "custom_fields", "blocked", "block_reason", "created_at", "updated_at",
+}
+
+// checkInAttendeeUpdateSQL matches CheckInAttendee's exact guarded UPDATE —
+// including the `checkin_status = false` guard that makes this the
+// zero-double-checkin write (P2.1 lesson: assert real SQL text, not a loose
+// matcher).
+const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, checked_in_at = now\(\), checked_in_by = \$1, checked_in_point_name = \$2, updated_at = now\(\)\s+WHERE id = \$3 AND event_id = \$4 AND checkin_status = false AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+
+// checkInAttendeeFallbackSelectSQL matches the 0-row fallback SELECT — the
+// same LEFT JOIN ... users shape as attendeeListColumnsSQL/scanAttendeeRow,
+// scoped to one attendee id within eventID.
+const checkInAttendeeFallbackSelectSQL = `SELECT\s+a\.id, a\.event_id, a\.first_name, a\.last_name, a\.email, a\.company, a\.position, a\.code,\s+a\.checkin_status, a\.checked_in_at, a\.checked_in_by, a\.checked_in_device_number, a\.checked_in_point_name, a\.printed_count, a\.custom_fields,\s+a\.blocked, a\.block_reason, a\.created_at, a\.updated_at,\s+u\.email as checked_in_by_email\s+FROM attendees a\s+LEFT JOIN users u ON a\.checked_in_by = u\.id\s+WHERE a\.id = \$1 AND a\.event_id = \$2 AND a\.deleted_at IS NULL`
+
+// checkinActionsInsertCheckinSQL matches the feed row CheckInAttendee
+// inserts on the "checked_in" outcome, in the SAME transaction.
+const checkinActionsInsertCheckinSQL = `INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id\) VALUES \(\$1, \$2, \$3, 'checkin', \$4\)`
+
+// TestCheckInAttendeeFreshAttendeeChecksInAndLogsFeedRow proves the exact
+// guarded-UPDATE SQL, that a 1-row RETURNING result yields outcome
+// "checked_in", that the returned attendee carries THIS call's
+// staffEmail/stationName (checked_in_by_email has no column to read back
+// from), and that a checkin_actions ('checkin') row is inserted in the
+// SAME transaction before commit.
+func TestCheckInAttendeeFreshAttendeeChecksInAndLogsFeedRow(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, stationID, staffID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	stationName := "Main Entrance"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, &stationName, attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				true, &now, &staffID, nil, &stationName, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertCheckinSQL).
+		WithArgs(eventID, attendeeID, &stationID, staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, &stationID, staffID, "ada.staff@example.com", "Main Entrance")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "checked_in" {
+		t.Errorf("outcome = %q, want checked_in", outcome)
+	}
+	if a.CheckedInByEmail == nil || *a.CheckedInByEmail != "ada.staff@example.com" {
+		t.Errorf("CheckedInByEmail = %v, want ada.staff@example.com", a.CheckedInByEmail)
+	}
+	if a.CheckedInPointName == nil || *a.CheckedInPointName != "Main Entrance" {
+		t.Errorf("CheckedInPointName = %v, want Main Entrance", a.CheckedInPointName)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestCheckInAttendeeNoStationLeavesPointNameNull proves an empty
+// stationName is passed through as NULL (not an empty string) — a
+// station-less check-in (no station_id in the request).
+func TestCheckInAttendeeNoStationLeavesPointNameNull(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				true, &now, &staffID, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertCheckinSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "ada.staff@example.com", "")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "checked_in" {
+		t.Errorf("outcome = %q, want checked_in", outcome)
+	}
+	if a.CheckedInPointName != nil {
+		t.Errorf("CheckedInPointName = %v, want nil", a.CheckedInPointName)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestCheckInAttendeeAlreadyCheckedInFallsBackNoFeedRow covers the 0-row
+// path: the guarded UPDATE affects nothing (already checked in), so
+// CheckInAttendee falls back to the joined SELECT and returns the
+// EXISTING first-scan metadata — no checkin_actions row is inserted (no
+// ExpectExec is set; an unexpected call would fail ExpectationsWereMet).
+func TestCheckInAttendeeAlreadyCheckedInFallsBackNoFeedRow(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	originalStaff := uuid.New()
+	firstScan := time.Now().Add(-time.Hour)
+	requestedStationName := "Side Door"
+	originalPointName := "Main Entrance"
+	originalEmail := "original.staff@example.com"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, &requestedStationName, attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns)) // 0 rows
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(attendeesByEventColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				true, &firstScan, &originalStaff, nil, &originalPointName, 0, nil, false, nil, firstScan, firstScan,
+				&originalEmail))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "second.staff@example.com", "Side Door")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "already_checked_in" {
+		t.Errorf("outcome = %q, want already_checked_in", outcome)
+	}
+	if a.CheckedInByEmail == nil || *a.CheckedInByEmail != "original.staff@example.com" {
+		t.Errorf("CheckedInByEmail = %v, want the ORIGINAL scanner's email (original.staff@example.com), never overwritten", a.CheckedInByEmail)
+	}
+	if a.CheckedInPointName == nil || *a.CheckedInPointName != "Main Entrance" {
+		t.Errorf("CheckedInPointName = %v, want the ORIGINAL Main Entrance, never overwritten by Side Door", a.CheckedInPointName)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestCheckInAttendeeMissingReturnsErrAttendeeNotFound covers the
+// soft-delete-race / foreign-event 0-row-on-both-queries case: the guarded
+// UPDATE and the fallback SELECT both match nothing, so the transaction
+// rolls back (never commits) and the store surfaces ErrAttendeeNotFound.
+func TestCheckInAttendeeMissingReturnsErrAttendeeNotFound(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns))
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(attendeesByEventColumns))
+	mock.ExpectRollback()
+
+	s := &PGStore{db: mock}
+	_, _, err = s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "staff@example.com", "")
+	if !errors.Is(err, ErrAttendeeNotFound) {
+		t.Fatalf("err = %v, want ErrAttendeeNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// undoCheckinUpdateSQL matches UndoCheckin's exact guarded UPDATE — guarded
+// on checkin_status = true (the mirror-image guard of CheckInAttendee's
+// checkin_status = false).
+const undoCheckinUpdateSQL = `UPDATE attendees\s+SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_point_name = NULL, updated_at = now\(\)\s+WHERE id = \$1 AND event_id = \$2 AND checkin_status = true AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+
+// undoCheckinFallbackSelectSQL matches the 0-row fallback SELECT (plain,
+// non-joined — an undone/never-checked-in attendee has no email to show).
+const undoCheckinFallbackSelectSQL = `SELECT id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at FROM attendees WHERE id = \$1 AND event_id = \$2 AND deleted_at IS NULL`
+
+// checkinActionsInsertUndoSQL matches the feed row UndoCheckin inserts on a
+// genuine clear, in the SAME transaction.
+const checkinActionsInsertUndoSQL = `INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id\) VALUES \(\$1, \$2, \$3, 'undo', \$4\)`
+
+// TestUndoCheckinClearsAndLogsFeedRow proves the exact guarded-UPDATE SQL
+// (checkin_status = true guard) and that a 1-row result inserts an 'undo'
+// checkin_actions row in the same transaction before commit.
+func TestUndoCheckinClearsAndLogsFeedRow(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, stationID, staffID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(undoCheckinUpdateSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				false, nil, nil, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertUndoSQL).
+		WithArgs(eventID, attendeeID, &stationID, staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	a, err := s.UndoCheckin(context.Background(), eventID, attendeeID, &stationID, staffID)
+	if err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if a.CheckinStatus {
+		t.Errorf("CheckinStatus = true, want false after undo")
+	}
+	if a.CheckedInAt != nil || a.CheckedInBy != nil || a.CheckedInPointName != nil {
+		t.Errorf("undo left stale metadata: CheckedInAt=%v CheckedInBy=%v CheckedInPointName=%v", a.CheckedInAt, a.CheckedInBy, a.CheckedInPointName)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestUndoCheckinAlreadyClearIsIdempotentNoFeedRow covers the 0-row path:
+// the guarded UPDATE affects nothing (already not checked in), so
+// UndoCheckin falls back to the plain SELECT and returns 200 with no feed
+// row written (no ExpectExec is set for the checkin_actions INSERT).
+func TestUndoCheckinAlreadyClearIsIdempotentNoFeedRow(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(undoCheckinUpdateSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns)) // 0 rows
+	mock.ExpectQuery(undoCheckinFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				false, nil, nil, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	a, err := s.UndoCheckin(context.Background(), eventID, attendeeID, nil, staffID)
+	if err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if a.CheckinStatus {
+		t.Errorf("CheckinStatus = true, want false")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestUndoCheckinMissingReturnsErrAttendeeNotFound covers both queries
+// matching nothing — the transaction rolls back and ErrAttendeeNotFound
+// surfaces, the same soft-delete-race shape as CheckInAttendee's.
+func TestUndoCheckinMissingReturnsErrAttendeeNotFound(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(undoCheckinUpdateSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns))
+	mock.ExpectQuery(undoCheckinFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns))
+	mock.ExpectRollback()
+
+	s := &PGStore{db: mock}
+	_, err = s.UndoCheckin(context.Background(), eventID, attendeeID, nil, staffID)
+	if !errors.Is(err, ErrAttendeeNotFound) {
+		t.Fatalf("err = %v, want ErrAttendeeNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// getCheckinActionsSQL matches GetCheckinActions' exact joined SELECT.
+const getCheckinActionsSQL = `SELECT ca\.id, ca\.action, ca\.station_id, ca\.created_at, a\.id, a\.first_name, a\.last_name, a\.code\s+FROM checkin_actions ca\s+JOIN attendees a ON ca\.attendee_id = a\.id\s+WHERE ca\.event_id = \$1\s+ORDER BY ca\.created_at DESC\s+LIMIT \$2`
+
+// TestGetCheckinActionsReturnsNewestFirstJoinedRows proves the exact SQL
+// (including LIMIT $2) and that rows scan into the joined
+// CheckinActionRow/CheckinActionAttendee shape in whatever order the mock
+// (standing in for the real ORDER BY created_at DESC) returns them.
+func TestGetCheckinActionsReturnsNewestFirstJoinedRows(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	actionID1, actionID2 := uuid.New(), uuid.New()
+	attendeeID1, attendeeID2 := uuid.New(), uuid.New()
+	stationID := uuid.New()
+	newer := time.Now()
+	older := newer.Add(-time.Minute)
+
+	mock.ExpectQuery(getCheckinActionsSQL).
+		WithArgs(eventID, 50).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "action", "station_id", "created_at", "id", "first_name", "last_name", "code"}).
+			AddRow(actionID1, "checkin", &stationID, newer, attendeeID1, "Ada", "Lovelace", "CODE1").
+			AddRow(actionID2, "undo", nil, older, attendeeID2, "Bob", "Builder", "CODE2"))
+
+	s := &PGStore{db: mock}
+	got, err := s.GetCheckinActions(context.Background(), eventID, 50)
+	if err != nil {
+		t.Fatalf("GetCheckinActions: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(got) = %d, want 2", len(got))
+	}
+	if got[0].ID != actionID1 || got[0].Action != "checkin" || got[0].StationID == nil || *got[0].StationID != stationID {
+		t.Errorf("got[0] = %+v, unexpected", got[0])
+	}
+	if got[0].Attendee.ID != attendeeID1 || got[0].Attendee.FirstName != "Ada" || got[0].Attendee.Code != "CODE1" {
+		t.Errorf("got[0].Attendee = %+v, unexpected", got[0].Attendee)
+	}
+	if got[1].StationID != nil {
+		t.Errorf("got[1].StationID = %v, want nil (undo with no station)", got[1].StationID)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestGetCheckinActionsNoneReturnsEmpty proves an event with no feed rows
+// yet gets a nil/empty slice, not an error.
+func TestGetCheckinActionsNoneReturnsEmpty(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID := uuid.New()
+	mock.ExpectQuery(getCheckinActionsSQL).
+		WithArgs(eventID, 50).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "action", "station_id", "created_at", "id", "first_name", "last_name", "code"}))
+
+	s := &PGStore{db: mock}
+	got, err := s.GetCheckinActions(context.Background(), eventID, 50)
+	if err != nil {
+		t.Fatalf("GetCheckinActions: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("len(got) = %d, want 0", len(got))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 func TestListCheckinStationsNoneRegisteredReturnsEmpty(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

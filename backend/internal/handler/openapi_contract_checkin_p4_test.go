@@ -706,3 +706,588 @@ func TestOpenAPIContract_CheckinStations_ForeignEvent404(t *testing.T) {
 		validateResponse(t, http.MethodGet, path, rec)
 	})
 }
+
+// --- Task 3: idempotent check-in + undo + actions feed ---
+
+func checkinPath(eventID uuid.UUID) string     { return "/api/events/" + eventID.String() + "/checkin" }
+func checkinUndoPath(eventID uuid.UUID) string { return checkinPath(eventID) + "/undo" }
+func checkinActionsPath(eventID uuid.UUID) string {
+	return "/api/events/" + eventID.String() + "/checkin-actions"
+}
+
+func setCheckinPathParams(c echo.Context, eventID uuid.UUID) {
+	c.SetPath("/api/events/:event_id/checkin")
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+}
+func setCheckinUndoPathParams(c echo.Context, eventID uuid.UUID) {
+	c.SetPath("/api/events/:event_id/checkin/undo")
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+}
+func setCheckinActionsPathParams(c echo.Context, eventID uuid.UUID) {
+	c.SetPath("/api/events/:event_id/checkin-actions")
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+}
+
+// newStationCheckinHandler builds a Handler wired for the stationCheckin /
+// undoCheckin endpoints: event + attendee ownership resolve via
+// getEventByID/getAttendeeByID (the same fakeStore.GetAttendeeByIDForTenant
+// plumbing every other attendee-scoped contract test relies on), plus the
+// station/check-in/undo/staff-user fakes each test needs. Any argument left
+// nil panics if the corresponding path is exercised.
+func newStationCheckinHandler(
+	event *models.Event,
+	attendee *models.Attendee,
+	getUser func(id uuid.UUID) (*models.User, error),
+	getStation func(id uuid.UUID) (*models.CheckinStation, error),
+	checkIn func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error),
+	undo func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error),
+) *Handler {
+	return New(&fakeStore{
+		getEventByID:          func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:       func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getUserByID:           getUser,
+		getCheckinStationByID: getStation,
+		checkInAttendee:       checkIn,
+		undoCheckin:           undo,
+	})
+}
+
+// TestOpenAPIContract_StationCheckin_FreshAttendeeChecksIn proves the happy
+// path end-to-end: the handler resolves the staff user's email via
+// GetUserByID and passes it (plus the attendee_id/station_id from the
+// body) through to store.CheckInAttendee, and the 200 response carries the
+// outcome/checkin block the store returned.
+func TestOpenAPIContract_StationCheckin_FreshAttendeeChecksIn(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	staffID := uuid.New()
+	stationID := uuid.New()
+	now := time.Now()
+
+	h := newStationCheckinHandler(event, attendee,
+		func(id uuid.UUID) (*models.User, error) {
+			if id != staffID {
+				t.Fatalf("GetUserByID called with %s, want %s", id, staffID)
+			}
+			return &models.User{ID: staffID, Email: "staff@example.com"}, nil
+		},
+		func(id uuid.UUID) (*models.CheckinStation, error) {
+			if id != stationID {
+				t.Fatalf("GetCheckinStationByID called with %s, want %s", id, stationID)
+			}
+			return &models.CheckinStation{ID: stationID, EventID: event.ID, Name: "Main Entrance"}, nil
+		},
+		func(eventID, attendeeID uuid.UUID, gotStationID *uuid.UUID, gotStaffID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error) {
+			if eventID != event.ID || attendeeID != attendee.ID {
+				t.Fatalf("CheckInAttendee called with eventID=%s attendeeID=%s, want %s/%s", eventID, attendeeID, event.ID, attendee.ID)
+			}
+			if gotStationID == nil || *gotStationID != stationID {
+				t.Fatalf("CheckInAttendee stationID = %v, want %s", gotStationID, stationID)
+			}
+			if gotStaffID != staffID {
+				t.Fatalf("CheckInAttendee staffUserID = %s, want %s", gotStaffID, staffID)
+			}
+			if staffEmail != "staff@example.com" {
+				t.Fatalf("CheckInAttendee staffEmail = %q, want staff@example.com", staffEmail)
+			}
+			if stationName != "Main Entrance" {
+				t.Fatalf("CheckInAttendee stationName = %q, want Main Entrance", stationName)
+			}
+			checkedIn := *attendee
+			checkedIn.CheckinStatus = true
+			checkedIn.CheckedInAt = &now
+			checkedIn.CheckedInByEmail = &staffEmail
+			checkedIn.CheckedInPointName = &stationName
+			return "checked_in", &checkedIn, nil
+		},
+		nil,
+	)
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `","station_id":"` + stationID.String() + `"}`
+	c, rec := newAuthedContextWithUserID(e, http.MethodPost, path, body, tenantID.String(), staffID, "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got StationCheckinResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Outcome != "checked_in" {
+		t.Fatalf("outcome = %q, want checked_in", got.Outcome)
+	}
+	if got.Checkin == nil || got.Checkin.ByEmail != "staff@example.com" {
+		t.Fatalf("checkin = %+v, want by_email=staff@example.com", got.Checkin)
+	}
+	if got.Checkin.PointName == nil || *got.Checkin.PointName != "Main Entrance" {
+		t.Fatalf("checkin.point_name = %v, want Main Entrance", got.Checkin.PointName)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_AlreadyCheckedInReturnsOriginalMetadata
+// proves the repeat-scan path: the store returns outcome
+// already_checked_in with the ORIGINAL first-scan metadata (a different
+// staff/station than the store's canned return would prove this call did
+// NOT overwrite it — CheckInAttendee is the sole source of truth here, the
+// handler just relays whatever it returns).
+func TestOpenAPIContract_StationCheckin_AlreadyCheckedInReturnsOriginalMetadata(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	firstScan := time.Now().Add(-time.Hour)
+	originalEmail := "original.staff@example.com"
+	originalPoint := "Main Entrance"
+
+	h := newStationCheckinHandler(event, attendee,
+		func(uuid.UUID) (*models.User, error) { return &models.User{Email: "second.staff@example.com"}, nil },
+		nil,
+		func(uuid.UUID, uuid.UUID, *uuid.UUID, uuid.UUID, string, string) (string, *models.Attendee, error) {
+			existing := *attendee
+			existing.CheckinStatus = true
+			existing.CheckedInAt = &firstScan
+			existing.CheckedInByEmail = &originalEmail
+			existing.CheckedInPointName = &originalPoint
+			return "already_checked_in", &existing, nil
+		},
+		nil,
+	)
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got StationCheckinResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Outcome != "already_checked_in" {
+		t.Fatalf("outcome = %q, want already_checked_in", got.Outcome)
+	}
+	if got.Checkin == nil || got.Checkin.ByEmail != originalEmail {
+		t.Fatalf("checkin.by_email = %v, want the ORIGINAL %s, never overwritten", got.Checkin, originalEmail)
+	}
+	if got.Checkin.PointName == nil || *got.Checkin.PointName != originalPoint {
+		t.Fatalf("checkin.point_name = %v, want the ORIGINAL %s, never overwritten", got.Checkin.PointName, originalPoint)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_BlockedAttendeeNeverChecksIn proves the
+// handler-level short-circuit: a blocked attendee returns outcome "blocked"
+// with checkin: null and NEVER reaches store.CheckInAttendee (the nil
+// checkIn func argument panics if it's called).
+func TestOpenAPIContract_StationCheckin_BlockedAttendeeNeverChecksIn(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	reason := "Denied entry — payment overdue"
+	attendee.Blocked = true
+	attendee.BlockReason = &reason
+
+	h := newStationCheckinHandler(event, attendee, nil, nil, nil, nil)
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got StationCheckinResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Outcome != "blocked" {
+		t.Fatalf("outcome = %q, want blocked", got.Outcome)
+	}
+	if got.Checkin != nil {
+		t.Fatalf("checkin = %+v, want nil for outcome blocked", got.Checkin)
+	}
+	if got.Attendee == nil || got.Attendee.BlockReason == nil || *got.Attendee.BlockReason != reason {
+		t.Fatalf("attendee.block_reason = %v, want %q", got.Attendee, reason)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_UnknownAttendee404 proves an
+// attendee_id with no matching row 404s (requireAttendeeOwnership masking)
+// before ever reaching the store's check-in write.
+func TestOpenAPIContract_StationCheckin_UnknownAttendee404(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return nil, nil },
+	})
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + uuid.New().String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_AttendeeFromDifferentEvent400 proves an
+// attendee that exists (same tenant) but belongs to a DIFFERENT event than
+// the path's event_id is a 400, not a 404 — it genuinely exists, it's just
+// out of scope for this event (badge_zpl.go's BadgeZPL handler precedent).
+func TestOpenAPIContract_StationCheckin_AttendeeFromDifferentEvent400(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	otherEvent := contractEvent(tenantID, "Other Event")
+	attendee := contractAttendee(otherEvent.ID)
+
+	h := New(&fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			if id == otherEvent.ID {
+				return otherEvent, nil
+			}
+			return event, nil
+		},
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+	})
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_ForeignStation400 proves a station_id
+// belonging to a DIFFERENT event is a 400, checked before the guarded
+// check-in write (the nil checkIn argument panics if it's reached).
+func TestOpenAPIContract_StationCheckin_ForeignStation400(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	foreignStation := &models.CheckinStation{ID: uuid.New(), EventID: uuid.New(), Name: "Someone Else's Station"}
+
+	h := newStationCheckinHandler(event, attendee, nil,
+		func(uuid.UUID) (*models.CheckinStation, error) { return foreignStation, nil },
+		nil, nil,
+	)
+
+	e := echo.New()
+	path := checkinPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `","station_id":"` + foreignStation.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_StationCheckin_MissingAttendeeID400 proves an absent
+// attendee_id never reaches ownership resolution.
+func TestOpenAPIContract_StationCheckin_MissingAttendeeID400(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) {
+			t.Fatalf("GetAttendeeByID should not be called when attendee_id is missing")
+			return nil, nil
+		},
+	})
+	e := echo.New()
+	path := checkinPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{}`, tenantID.String(), "staff")
+	setCheckinPathParams(c, event.ID)
+
+	if err := h.StationCheckin(c); err != nil {
+		t.Fatalf("StationCheckin: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_UndoCheckin_ClearsCheckedIn proves the happy path:
+// the response envelope carries the (now cleared) attendee the store
+// returned.
+func TestOpenAPIContract_UndoCheckin_ClearsCheckedIn(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	attendee.CheckinStatus = true
+
+	h := newStationCheckinHandler(event, attendee, nil, nil, nil,
+		func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error) {
+			if eventID != event.ID || attendeeID != attendee.ID {
+				t.Fatalf("UndoCheckin called with eventID=%s attendeeID=%s, want %s/%s", eventID, attendeeID, event.ID, attendee.ID)
+			}
+			cleared := *attendee
+			cleared.CheckinStatus = false
+			cleared.CheckedInAt = nil
+			return &cleared, nil
+		},
+	)
+
+	e := echo.New()
+	path := checkinUndoPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinUndoPathParams(c, event.ID)
+
+	if err := h.UndoCheckin(c); err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got UndoCheckinResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Attendee == nil || got.Attendee.CheckinStatus {
+		t.Fatalf("attendee.checkin_status = %+v, want false after undo", got.Attendee)
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_UndoCheckin_AlreadyClearIsIdempotent200 proves
+// undoing an attendee who is already not checked in is still a 200 (the
+// store's idempotent no-op, relayed as-is by the handler).
+func TestOpenAPIContract_UndoCheckin_AlreadyClearIsIdempotent200(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+
+	h := newStationCheckinHandler(event, attendee, nil, nil, nil,
+		func(uuid.UUID, uuid.UUID, *uuid.UUID, uuid.UUID) (*models.Attendee, error) {
+			return attendee, nil
+		},
+	)
+
+	e := echo.New()
+	path := checkinUndoPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinUndoPathParams(c, event.ID)
+
+	if err := h.UndoCheckin(c); err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_UndoCheckin_UnknownAttendee404 mirrors stationCheckin's
+// masking of a missing attendee.
+func TestOpenAPIContract_UndoCheckin_UnknownAttendee404(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return nil, nil },
+	})
+	e := echo.New()
+	path := checkinUndoPath(event.ID)
+	body := `{"attendee_id":"` + uuid.New().String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinUndoPathParams(c, event.ID)
+
+	if err := h.UndoCheckin(c); err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_UndoCheckin_ForeignStation400 mirrors stationCheckin's
+// foreign-station validation.
+func TestOpenAPIContract_UndoCheckin_ForeignStation400(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	foreignStation := &models.CheckinStation{ID: uuid.New(), EventID: uuid.New(), Name: "Someone Else's Station"}
+
+	h := newStationCheckinHandler(event, attendee, nil,
+		func(uuid.UUID) (*models.CheckinStation, error) { return foreignStation, nil },
+		nil, nil,
+	)
+
+	e := echo.New()
+	path := checkinUndoPath(event.ID)
+	body := `{"attendee_id":"` + attendee.ID.String() + `","station_id":"` + foreignStation.ID.String() + `"}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setCheckinUndoPathParams(c, event.ID)
+
+	if err := h.UndoCheckin(c); err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_GetCheckinActions_ReturnsNewestFirstAndDefaultsLimit
+// proves the default limit (50) is passed to the store when no ?limit is
+// given, and the response envelope carries whatever rows the store
+// returns, newest first.
+func TestOpenAPIContract_GetCheckinActions_ReturnsNewestFirstAndDefaultsLimit(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	newer := time.Now()
+	older := newer.Add(-time.Minute)
+	rows := []store.CheckinActionRow{
+		{ID: uuid.New(), Action: "checkin", CreatedAt: newer, Attendee: store.CheckinActionAttendee{ID: uuid.New(), FirstName: "Ada", LastName: "Lovelace", Code: "CODE1"}},
+		{ID: uuid.New(), Action: "undo", CreatedAt: older, Attendee: store.CheckinActionAttendee{ID: uuid.New(), FirstName: "Bob", LastName: "Builder", Code: "CODE2"}},
+	}
+
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getCheckinActions: func(eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error) {
+			if eventID != event.ID {
+				t.Fatalf("GetCheckinActions eventID = %s, want %s", eventID, event.ID)
+			}
+			if limit != 50 {
+				t.Fatalf("GetCheckinActions limit = %d, want default 50", limit)
+			}
+			return rows, nil
+		},
+	})
+
+	e := echo.New()
+	path := checkinActionsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "staff")
+	setCheckinActionsPathParams(c, event.ID)
+
+	if err := h.GetCheckinActions(c); err != nil {
+		t.Fatalf("GetCheckinActions: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got CheckinActionsResponse
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Actions) != 2 || got.Actions[0].Action != "checkin" || got.Actions[1].Action != "undo" {
+		t.Fatalf("got actions=%+v, want [checkin, undo] newest-first", got.Actions)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+}
+
+// TestOpenAPIContract_GetCheckinActions_LimitHonoredAndClampedTo50 proves a
+// caller-supplied ?limit is passed through to the store, and a value above
+// 50 is clamped down rather than rejected.
+func TestOpenAPIContract_GetCheckinActions_LimitHonoredAndClampedTo50(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+
+	for name, tc := range map[string]struct {
+		query     string
+		wantLimit int
+	}{
+		"below_default": {"10", 10},
+		"above_max":     {"999", 50},
+	} {
+		var gotLimit int
+		h := New(&fakeStore{
+			getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+			getCheckinActions: func(_ uuid.UUID, limit int) ([]store.CheckinActionRow, error) {
+				gotLimit = limit
+				return nil, nil
+			},
+		})
+
+		e := echo.New()
+		path := checkinActionsPath(event.ID)
+		c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "staff")
+		setCheckinActionsPathParams(c, event.ID)
+		c.QueryParams().Set("limit", tc.query)
+
+		if err := h.GetCheckinActions(c); err != nil {
+			t.Fatalf("%s: GetCheckinActions: %v", name, err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: want 200, got %d, body=%s", name, rec.Code, rec.Body.String())
+		}
+		if gotLimit != tc.wantLimit {
+			t.Errorf("%s: limit passed to store = %d, want %d", name, gotLimit, tc.wantLimit)
+		}
+		validateResponse(t, http.MethodGet, path, rec)
+	}
+}
+
+// TestOpenAPIContract_CheckinActions_ForeignEvent404 mirrors every other
+// event-scoped endpoint's ownership masking.
+func TestOpenAPIContract_CheckinActions_ForeignEvent404(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	foreignTenantID := uuid.New()
+
+	h := New(&fakeStore{
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getCheckinActions: func(uuid.UUID, int) ([]store.CheckinActionRow, error) {
+			t.Fatalf("GetCheckinActions should not be called for a foreign event")
+			return nil, nil
+		},
+	})
+	e := echo.New()
+	path := checkinActionsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodGet, path, "", foreignTenantID.String(), "staff")
+	setCheckinActionsPathParams(c, event.ID)
+
+	if err := h.GetCheckinActions(c); err != nil {
+		t.Fatalf("GetCheckinActions: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+}

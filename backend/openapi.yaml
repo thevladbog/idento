@@ -369,6 +369,101 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CheckinStation" }
       required: [stations]
+    CheckinOutcome:
+      type: string
+      description: >
+        Server-decided outcome of POST /api/events/{event_id}/checkin
+        (P4.1 Task 3). "not_found" is deliberately NOT a value here — an
+        unresolved scanned code is a client-side outcome (the code lookup
+        itself returned empty) that never reaches this endpoint.
+      enum: [checked_in, already_checked_in, blocked]
+    StationCheckinRequest:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin request body (P4.1 Task 3).
+        station_id, when present, must belong to the same event (400
+        otherwise); it is optional — a station-less check-in is valid.
+      properties:
+        attendee_id: { type: string, format: uuid }
+        station_id: { type: string, format: uuid, nullable: true }
+      required: [attendee_id]
+      additionalProperties: false
+    CheckinInfo:
+      type: object
+      description: >
+        The first-scan metadata block of StationCheckinResponse — for
+        outcome checked_in this is THIS scan; for already_checked_in it is
+        the ORIGINAL scan, never overwritten.
+      properties:
+        at: { type: string, format: date-time }
+        by_email: { type: string }
+        point_name: { type: string, nullable: true }
+      required: [at, by_email]
+    StationCheckinResponse:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin response. checkin is the
+        first-scan metadata for outcome checked_in/already_checked_in, and
+        null for outcome blocked (block_reason is read from attendee
+        instead — a blocked attendee is never checked in).
+      properties:
+        outcome: { $ref: "#/components/schemas/CheckinOutcome" }
+        attendee: { $ref: "#/components/schemas/Attendee" }
+        checkin:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CheckinInfo"
+      required: [outcome, attendee, checkin]
+    UndoCheckinRequest:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin/undo request body (P4.1 Task
+        3). station_id, when present, must belong to the same event (400
+        otherwise); it is recorded on the checkin_actions feed row only.
+      properties:
+        attendee_id: { type: string, format: uuid }
+        station_id: { type: string, format: uuid, nullable: true }
+      required: [attendee_id]
+      additionalProperties: false
+    UndoCheckinResponse:
+      type: object
+      description: >
+        POST /api/events/{event_id}/checkin/undo response — always 200,
+        idempotent: undoing an attendee who is already not checked in
+        still returns 200 with the (unchanged) attendee.
+      properties:
+        attendee: { $ref: "#/components/schemas/Attendee" }
+      required: [attendee]
+    CheckinActionAttendee:
+      type: object
+      description: Slim attendee projection embedded in a CheckinActionRow.
+      properties:
+        id: { type: string, format: uuid }
+        first_name: { type: string }
+        last_name: { type: string }
+        code: { type: string }
+      required: [id, first_name, last_name, code]
+    CheckinActionRow:
+      type: object
+      description: >
+        One row of GET /api/events/{event_id}/checkin-actions' feed (P4.1
+        Task 3) — the durable check-in/undo/reprint audit trail backing
+        the station's recent-scans rail.
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string, enum: [checkin, undo, reprint] }
+        station_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        attendee: { $ref: "#/components/schemas/CheckinActionAttendee" }
+      required: [id, action, created_at, attendee]
+    CheckinActionsResponse:
+      type: object
+      description: GET /api/events/{event_id}/checkin-actions' response envelope.
+      properties:
+        actions:
+          type: array
+          items: { $ref: "#/components/schemas/CheckinActionRow" }
+      required: [actions]
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -1832,6 +1927,176 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: Store failure resolving event ownership or updating the station.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkin:
+    post:
+      operationId: stationCheckin
+      summary: >
+        Idempotent single-scan check-in (P4.1 Task 3) — the
+        zero-double-checkin guarantee at the source, via a guarded
+        `UPDATE ... WHERE checkin_status = false` in the store. Never
+        touches printed_count and never prints; printing is a separate
+        client step gated on the "checked_in" outcome only.
+      description: >
+        A blocked attendee (attendee.blocked) is never checked in — the
+        handler returns outcome "blocked" (with block_reason on attendee)
+        without attempting the guarded write. Otherwise, the guarded
+        UPDATE either performs the check-in (outcome "checked_in", and a
+        checkin_actions row is inserted in the same transaction) or, if
+        the attendee was already checked in, falls back to a read that
+        returns the ORIGINAL first-scan metadata unchanged (outcome
+        "already_checked_in", no new feed row).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StationCheckinRequest" }
+      responses:
+        "200":
+          description: >
+            checked_in, already_checked_in, or blocked — all three are 200,
+            never an error; the station renders each as a distinct verdict.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StationCheckinResponse" }
+        "400":
+          description: >
+            event_id is not a UUID, the body is malformed, attendee_id is
+            missing, the attendee belongs to a different event than
+            event_id, or station_id is present but does not belong to this
+            event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist / belongs to a different tenant, or
+            attendee_id does not exist / belongs to a different tenant
+            (both requireEventOwnership and requireAttendeeOwnership mask
+            "foreign" as "missing" — no existence oracle), or the
+            attendee was concurrently soft-deleted between the ownership
+            check and the guarded write (store.ErrAttendeeNotFound).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: >
+            Store failure resolving ownership, verifying station_id,
+            resolving the staff user, or performing the check-in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkin/undo:
+    post:
+      operationId: undoCheckin
+      summary: >
+        Clear a check-in (P4.1 Task 3) — idempotent: undoing an attendee
+        who is already not checked in still returns 200 with no
+        checkin_actions row written.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UndoCheckinRequest" }
+      responses:
+        "200":
+          description: Check-in cleared (or already clear — idempotent).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UndoCheckinResponse" }
+        "400":
+          description: >
+            event_id is not a UUID, the body is malformed, attendee_id is
+            missing, the attendee belongs to a different event than
+            event_id, or station_id is present but does not belong to this
+            event.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist / belongs to a different tenant, or
+            attendee_id does not exist / belongs to a different tenant, or
+            the attendee was concurrently soft-deleted
+            (store.ErrAttendeeNotFound).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving ownership, verifying station_id, or clearing the check-in.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/checkin-actions:
+    get:
+      operationId: getCheckinActions
+      summary: >
+        The event's check-in/undo/reprint feed, newest first (P4.1 Task 3)
+        — backs the station's recent-scans rail (last 50).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: limit
+          in: query
+          required: false
+          description: >
+            Defaults to 50 and is clamped to a maximum of 50 (the rail
+            never shows more). An invalid or non-positive value is
+            ignored, falling back to the default, rather than 400ing this
+            read-only feed endpoint.
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The newest (at most) `limit` check-in actions, newest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckinActionsResponse" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving event ownership or fetching the feed.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

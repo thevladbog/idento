@@ -69,6 +69,10 @@ type fakeStore struct {
 	upsertCheckinStation          func(eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error)
 	heartbeatCheckinStation       func(eventID, stationID uuid.UUID) error
 	listCheckinStations           func(eventID uuid.UUID) ([]*models.CheckinStation, error)
+	getCheckinStationByID         func(id uuid.UUID) (*models.CheckinStation, error)
+	checkInAttendee               func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error)
+	undoCheckin                   func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error)
+	getCheckinActions             func(eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
 	provisionTenantWithAdmin            func(tenantName, email, password string) (*models.Tenant, *models.User, error)
@@ -292,6 +296,18 @@ func (f *fakeStore) HeartbeatCheckinStation(_ context.Context, eventID, stationI
 }
 func (f *fakeStore) ListCheckinStations(_ context.Context, eventID uuid.UUID) ([]*models.CheckinStation, error) {
 	return f.listCheckinStations(eventID)
+}
+func (f *fakeStore) GetCheckinStationByID(_ context.Context, id uuid.UUID) (*models.CheckinStation, error) {
+	return f.getCheckinStationByID(id)
+}
+func (f *fakeStore) CheckInAttendee(_ context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error) {
+	return f.checkInAttendee(eventID, attendeeID, stationID, staffUserID, staffEmail, stationName)
+}
+func (f *fakeStore) UndoCheckin(_ context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error) {
+	return f.undoCheckin(eventID, attendeeID, stationID, staffUserID)
+}
+func (f *fakeStore) GetCheckinActions(_ context.Context, eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error) {
+	return f.getCheckinActions(eventID, limit)
 }
 
 func (f *fakeStore) CreateTenantWithDefaultSubscription(_ context.Context, tenant *models.Tenant) error {
