@@ -6,6 +6,7 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { AttendeeDrawer } from "./AttendeeDrawer";
 import { useAttendeesPage } from "./hooks";
+import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -1230,6 +1231,42 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
   });
 
+  // Follow-up batch item 4: while the send is in flight, every dismiss path
+  // is inert (Fix 2's mid-print lock) — without an explanation the disabled
+  // Cancel reads as a broken button, and an operator might assume closing
+  // WOULD have stopped the print. The hint states the transport-ack truth:
+  // a send can't be recalled; a badge already handed to the agent still
+  // prints.
+  it("explains, while the send is in flight, that it can't be cancelled and an already-sent badge will still print", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    printDelayMs = 40;
+    const user = userEvent.setup();
+    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+    await screen.findByText("Ada Lovelace");
+
+    const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+    await waitFor(() => expect(reprintButton).toBeEnabled());
+    await user.click(reprintButton);
+    const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+    // Not shown before confirming — nothing is in flight yet.
+    expect(
+      within(dialog).queryByText("Sending can't be cancelled — a badge already sent to the printer will still print."),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Print" }));
+    expect(
+      await within(dialog).findByText(
+        "Sending can't be cancelled — a badge already sent to the printer will still print.",
+      ),
+    ).toBeInTheDocument();
+
+    // The happy path closes the dialog once the send resolves — the hint
+    // goes with it.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
+  });
+
   // PR #74 review round Fix 2: cancel-during-pending is no longer a race to
   // win — Cancel (and every other dismiss path) is now INERT while printing,
   // matching TestPrintDialog's convention. A cancel attempt made DURING the
@@ -1272,6 +1309,45 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     );
     // The OUTER Reprint button is not left stranded disabled.
     expect(screen.getByRole("button", { name: "Reprint badge" })).toBeEnabled();
+  });
+
+  // Follow-up batch item 2: a timed-out send is NOT a proven failure — the
+  // abort only cancelled the client's wait; the agent may have received the
+  // job, so the badge can still emerge. The generic branch's verbatim
+  // `error.message` would leak the client-authored (non-i18n) English
+  // message AND read like a plain failure, inviting a double print — the
+  // typed error maps to dedicated honest copy instead.
+  it("shows honest may-still-print timeout copy (not the raw error message) when the send times out", async () => {
+    agentHealthOk = true;
+    printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+    defaultPrinterResponse = { default: "Zebra_ZD421" };
+    const printSpy = vi
+      .spyOn(agentClient, "print")
+      .mockRejectedValue(new AgentPrintTimeoutError(30_000));
+    try {
+      const user = userEvent.setup();
+      renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
+      await screen.findByText("Ada Lovelace");
+
+      const reprintButton = await screen.findByRole("button", { name: "Reprint badge" });
+      await waitFor(() => expect(reprintButton).toBeEnabled());
+      await user.click(reprintButton);
+      const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      expect(
+        await within(dialog).findByText(
+          "The print agent didn't respond. The badge may still print — check the printer before retrying.",
+        ),
+      ).toBeInTheDocument();
+      // Never the raw client-authored message, and never a "sent" claim.
+      expect(within(dialog).queryByText(/produced no response/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Sent to/)).not.toBeInTheDocument();
+      // An unconfirmed send must never bump the printed counter.
+      expect(markPrintedHitCount).toBe(0);
+    } finally {
+      printSpy.mockRestore();
+    }
   });
 
   // Distinct from the mark-printed-failure test above: here the AGENT

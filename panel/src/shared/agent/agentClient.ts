@@ -82,6 +82,29 @@ async function getDefaultPrinter(): Promise<string | null> {
 }
 
 /**
+ * Thrown when POST /print produced no response within the timeout (follow-up
+ * batch item 2: a wedged agent SendRaw — connection accepted, response never
+ * comes — used to leave print() pending forever, freezing the print dialogs
+ * whose dismissal is deliberately locked while a send is in flight).
+ * IMPORTANT for callers' copy: the abort only cancels the CLIENT's wait, not
+ * the send — the agent may well have received the job, so the badge can
+ * still emerge from the printer. Never present this as "nothing printed".
+ */
+export class AgentPrintTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`agent POST /print produced no response within ${timeoutMs}ms — the badge may still print`);
+    this.name = "AgentPrintTimeoutError";
+  }
+}
+
+// Generous by design: it must comfortably exceed the agent's own worst
+// honest path (5s TCP dial to a network printer + writing a raster-heavy
+// ZPL payload) so it only ever fires on a genuinely wedged send, never a
+// merely slow one — a false timeout on a job that then prints would read
+// as "failed" and invite a double print.
+const PRINT_TIMEOUT_MS = 30_000;
+
+/**
  * Sends a print job. The 200 response here is a TRANSPORT ack only — it
  * means the agent handed the ZPL bytes to the printer's serial/network
  * connection, NOT that the label physically printed (reconciliation #5,
@@ -89,17 +112,33 @@ async function getDefaultPrinter(): Promise<string | null> {
  * response body is discarded on purpose: nothing in it upgrades this into
  * a print confirmation, so callers must not present success copy as
  * "printed" — see the test-print dialog's "Sent to {{printer}}" wording.
+ *
+ * `timeoutMs` is an injectable override purely so tests can exercise the
+ * abort path with a short delay — same idiom as checkHealth above.
  */
-async function print(request: PrintRequest): Promise<void> {
-  const response = await fetch(agentUrl("/print"), {
-    method: "POST",
-    // Required for the agent's Origin-allowlist browser fallback auth on
-    // mutating requests (see agent/openapi.yaml's Авторизация section) —
-    // without it a same-origin-allowlisted-but-tokenless request gets 415.
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  await ensureOk(response, "agent POST /print failed");
+async function print(request: PrintRequest, timeoutMs = PRINT_TIMEOUT_MS): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(agentUrl("/print"), {
+      method: "POST",
+      // Required for the agent's Origin-allowlist browser fallback auth on
+      // mutating requests (see agent/openapi.yaml's Авторизация section) —
+      // without it a same-origin-allowlisted-but-tokenless request gets 415.
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+      signal: controller.signal,
+    });
+    await ensureOk(response, "agent POST /print failed");
+  } catch (error) {
+    // Only OUR timer's abort becomes a timeout — every other failure
+    // (refused connection, the agent's own error status via ensureOk)
+    // rethrows untouched so callers keep the agent's verbatim error text.
+    if (controller.signal.aborted) throw new AgentPrintTimeoutError(timeoutMs);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export const agentClient = {

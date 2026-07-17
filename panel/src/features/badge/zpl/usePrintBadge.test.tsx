@@ -269,6 +269,56 @@ describe("usePrintBadge", () => {
     expect(printHitCount).toBe(1);
   });
 
+  // Follow-up batch item 6: ParseBadgeTemplate casts dpi with Go's int(d) —
+  // truncation toward zero — BEFORE its <= 0 fallback check
+  // (backend/internal/zpl/zpl.go: `cfg.DPI = int(d)` then
+  // `if cfg.DPI <= 0 { cfg.DPI = 203 }`). A pathological fractional dpi in a
+  // stored raw template must therefore print byte-identically here.
+  it("truncates a fractional dpi exactly like the backend's Go int() cast (203.7 -> 203), never keeping the fraction", async () => {
+    templateResponse = {
+      template: {
+        width_mm: 50,
+        height_mm: 30,
+        dpi: 203.7,
+        elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+      },
+      version: 1,
+    };
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421");
+    });
+
+    expect(printCapture?.zpl).toContain(`^PW${mmToDots(50, 203)}`);
+    expect(printCapture?.zpl).toContain(`^LL${mmToDots(30, 203)}`);
+  });
+
+  it("applies the 203 dpi fallback AFTER truncation (0.9 -> 0 -> 203), matching the backend's check order", async () => {
+    templateResponse = {
+      template: {
+        width_mm: 50,
+        height_mm: 30,
+        dpi: 0.9,
+        elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+      },
+      version: 1,
+    };
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421");
+    });
+
+    // A naive `dpi > 0` check on the RAW value would keep 0.9 and print a
+    // ~2-dot-wide label; the backend truncates first (0.9 -> 0), then falls
+    // back to 203.
+    expect(printCapture?.zpl).toContain(`^PW${mmToDots(50, 203)}`);
+    expect(printCapture?.zpl).toContain(`^LL${mmToDots(30, 203)}`);
+  });
+
   // PR #74 review round Fix 8: a template can reference a customFont family
   // no uploaded font backs (deleted after the template was saved, or hand-
   // edited into a typo) -- generateZpl's raster branch wouldn't detect this

@@ -1,6 +1,6 @@
 import { delay, http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
-import { agentClient } from "./agentClient";
+import { agentClient, AgentPrintTimeoutError } from "./agentClient";
 import { startMswServer } from "../../test/msw";
 
 // The agent is a separate origin from the backend API (not in
@@ -127,6 +127,38 @@ describe("agentClient", () => {
       await expect(
         agentClient.print({ printer_name: "HP_Smart_Tank_790_series", zpl: "^XA^XZ" }),
       ).resolves.toBeUndefined();
+    });
+
+    // Follow-up batch item 2: a wedged agent SendRaw (accepted connection,
+    // response never comes) used to leave print() pending FOREVER — and the
+    // bulk dialog's dismissal is deliberately locked while printing, so one
+    // wedged printer meant an unclosable modal. Same injectable-timeoutMs
+    // idiom as checkHealth: the override exists purely so tests exercise the
+    // abort path without a real multi-second wait.
+    it("rejects with a typed AgentPrintTimeoutError when the agent never responds, without waiting for it", async () => {
+      server.use(
+        http.post("http://agent.test/print", async () => {
+          await delay(300);
+          return HttpResponse.json({ status: "printed" });
+        }),
+      );
+      const start = Date.now();
+      await expect(
+        agentClient.print({ printer_name: "HP_Smart_Tank_790_series", zpl: "^XA^XZ" }, 30),
+      ).rejects.toBeInstanceOf(AgentPrintTimeoutError);
+      expect(Date.now() - start).toBeLessThan(200);
+    });
+
+    it("never masks a genuine network failure as a timeout — a refused connection rejects immediately with a non-timeout error", async () => {
+      server.use(http.post("http://agent.test/print", () => HttpResponse.error()));
+      let caught: unknown;
+      try {
+        await agentClient.print({ printer_name: "HP_Smart_Tank_790_series", zpl: "^XA^XZ" });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      expect(caught).not.toBeInstanceOf(AgentPrintTimeoutError);
     });
   });
 });

@@ -5,6 +5,7 @@ import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { BulkBar } from "./BulkBar";
 import { ATTENDEES_LIST_KEY, useAttendeesPage } from "./hooks";
+import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -469,7 +470,12 @@ describe("BulkBar", () => {
       // Two sends genuinely happened before the short-circuit; the third
       // attendee was never attempted.
       await waitFor(() => expect(printCalls).toHaveLength(2));
-      expect(await within(dialog).findByText("This event doesn't have a badge template yet.")).toBeInTheDocument();
+      // Follow-up batch item 5: mid-batch the event demonstrably HAD a
+      // template (two badges were generated from it), so the "doesn't have
+      // a badge template YET" copy would misread — the softened
+      // became-unavailable copy shows instead.
+      expect(await within(dialog).findByText("The badge template is no longer available.")).toBeInTheDocument();
+      expect(within(dialog).queryByText("This event doesn't have a badge template yet.")).not.toBeInTheDocument();
       // The already-sent badges must NOT be hidden by the no-template
       // message — an operator who saw only "no template" would re-run the
       // same selection after restoring the template and double-print these
@@ -477,6 +483,45 @@ describe("BulkBar", () => {
       expect(within(dialog).getByText("2 of 3 sent before the template became unavailable")).toBeInTheDocument();
       expect(printCalls).toHaveLength(2);
       expect(markPrintedHitCount).toBe(2);
+    });
+
+    // Follow-up batch item 5 (mixed composition): a genuine send failure AND
+    // a mid-batch no-template short-circuit in the same batch. The plain
+    // "{{sent}} of {{total}} sent before…" readout leaves the remainder
+    // ambiguous — of the unaccounted-for attendees, which ones FAILED (were
+    // attempted, printer said no) vs were NEVER ATTEMPTED (loop stopped
+    // before reaching them)? The split readout answers exactly that.
+    it("splits failed vs never-attempted in the partial readout when a send failure and a mid-batch no-template short-circuit compose", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      // ADA's send fails (attempted, counted failed); BOB's succeeds; the
+      // template vanishes after BOB's send, so CAROL is never attempted.
+      printFailOnIndex = 1;
+      templateNullAfterPrints = 2;
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB, CAROL]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+      await waitFor(() => expect(printCalls).toHaveLength(2));
+      // sent = 1 (BOB), failed = 1 (ADA), never attempted = 1 (CAROL).
+      expect(
+        await within(dialog).findByText(
+          "1 of 3 sent — 1 failed, 1 never attempted — before the template became unavailable",
+        ),
+      ).toBeInTheDocument();
+      expect(within(dialog).getByText("The badge template is no longer available.")).toBeInTheDocument();
+      // The completion-shaped tally must stay suppressed — the batch never
+      // ran to completion.
+      expect(within(dialog).queryByText(/^\d+ of \d+ sent$/)).not.toBeInTheDocument();
+      expect(within(dialog).queryByText(/^\d+ of \d+ sent — \d+ failed$/)).not.toBeInTheDocument();
+      // Only BOB's send was recorded.
+      expect(markPrintedHitCount).toBe(1);
     });
 
     it("shows an inline printer select (no configured default), preselects the first printer, and sends to whichever is chosen", async () => {
@@ -501,6 +546,117 @@ describe("BulkBar", () => {
 
       await waitFor(() => expect(printCalls).toHaveLength(1));
       expect(printCalls[0].printer_name).toBe("Network_Printer");
+    });
+
+    // Follow-up batch item 1 (double-print footgun): after the batch settled
+    // on its final tally, `printing` went back to false and the confirm
+    // button silently re-enabled — one more click re-ran the WHOLE batch
+    // over the same selection. A settled session is done: re-running the
+    // same selection must require an explicit close + reopen.
+    it("keeps the confirm button disabled once the batch has settled — re-running requires close and reopen", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      const confirm = within(dialog).getByRole("button", { name: "Print" });
+      await user.click(confirm);
+
+      // Batch settles on the final tally — confirm must stay disabled, or a
+      // stray second click would double-print both badges.
+      expect(await within(dialog).findByText("2 of 2 sent")).toBeInTheDocument();
+      expect(confirm).toBeDisabled();
+
+      // Close and reopen: a fresh session re-enables confirm again.
+      await user.click(within(dialog).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await user.click(printButton);
+      const reopened = await screen.findByRole("dialog", { name: "Print badges" });
+      await waitFor(() => expect(within(reopened).getByRole("button", { name: "Print" })).toBeEnabled());
+    });
+
+    // PR #75 review finding: a timed-out send is NOT a proven failure — the
+    // abort cancels only the client's wait; the agent may have received the
+    // job, so the badge can still emerge. Counting it in the "N failed"
+    // tally invited re-running an attendee whose badge may already be
+    // printing (double print). Timeouts get their own may-still-print
+    // warning line, excluded from both the sent AND failed counts.
+    it("counts a timed-out send separately from hard failures — may-still-print warning, never part of the failed tally", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      // ADA's send times out (spy); BOB's flows through to MSW and succeeds.
+      const realPrint = agentClient.print;
+      const printSpy = vi
+        .spyOn(agentClient, "print")
+        .mockImplementationOnce(() => Promise.reject(new AgentPrintTimeoutError(30_000)))
+        .mockImplementation(realPrint);
+      try {
+        const user = userEvent.setup();
+        renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+        const printButton = await screen.findByRole("button", { name: "Print badges" });
+        await waitFor(() => expect(printButton).toBeEnabled());
+        await user.click(printButton);
+        const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+        await user.click(within(dialog).getByRole("button", { name: "Print" }));
+
+        // BOB's send genuinely reached the agent.
+        await waitFor(() => expect(printCalls).toHaveLength(1));
+        // Settled tally: the timed-out attendee is neither sent nor failed.
+        expect(await within(dialog).findByText("1 of 2 sent")).toBeInTheDocument();
+        expect(within(dialog).queryByText(/failed/)).not.toBeInTheDocument();
+        expect(
+          within(dialog).getByText(
+            "1 timed out — those badges may still print; check the printer before re-running",
+          ),
+        ).toBeInTheDocument();
+        // Only BOB's confirmed send was recorded.
+        expect(markPrintedHitCount).toBe(1);
+      } finally {
+        printSpy.mockRestore();
+      }
+    });
+
+    // Follow-up batch item 4: while the batch is running, every dismiss
+    // path (Cancel/X/Escape) is deliberately inert — but the shared
+    // ConfirmDialog's Cancel button still LOOKS clickable, so without any
+    // explanation a click on it reads as a broken button (or worse, as a
+    // successful cancel). The hint states the transport-ack truth: a send
+    // can't be recalled, badges already handed to the agent still print.
+    it("explains, while the batch is running, that sending can't be cancelled and already-sent badges will still print", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      printDelayMs = 40;
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      const printButton = await screen.findByRole("button", { name: "Print badges" });
+      await waitFor(() => expect(printButton).toBeEnabled());
+      await user.click(printButton);
+      const dialog = await screen.findByRole("dialog", { name: "Print badges" });
+      // Not shown before the batch starts — nothing is in flight yet.
+      expect(
+        within(dialog).queryByText("Sending can't be cancelled — badges already sent to the printer will still print."),
+      ).not.toBeInTheDocument();
+
+      await user.click(within(dialog).getByRole("button", { name: "Print" }));
+      await waitFor(() => expect(printCalls).toHaveLength(1));
+      expect(
+        within(dialog).getByText("Sending can't be cancelled — badges already sent to the printer will still print."),
+      ).toBeInTheDocument();
+
+      // Gone again once the batch settles (the dialog is dismissable then).
+      await waitFor(() => expect(within(dialog).queryByText(/2 of 2 sent/)).toBeInTheDocument());
+      expect(
+        within(dialog).queryByText("Sending can't be cancelled — badges already sent to the printer will still print."),
+      ).not.toBeInTheDocument();
     });
 
     it("cannot be dismissed via the X close button or Escape while the batch is genuinely running, but becomes dismissable once it settles", async () => {

@@ -8,6 +8,7 @@ import { exportAttendeesCsv } from "./exportCsv";
 import { ATTENDEES_LIST_KEY, useEventZones } from "./hooks";
 import { READINESS_KEY } from "../events/hooks";
 import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -110,6 +111,13 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // surfaced as its own non-destructive warning line (never conflated with a
   // genuine send failure).
   const [printMarkWarnCount, setPrintMarkWarnCount] = React.useState(0);
+  // PR #75 review finding: a timed-out send (AgentPrintTimeoutError) is NOT
+  // a proven failure — the abort cancels only the client's wait; the agent
+  // may have received the job, so the badge can still emerge. Counted as
+  // neither sent nor failed: its own may-still-print warning line, so the
+  // failed tally never invites re-running an attendee whose badge may
+  // already be printing.
+  const [printTimeoutCount, setPrintTimeoutCount] = React.useState(0);
   // No-template short-circuit: the loop stops at whichever attendee FIRST
   // observes a missing template — usePrintBadge re-fetches the template PER
   // printAttendee call (staleTime 0), so this can fire MID-batch (template
@@ -294,6 +302,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       setPrintProgress(null);
       setPrintFailedCount(0);
       setPrintMarkWarnCount(0);
+      setPrintTimeoutCount(0);
       setPrintNoTemplate(false);
       setPrintMissingFontFamilies(null);
       setPrinterSelection(null);
@@ -310,11 +319,13 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     setPrintProgress({ done: 0, total });
     setPrintFailedCount(0);
     setPrintMarkWarnCount(0);
+    setPrintTimeoutCount(0);
     setPrintNoTemplate(false);
     setPrintMissingFontFamilies(null);
     let attemptedAny = false;
     let failedCount = 0;
     let markWarnCount = 0;
+    let timeoutCount = 0;
     let noTemplate = false;
     let missingFontFamilies: string[] | null = null;
 
@@ -361,6 +372,10 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           // The SEND succeeded -- counted as sent, never as failed, but
           // flagged via the soft warning counter below.
           markWarnCount += 1;
+        } else if (error instanceof AgentPrintTimeoutError) {
+          // Unconfirmed, not failed: the badge may still emerge (see the
+          // counter's doc comment above) -- never folded into failedCount.
+          timeoutCount += 1;
         } else {
           failedCount += 1;
         }
@@ -369,6 +384,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         setPrintProgress({ done: i + 1, total });
         setPrintFailedCount(failedCount);
         setPrintMarkWarnCount(markWarnCount);
+        setPrintTimeoutCount(timeoutCount);
       }
     }
 
@@ -404,14 +420,20 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
   // for `printMissingFontFamilies` (PR #74 review round Fix 8) -- an
   // event-level short-circuit exactly like `printNoTemplate`, so it gets the
   // SAME "don't show the completion-shaped tally" treatment.
+  // `sent` excludes timeouts as well as failures (PR #75 review finding):
+  // a timed-out send was never confirmed, so claiming it as "sent" would be
+  // as dishonest as calling it failed — it gets its own warning line below.
   const printDoneReadout = !printing && printProgress && !printNoTemplate && !printMissingFontFamilies ? (
     printFailedCount > 0
       ? t("bulkPrintDoneWithFailures", {
-          sent: printProgress.total - printFailedCount,
+          sent: printProgress.total - printFailedCount - printTimeoutCount,
           total: printProgress.total,
           failed: printFailedCount,
         })
-      : t("bulkPrintDone", { sent: printProgress.total - printFailedCount, total: printProgress.total })
+      : t("bulkPrintDone", {
+          sent: printProgress.total - printFailedCount - printTimeoutCount,
+          total: printProgress.total,
+        })
   ) : null;
 
   const printDescription = (
@@ -427,11 +449,23 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
                 tally stays visible, stacked above the error. `done` counts
                 completed attempts (the short-circuited attendee never bumps
                 it); genuine failures among them are subtracted, so `sent`
-                is only ever badges that actually went out. */}
-            {t("bulkPrintPartialBeforeNoTemplate", {
-              sent: printProgress.done - printFailedCount,
-              total: printProgress.total,
-            })}
+                is only ever badges that actually went out. Follow-up batch
+                item 5: with failures in the mix, the plain tally leaves the
+                remainder ambiguous (failed? never reached?), so the
+                with-failures variant splits failed (attempted, send
+                rejected) from never-attempted (loop stopped first:
+                total - done, which includes the short-circuited attendee). */}
+            {printFailedCount > 0
+              ? t("bulkPrintPartialBeforeNoTemplateWithFailures", {
+                  sent: printProgress.done - printFailedCount - printTimeoutCount,
+                  total: printProgress.total,
+                  failed: printFailedCount,
+                  notAttempted: printProgress.total - printProgress.done,
+                })
+              : t("bulkPrintPartialBeforeNoTemplate", {
+                  sent: printProgress.done - printFailedCount - printTimeoutCount,
+                  total: printProgress.total,
+                })}
           </span>
         ) : null
       ) : printMissingFontFamilies ? (
@@ -443,7 +477,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         printProgress && printProgress.done > 0 ? (
           <span className="block">
             {t("bulkPrintPartialBeforeMissingFont", {
-              sent: printProgress.done - printFailedCount,
+              sent: printProgress.done - printFailedCount - printTimeoutCount,
               total: printProgress.total,
             })}
           </span>
@@ -457,7 +491,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
       ) : null}
       {!printConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
-          <Label htmlFor="bulk-print-printer">{t("badgeTestPrintPrinterLabel")}</Label>
+          <Label htmlFor="bulk-print-printer">{t("printPrinterLabel")}</Label>
           <select
             id="bulk-print-printer"
             className={PRINT_SELECT_CLASSNAME}
@@ -466,7 +500,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
             onChange={(event) => setPrinterSelection(event.target.value)}
           >
             {agent.printers.length === 0 ? (
-              <option value="">{t("badgeTestPrintNoPrinters")}</option>
+              <option value="">{t("printNoPrinters")}</option>
             ) : (
               agent.printers.map((printer) => (
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
@@ -475,14 +509,33 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
           </select>
         </span>
       ) : null}
+      {printing ? (
+        // Follow-up batch item 4: every dismiss path is inert while the
+        // batch runs (see handlePrintOpenChange), but the shared
+        // ConfirmDialog's Cancel button still LOOKS clickable — without
+        // this line a click on it reads as a broken button, or worse, as a
+        // successful cancel. Transport-ack truth: a send can't be recalled.
+        <span className="mt-2 block">{t("bulkPrintNoCancelHint")}</span>
+      ) : null}
       {printBadge.fontsStatus === "error" ? (
         <span className="mt-2 block text-warning">{t("badgeFontsNotReady")}</span>
       ) : null}
       {!printing && printMarkWarnCount > 0 ? (
         <span className="mt-2 block text-warning">{t("bulkPrintMarkWarn", { count: printMarkWarnCount })}</span>
       ) : null}
+      {!printing && printTimeoutCount > 0 ? (
+        <span className="mt-2 block text-warning">{t("bulkPrintTimeoutWarn", { count: printTimeoutCount })}</span>
+      ) : null}
       {printNoTemplate ? (
-        <span className="mt-2 block text-destructive">{t("bulkPrintNoTemplate")}</span>
+        <span className="mt-2 block text-destructive">
+          {/* Follow-up batch item 5: with done > 0 the event demonstrably
+              HAD a template (badges were generated from it this batch), so
+              "doesn't have a badge template YET" would misread — the
+              softened became-unavailable copy shows instead. done === 0
+              keeps the original copy: nothing was ever generated, so
+              "no template yet" is the honest description. */}
+          {printProgress && printProgress.done > 0 ? t("bulkPrintTemplateGone") : t("bulkPrintNoTemplate")}
+        </span>
       ) : null}
       {printMissingFontFamilies ? (
         <span className="mt-2 block text-destructive">
@@ -639,7 +692,16 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         confirmLabel={t("bulkPrintConfirm")}
         cancelLabel={t("createEventCancel")}
         closeLabel={t("workspaceDialogClose")}
-        confirmDisabled={printing || !printTargetPrinter || agent.state !== "connected" || printFontsBlocking}
+        // `printProgress !== null` (not just `printing`): once a batch has
+        // SETTLED on its final tally, confirm must not silently re-enable —
+        // a second click would re-run the whole batch over the same
+        // selection (double print). A settled session is closed with the
+        // dialog (handlePrintOpenChange resets printProgress); re-running
+        // requires an explicit close + reopen.
+        confirmDisabled={
+          printing || printProgress !== null || !printTargetPrinter
+          || agent.state !== "connected" || printFontsBlocking
+        }
         onConfirm={() => void handleConfirmPrintBadges()}
       />
     </>

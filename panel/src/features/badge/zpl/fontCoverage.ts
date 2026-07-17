@@ -70,6 +70,11 @@ export function useFontCoverage(eventId: string): Record<string, boolean | undef
         return checkCyrillicCoverage(data);
       },
       retry: false,
+      // Font bytes are immutable per id (a "changed" font is a new upload
+      // with a new id, never an in-place edit), so a resolved coverage flag
+      // can never go stale — without this, the default staleTime of 0 made
+      // every window refocus re-download and re-parse every event font.
+      staleTime: Infinity,
     })),
   });
 
