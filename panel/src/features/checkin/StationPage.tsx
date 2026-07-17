@@ -38,6 +38,7 @@ import { useCheckinSettings, useCheckinStations } from "./hooks";
 import { DEFAULT_CHECKIN_SETTINGS } from "./settingsTypes";
 import { useCheckinFlow } from "./useCheckinFlow";
 import { useConnectionState } from "./useConnectionState";
+import { useHeartbeat } from "./useHeartbeat";
 
 type Attendee = components["schemas"]["Attendee"];
 
@@ -51,6 +52,13 @@ export function StationPage() {
   const { eventId } = routeApi.useParams();
   const search = routeApi.useSearch();
   const stationId = search.station ?? null;
+
+  // Task 12 -- keeps this station's last_seen_at fresh for as long as this
+  // page stays mounted (immediate heartbeat + every 20s, cleared on
+  // unmount). Mounted unconditionally alongside every other hook here (no
+  // early return above it) per Rules of Hooks; the hook itself no-ops
+  // internally when `stationId` is null.
+  useHeartbeat(eventId, stationId);
 
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
   const stationsQuery = useCheckinStations(eventId);

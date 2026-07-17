@@ -202,6 +202,11 @@ const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/checkin-actions", () => HttpResponse.json({ actions: [] })),
   http.get("http://api.test/api/events/:id/badge-template", () => HttpResponse.json({ template: null, version: 0 })),
   http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
+  // Task 12's useHeartbeat mounts unconditionally alongside every other hook
+  // here and fires an immediate POST on mount -- mocked like every other
+  // endpoint this page hits (this suite's own top-of-block precedent) rather
+  // than left to MSW's onUnhandledRequest:"error".
+  http.post("http://api.test/api/events/:eventId/checkin-stations/:id/heartbeat", () => new HttpResponse(null, { status: 204 })),
   http.get("http://agent.test/health", () => new HttpResponse(null, { status: 200 })),
   http.get("http://agent.test/printers", () => HttpResponse.json([])),
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
