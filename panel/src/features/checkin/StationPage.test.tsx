@@ -183,6 +183,14 @@ const server = startMswServer(
         : { at: "2026-01-01T12:34:00Z", by_email: "staff@example.com", point_name: "Main Door" };
     return HttpResponse.json({ outcome: checkinOutcome, attendee, checkin });
   }),
+  // Task 9's RecentScansRail mounts unconditionally alongside the verdict
+  // panel -- its own feed query, plus usePrintBadge's own
+  // useBadgeTemplate/useEventFontFaces calls (reprint's print pipeline),
+  // need mocking here too, same as every OTHER surface that mounts
+  // usePrintBadge (AttendeeDrawer.test.tsx's own top-of-file comment).
+  http.get("http://api.test/api/events/:eventId/checkin-actions", () => HttpResponse.json({ actions: [] })),
+  http.get("http://api.test/api/events/:id/badge-template", () => HttpResponse.json({ template: null, version: 0 })),
+  http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([])),
   http.get("http://agent.test/health", () => new HttpResponse(null, { status: 200 })),
   http.get("http://agent.test/printers", () => HttpResponse.json([])),
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
@@ -200,7 +208,7 @@ describe("StationPage routing -- sibling registration proof", () => {
     renderCorrectAt("/events/evt-1/checkin?station=st-1");
 
     expect(await screen.findByTestId("checkin-station-page")).toBeInTheDocument();
-    expect(screen.getByTestId("checkin-rail-placeholder")).toBeInTheDocument();
+    expect(await screen.findByTestId("checkin-recent-scans-rail")).toBeInTheDocument();
 
     // None of the workspace shell's own distinguishing nav text is
     // present -- if the checkin route had been (incorrectly) nested as a
@@ -255,7 +263,7 @@ describe("StationPage", () => {
     expect(screen.getByRole("link", { name: /Exit/ })).toHaveAttribute("href", "/events/evt-1");
     expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
     expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
-    expect(screen.getByTestId("checkin-rail-placeholder")).toBeInTheDocument();
+    expect(await screen.findByTestId("checkin-recent-scans-rail")).toBeInTheDocument();
   });
 
   it("a wedge scan of a known code shows the checked_in verdict card through the mapped verdictClasses", async () => {

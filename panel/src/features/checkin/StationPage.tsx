@@ -7,10 +7,10 @@
 // protected route).
 //
 // Wires together Task 5's settings/data layer, Task 6's verdict state
-// machine, and Task 7's scan input modes: a top bar (event name / station
-// name / Exit back to the workspace), the main verdict panel
-// (VerdictCard + ScanInput), and a placeholder rail region Task 9 fills
-// with the recent-scans feed.
+// machine, Task 7's scan input modes, and Task 9's recent-scans rail: a
+// top bar (event name / station name / Exit back to the workspace), the
+// main verdict panel (VerdictCard + ScanInput), and the RecentScansRail
+// (last-50 check-in actions feed with per-row reprint/undo/details).
 //
 // `?station=` (the registered station id) is validated by the route's own
 // `beforeLoad` (app/router.tsx's checkinStationBeforeLoad,
@@ -29,6 +29,7 @@ import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 import { $api } from "../../shared/api/query";
+import { RecentScansRail } from "./RecentScansRail";
 import { ScanInput } from "./ScanInput";
 import { VerdictCard } from "./VerdictCard";
 import { useCheckinSettings, useCheckinStations } from "./hooks";
@@ -125,15 +126,10 @@ export function StationPage() {
           />
         </div>
 
-        {/* Placeholder rail region -- Task 9 (RecentScansRail) fills this
-            with the last-50 check-in actions feed (reprint/undo/details).
-            296px matches that task's own stated width, so the layout
-            doesn't shift once it lands. */}
-        <aside
-          className="w-[296px] flex-none border-l border-border p-4 text-body text-muted-foreground"
-          data-testid="checkin-rail-placeholder"
-        >
-          {t("checkinRailComingSoon")}
+        {/* Task 9's recent-scans rail -- the last-50 check-in actions feed
+            (reprint/undo/details). 296px per the board's own stated width. */}
+        <aside className="w-[296px] flex-none overflow-y-auto border-l border-border p-4">
+          <RecentScansRail eventId={eventId} stationId={stationId} />
         </aside>
       </div>
     </div>
