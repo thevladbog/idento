@@ -18,10 +18,10 @@ proof the CI half (goldens) cannot provide.
 - A real Zebra printer (the model this event is configured for, e.g. Zebra ZD421 — board 4a's
   caption) connected and reachable by the local print agent (`agent/` service running, printer
   attached via USB/network per its own setup).
-- Panel's AgentStatus shows **connected** (green dot) in the badge editor top bar / Test print
-  dialog — if disconnected, both "Test print" and the drawer/bulk print affordances are disabled
-  per the reachability-gated idiom; fix connectivity before starting this checklist, don't work
-  around it.
+- Open **Test print** and confirm the agent status shows **connected** (AgentStatus's green dot
+  lives INSIDE the Test print dialog, not in the badge editor's top bar) — if disconnected, both
+  "Test print" and the drawer/bulk print affordances are disabled per the reachability-gated
+  idiom; fix connectivity before starting this checklist, don't work around it.
 - An event with a badge template open in the editor (`/events/{eventId}/badge`) whose elements
   include (mirrors the golden fixture's semantics, spec §1/§9): text bound to `first_name`,
   `last_name`, `company` + a QR code bound to `code` + a line.
@@ -38,7 +38,7 @@ proof the CI half (goldens) cannot provide.
 
 | Cell | Font mode | Language | Expect (per generateZpl's ported rules) |
 |---|---|---|---|
-| 1 | native font (e.g. "Zebra 0 (scalable)", Properties → "Printer fonts") | EN | Fully native `^A`/`^FB` path — no image rendering |
+| 1 | native font (e.g. "Scalable (0)", Properties → "Built-in ZPL — Latin only") | EN | Fully native `^A`/`^FB` path — no image rendering |
 | 2 | native font | RU | Cyrillic name elements raster (image); Latin `company` element (if left as-is) still native — routing is per-element, not per-template |
 | 3 | customFont (uploaded event font) | EN | ALL text elements raster, despite Latin text — a set customFont always wins |
 | 4 | customFont (uploaded event font) | RU | ALL text elements raster (customFont AND Cyrillic both apply) |
@@ -47,7 +47,8 @@ For **each** of the 4 cells:
 
 1. In the editor's Properties inspector, select each text element (first name / last name /
    company) and set its font per the cell's "Font mode" column (native cells: pick a built-in
-   "Printer fonts" entry; customFont cells: pick the uploaded event font from "Event fonts").
+   "Built-in ZPL — Latin only" entry; customFont cells: pick the uploaded event font from
+   "Event fonts").
 2. Switch the preview attendee to the cell's language sample (PreviewPicker — search/pick the
    EN or RU attendee, or the sample persona if the event has none).
 3. Open **"ZPL preview"** (top bar) → confirm the **"ZPL code"** tab shows the generated string,

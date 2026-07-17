@@ -41,12 +41,13 @@ work while this rewrite runs (see root `AGENTS.md`).
   `.dark` class toggle already wired in `ThemeProvider` — never hardcode a
   color or write `prefers-color-scheme` CSS directly in `panel/`. Sanctioned
   exception: physical-media surfaces (the badge canvas artboard/print
-  surfaces — `BadgeCanvas.tsx`, `QrSvg.tsx`, `features/staff/print.css`) use
-  fixed literal colors BY DESIGN, not a lapse — they represent a physical
-  medium (paper, thermal print, a printed badge) that must render
-  identically regardless of the app's theme, where a theme token would flip
-  and misrepresent it (e.g. print ink going invisible on a dark-mode-inverted
-  face); each literal carries its own rationale comment at the point of use.
+  surfaces — `BadgeCanvas.tsx`, `QrSvg.tsx`, `features/staff/print.css`,
+  `ZplPreviewModal.tsx`, `zpl/canvasRasterizer.ts`) use fixed literal colors
+  BY DESIGN, not a lapse — they represent a physical medium (paper, thermal
+  print, a printed badge) that must render identically regardless of the
+  app's theme, where a theme token would flip and misrepresent it (e.g.
+  print ink going invisible on a dark-mode-inverted face); each literal
+  carries its own rationale comment at the point of use.
 - **Verify before finishing any change here:**
   `npm test -w panel && npm run typecheck -w panel && npm run lint -w panel && npm run build -w panel`
   from the repo root.

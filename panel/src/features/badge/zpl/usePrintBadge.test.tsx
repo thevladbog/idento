@@ -15,6 +15,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { MarkPrintedError, NoTemplateError, usePrintBadge } from "./usePrintBadge";
+import { mmToDots } from "./generateZpl";
 import { useAttendeeDetail } from "../../attendees/hooks";
 import { useAttendeesPage } from "../../attendees/hooks";
 import { startMswServer } from "../../../test/msw";
@@ -213,6 +214,59 @@ describe("usePrintBadge", () => {
     // failed, so both queries still refetch.
     await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
     await waitFor(() => expect(detailHitCount).toBeGreaterThan(1));
+  });
+
+  // Final-review Important fix: backend/internal/zpl/zpl.go:334-364's
+  // ParseBadgeTemplate tolerates a legacy raw template whose width_mm/
+  // height_mm/dpi are missing (or <= 0) by substituting 50mm x 30mm @
+  // 203dpi -- pre-P3.1 event docs are exactly this shape, and this hook's
+  // "parse-nothing" raw read path (see the hook's own top-of-file comment)
+  // must mirror that exact fallback or generateZpl's `mmToDots`/dpi math
+  // silently produces NaN, which the agent still accepts and sends to the
+  // physical printer as `^PWNaN`/`^LLNaN`/`^FONaN,NaN`.
+  it("substitutes the backend's 50x30@203 config fallback when a legacy raw template has NO width_mm/height_mm/dpi keys at all", async () => {
+    templateResponse = {
+      template: {
+        elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+      },
+      version: 1,
+    };
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421");
+    });
+
+    expect(printCapture?.zpl).toContain(`^PW${mmToDots(50, 203)}`);
+    expect(printCapture?.zpl).toContain(`^LL${mmToDots(30, 203)}`);
+    expect(printCapture?.zpl).not.toMatch(/NaN/);
+    expect(printHitCount).toBe(1);
+  });
+
+  it("substitutes the width/height fallback when width_mm/height_mm are explicitly 0 (zero-config variant), not just missing", async () => {
+    templateResponse = {
+      template: {
+        width_mm: 0,
+        height_mm: 0,
+        dpi: 300,
+        elements: [{ id: "e1", type: "text", x: 0, y: 0, fontSize: 10, source: "first_name", text: "Guest" }],
+      },
+      version: 1,
+    };
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421");
+    });
+
+    // dpi IS explicit and > 0, so it's honored as-is; only the two zeroed
+    // dimensions fall back to the backend's 50/30mm defaults.
+    expect(printCapture?.zpl).toContain(`^PW${mmToDots(50, 300)}`);
+    expect(printCapture?.zpl).toContain(`^LL${mmToDots(30, 300)}`);
+    expect(printCapture?.zpl).not.toMatch(/NaN/);
+    expect(printHitCount).toBe(1);
   });
 
   it("skips invalidation for this call when skipInvalidate is set (Task 9's bulk loop dedupe)", async () => {

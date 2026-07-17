@@ -132,11 +132,28 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
 
     await waitForFontsTerminal();
 
-    // "Parse-nothing" (reconciliation #13): the raw server doc's config +
-    // elements feed the generator directly -- no parseTemplateDoc defensive
+    // "Parse-nothing" (reconciliation #13): the raw server doc's elements
+    // feed the generator directly -- no parseTemplateDoc defensive
     // narrowing. A template that made it into the database already passed
     // zpl.ParseBadgeTemplate's structural validation at save time.
-    const config = raw as unknown as BadgeConfig;
+    //
+    // width_mm/height_mm/dpi are the one exception (final-review Important
+    // fix): zpl.ParseBadgeTemplate (backend/internal/zpl/zpl.go:334-364)
+    // tolerates a raw template whose config keys are missing OR <= 0 by
+    // substituting 50mm x 30mm @ 203dpi -- legacy, pre-P3.1 event docs are
+    // exactly this shape and flow through this raw read path verbatim. A
+    // naive `raw as BadgeConfig` cast leaves those fields `undefined`/`0`,
+    // and generateZpl's `mmToDots`/dpi math (`Math.round((mm / 25.4) *
+    // dpi)`) silently produces NaN -- `^PWNaN`/`^LLNaN`/`^FONaN,NaN` ZPL that
+    // the agent still accepts and sends to the physical printer, reporting
+    // "Sent to {{printer}}" and incrementing printed_count even though
+    // nothing legible printed. Mirroring the backend's exact fallback here
+    // keeps this path's config honest without reintroducing element-level
+    // narrowing.
+    const rawWidthMM = typeof raw.width_mm === "number" && raw.width_mm > 0 ? raw.width_mm : 50;
+    const rawHeightMM = typeof raw.height_mm === "number" && raw.height_mm > 0 ? raw.height_mm : 30;
+    const rawDpi = typeof raw.dpi === "number" && raw.dpi > 0 ? raw.dpi : 203;
+    const config: BadgeConfig = { width_mm: rawWidthMM, height_mm: rawHeightMM, dpi: rawDpi };
     const elements = Array.isArray(raw.elements) ? (raw.elements as RawBadgeElement[]) : [];
     const data = attendeeToPreviewData(attendee);
     const zpl = await generateZpl(config, elements, data, { rasterizeText });

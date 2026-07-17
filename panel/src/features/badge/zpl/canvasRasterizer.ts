@@ -81,6 +81,13 @@ function rasterizeToBitmap(text: string, opts: RasterizeOpts): RasterBitmap {
   // textBaseline all revert to the spec defaults) -- web's own
   // textToZPLImage re-sets `ctx.font` after resizing for the exact same
   // reason (zpl-image-text.ts:47).
+  //
+  // Physical-media exception (panel/AGENTS.md's documented class -- same
+  // pattern as ZplPreviewModal.tsx's PRINT_SUBSTRATE/PRINT_INK,
+  // BadgeCanvas.tsx, and QrSvg.tsx): these pixels ARE the printed label's
+  // monochrome bitmap (white substrate, black ink), always literal
+  // regardless of the app's light/dark theme -- a theme token here would
+  // misrepresent the physical medium this canvas is standing in for.
   ctx.fillStyle = "white";
   ctx.fillRect(0, 0, width, height);
 
