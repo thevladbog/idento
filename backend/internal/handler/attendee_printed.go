@@ -46,14 +46,26 @@ type markAttendeePrintedRequest struct {
 // counter-only, exactly as before. The body is parsed leniently: an absent
 // body, an empty body, and a syntactically malformed body are ALL treated
 // as "no context" (unknown fields are ignored by plain encoding/json
-// decoding too) — the counter still increments in every case. The ONLY 400
-// this body can trigger is a present event_id/station_id value that fails
-// uuid.Parse; that check happens BEFORE the counter increment, so a
-// rejected request never partially applies. Once event_id parses, logging
-// itself is best-effort: the counter has already committed by the time
-// logging is attempted, so a failure resolving staff claims or writing the
-// feed row is logged server-side and never turns the response into an
-// error or changes its shape.
+// decoding too) — the counter still increments in every case. A present
+// event_id/station_id value is rejected with 400 in two cases, BOTH before
+// the counter increments so a rejected request never partially applies:
+// (1) it fails uuid.Parse, or (2) it parses but doesn't belong to the
+// attendee's own event — event_id is NEVER trusted as the source of truth
+// for which event the feed row belongs to (fix round 1: the body used to
+// be passed straight to InsertCheckinAction, letting an authenticated
+// caller who legitimately owns the attendee log a 'reprint' row into an
+// arbitrary OTHER event's/tenant's checkin_actions feed). This mirrors the
+// same-file precedent set by StationCheckin/UndoCheckin (checkin.go) and
+// BadgeZPL (badge_zpl.go), which all 400 with "Attendee does not belong to
+// this event" on an attendee/event scope mismatch rather than silently
+// substituting the correct event. station_id, when present, is validated
+// the same way its siblings do — via resolveCheckinStation, 400ing
+// "Station not found in event" for a station belonging to a different
+// event. Once both parse and validate, logging itself is best-effort: the
+// counter has already committed by the time logging is attempted, so a
+// failure resolving staff claims or writing the feed row is logged
+// server-side and never turns the response into an error or changes its
+// shape.
 func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 	attendeeID, err := uuid.Parse(c.Param("attendee_id"))
 	if err != nil {
@@ -62,7 +74,11 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 
 	// Existence/ownership established FIRST (house convention: 404-masks a
 	// missing attendee identically to a foreign one — no existence oracle).
-	if _, err := h.requireAttendeeOwnership(c, attendeeID); err != nil {
+	// The returned attendee is kept (not discarded) — its EventID is the
+	// ONLY trustworthy event context for the feed row below; the request
+	// body's event_id is validated against it, never used on its own.
+	attendee, err := h.requireAttendeeOwnership(c, attendeeID)
+	if err != nil {
 		return writeErr(c, err)
 	}
 
@@ -81,6 +97,13 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid event_id"})
 		}
+		// A same-tenant attendee whose REAL event differs from the body's
+		// event_id is a 400, not a silent substitution — same treatment
+		// StationCheckin/UndoCheckin/BadgeZPL give an attendee/event scope
+		// mismatch (checkin.go, badge_zpl.go).
+		if parsed != attendee.EventID {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Attendee does not belong to this event"})
+		}
 		eventID = &parsed
 	}
 	var stationID *uuid.UUID
@@ -90,6 +113,16 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid station_id"})
 		}
 		stationID = &parsed
+	}
+	// station_id is only meaningful alongside a validated event_id (it's
+	// only ever used by the feed-row insert below, gated on eventID != nil)
+	// — reuse the exact same-package check StationCheckin/UndoCheckin use
+	// (checkin.go:76-88) rather than re-implementing "does this station
+	// belong to this event".
+	if eventID != nil && stationID != nil {
+		if _, err := h.resolveCheckinStation(c, *eventID, stationID); err != nil {
+			return writeErr(c, err)
+		}
 	}
 
 	newCount, err := h.Store.IncrementAttendeePrintedCount(c.Request().Context(), attendeeID)

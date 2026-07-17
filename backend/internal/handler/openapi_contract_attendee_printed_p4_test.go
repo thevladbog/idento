@@ -29,13 +29,23 @@ import (
 // appends to it, getCheckinActions reads it back — so a test can prove a
 // reprint row landed by calling GetCheckinActions on the SAME handler/store
 // afterward (the brief's prescribed proof, reusing Task 3's feed list
-// rather than inspecting fakeStore internals directly).
+// rather than inspecting fakeStore internals directly). getCheckinStationByID
+// defaults to "any requested station_id belongs to this event" — fix round
+// 1 added a resolveCheckinStation call gated on event_id/station_id both
+// being present, so any test driving a station_id through this helper needs
+// a station lookup wired up even if it isn't the thing under test.
 func newMarkPrintedHandler(t *testing.T, event *models.Event, attendee *models.Attendee, incrementCount int) (*Handler, *[]store.CheckinActionRow) {
 	t.Helper()
 	actions := []store.CheckinActionRow{}
 	h := New(&fakeStore{
 		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getCheckinStationByID: func(id uuid.UUID) (*models.CheckinStation, error) {
+			if event == nil {
+				return nil, nil
+			}
+			return &models.CheckinStation{ID: id, EventID: event.ID, Name: "Main Entrance"}, nil
+		},
 		incrementAttendeePrintedCount: func(attendeeID uuid.UUID) (int, error) {
 			if attendee != nil && attendeeID != attendee.ID {
 				t.Fatalf("IncrementAttendeePrintedCount called with %s, want %s", attendeeID, attendee.ID)
@@ -298,6 +308,94 @@ func TestOpenAPIContract_MarkAttendeePrinted_PresentButInvalidStationID400s(t *t
 	e := echo.New()
 	path := markPrintedPath(attendee.ID)
 	body := `{"event_id":"` + event.ID.String() + `","station_id":"not-a-uuid"}`
+
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
+	setMarkPrintedPathParams(c, attendee.ID)
+	if err := h.MarkAttendeePrinted(c); err != nil {
+		t.Fatalf("MarkAttendeePrinted: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_MarkAttendeePrinted_ForeignEventIDRejected is the fix
+// round 1 regression test: the body's event_id is parseable but does NOT
+// match the attendee's own event (fetched via requireAttendeeOwnership, the
+// only trustworthy event context). Before the fix, this event_id was passed
+// straight to InsertCheckinAction — an authenticated caller who legitimately
+// owns the ATTENDEE could get a 'reprint' row logged into an arbitrary
+// OTHER event's/tenant's checkin_actions feed, since GetCheckinActions has
+// no tenant scoping. This must 400 BEFORE the counter increments (mirrors
+// StationCheckin/UndoCheckin/BadgeZPL's "Attendee does not belong to this
+// event" treatment of the same mismatch), and neither the counter nor the
+// feed insert may be reached.
+func TestOpenAPIContract_MarkAttendeePrinted_ForeignEventIDRejected(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	foreignEvent := contractEvent(uuid.New(), "Other Tenant's Conference")
+
+	h := New(&fakeStore{
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		incrementAttendeePrintedCount: func(uuid.UUID) (int, error) {
+			t.Fatal("IncrementAttendeePrintedCount should not be called when event_id doesn't match the attendee's own event")
+			return 0, nil
+		},
+		insertCheckinAction: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, uuid.UUID) error {
+			t.Fatal("InsertCheckinAction should not be called when event_id doesn't match the attendee's own event")
+			return nil
+		},
+	})
+	e := echo.New()
+	path := markPrintedPath(attendee.ID)
+	body := `{"event_id":"` + foreignEvent.ID.String() + `"}`
+
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
+	setMarkPrintedPathParams(c, attendee.ID)
+	if err := h.MarkAttendeePrinted(c); err != nil {
+		t.Fatalf("MarkAttendeePrinted: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_MarkAttendeePrinted_ForeignStationIDRejected covers
+// fix round 1's second half: event_id matches the attendee's own event, but
+// station_id belongs to a DIFFERENT event. resolveCheckinStation (shared
+// with StationCheckin/UndoCheckin, checkin.go:76-88) must reject this the
+// same way it already rejects a foreign station_id there — 400 before the
+// counter increments, no feed row attempted.
+func TestOpenAPIContract_MarkAttendeePrinted_ForeignStationIDRejected(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	foreignStationID := uuid.New()
+
+	h := New(&fakeStore{
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getCheckinStationByID: func(id uuid.UUID) (*models.CheckinStation, error) {
+			// The station exists, but is registered to a DIFFERENT event
+			// than the one in the (matching) request body.
+			return &models.CheckinStation{ID: id, EventID: uuid.New(), Name: "Foreign Station"}, nil
+		},
+		incrementAttendeePrintedCount: func(uuid.UUID) (int, error) {
+			t.Fatal("IncrementAttendeePrintedCount should not be called when station_id doesn't belong to the event")
+			return 0, nil
+		},
+		insertCheckinAction: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, uuid.UUID) error {
+			t.Fatal("InsertCheckinAction should not be called when station_id doesn't belong to the event")
+			return nil
+		},
+	})
+	e := echo.New()
+	path := markPrintedPath(attendee.ID)
+	body := `{"event_id":"` + event.ID.String() + `","station_id":"` + foreignStationID.String() + `"}`
 
 	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
 	setMarkPrintedPathParams(c, attendee.ID)
