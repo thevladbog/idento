@@ -596,5 +596,8 @@
   "checkinUndoConfirm": "Отменить регистрацию",
   "checkinUndoError": "Не удалось отменить регистрацию. Попробуйте ещё раз.",
   "checkinDetailsUndoneAt": "Регистрация отменена в {{time}}",
-  "checkinDetailsReprintedAt": "Бейдж перепечатан в {{time}}"
+  "checkinDetailsReprintedAt": "Бейдж перепечатан в {{time}}",
+  "checkinDegradedBanner": "Соединение нестабильно",
+  "checkinOfflineBlocked": "Не удаётся зарегистрировать — нет соединения.",
+  "checkinManualSearchReadOnlyHint": "Регистрация недоступна, пока нет соединения."
 }

@@ -52,7 +52,9 @@ const server = startMswServer(
 );
 void server;
 
-function renderScanInput(overrides: { mode?: "wedge" | "scanner" | "manual"; enabled?: boolean } = {}) {
+function renderScanInput(
+  overrides: { mode?: "wedge" | "scanner" | "manual"; enabled?: boolean; readOnly?: boolean } = {},
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onCode = vi.fn();
   const onPickAttendee = vi.fn();
@@ -64,6 +66,7 @@ function renderScanInput(overrides: { mode?: "wedge" | "scanner" | "manual"; ena
       eventId="evt-1"
       mode={overrides.mode ?? "wedge"}
       enabled={overrides.enabled ?? true}
+      readOnly={overrides.readOnly}
       onCode={onCode}
       onPickAttendee={onPickAttendee}
     />,
@@ -157,5 +160,34 @@ describe("ScanInput", () => {
     renderScanInput({ mode: "manual" });
     await new Promise((resolve) => setTimeout(resolve, 350));
     expect(attendeesHitCount).toBe(0);
+  });
+
+  // P4.1 Task 10 -- degraded mode's "read-only manual search" requirement:
+  // StationPage passes `readOnly` while offline so a scan/search can still
+  // LOOK someone up, but there is no check-in CTA to attempt (the brief's
+  // "look someone up, no check-in button").
+  describe("readOnly", () => {
+    it("still shows a matched result, but as plain text -- no check-in button, and clicking it calls nothing", async () => {
+      const user = userEvent.setup();
+      const { onPickAttendee } = renderScanInput({ mode: "manual", readOnly: true });
+
+      const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
+      await user.type(searchBox, "Ada");
+      await waitFor(() => expect(screen.getByText("Ada Lovelace")).toBeInTheDocument());
+
+      expect(screen.queryByRole("button", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
+
+      await user.click(screen.getByText("Ada Lovelace"));
+      expect(onPickAttendee).not.toHaveBeenCalled();
+    });
+
+    it("renders a real check-in button (not readOnly) by default", async () => {
+      const user = userEvent.setup();
+      renderScanInput({ mode: "manual" });
+
+      const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
+      await user.type(searchBox, "Ada");
+      await waitFor(() => expect(screen.getByRole("button", { name: /Ada Lovelace/ })).toBeInTheDocument());
+    });
   });
 });

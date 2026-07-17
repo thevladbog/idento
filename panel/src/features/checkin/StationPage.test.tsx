@@ -165,8 +165,19 @@ const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/attendees", ({ request }) => {
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
-    if (code && code === ATTENDEE.code) return HttpResponse.json([ATTENDEE]);
-    return HttpResponse.json([]);
+    // The wedge-scan lookup (useCheckinFlow.submitCode) always sends `code`
+    // (never `page`/`per_page`) and expects the legacy bare-array shape.
+    // The manual search box (ScanInput -> useAttendeesPage, Task 7) always
+    // sends `page`/`per_page`/`search` and expects the `{attendees, total,
+    // page, per_page}` envelope -- same two-shape split ScanInput.test.tsx's
+    // own handler documents.
+    if (code !== null) {
+      return HttpResponse.json(code === ATTENDEE.code ? [ATTENDEE] : []);
+    }
+    const search = (url.searchParams.get("search") ?? "").toLowerCase();
+    const haystack = `${ATTENDEE.first_name} ${ATTENDEE.last_name} ${ATTENDEE.email} ${ATTENDEE.code}`.toLowerCase();
+    const matches = search && haystack.includes(search) ? [ATTENDEE] : [];
+    return HttpResponse.json({ attendees: matches, total: matches.length, page: 1, per_page: 8 });
   }),
   http.post("http://api.test/api/events/:eventId/checkin", async ({ request }) => {
     checkinHitCount += 1;
@@ -311,5 +322,132 @@ describe("StationPage", () => {
     expect(card.className).toContain(verdictClasses.not_registered.bg);
     expect(within(card).getByText("Not registered").className).toContain(verdictClasses.not_registered.text);
     expect(checkinHitCount).toBe(0);
+  });
+});
+
+// P4.1 Task 10 -- degraded mode. useConnectionState (its own dedicated unit
+// tests live in useConnectionState.test.tsx) folds `navigator.onLine`/the
+// window 'online'/'offline' events and the checkin-actions feed's own
+// isError into one debounced `online` boolean; these tests prove StationPage
+// actually WIRES that signal into the three required reactions: the amber
+// banner, an inert scan (no POST, an explicit offline verdict instead of
+// silently dropping it), and the manual search's check-in CTA disappearing
+// (read-only against whatever's already in the query cache) -- see this
+// task's brief and the spec's §4 "Degraded mode (2d)".
+function goOffline() {
+  Object.defineProperty(window.navigator, "onLine", { value: false, writable: true, configurable: true });
+  window.dispatchEvent(new Event("offline"));
+}
+
+function goOnline() {
+  Object.defineProperty(window.navigator, "onLine", { value: true, writable: true, configurable: true });
+  window.dispatchEvent(new Event("online"));
+}
+
+describe("StationPage — degraded mode", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+    checkinOutcome = "checked_in";
+    checkinHitCount = 0;
+    settingsOverride = {
+      print_on_checkin: false,
+      verdict_auto_dismiss_sec: 30,
+      scan_input: "wedge",
+      manual_search_enabled: true,
+    };
+    goOnline();
+  });
+
+  afterEach(() => {
+    goOnline();
+  });
+
+  it("shows the amber 'Connection is unstable' banner while offline, and hides it again on reconnect", async () => {
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+    expect(screen.queryByTestId("checkin-degraded-banner")).not.toBeInTheDocument();
+
+    goOffline();
+    expect(await screen.findByTestId("checkin-degraded-banner")).toHaveTextContent("Connection is unstable");
+
+    goOnline();
+    await waitFor(() => expect(screen.queryByTestId("checkin-degraded-banner")).not.toBeInTheDocument());
+  });
+
+  it("blocks a wedge scan while offline -- no check-in POST fires, an explicit offline verdict shows instead -- then lets a scan through again once reconnected", async () => {
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+
+    goOffline();
+    await screen.findByTestId("checkin-degraded-banner");
+
+    await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
+
+    expect(await screen.findByTestId("checkin-verdict-offline")).toHaveTextContent("Can't check in — offline.");
+    expect(checkinHitCount).toBe(0);
+    expect(screen.queryByTestId("checkin-verdict-card")).not.toBeInTheDocument();
+
+    goOnline();
+    await waitFor(() => expect(screen.queryByTestId("checkin-degraded-banner")).not.toBeInTheDocument());
+
+    await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
+
+    const card = await screen.findByTestId("checkin-verdict-card");
+    expect(card).toHaveAttribute("data-verdict", "allowed");
+    expect(checkinHitCount).toBe(1);
+  });
+
+  it("manual search stays read-only while offline -- the cached result still shows, but with no check-in button -- and picking it does not check anyone in", async () => {
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+
+    const searchBox = screen.getByPlaceholderText("Search by name, email, or code…");
+    await user.type(searchBox, "Ada");
+    await waitFor(() => expect(screen.getByText("Ada Lovelace")).toBeInTheDocument());
+    // Online: the result is a real check-in CTA.
+    expect(screen.getByRole("button", { name: /Ada Lovelace/ })).toBeInTheDocument();
+
+    goOffline();
+    await screen.findByTestId("checkin-degraded-banner");
+
+    // Still visible (the already-loaded/cached result), but no longer a
+    // clickable check-in CTA.
+    expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("Ada Lovelace"));
+    expect(checkinHitCount).toBe(0);
+    expect(screen.queryByTestId("checkin-verdict-card")).not.toBeInTheDocument();
+  });
+
+  it("disables the recent-scans rail's Undo trigger while offline", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/checkin-actions", () =>
+        HttpResponse.json({
+          actions: [
+            {
+              id: "ca-1",
+              action: "checkin",
+              station_id: "st-1",
+              created_at: "2026-01-01T00:00:00Z",
+              attendee: { id: "att-1", first_name: "Ada", last_name: "Lovelace", code: "CODE1" },
+            },
+          ],
+        }),
+      ),
+    );
+    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    await screen.findByText("Main Door");
+    const undoButton = await screen.findByRole("button", { name: "Undo" });
+    expect(undoButton).toBeEnabled();
+
+    goOffline();
+    await screen.findByTestId("checkin-degraded-banner");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled());
   });
 });

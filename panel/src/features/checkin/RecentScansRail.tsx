@@ -71,9 +71,17 @@ export interface RecentScansRailProps {
   // body (schema.d.ts's UndoCheckinRequest: optional, recorded on the
   // feed row only). `null` is a valid station-less rail.
   stationId: string | null;
+  // P4.1 Task 10 -- degraded mode. StationPage passes its own
+  // useConnectionState(eventId).online down here so Undo/Reprint are
+  // DISABLED (never attempted, not just left to fail) while the station is
+  // offline -- same "check-in/undo/reprint disabled" requirement as the
+  // main verdict panel's scan/search blocking (StationPage.tsx's own
+  // comment). Defaults to `true` (online) so every OTHER caller/test that
+  // doesn't know about connectivity keeps its exact prior behavior.
+  online?: boolean;
 }
 
-export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
+export function RecentScansRail({ eventId, stationId, online = true }: RecentScansRailProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const actionsQuery = useCheckinActions(eventId);
@@ -379,9 +387,9 @@ export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={agent.state !== "connected" || anyMutationPending || anyDialogOpen}
-                  aria-disabled={agent.state !== "connected" || anyMutationPending || anyDialogOpen}
-                  title={reprintAgentDisconnected ? t("checkinRailReprintUnreachable") : undefined}
+                  disabled={!online || agent.state !== "connected" || anyMutationPending || anyDialogOpen}
+                  aria-disabled={!online || agent.state !== "connected" || anyMutationPending || anyDialogOpen}
+                  title={!online ? t("checkinDegradedBanner") : reprintAgentDisconnected ? t("checkinRailReprintUnreachable") : undefined}
                   onClick={() => {
                     setReprintError(null);
                     setReprintTarget(row);
@@ -393,7 +401,8 @@ export function RecentScansRail({ eventId, stationId }: RecentScansRailProps) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={anyMutationPending || anyDialogOpen}
+                  disabled={!online || anyMutationPending || anyDialogOpen}
+                  title={!online ? t("checkinDegradedBanner") : undefined}
                   onClick={() => {
                     setUndoError(false);
                     setUndoTarget(row);

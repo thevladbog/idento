@@ -178,13 +178,13 @@ function AttendeesListObserver() {
 // suite exercises the rail's own rendering, not routing).
 const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
 
-function renderRail(stationId: string | null = "st-1", extra?: ReactNode) {
+function renderRail(stationId: string | null = "st-1", extra?: ReactNode, online?: boolean) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <RouterContextProvider router={testRouter}>
         {extra}
-        <RecentScansRail eventId="evt-1" stationId={stationId} />
+        <RecentScansRail eventId="evt-1" stationId={stationId} online={online} />
       </RouterContextProvider>
     </QueryClientProvider>,
   );
@@ -509,6 +509,38 @@ describe("RecentScansRail", () => {
       // `aria-hidden` while its Dialog is open, so `{ hidden: true }` is
       // needed here to still query the row underneath.
       expect(within(rows[1]).getByRole("button", { name: "Reprint", hidden: true })).toBeDisabled();
+    });
+  });
+
+  // P4.1 Task 10 -- degraded mode: StationPage forwards its own
+  // useConnectionState(eventId).online down to this rail so Undo/Reprint
+  // are DISABLED (never attempted) while the station is offline -- these
+  // rows don't own their own connectivity signal, they just render whatever
+  // `online` they're given (default `true`, so every OTHER describe block
+  // above -- none of which pass `online` -- is completely unaffected).
+  describe("online prop (degraded mode)", () => {
+    it("disables both Undo and Reprint when online={false}, regardless of agent/print-agent reachability", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      renderRail("st-1", undefined, false);
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      const undoButton = within(rows[0]).getByRole("button", { name: "Undo" });
+      const reprintButton = within(rows[0]).getByRole("button", { name: "Reprint" });
+      await waitFor(() => expect(undoButton).toBeDisabled());
+      expect(reprintButton).toBeDisabled();
+    });
+
+    it("leaves Undo/Reprint gated only by the usual reasons when online is omitted (default true)", async () => {
+      renderRail("st-1");
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      // Reprint is still disabled here (the print agent is unreachable by
+      // this suite's own default), but for the PRE-EXISTING reason, not a
+      // connectivity one -- Undo (which has no agent dependency) is enabled.
+      const undoButton = within(rows[0]).getByRole("button", { name: "Undo" });
+      await waitFor(() => expect(undoButton).toBeEnabled());
     });
   });
 });

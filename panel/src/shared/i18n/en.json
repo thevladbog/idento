@@ -594,5 +594,8 @@
   "checkinUndoConfirm": "Undo check-in",
   "checkinUndoError": "Couldn't undo the check-in. Try again.",
   "checkinDetailsUndoneAt": "Check-in undone at {{time}}",
-  "checkinDetailsReprintedAt": "Badge reprinted at {{time}}"
+  "checkinDetailsReprintedAt": "Badge reprinted at {{time}}",
+  "checkinDegradedBanner": "Connection is unstable",
+  "checkinOfflineBlocked": "Can't check in — offline.",
+  "checkinManualSearchReadOnlyHint": "Check-in is disabled while offline."
 }

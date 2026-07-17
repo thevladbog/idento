@@ -23,10 +23,12 @@
 // station this page simply can't NAME yet (falls back to the raw id in
 // the top bar), not as a reason to bounce the operator back to the
 // ceremony mid-shift.
+import * as React from "react";
 import { Button, Skeleton } from "@idento/ui";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 import { $api } from "../../shared/api/query";
 import { RecentScansRail } from "./RecentScansRail";
@@ -35,6 +37,9 @@ import { VerdictCard } from "./VerdictCard";
 import { useCheckinSettings, useCheckinStations } from "./hooks";
 import { DEFAULT_CHECKIN_SETTINGS } from "./settingsTypes";
 import { useCheckinFlow } from "./useCheckinFlow";
+import { useConnectionState } from "./useConnectionState";
+
+type Attendee = components["schemas"]["Attendee"];
 
 // Same getRouteApi-by-string-id rationale as AttendeesPage.tsx /
 // EventWorkspaceLayout.tsx -- avoids a circular import with app/router.tsx
@@ -72,6 +77,52 @@ export function StationPage() {
     settings,
     printerName: agent.defaultPrinter ?? "",
   });
+
+  // P4.1 Task 10 -- degraded mode. `connection.online` folds
+  // navigator.onLine/the browser's online/offline events and the checkin-
+  // actions feed's own isError (after react-query's default retries) into
+  // one debounced signal (useConnectionState's own module comment). This
+  // task is display/UX degradation ONLY (the phase spec explicitly rules an
+  // offline write queue out of scope -- offline ownership stays with the
+  // kiosks): no scan is ever queued for later, it's either sent now or the
+  // operator sees an explicit "can't check in — offline" state.
+  const connection = useConnectionState(eventId);
+
+  // Set only when a scan/pick was attempted WHILE offline (never on mount,
+  // never just because the banner is showing) -- cleared as soon as the
+  // connection recovers, so a stale "offline" card can't linger once
+  // check-ins are actually working again.
+  const [offlineBlocked, setOfflineBlocked] = React.useState(false);
+  React.useEffect(() => {
+    if (connection.online) setOfflineBlocked(false);
+  }, [connection.online]);
+
+  // These wrap ScanInput's onCode/onPickAttendee (not useCheckinFlow
+  // itself, which Task 6 owns unmodified) -- the interception happens HERE,
+  // before either of useCheckinFlow's own network calls (submitCode's own
+  // GET-by-code lookup, submitAttendee's POST /checkin), so a scan attempted
+  // while offline never reaches the network at all. Wedge/scanner capture
+  // itself stays enabled regardless of connectivity (ScanInput's own
+  // `enabled` prop below is untouched by `connection.online`) so a real
+  // physical scan is always CONSUMED -- never silently dropped -- even
+  // while offline; this is what shows the explicit offline verdict instead.
+  function handleCode(code: string) {
+    if (!connection.online) {
+      setOfflineBlocked(true);
+      return;
+    }
+    setOfflineBlocked(false);
+    void flow.submitCode(code);
+  }
+
+  function handlePickAttendee(attendee: Attendee) {
+    if (!connection.online) {
+      setOfflineBlocked(true);
+      return;
+    }
+    setOfflineBlocked(false);
+    void flow.submitAttendee(attendee);
+  }
 
   if (eventQuery.isLoading) {
     return (
@@ -114,22 +165,48 @@ export function StationPage() {
         </div>
       </div>
 
+      {/* Task 10 -- degraded mode's amber banner (board 2d copy,
+          `checkinDegradedBanner`), same solid-warning treatment
+          ImpersonationBanner.tsx already establishes for a station-wide,
+          hard-to-miss connectivity notice. */}
+      {!connection.online ? (
+        <div
+          role="status"
+          data-testid="checkin-degraded-banner"
+          className="flex items-center justify-center gap-2 bg-warning px-4 py-2 text-body font-medium text-warning-foreground"
+        >
+          <WifiOff aria-hidden className="size-4" />
+          {t("checkinDegradedBanner")}
+        </div>
+      ) : null}
+
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-8">
-          <VerdictCard state={flow.state} />
+          {offlineBlocked ? (
+            <div
+              className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-12 text-center"
+              data-testid="checkin-verdict-offline"
+            >
+              <WifiOff aria-hidden className="size-10 text-warning" />
+              <p className="text-page-title text-warning">{t("checkinOfflineBlocked")}</p>
+            </div>
+          ) : (
+            <VerdictCard state={flow.state} />
+          )}
           <ScanInput
             eventId={eventId}
             mode={settings.scan_input}
             enabled={scanEnabled}
-            onCode={(code) => void flow.submitCode(code)}
-            onPickAttendee={(attendee) => void flow.submitAttendee(attendee)}
+            readOnly={!connection.online}
+            onCode={handleCode}
+            onPickAttendee={handlePickAttendee}
           />
         </div>
 
         {/* Task 9's recent-scans rail -- the last-50 check-in actions feed
             (reprint/undo/details). 296px per the board's own stated width. */}
         <aside className="w-[296px] flex-none overflow-y-auto border-l border-border p-4">
-          <RecentScansRail eventId={eventId} stationId={stationId} />
+          <RecentScansRail eventId={eventId} stationId={stationId} online={connection.online} />
         </aside>
       </div>
     </div>
