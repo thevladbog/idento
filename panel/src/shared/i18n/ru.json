@@ -562,5 +562,15 @@
   "checkinScanScannerDegradedHint": "Не удаётся подключиться к ручному сканеру — используйте поиск вручную ниже.",
   "checkinScanManualHint": "Найдите участника по имени, email или коду ниже.",
   "checkinManualSearchPlaceholder": "Поиск по имени, email или коду…",
-  "checkinManualSearchNoMatches": "Участники не найдены."
+  "checkinManualSearchNoMatches": "Участники не найдены.",
+  "checkinExit": "Выход",
+  "checkinIdleHint": "Готово к следующему сканированию.",
+  "checkinResolvingHint": "Проверка…",
+  "checkinVerdictAllowed": "Зарегистрирован",
+  "checkinVerdictNoAccess": "Доступ запрещён",
+  "checkinVerdictNotRegistered": "Не зарегистрирован",
+  "checkinVerdictAlreadyCheckedIn": "Уже зарегистрирован",
+  "checkinFirstScanAt": "Первый скан в {{time}}",
+  "checkinPrintFailedWarning": "Бейдж не был напечатан — перепечатайте его из списка последних сканирований.",
+  "checkinRailComingSoon": "Список последних сканирований появится в следующем обновлении."
 }

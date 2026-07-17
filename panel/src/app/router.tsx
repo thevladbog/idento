@@ -13,6 +13,8 @@ import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
 import { BadgeEditorPage } from "../features/badge/BadgeEditorPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
+import { StationPage } from "../features/checkin/StationPage";
+import { checkinStationBeforeLoad, validateCheckinStationSearch } from "../features/checkin/searchParams";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -135,6 +137,23 @@ const eventBadgeRoute = createRoute({
   component: BadgeEditorPage,
 });
 
+// P4.1 Task 8 -- the check-in station. A TOP-LEVEL protected route, a
+// SIBLING of eventWorkspaceRoute (registered directly under
+// protectedLayoutRoute.addChildren below, NOT nested inside
+// eventWorkspaceRoute.addChildren) so it renders WITHOUT the workspace
+// rail shell (WorkspaceRail/EventWorkspaceLayout) -- a near-fullscreen
+// screen for event-day check-in, not another workspace tab. See
+// features/checkin/searchParams.ts for the `?station=` validation +
+// beforeLoad guard this route shares with StationPage.test.tsx's own
+// routed harness.
+const eventCheckinRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/events/$eventId/checkin",
+  validateSearch: validateCheckinStationSearch,
+  beforeLoad: checkinStationBeforeLoad,
+  component: StationPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
@@ -144,6 +163,7 @@ const routeTree = rootRoute.addChildren([
     eventWorkspaceRoute.addChildren([
       eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute, eventBadgeRoute,
     ]),
+    eventCheckinRoute,
   ]),
   loginRoute,
   registerRoute,

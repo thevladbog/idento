@@ -560,5 +560,15 @@
   "checkinScanScannerDegradedHint": "Can't reach the handheld scanner — use manual search below.",
   "checkinScanManualHint": "Look up an attendee by name, email, or code below.",
   "checkinManualSearchPlaceholder": "Search by name, email, or code…",
-  "checkinManualSearchNoMatches": "No matching attendees."
+  "checkinManualSearchNoMatches": "No matching attendees.",
+  "checkinExit": "Exit",
+  "checkinIdleHint": "Ready for the next scan.",
+  "checkinResolvingHint": "Checking…",
+  "checkinVerdictAllowed": "Checked in",
+  "checkinVerdictNoAccess": "Access denied",
+  "checkinVerdictNotRegistered": "Not registered",
+  "checkinVerdictAlreadyCheckedIn": "Already checked in",
+  "checkinFirstScanAt": "First checked in at {{time}}",
+  "checkinPrintFailedWarning": "Badge didn't print — reprint it from the recent scans list.",
+  "checkinRailComingSoon": "Recent scans arrive with the next update."
 }
