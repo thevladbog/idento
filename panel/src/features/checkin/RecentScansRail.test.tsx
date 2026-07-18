@@ -339,7 +339,20 @@ describe("RecentScansRail", () => {
       agentHealthOk = true;
       printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
       defaultPrinterResponse = { default: "Zebra_ZD421" };
-      printDelayMs = 40;
+      // 300ms, not the original 40ms: this test performs THREE sequential
+      // userEvent interactions (Cancel click, Escape keypress,
+      // pointerDown) plus a waitFor before its final assertion, entirely
+      // on real timers (this codebase deliberately avoids fake timers for
+      // MSW-async tests, see useHeartbeat.test.tsx/useConnectionState.test.tsx's
+      // own documented reasoning) -- 40ms flaked in CI (PR #77 CI run
+      // 29632317448) because that whole sequence can legitimately exceed
+      // 40ms of real wall-clock time under CI's slower/more loaded
+      // runners, letting the mock mutation genuinely resolve mid-sequence
+      // and close the dialog via its OWN success path, not because
+      // dismissal-blocking failed. 300ms matches this file's/this
+      // feature's own precedent for a similar-shaped "hold pending across
+      // multiple interactions" test (useCheckinFlow.test.tsx uses 400ms).
+      printDelayMs = 300;
       const user = userEvent.setup();
       renderRail("st-1");
       const rows = await screen.findAllByTestId("checkin-rail-row");
@@ -460,7 +473,11 @@ describe("RecentScansRail", () => {
     // Cancel; Escape and outside-click are the OTHER two dismissal paths
     // this exact P3.2 convention is supposed to block too.
     it("blocks dismissal while the undo is in flight (Cancel, Escape, and outside click), same convention as reprint", async () => {
-      undoDelayMs = 40;
+      // 300ms, not the original 40ms -- see the identical reasoning on
+      // printDelayMs above (this test has the same Cancel/Escape/
+      // pointerDown/waitFor shape); this exact test flaked in CI
+      // (run 29632317448) at the original 40ms.
+      undoDelayMs = 300;
       const user = userEvent.setup();
       renderRail("st-1");
       const rows = await screen.findAllByTestId("checkin-rail-row");
