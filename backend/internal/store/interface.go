@@ -243,6 +243,51 @@ type Store interface {
 	// failure here as best-effort/non-fatal).
 	InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
 
+	// GetMonitorCounts returns the total non-deleted attendee count and the
+	// currently-checked-in count for eventID (P4.2 Task 2) from ONE query —
+	// COUNT(*) and COUNT(*) FILTER (WHERE checkin_status) over the same
+	// attendees row set — so the two numbers can never disagree the way two
+	// separate queries against a live, concurrently-changing event could (a
+	// check-in landing between them). Backs the monitor snapshot's
+	// totals.total/totals.checked_in.
+	GetMonitorCounts(ctx context.Context, eventID uuid.UUID) (total int, checkedIn int, err error)
+
+	// GetMonitorZones returns every zone's currently-checked-in count, plus
+	// the count of checked-in attendees that can't be attributed to any zone
+	// (unattributed) — from ONE statement (P4.2 Task 2), so
+	// sum(zones[].CheckedIn) + unattributed == checkedIn holds BY
+	// CONSTRUCTION: both numbers are aggregated from the SAME "attributed"
+	// CTE (one row per currently-checked-in attendee — checkin_status = true
+	// AND deleted_at IS NULL — carrying that attendee's zone, or NULL)
+	// rather than from two independently-issued queries that a future edit
+	// could let drift apart. An attendee's zone comes from their MOST RECENT
+	// 'checkin' action — DISTINCT ON (ca.attendee_id) ... ORDER BY
+	// ca.attendee_id, ca.created_at DESC, ca.id DESC, the same id
+	// tie-breaker as GetCheckinActions (PR #77 bot-review round, Finding E)
+	// — joined through checkin_stations.zone_id to event_zones; a checked-in
+	// attendee with no 'checkin' action row, a station-less action, or a
+	// zone-less station all count into unattributed rather than any zone.
+	// Zones are listed in event_zones.order_index order and INCLUDE
+	// zero-count zones (LEFT JOIN FROM event_zones, not the other way
+	// around, so an empty zone never silently disappears from the list).
+	GetMonitorZones(ctx context.Context, eventID uuid.UUID) (zones []MonitorZoneCount, unattributed int, err error)
+
+	// GetMonitorMinuteBuckets returns one row per minute (ascending) holding
+	// the count of 'checkin' actions in that minute, for created_at >= since
+	// (P4.2 Task 2) — a date_trunc('minute', created_at) GROUP BY. The
+	// caller passes a UTC start-of-day for the monitor's today's-peak
+	// computation; the per-5-minute rate reuses these SAME buckets rather
+	// than issuing a second query.
+	GetMonitorMinuteBuckets(ctx context.Context, eventID uuid.UUID, since time.Time) ([]MinuteBucket, error)
+
+	// GetMonitorStations returns every check-in station for eventID (P4.2
+	// Task 2) with its LEFT JOINed 'checkin'-action count — COUNT(...)
+	// FILTER (WHERE ca.action = 'checkin'), so 'undo'/'reprint' rows sharing
+	// the same station_id don't inflate the count — ordered by name, the
+	// same deterministic-listing convention as ListCheckinStations, just
+	// with the running count attached for the monitor's stations card.
+	GetMonitorStations(ctx context.Context, eventID uuid.UUID) ([]MonitorStation, error)
+
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,
@@ -421,4 +466,36 @@ type CheckinActionRow struct {
 	StationID *uuid.UUID            `json:"station_id,omitempty"`
 	CreatedAt time.Time             `json:"created_at"`
 	Attendee  CheckinActionAttendee `json:"attendee"`
+}
+
+// MonitorZoneCount is one zone's currently-checked-in count, one element of
+// GetMonitorZones' result (P4.2 Task 2). Zero-count zones are included, so
+// this is never a sparse/omit-if-empty list — the caller (the monitor
+// endpoint, Task 3) reshapes this into the wire schema.
+type MonitorZoneCount struct {
+	ZoneID    uuid.UUID
+	Name      string
+	CheckedIn int
+}
+
+// MinuteBucket is one date_trunc('minute', created_at) bucket from
+// GetMonitorMinuteBuckets (P4.2 Task 2) — the single shared source for both
+// the monitor's per-5-minute check-in rate and its today's-peak computation
+// (Task 3's computeRates), so the two numbers are always reading the same
+// underlying data.
+type MinuteBucket struct {
+	Minute time.Time
+	Count  int
+}
+
+// MonitorStation is one check-in station plus its running 'checkin'-action
+// count, from GetMonitorStations (P4.2 Task 2) — backs the monitor's
+// stations card (name, zone, last-seen staleness, and how many check-ins it
+// has processed so far).
+type MonitorStation struct {
+	ID           uuid.UUID
+	Name         string
+	ZoneID       *uuid.UUID
+	LastSeenAt   time.Time
+	CheckinCount int
 }
