@@ -143,10 +143,9 @@ async function print(request: PrintRequest, timeoutMs = PRINT_TIMEOUT_MS): Promi
 
 /**
  * The agent's last-scanned-code buffer, per agent/openapi.yaml's `ScanData`
- * schema (`GET /scan/last`) -- confirmed present in the agent's own contract
- * (paths `/scan/last` + `/scan/clear`, tag "Scan"), not a panel-side
- * invention. When nothing has been scanned yet (or the buffer was just
- * cleared via clearLastScan()), the agent returns `code: ""`, `time:
+ * schema -- confirmed present in the agent's own contract (path
+ * `/scan/consume`, tag "Scan"), not a panel-side invention. When nothing has
+ * been scanned since the last consume, the agent returns `code: ""`, `time:
  * "0001-01-01T00:00:00Z"` -- this is a normal "no new scan" poll result, not
  * an error.
  */
@@ -157,33 +156,34 @@ export interface ScanData {
 
 /**
  * Polling primitive for P4.1's handheld-scanner check-in mode
- * (useScanInput.ts) -- returns the last code any connected hardware scanner
- * has produced. Never throws on an empty buffer (that's the normal steady
- * state between scans); only a genuine transport/HTTP failure (agent
- * unreachable, non-2xx) rejects, same "throw on failure" contract as
- * getPrinters/getDefaultPrinter above.
+ * (useScanInput.ts) -- atomically reads AND clears the agent's last-scan
+ * buffer in one request (`POST /scan/consume`), replacing the earlier
+ * GET /scan/last + POST /scan/clear pair. That two-step protocol had a real
+ * race: a second physical scan arriving between this client's read and its
+ * later clear call was silently erased by the clear (the CodeRabbit finding
+ * on panel PR #77, fixed agent-side by
+ * docs/superpowers/plans/2026-07-18-agent-atomic-scan-consume.md). Because
+ * read+clear now happen server-side under one lock, every non-empty
+ * response here is guaranteed to be a scan this client has never seen
+ * before -- callers no longer need to dedup by {code, time} or separately
+ * retry a failed clear (see useScanInput.ts). Never throws on an empty
+ * buffer (that's the normal steady state between scans); only a genuine
+ * transport/HTTP failure (agent unreachable, non-2xx) rejects, same "throw
+ * on failure" contract as getPrinters/getDefaultPrinter above.
  */
-async function getLastScan(): Promise<ScanData> {
-  const response = await ensureOk(await fetch(agentUrl("/scan/last")), "agent GET /scan/last failed");
+async function consumeLastScan(): Promise<ScanData> {
+  const response = await ensureOk(
+    await fetch(agentUrl("/scan/consume"), {
+      method: "POST",
+      // Required for the agent's Origin-allowlist browser fallback auth on
+      // mutating requests (see agent/openapi.yaml's Авторизация section) --
+      // without it a same-origin-allowlisted-but-tokenless request gets 415.
+      headers: { "Content-Type": "application/json" },
+    }),
+    "agent POST /scan/consume failed",
+  );
   const data = (await response.json()) as { code?: string; time?: string };
   return { code: data.code ?? "", time: data.time ?? "" };
-}
-
-/**
- * Resets the agent's last-scan buffer (`POST /scan/clear`) -- called after a
- * scan has been consumed so the NEXT poll doesn't re-observe the same
- * code/time pair. `Content-Type: application/json` is set even though there
- * is no request body: every mutating agent call needs it for the agent's
- * Origin-allowlist browser fallback auth (see agent/openapi.yaml's
- * Авторизация section; mirrors `print`'s header above), regardless of
- * whether the mutation itself carries a payload.
- */
-async function clearLastScan(): Promise<void> {
-  const response = await fetch(agentUrl("/scan/clear"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  });
-  await ensureOk(response, "agent POST /scan/clear failed");
 }
 
 export const agentClient = {
@@ -191,6 +191,5 @@ export const agentClient = {
   getPrinters,
   getDefaultPrinter,
   print,
-  getLastScan,
-  clearLastScan,
+  consumeLastScan,
 };
