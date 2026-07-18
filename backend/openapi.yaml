@@ -464,6 +464,87 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CheckinActionRow" }
       required: [actions]
+    MonitorPeak:
+      type: object
+      description: >
+        The highest one-minute check-in bucket "today" (UTC) — totals.peak
+        (P4.2 Task 3, spec §3.1) — paired with that bucket's start time.
+        totals.peak is null instead when there have been no 'checkin'
+        actions today.
+      properties:
+        rate: { type: number }
+        at: { type: string, format: date-time }
+      required: [rate, at]
+      additionalProperties: false
+    MonitorTotals:
+      type: object
+      description: >
+        Monitor snapshot's totals block (P4.2 Task 3, spec §3.1).
+        rate_per_min is the sum of 'checkin' actions in the last 5 minutes
+        divided by 5, rounded to one decimal. peak is null when there have
+        been no check-ins today. est_done_at is null when rate_per_min is
+        effectively zero (< 0.1) or checked_in >= total (event already
+        fully checked in).
+      properties:
+        checked_in: { type: integer }
+        total: { type: integer }
+        rate_per_min: { type: number }
+        peak:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MonitorPeak"
+        est_done_at: { type: string, format: date-time, nullable: true }
+      required: [checked_in, total, rate_per_min, peak, est_done_at]
+      additionalProperties: false
+    MonitorZone:
+      type: object
+      description: >
+        One zone's currently-checked-in count for the monitor snapshot's
+        zones[] (P4.2 Task 3) — mirrors store.MonitorZoneCount. Zero-count
+        zones are included, in event_zones.order_index order.
+      properties:
+        zone_id: { type: string, format: uuid }
+        name: { type: string }
+        checked_in: { type: integer }
+      required: [zone_id, name, checked_in]
+      additionalProperties: false
+    MonitorStationRow:
+      type: object
+      description: >
+        One check-in station's liveness + running count for the monitor
+        snapshot's stations[] (P4.2 Task 3) — mirrors store.MonitorStation,
+        ordered by name.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        zone_id: { type: string, format: uuid, nullable: true }
+        last_seen_at: { type: string, format: date-time }
+        checkin_count: { type: integer }
+      required: [id, name, zone_id, last_seen_at, checkin_count]
+      additionalProperties: false
+    MonitorSnapshot:
+      type: object
+      description: >
+        GET /api/events/{event_id}/monitor's response (P4.2 Task 3, spec
+        §3.1) — everything the live monitor screen (board 7e) renders in
+        one request. Invariant: sum(zones[].checked_in) + unattributed ==
+        totals.checked_in (see store.GetMonitorZones). recent reuses the
+        same CheckinActionRow shape as GET
+        /api/events/{event_id}/checkin-actions (last 20, newest first).
+      properties:
+        totals: { $ref: "#/components/schemas/MonitorTotals" }
+        zones:
+          type: array
+          items: { $ref: "#/components/schemas/MonitorZone" }
+        unattributed: { type: integer }
+        stations:
+          type: array
+          items: { $ref: "#/components/schemas/MonitorStationRow" }
+        recent:
+          type: array
+          items: { $ref: "#/components/schemas/CheckinActionRow" }
+      required: [totals, zones, unattributed, stations, recent]
+      additionalProperties: false
     MarkAttendeePrintedRequest:
       type: object
       description: >
@@ -2154,6 +2235,49 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: Store failure resolving event ownership or fetching the feed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/monitor:
+    get:
+      operationId: getEventMonitor
+      summary: >
+        Live monitor snapshot (P4.2 Task 3, spec §3.1) — totals with
+        progress, scans/min + peak + estimated-done, per-zone breakdown,
+        per-station liveness, and the last 20 check-in/undo/reprint feed
+        rows. Backs the tablet monitor screen (board 7e) and the Home
+        LiveStrip.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The event's current monitor snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MonitorSnapshot" }
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing").
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving event ownership or any aggregation.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

@@ -86,6 +86,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/events/:event_id/checkin", h.StationCheckin)
 	api.POST("/events/:event_id/checkin/undo", h.UndoCheckin)
 	api.GET("/events/:event_id/checkin-actions", h.GetCheckinActions)
+	api.GET("/events/:event_id/monitor", h.GetEventMonitor)
 	api.GET("/events/:id/readiness", h.GetEventReadiness)
 	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)
