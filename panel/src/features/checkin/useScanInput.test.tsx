@@ -19,6 +19,11 @@ let scanLastResponse: { code: string; time: string } = { code: "", time: "0001-0
 let scanLastHitCount = 0;
 let scanLastShouldError = false;
 let scanClearHitCount = 0;
+// PR #77 bot-review round, Finding P -- lets a test make the NEXT
+// `/scan/clear` call fail without touching `/scan/last`'s own error toggle
+// above (a clear failure must not also look like the agent being
+// unreachable for `getLastScan`).
+let scanClearShouldFailNext = false;
 
 const server = startMswServer(
   http.get("http://agent.test/scan/last", () => {
@@ -28,6 +33,10 @@ const server = startMswServer(
   }),
   http.post("http://agent.test/scan/clear", () => {
     scanClearHitCount += 1;
+    if (scanClearShouldFailNext) {
+      scanClearShouldFailNext = false;
+      return new HttpResponse(null, { status: 500 });
+    }
     return HttpResponse.json({ status: "cleared" });
   }),
 );
@@ -55,6 +64,7 @@ describe("useScanInput", () => {
     scanLastHitCount = 0;
     scanLastShouldError = false;
     scanClearHitCount = 0;
+    scanClearShouldFailNext = false;
   });
 
   describe("wedge mode", () => {
@@ -156,6 +166,35 @@ describe("useScanInput", () => {
       expect(scanLastHitCount).toBe(0);
       expect(onCode).not.toHaveBeenCalled();
     });
+
+    // PR #77 bot-review round, Finding P -- the CURRENT code's dedup check
+    // (`last.code === scan.code && last.time === scan.time`) previously
+    // caused the poll to see the same still-uncleared pair and exit early
+    // WITHOUT re-attempting the clear (since it's already in
+    // `lastHandledRef`), leaving the agent's buffer stuck forever after a
+    // single transient clear failure -- even though the scan itself was
+    // correctly consumed exactly once (no double-emit).
+    it("retries a failed clearLastScan() on the next poll of the SAME scan, without re-emitting onCode", async () => {
+      scanLastResponse = { code: "PD-0107", time: "2026-07-17T10:00:00Z" };
+      scanClearShouldFailNext = true;
+      const onCode = vi.fn();
+      render(<ScannerHarness onCode={onCode} />);
+
+      // First poll: onCode fires once, the clear is attempted and FAILS.
+      await waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(scanClearHitCount).toBe(1));
+
+      // A later poll sees the SAME {code, time} pair (this mock never
+      // changes it) -- the clear is retried (a second /scan/clear hit),
+      // but onCode must NOT fire again.
+      await waitFor(() => expect(scanClearHitCount).toBe(2), { timeout: 10000 });
+      expect(onCode).toHaveBeenCalledTimes(1);
+
+      // And once the clear finally succeeds, no FURTHER retries happen.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(scanClearHitCount).toBe(2);
+      expect(onCode).toHaveBeenCalledTimes(1);
+    }, 15000);
   });
 
   describe("manual mode", () => {

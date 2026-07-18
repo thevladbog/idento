@@ -22,7 +22,7 @@ import {
 } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { verdictClasses } from "@idento/ui";
 import { StationPage } from "./StationPage";
 import { checkinStationBeforeLoad, validateCheckinStationSearch } from "./searchParams";
@@ -129,7 +129,7 @@ const EVENT = {
 };
 
 const STATIONS = [
-  { id: "st-1", event_id: "evt-1", name: "Main Door", last_seen_at: "2026-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" },
+  { id: "11111111-1111-4111-8111-111111111111", event_id: "evt-1", name: "Main Door", last_seen_at: "2026-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" },
 ];
 
 const ATTENDEE: Attendee = {
@@ -221,7 +221,7 @@ describe("StationPage routing -- sibling registration proof", () => {
   });
 
   it("renders StationPage's own content with NONE of the workspace shell's nav markers, when registered as a top-level sibling of the workspace route (app/router.tsx's real shape)", async () => {
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
 
     expect(await screen.findByTestId("checkin-station-page")).toBeInTheDocument();
     expect(await screen.findByTestId("checkin-recent-scans-rail")).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe("StationPage", () => {
   });
 
   it("renders the split layout: top bar (event name, station name, Exit), the idle verdict panel, scan input, and the rail placeholder", async () => {
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(await screen.findByText("Main Door")).toBeInTheDocument();
@@ -293,7 +293,7 @@ describe("StationPage", () => {
   // from the settings response actually reaches it).
   it("hides the manual search box when settings.manual_search_enabled is false, without affecting the wedge scan-input mechanism", async () => {
     settingsOverride = { ...settingsOverride, manual_search_enabled: false };
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     expect(screen.queryByPlaceholderText("Search by name, email, or code…")).not.toBeInTheDocument();
@@ -301,7 +301,7 @@ describe("StationPage", () => {
   });
 
   it("shows the manual search box when settings.manual_search_enabled is true (the default)", async () => {
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     expect(screen.getByPlaceholderText("Search by name, email, or code…")).toBeInTheDocument();
@@ -309,7 +309,7 @@ describe("StationPage", () => {
 
   it("a wedge scan of a known code shows the checked_in verdict card through the mapped verdictClasses", async () => {
     const user = userEvent.setup();
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
@@ -325,7 +325,7 @@ describe("StationPage", () => {
   it("a repeat scan shows the already_checked_in verdict card (the info/repeat verdictClasses) with the first-scan metadata line", async () => {
     checkinOutcome = "already_checked_in";
     const user = userEvent.setup();
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
@@ -340,9 +340,65 @@ describe("StationPage", () => {
     expect(meta).toHaveTextContent("Main Door");
   });
 
+  // PR #77 bot-review round, Finding N -- while the real check-in settings
+  // are still loading, the station must not silently scan/search against
+  // DEFAULT_CHECKIN_SETTINGS (the P3.1 badge-editor "ungated load effect"
+  // bug class) -- an explicit loading state replaces the verdict/scan
+  // surface until settingsQuery resolves. The station's OTHER data (event
+  // name, station name) is unaffected -- only the settings-derived surface
+  // is gated.
+  it("shows a loading state (not defaults) for the verdict/scan surface while check-in settings are still loading, then enables scanning once they resolve", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:id/checkin-settings", async () => {
+        await delay(50);
+        return HttpResponse.json({ settings: settingsOverride });
+      }),
+    );
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
+    await screen.findByText("Main Door");
+
+    expect(screen.getByTestId("checkin-settings-loading")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Badge scanner input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("checkin-verdict-idle")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.queryByTestId("checkin-settings-loading")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
+    expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
+  });
+
+  // PR #77 bot-review round, Finding F -- flow.submitCode/submitAttendee can
+  // reject (the API unreachable even though the browser still reports
+  // itself online, or the backend rejects the request) -- previously
+  // neither StationPage call site had a `.catch`, producing an unhandled
+  // promise rejection with NO visible verdict/error, silently dropping the
+  // scan. This proves the operator sees something AND can immediately try
+  // again -- and, implicitly, that this test itself doesn't fail from an
+  // unhandled rejection (vitest surfaces those as failures).
+  it("shows a visible error and lets the operator scan again when the check-in request itself fails (not a print failure) -- no scan is silently dropped", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin", () => new HttpResponse(null, { status: 500 })),
+    );
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
+    await screen.findByText("Main Door");
+
+    await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
+
+    expect(await screen.findByTestId("checkin-request-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("checkin-verdict-card")).not.toBeInTheDocument();
+    // Recovered -- the wedge input is enabled again (status reset to idle)
+    // and a fresh scan reaches the network normally.
+    expect(screen.getByLabelText("Badge scanner input")).toBeEnabled();
+
+    server.resetHandlers();
+    await user.type(screen.getByLabelText("Badge scanner input"), "CODE1{Enter}");
+    const card = await screen.findByTestId("checkin-verdict-card");
+    expect(card).toHaveAttribute("data-verdict", "allowed");
+  });
+
   it("an unrecognized code shows the not_registered verdict card, without ever calling the check-in endpoint", async () => {
     const user = userEvent.setup();
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     await user.type(screen.getByLabelText("Badge scanner input"), "NO-SUCH-CODE{Enter}");
@@ -395,7 +451,7 @@ describe("StationPage — degraded mode", () => {
   });
 
   it("shows the amber 'Connection is unstable' banner while offline, and hides it again on reconnect", async () => {
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
     expect(screen.queryByTestId("checkin-degraded-banner")).not.toBeInTheDocument();
 
@@ -408,7 +464,7 @@ describe("StationPage — degraded mode", () => {
 
   it("blocks a wedge scan while offline -- no check-in POST fires, an explicit offline verdict shows instead -- then lets a scan through again once reconnected", async () => {
     const user = userEvent.setup();
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     goOffline();
@@ -432,7 +488,7 @@ describe("StationPage — degraded mode", () => {
 
   it("manual search stays read-only while offline -- the cached result still shows, but with no check-in button -- and picking it does not check anyone in", async () => {
     const user = userEvent.setup();
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
 
     const searchBox = screen.getByPlaceholderText("Search by name, email, or code…");
@@ -462,7 +518,7 @@ describe("StationPage — degraded mode", () => {
             {
               id: "ca-1",
               action: "checkin",
-              station_id: "st-1",
+              station_id: "11111111-1111-4111-8111-111111111111",
               created_at: "2026-01-01T00:00:00Z",
               attendee: { id: "att-1", first_name: "Ada", last_name: "Lovelace", code: "CODE1" },
             },
@@ -470,7 +526,7 @@ describe("StationPage — degraded mode", () => {
         }),
       ),
     );
-    renderCorrectAt("/events/evt-1/checkin?station=st-1");
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
     await screen.findByText("Main Door");
     const undoButton = await screen.findByRole("button", { name: "Undo" });
     expect(undoButton).toBeEnabled();

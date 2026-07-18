@@ -33,6 +33,7 @@ const ADA: Attendee = {
 
 let attendeesHitCount = 0;
 let lastSearchParam: string | null = null;
+let attendeesShouldError = false;
 let scanLastResponse: { code: string; time: string } = { code: "", time: "0001-01-01T00:00:00Z" };
 let scanLastShouldError = false;
 
@@ -41,6 +42,7 @@ const server = startMswServer(
     attendeesHitCount += 1;
     const url = new URL(request.url);
     lastSearchParam = url.searchParams.get("search");
+    if (attendeesShouldError) return new HttpResponse(null, { status: 500 });
     const matches = lastSearchParam && "Ada Lovelace ada@example.com PD-0107".includes(lastSearchParam) ? [ADA] : [];
     return HttpResponse.json({ attendees: matches, total: matches.length, page: 1, per_page: 8 });
   }),
@@ -88,6 +90,7 @@ describe("ScanInput", () => {
     window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
     attendeesHitCount = 0;
     lastSearchParam = null;
+    attendeesShouldError = false;
     scanLastResponse = { code: "", time: "0001-01-01T00:00:00Z" };
     scanLastShouldError = false;
   });
@@ -168,19 +171,59 @@ describe("ScanInput", () => {
     expect(attendeesHitCount).toBe(0);
   });
 
+  // PR #77 bot-review round, Finding K -- a FAILED search must never be
+  // presented as "no matching attendees" (a false negative): the old
+  // `showNoMatches` derivation only checked "loading is false and results
+  // are empty", which a failed query also satisfies.
+  it("never shows the no-matches line for a search that failed (not merely came back empty)", async () => {
+    attendeesShouldError = true;
+    const user = userEvent.setup();
+    renderScanInput({ mode: "manual" });
+
+    const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
+    await user.type(searchBox, "Ada");
+
+    await waitFor(() => expect(attendeesHitCount).toBeGreaterThan(0));
+    // Give the (wrong) no-matches line a chance to render before asserting
+    // its absence.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText("No matching attendees.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
+  });
+
   // P4.1 Task 10 -- degraded mode's "read-only manual search" requirement:
   // StationPage passes `readOnly` while offline so a scan/search can still
   // LOOK someone up, but there is no check-in CTA to attempt (the brief's
   // "look someone up, no check-in button").
   describe("readOnly", () => {
+    // PR #77 bot-review round, Finding K -- previously readOnly typed a
+    // BRAND NEW search term and still fired a fresh (uncached) request; now
+    // the query is disabled while readOnly, so this test seeds the cache
+    // WHILE ONLINE first (matching the real degraded-mode story: readOnly
+    // only ever flips true AFTER StationPage's own useConnectionState goes
+    // offline, never from a fresh render), then flips readOnly on and
+    // confirms the ALREADY-cached result still renders as plain text.
     it("still shows a matched result, but as plain text -- no check-in button, and clicking it calls nothing", async () => {
       const user = userEvent.setup();
-      const { onPickAttendee } = renderScanInput({ mode: "manual", readOnly: true });
+      const { rerender, onPickAttendee } = renderScanInput({ mode: "manual", readOnly: false });
 
       const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
       await user.type(searchBox, "Ada");
       await waitFor(() => expect(screen.getByText("Ada Lovelace")).toBeInTheDocument());
 
+      rerender(
+        <ScanInput
+          eventId="evt-1"
+          mode="manual"
+          enabled={true}
+          readOnly={true}
+          manualSearchEnabled={true}
+          onCode={vi.fn()}
+          onPickAttendee={onPickAttendee}
+        />,
+      );
+
+      expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Ada Lovelace/ })).not.toBeInTheDocument();
 
       await user.click(screen.getByText("Ada Lovelace"));
@@ -194,6 +237,23 @@ describe("ScanInput", () => {
       const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
       await user.type(searchBox, "Ada");
       await waitFor(() => expect(screen.getByRole("button", { name: /Ada Lovelace/ })).toBeInTheDocument());
+    });
+
+    // PR #77 bot-review round, Finding K -- the "read-only CACHED roster"
+    // contract: a term typed WHILE ALREADY readOnly (never cached) must
+    // never reach the network at all, and must show neither a false match
+    // nor a false "no matching attendees" (the query never even attempted).
+    it("never fires a search request for a term typed while already read-only, and shows no result / no-matches line for it", async () => {
+      const user = userEvent.setup();
+      renderScanInput({ mode: "manual", readOnly: true });
+
+      const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
+      await user.type(searchBox, "Ada");
+
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      expect(attendeesHitCount).toBe(0);
+      expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
+      expect(screen.queryByText("No matching attendees.")).not.toBeInTheDocument();
     });
   });
 
@@ -240,6 +300,48 @@ describe("ScanInput", () => {
         expect(screen.getByText("Waiting for a scan from the handheld scanner…")).toBeInTheDocument(),
       );
       expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    });
+
+    // PR #77 bot-review round, Finding Q -- the scanner-outage copy tells
+    // the operator to "use manual search below", which is actively wrong
+    // when manual search is disabled outright (no search box renders in ANY
+    // mode, per the block above). A dedicated key with no manual-search
+    // reference is shown instead.
+    it("shows manual-search-free degraded copy when the scanner fails AND manualSearchEnabled is false", async () => {
+      scanLastShouldError = true;
+      renderScanInput({ mode: "scanner", manualSearchEnabled: false });
+
+      expect(
+        await screen.findByText(
+          "Can't reach the handheld scanner. Ask a colleague for help checking this attendee in.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText("Can't reach the handheld scanner — use manual search below."),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText(SEARCH_PLACEHOLDER)).not.toBeInTheDocument();
+    });
+  });
+
+  // PR #77 bot-review round, Finding M -- `pick()` must honor `enabled`
+  // (StationPage passes `enabled={false}` while a previous scan is still
+  // resolving, the same signal that already disables the wedge/scanner
+  // input) so a manual-search pick can't start a second, competing
+  // check-in racing the first one's verdict/print state.
+  describe("enabled=false (a previous scan is still resolving)", () => {
+    it("renders the result row's button as disabled, and clicking it never calls onPickAttendee", async () => {
+      const user = userEvent.setup();
+      const { onPickAttendee } = renderScanInput({ mode: "manual", enabled: false });
+
+      const searchBox = screen.getByPlaceholderText(SEARCH_PLACEHOLDER);
+      await user.type(searchBox, "Ada");
+      await waitFor(() => expect(screen.getByText("Ada Lovelace")).toBeInTheDocument());
+
+      const resultButton = screen.getByRole("button", { name: /Ada Lovelace/ });
+      expect(resultButton).toBeDisabled();
+
+      await user.click(resultButton);
+      expect(onPickAttendee).not.toHaveBeenCalled();
     });
   });
 });

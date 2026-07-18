@@ -54,6 +54,16 @@ export function VerdictCard({ state }: VerdictCardProps) {
       >
         <ScanLine aria-hidden className="size-10 text-muted-foreground" />
         <p className="text-body text-muted-foreground">{t("checkinIdleHint")}</p>
+        {/* PR #77 bot-review round, Finding F -- submitCode/submitAttendee
+            resets to "idle" immediately on a genuine request failure
+            (network error, 5xx -- not a print failure, which never reverts
+            status) so the operator can retry right away; this surfaces WHY
+            the previous attempt produced no verdict instead of going quiet. */}
+        {state.requestError ? (
+          <p className="text-caption text-destructive" role="alert" data-testid="checkin-request-error">
+            {t("checkinRequestError")}
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -101,7 +111,31 @@ export function VerdictCard({ state }: VerdictCardProps) {
         </p>
       ) : null}
 
-      {state.printError ? (
+      {/* PR #77 bot-review round, Finding H -- the ONLY outcome that maps to
+          "no_access" here is the server's own "blocked" (verdict.ts's
+          OUTCOME_TO_VERDICT) -- door staff see "Access denied" but not WHY
+          without this. Mirrors the already_checked_in block above's
+          per-outcome conditional-rendering pattern. Gracefully omitted when
+          block_reason is empty/null (schema.d.ts: `block_reason?: string |
+          null`) rather than rendering a blank line. */}
+      {verdict === "no_access" && attendee?.block_reason ? (
+        <p className="text-body text-muted-foreground" data-testid="checkin-block-reason">
+          {t("checkinBlockReason", { reason: attendee.block_reason })}
+        </p>
+      ) : null}
+
+      {/* PR #77 bot-review round, Finding I -- a MarkPrintedError (the badge
+          WAS sent, only the /printed counter-update afterward failed) must
+          read as a softer, distinct caveat from a genuine print failure --
+          telling the operator to reprint here would risk an unnecessary
+          duplicate print. Mirrors RecentScansRail.tsx's own MarkPrintedError
+          handling for the SAME distinction on that surface (reuses its
+          exact `checkinReprintMarkPrintedWarning` copy for consistency). */}
+      {state.printMarkFailed ? (
+        <p className="text-caption text-warning" role="status" data-testid="checkin-print-mark-warning">
+          {t("checkinReprintMarkPrintedWarning", { printer: state.printMarkFailed.printer })}
+        </p>
+      ) : state.printError ? (
         <p className="text-caption text-warning" role="status">
           {t("checkinPrintFailedWarning")}
         </p>

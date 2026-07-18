@@ -15,7 +15,7 @@ import * as React from "react";
 import type { Verdict } from "@idento/ui";
 import { api } from "../../shared/api/http";
 import type { components } from "../../shared/api/schema";
-import { usePrintBadge } from "../badge/zpl/usePrintBadge";
+import { MarkPrintedError, usePrintBadge } from "../badge/zpl/usePrintBadge";
 import { useStationCheckin } from "./hooks";
 import type { CheckinSettings } from "./settingsTypes";
 import { outcomeToVerdict } from "./verdict";
@@ -61,6 +61,28 @@ export interface CheckinFlowState {
   // check-in already committed server-side; this field is purely additive
   // surfacing for whatever UI (Task 8's VerdictCard) wants to show it.
   printError?: unknown;
+  // PR #77 bot-review round, Finding I -- set instead of (never alongside)
+  // `printError` when the print step's failure was specifically a
+  // MarkPrintedError: the badge WAS sent (usePrintBadge.printAttendee's own
+  // doc comment -- "Non-fatal from the operator's perspective") and only the
+  // `/printed` counter-update afterward failed. Carries the printer name so
+  // the UI can reuse RecentScansRail.tsx's own MarkPrintedError copy
+  // verbatim (that copy is printer-name-parameterized) rather than a
+  // parallel printer-less message.
+  printMarkFailed?: { printer: string };
+  // PR #77 bot-review round, Finding F -- set when submitCode/submitAttendee
+  // ITSELF fails (network error, 5xx on the check-in POST, or the code
+  // lookup GET) -- NOT a print failure, which never reverts status. `status`
+  // is reset to "idle" in the SAME setState call that sets this, so the
+  // operator can immediately scan/search again; this field lets the idle
+  // view explain why the previous attempt produced no verdict instead of
+  // silently going quiet. This hook still re-throws the error afterward
+  // (unchanged -- callers may want it too), so every caller must still
+  // `.catch()` the call (see StationPage.tsx's handleCode/handlePickAttendee)
+  // to avoid an unhandled promise rejection; this field is what actually
+  // gives the operator something visible, independent of whether a given
+  // caller bothers to inspect the rejected error itself.
+  requestError?: unknown;
 }
 
 export interface UseCheckinFlowResult {
@@ -115,6 +137,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
     });
 
     let printError: unknown;
+    let printMarkFailed: { printer: string } | undefined;
     // Zero-double-print at the source (plan global constraint): printing
     // fires ONLY on the server's own "checked_in" outcome -- never
     // "already_checked_in"/"blocked", regardless of settings.
@@ -139,7 +162,19 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
         // here must never look like (or cause) an undone check-in. The
         // person is in; this is surfaced separately, not as a verdict
         // change.
-        printError = error;
+        //
+        // PR #77 bot-review round, Finding I -- a MarkPrintedError means the
+        // agent print itself SUCCEEDED and only the later /printed
+        // counter-update call failed -- collapsing it into the same
+        // `printError` VerdictCard renders as "reprint it" would invite an
+        // unnecessary duplicate print for a badge that may already be
+        // printing/printed. Kept mutually exclusive from `printError` (only
+        // one of the two is ever set).
+        if (error instanceof MarkPrintedError) {
+          printMarkFailed = { printer: printerName };
+        } else {
+          printError = error;
+        }
       }
     }
 
@@ -149,6 +184,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
       attendee: response.attendee,
       checkin: response.checkin,
       printError,
+      printMarkFailed,
     });
     scheduleAutoDismiss();
   }
@@ -182,9 +218,14 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
       // A genuine failure resolving the check-in itself (network error,
       // 5xx, etc. -- not a print failure, which resolveCheckin already
       // swallows into printError) must not leave the flow stuck on
-      // "resolving" forever; reset to idle and let the caller decide how to
-      // surface it (Task 10's degraded mode owns the offline story).
-      setState(IDLE_STATE);
+      // "resolving" forever; reset to idle so the operator can immediately
+      // retry (Task 10's degraded mode owns the offline story), and record
+      // it as `requestError` (PR #77 Finding F) so the idle view can show
+      // SOMETHING rather than silently dropping the scan -- still re-thrown
+      // so a caller that wants the raw error can also see it, but every
+      // caller must `.catch()` this (StationPage.tsx's handleCode/
+      // handlePickAttendee do) to avoid an unhandled rejection.
+      setState({ status: "idle", requestError: error });
       throw error;
     } finally {
       busyRef.current = false;
@@ -199,7 +240,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
     try {
       await resolveCheckin(attendee);
     } catch (error) {
-      setState(IDLE_STATE);
+      setState({ status: "idle", requestError: error });
       throw error;
     } finally {
       busyRef.current = false;

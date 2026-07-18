@@ -13,12 +13,26 @@ export interface CheckinStationSearch {
   station?: string;
 }
 
-// A missing, empty, or non-string `station` search value all collapse to
-// `undefined` here -- "missing" and "malformed" are handled identically by
-// the beforeLoad guard below (checkinStationBeforeLoad), matching the
-// brief's own phrasing ("Missing/invalid ?station= ... redirect").
+// PR #77 bot-review round, Finding G -- format-only validation. Station ids
+// are server-generated UUIDs (backend/internal/handler/checkin_stations.go's
+// own uuid.Parse); a `?station=` that isn't UUID-SHAPED can never resolve to
+// a real station, so accepting it verbatim just deferred the failure to
+// StationPage's own heartbeat/check-in calls, which would then 400 in a loop
+// instead of the intended redirect-to-launch-ceremony. Deliberately FORMAT
+// ONLY -- this module has no access to (and must never gain) the registered
+// station list: a well-formed but hypothetically-unregistered UUID is NOT
+// rejected here (see StationPage.tsx's own file-header comment for why that
+// distinction is a deliberate design decision, not an oversight).
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A missing, empty, non-string, or non-UUID-shaped `station` search value
+// all collapse to `undefined` here -- "missing" and "malformed" are handled
+// identically by the beforeLoad guard below (checkinStationBeforeLoad),
+// matching the brief's own phrasing ("Missing/invalid ?station= ...
+// redirect").
 export function validateCheckinStationSearch(search: Record<string, unknown>): CheckinStationSearch {
-  const station = typeof search.station === "string" && search.station !== "" ? search.station : undefined;
+  const raw = typeof search.station === "string" ? search.station : "";
+  const station = UUID_PATTERN.test(raw) ? raw : undefined;
   return { station };
 }
 

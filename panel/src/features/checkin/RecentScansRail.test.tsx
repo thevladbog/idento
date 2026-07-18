@@ -10,7 +10,7 @@
 // regardless of whether it exercises printing.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
@@ -104,6 +104,11 @@ const ADA_FULL: Attendee = {
 let actionsRows: CheckinActionRow[] = [ROW_CHECKIN, ROW_REPRINT, ROW_UNDO];
 let actionsHitCount = 0;
 let actionsStatus = 200;
+// PR #77 bot-review round, Finding S -- tracks GET /api/events/:eventId/
+// attendees hits so a test can prove the attendees-LIST invalidation (not
+// just the feed's) actually happened after Undo, mirroring how
+// `actionsHitCount` is already tracked above.
+let attendeesFeedHitCount = 0;
 
 // Disconnected by default (mirrors AttendeeDrawer.test.tsx's own baseline) --
 // individual reprint tests flip this to true.
@@ -134,7 +139,10 @@ const server = startMswServer(
     if (undoStatus !== 200) return new HttpResponse(null, { status: undoStatus });
     return HttpResponse.json({ attendee: { ...ADA_FULL, checkin_status: false } });
   }),
-  http.get("http://api.test/api/events/:eventId/attendees", () => HttpResponse.json([])),
+  http.get("http://api.test/api/events/:eventId/attendees", () => {
+    attendeesFeedHitCount += 1;
+    return HttpResponse.json([]);
+  }),
   http.get("http://api.test/api/attendees/:id", ({ params }) => {
     if (params.id === "att-1") return HttpResponse.json(ADA_FULL);
     return new HttpResponse(null, { status: 404 });
@@ -178,17 +186,29 @@ function AttendeesListObserver() {
 // suite exercises the rail's own rendering, not routing).
 const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
 
-function renderRail(stationId: string | null = "st-1", extra?: ReactNode, online?: boolean) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+function railTree(queryClient: QueryClient, stationId: string | null, extra: ReactNode | undefined, online: boolean | undefined) {
+  return (
     <QueryClientProvider client={queryClient}>
       <RouterContextProvider router={testRouter}>
         {extra}
         <RecentScansRail eventId="evt-1" stationId={stationId} online={online} />
       </RouterContextProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
-  return queryClient;
+}
+
+function renderRail(stationId: string | null = "st-1", extra?: ReactNode, online?: boolean) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const utils = render(railTree(queryClient, stationId, extra, online));
+  return {
+    queryClient,
+    ...utils,
+    // PR #77 bot-review round, Finding L -- lets a test flip `online` on an
+    // ALREADY-rendered rail (a dialog opened while online, THEN connectivity
+    // drops) without losing the queryClient/router identity `rerender`
+    // would otherwise require reconstructing by hand at every call site.
+    rerenderOnline: (nextOnline: boolean) => utils.rerender(railTree(queryClient, stationId, extra, nextOnline)),
+  };
 }
 
 describe("RecentScansRail", () => {
@@ -198,6 +218,7 @@ describe("RecentScansRail", () => {
     localStorage.setItem("token", "jwt-test");
     actionsRows = [ROW_CHECKIN, ROW_REPRINT, ROW_UNDO];
     actionsHitCount = 0;
+    attendeesFeedHitCount = 0;
     actionsStatus = 200;
     agentHealthOk = false;
     printersResponse = [];
@@ -336,6 +357,22 @@ describe("RecentScansRail", () => {
       expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
       expect(within(dialog).getByText(/can't be cancelled/)).toBeInTheDocument();
 
+      // PR #77 bot-review round, Finding R -- the title above already
+      // promised Escape and outside click too, but only Cancel was ever
+      // exercised. Both are also inert while sending.
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+
+      // Radix marks the rest of the page `pointer-events: none` while its
+      // Dialog is open, so a real `userEvent.click` on `document.body`
+      // fails jsdom's own pointer-events check before it can even simulate
+      // the interaction -- `fireEvent.pointerDown` dispatches the SAME
+      // event Radix's DismissableLayer actually listens for (its own
+      // `handlePointerDown`) without going through that hover/move
+      // pipeline.
+      fireEvent.pointerDown(document.body);
+      expect(screen.getByRole("dialog", { name: "Reprint badge" })).toBe(dialog);
+
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
     });
 
@@ -399,6 +436,12 @@ describe("RecentScansRail", () => {
       renderRail("st-1", <AttendeesListObserver />);
       const rows = await screen.findAllByTestId("checkin-rail-row");
       await waitFor(() => expect(actionsHitCount).toBe(1));
+      // PR #77 bot-review round, Finding S -- the title above claims BOTH
+      // the feed AND the attendees-list refetch, but only the feed's hit
+      // count was ever asserted; capture the attendees-list baseline too so
+      // its OWN increase can be proven below.
+      await waitFor(() => expect(attendeesFeedHitCount).toBeGreaterThan(0));
+      const attendeesHitsBeforeUndo = attendeesFeedHitCount;
 
       await user.click(within(rows[0]).getByRole("button", { name: "Undo" }));
       const dialog = await screen.findByRole("dialog", { name: "Undo check-in" });
@@ -410,9 +453,13 @@ describe("RecentScansRail", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Undo check-in" })).not.toBeInTheDocument());
 
       await waitFor(() => expect(actionsHitCount).toBeGreaterThan(1));
+      await waitFor(() => expect(attendeesFeedHitCount).toBeGreaterThan(attendeesHitsBeforeUndo));
     });
 
-    it("blocks dismissal while the undo is in flight, same convention as reprint", async () => {
+    // PR #77 bot-review round, Finding R -- previously only exercised
+    // Cancel; Escape and outside-click are the OTHER two dismissal paths
+    // this exact P3.2 convention is supposed to block too.
+    it("blocks dismissal while the undo is in flight (Cancel, Escape, and outside click), same convention as reprint", async () => {
       undoDelayMs = 40;
       const user = userEvent.setup();
       renderRail("st-1");
@@ -424,7 +471,21 @@ describe("RecentScansRail", () => {
       await user.click(confirmButton);
 
       await waitFor(() => expect(confirmButton).toBeDisabled());
+
       await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+      expect(screen.getByRole("dialog", { name: "Undo check-in" })).toBe(dialog);
+
+      await user.keyboard("{Escape}");
+      expect(screen.getByRole("dialog", { name: "Undo check-in" })).toBe(dialog);
+
+      // Radix marks the rest of the page `pointer-events: none` while its
+      // Dialog is open, so a real `userEvent.click` on `document.body`
+      // fails jsdom's own pointer-events check before it can even simulate
+      // the interaction -- `fireEvent.pointerDown` dispatches the SAME
+      // event Radix's DismissableLayer actually listens for (its own
+      // `handlePointerDown`) without going through that hover/move
+      // pipeline.
+      fireEvent.pointerDown(document.body);
       expect(screen.getByRole("dialog", { name: "Undo check-in" })).toBe(dialog);
 
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Undo check-in" })).not.toBeInTheDocument());
@@ -541,6 +602,65 @@ describe("RecentScansRail", () => {
       // connectivity one -- Undo (which has no agent dependency) is enabled.
       const undoButton = within(rows[0]).getByRole("button", { name: "Undo" });
       await waitFor(() => expect(undoButton).toBeEnabled());
+    });
+  });
+
+  // PR #77 bot-review round, Finding L -- `online` previously only disabled
+  // the per-row TRIGGER buttons that OPEN the Reprint/Undo dialogs (Task
+  // 10's original fix, exercised above). If connectivity drops AFTER a
+  // dialog is already open but BEFORE the operator confirms, the confirm
+  // button and its handler were still enabled/reachable -- allowing exactly
+  // the offline reprint/undo mutation the degraded-mode contract says must
+  // be blocked.
+  describe("connectivity drop after a dialog is already open", () => {
+    beforeEach(() => stubFontFaceApi());
+    afterEach(() => unstubFontFaceApi());
+
+    it("disables the Reprint confirm button once connectivity drops while the dialog is open, and the handler sends nothing", async () => {
+      agentHealthOk = true;
+      printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
+      defaultPrinterResponse = { default: "Zebra_ZD421" };
+      const user = userEvent.setup();
+      const { rerenderOnline } = renderRail("st-1", undefined, true);
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      const reprintButton = within(rows[0]).getByRole("button", { name: "Reprint" });
+      await waitFor(() => expect(reprintButton).toBeEnabled());
+      await user.click(reprintButton);
+      const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
+      const confirmButton = within(dialog).getByRole("button", { name: "Print" });
+      await waitFor(() => expect(confirmButton).toBeEnabled());
+
+      rerenderOnline(false);
+
+      await waitFor(() => expect(within(dialog).getByRole("button", { name: "Print" })).toBeDisabled());
+      // Defense-in-depth: even a direct DOM click event (bypassing whatever
+      // pointer-events a real disabled button would suppress) must never
+      // reach the network -- handleReprintConfirm's own `if (!online)
+      // return;` guard is what actually stops it.
+      fireEvent.click(within(dialog).getByRole("button", { name: "Print" }));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(printCapture).toBeNull();
+    });
+
+    it("disables the Undo confirm button once connectivity drops while the dialog is open, and the handler sends nothing", async () => {
+      const user = userEvent.setup();
+      const { rerenderOnline } = renderRail("st-1", undefined, true);
+      const rows = await screen.findAllByTestId("checkin-rail-row");
+
+      const undoButton = within(rows[0]).getByRole("button", { name: "Undo" });
+      await waitFor(() => expect(undoButton).toBeEnabled());
+      await user.click(undoButton);
+      const dialog = await screen.findByRole("dialog", { name: "Undo check-in" });
+      const confirmButton = within(dialog).getByRole("button", { name: "Undo check-in" });
+      expect(confirmButton).toBeEnabled();
+
+      rerenderOnline(false);
+
+      await waitFor(() => expect(within(dialog).getByRole("button", { name: "Undo check-in" })).toBeDisabled());
+      fireEvent.click(within(dialog).getByRole("button", { name: "Undo check-in" }));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(undoHitCount).toBe(0);
     });
   });
 });

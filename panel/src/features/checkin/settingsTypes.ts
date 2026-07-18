@@ -83,7 +83,19 @@ export function parseCheckinSettings(raw: unknown): CheckinSettings {
       : DEFAULT_CHECKIN_SETTINGS.scan_input;
 
   let verdict_auto_dismiss_sec = DEFAULT_CHECKIN_SETTINGS.verdict_auto_dismiss_sec;
-  if (typeof raw.verdict_auto_dismiss_sec === "number" && Number.isFinite(raw.verdict_auto_dismiss_sec)) {
+  if (
+    typeof raw.verdict_auto_dismiss_sec === "number" &&
+    Number.isFinite(raw.verdict_auto_dismiss_sec) &&
+    // PR #77 bot-review round, Finding O -- the backend contract requires an
+    // INTEGER (openapi.yaml's putCheckinSettings 400 rule). A fractional
+    // value (e.g. 4.5, from a hand-edited DB row) previously survived the
+    // finite check above and was merely clamped, letting a fraction reach
+    // timer math (useCheckinFlow.ts's `verdict_auto_dismiss_sec * 1000`).
+    // Same fallback-to-default behavior as any other invalid case this
+    // parser already handles -- discard, don't round/truncate (rounding
+    // would silently invent a value the operator never actually set).
+    Number.isInteger(raw.verdict_auto_dismiss_sec)
+  ) {
     verdict_auto_dismiss_sec = Math.min(
       MAX_DISMISS_SEC,
       Math.max(MIN_DISMISS_SEC, raw.verdict_auto_dismiss_sec),

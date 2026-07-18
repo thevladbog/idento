@@ -21,7 +21,7 @@ import {
 } from "@tanstack/react-router";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { LaunchCeremony } from "./LaunchCeremony";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -260,6 +260,34 @@ describe("LaunchCeremony", () => {
       },
     });
     expect(await screen.findByText("Saved")).toBeInTheDocument();
+  });
+
+  // PR #77 bot-review round, Finding N -- the SAME "ungated load effect" bug
+  // class as P3.1's badge editor: `settingsForm`/`settingsBaseline` start as
+  // the hardcoded DEFAULT_CHECKIN_SETTINGS until the real GET resolves.
+  // Previously nothing stopped an operator from editing (and, since editing
+  // makes the form diverge from a baseline that's STILL the hardcoded
+  // default, saving) a whole-object PUT built on those defaults while the
+  // real fetch was still in flight, clobbering the event's actual saved
+  // settings the instant they'd otherwise have arrived.
+  it("disables the settings form (and Save) until check-in settings have actually loaded, so a premature edit+save can't clobber real settings with defaults", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:id/checkin-settings", async () => {
+        await delay(50);
+        return HttpResponse.json({ settings: settingsResponse });
+      }),
+    );
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-col-settings");
+
+    expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Allow manual search" })).toBeDisabled();
+    expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toBeDisabled();
+    expect(screen.getByLabelText("Scan input")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeEnabled());
+    expect(capturedSettingsPut).toBeNull();
   });
 
   it("disables the Start check-in CTA with an explanatory reason while the event isn't ready", async () => {

@@ -103,6 +103,12 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
   // clearLastScan() request landing and the agent actually processing it,
   // or simply because nothing new has been scanned since).
   const lastHandledRef = React.useRef<{ code: string; time: string } | null>(null);
+  // PR #77 bot-review round, Finding P -- a transient clearLastScan()
+  // failure must be RETRIED, not abandoned. Tracks whether the clear for
+  // `lastHandledRef`'s current pair has actually succeeded yet; the dedup
+  // branch below only skips re-emitting `onCode` (the dedup check itself is
+  // untouched), it does NOT skip retrying the clear while this stays false.
+  const clearPendingRef = React.useRef(false);
 
   React.useEffect(() => {
     if (mode !== "scanner" || !enabled) {
@@ -121,11 +127,23 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
         if (!scan.code) return; // steady state: nothing new since the last clear.
 
         const last = lastHandledRef.current;
-        if (last && last.code === scan.code && last.time === scan.time) return; // already consumed.
+        const isNewScan = !last || last.code !== scan.code || last.time !== scan.time;
 
-        lastHandledRef.current = { code: scan.code, time: scan.time };
-        onCodeRef.current(scan.code);
-        await agentClient.clearLastScan();
+        if (isNewScan) {
+          lastHandledRef.current = { code: scan.code, time: scan.time };
+          clearPendingRef.current = true;
+          onCodeRef.current(scan.code);
+        }
+        // else: already consumed -- onCode must NOT fire again (the dedup
+        // check above is unchanged), but the clear may still be owed if a
+        // PREVIOUS attempt for this same pair failed (clearPendingRef still
+        // true) -- retry it below rather than leaving the agent's buffer
+        // stuck forever.
+
+        if (clearPendingRef.current) {
+          await agentClient.clearLastScan();
+          clearPendingRef.current = false;
+        }
       } catch {
         if (!cancelled) setDegraded(true);
       }

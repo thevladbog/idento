@@ -43,6 +43,18 @@ export interface UseConnectionStateResult {
 // a human operator's own reaction time.
 const DEBOUNCE_MS = 400;
 
+// PR #77 bot-review round, Finding J -- without a recurring poll, `online`
+// only reacts to the INITIAL useCheckinActions fetch plus navigator.onLine
+// events: if the backend goes down mid-shift while the browser still
+// reports itself online, the degraded banner/action-disabling never
+// activates unless some UNRELATED refetch (a window focus, another
+// operator's mutation invalidating this same query) happens to occur. This
+// periodic `refetch()` keeps the health signal honest on its own. Matches
+// useHeartbeat's own 20s precedent (this feature's established interval for
+// a lightweight, non-aggressive background ping) rather than inventing a
+// new cadence.
+const HEALTH_POLL_INTERVAL_MS = 20_000;
+
 function readNavigatorOnline(): boolean {
   return typeof navigator === "undefined" || typeof navigator.onLine !== "boolean" ? true : navigator.onLine;
 }
@@ -68,6 +80,23 @@ export function useConnectionState(eventId: string): UseConnectionStateResult {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
+  }, []);
+
+  // Read the latest `refetch` on every tick without re-subscribing the
+  // interval effect below to its identity churn -- same ref-mirrors-latest-
+  // callback idiom useHeartbeat.ts/useScanInput.ts already establish in this
+  // feature (a fresh `useQuery` result's `refetch` is a new function
+  // reference on every render).
+  const refetchRef = React.useRef(actionsQuery.refetch);
+  React.useEffect(() => {
+    refetchRef.current = actionsQuery.refetch;
+  }, [actionsQuery.refetch]);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refetchRef.current();
+    }, HEALTH_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
   }, []);
 
   const rawOnline = browserOnline && !actionsQuery.isError;

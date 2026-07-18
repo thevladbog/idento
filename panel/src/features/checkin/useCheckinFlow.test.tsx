@@ -275,6 +275,48 @@ describe("useCheckinFlow", () => {
     expect(printedHitCount).toBe(0);
   });
 
+  // PR #77 bot-review round, Finding I -- a MarkPrintedError (the agent
+  // print SUCCEEDS but the LATER /printed counter-update call fails) must be
+  // distinguished from a genuine print failure: the badge may already be
+  // printing/printed, so telling the operator to reprint (printError's own
+  // copy) would invite an unnecessary duplicate print.
+  it("sets printMarkFailed (not printError) when the print succeeds but mark-printed fails", async () => {
+    server.use(
+      http.post("http://api.test/api/attendees/:attendeeId/printed", () =>
+        HttpResponse.json({ error: "boom" }, { status: 500 }),
+      ),
+    );
+    const { result } = renderFlow();
+
+    void result.current.submitCode(ATTENDEE.code);
+
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.verdict).toBe("allowed");
+    await waitFor(() => expect(agentPrintHitCount).toBe(1));
+    expect(result.current.state.printMarkFailed).toEqual({ printer: "Zebra_ZD421" });
+    expect(result.current.state.printError).toBeUndefined();
+  });
+
+  // PR #77 bot-review round, Finding F -- a genuine failure resolving the
+  // check-in itself (not a print failure, which resolveCheckin already
+  // swallows into printError/printMarkFailed) must not leave the flow stuck
+  // -- it resets to idle AND records `requestError` so the caller/UI has
+  // something to show instead of a scan silently vanishing.
+  it("resets to idle and sets requestError when the check-in POST itself fails, and the promise still rejects for a caller that awaits it", async () => {
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin", () =>
+        HttpResponse.json({ error: "boom" }, { status: 500 }),
+      ),
+    );
+    const { result } = renderFlow();
+
+    await expect(result.current.submitCode(ATTENDEE.code)).rejects.toBeDefined();
+
+    await waitFor(() => expect(result.current.state.status).toBe("idle"));
+    expect(result.current.state.requestError).toBeDefined();
+    expect(result.current.state.verdict).toBeUndefined();
+  });
+
   it("clear() resets to idle and cancels a pending auto-dismiss timer", async () => {
     const { result } = renderFlow();
 

@@ -116,7 +116,23 @@ export function LaunchCeremony() {
     }
   }, [settingsQuery.data]);
 
+  // PR #77 bot-review round, Finding N -- the SAME "ungated load effect" bug
+  // class as P3.1's badge editor: `settingsForm`/`settingsBaseline` start
+  // out as `DEFAULT_CHECKIN_SETTINGS` (hardcoded, not server-sourced) until
+  // the seeding effect above fires. Previously nothing stopped the operator
+  // from editing (and, since editing flips `settingsDirty` against a
+  // baseline that's STILL the hardcoded default while the real GET is in
+  // flight, saving) a whole-object PUT built on those defaults, clobbering
+  // whatever the event's real saved settings actually were the instant they
+  // would otherwise have arrived. Gated on `settingsQuery.isSuccess` --
+  // `useCheckinSettings`' own `select: parseCheckinSettings` means `.data`
+  // is truthy the moment `isSuccess` flips (never null), so this and the
+  // seeding effect's own `settingsQuery.data` check become true in the same
+  // render, with no window where one is true and the other isn't.
+  const settingsReady = settingsQuery.isSuccess;
+
   function updateSetting<K extends keyof CheckinSettings>(key: K, value: CheckinSettings[K]) {
+    if (!settingsReady) return;
     setSettingsForm((prev) => ({ ...prev, [key]: value }));
     setSettingsSaved(false);
     saveSettings.reset();
@@ -125,6 +141,7 @@ export function LaunchCeremony() {
   const settingsDirty = JSON.stringify(settingsForm) !== JSON.stringify(settingsBaseline);
 
   function handleSaveSettings() {
+    if (!settingsReady) return;
     const savedForm = settingsForm;
     saveSettings.mutate(
       { params: { path: { id: eventId } }, body: { settings: savedForm } },
@@ -264,10 +281,27 @@ export function LaunchCeremony() {
             <CardTitle>{t("launchColSettingsTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            {/* PR #77 bot-review round, Finding N -- every control below stays
+                disabled until settingsQuery has actually resolved: editing a
+                form still seeded from DEFAULT_CHECKIN_SETTINGS (not yet the
+                event's real saved values) invites a whole-object Save that
+                clobbers those real values the instant they'd otherwise
+                arrive. `settingsQuery.isLoading` shows an explicit loading
+                hint in place of a silently-inert form (an error state falls
+                back to the SAME disabled controls -- the operator can't
+                usefully seed real values here either, `settingsQuery.error`
+                has no retry surfaced yet, so this stays simple rather than
+                inventing a bespoke error+retry UI this task didn't ask for). */}
+            {settingsQuery.isLoading ? (
+              <p className="text-caption text-muted-foreground" data-testid="launch-settings-loading">
+                {t("checkinSettingsLoading")}
+              </p>
+            ) : null}
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="launch-print-on-checkin">{t("launchPrintOnCheckinLabel")}</Label>
               <Switch
                 id="launch-print-on-checkin"
+                disabled={!settingsReady}
                 checked={settingsForm.print_on_checkin}
                 onCheckedChange={(next) => updateSetting("print_on_checkin", next)}
               />
@@ -279,6 +313,7 @@ export function LaunchCeremony() {
                 type="number"
                 min={1}
                 max={30}
+                disabled={!settingsReady}
                 value={settingsForm.verdict_auto_dismiss_sec}
                 onChange={(e) => updateSetting("verdict_auto_dismiss_sec", Number(e.target.value))}
               />
@@ -288,6 +323,7 @@ export function LaunchCeremony() {
               <select
                 id="launch-scan-input"
                 className={SELECT_CLASSNAME}
+                disabled={!settingsReady}
                 value={settingsForm.scan_input}
                 onChange={(e) => updateSetting("scan_input", e.target.value as CheckinSettings["scan_input"])}
               >
@@ -302,13 +338,18 @@ export function LaunchCeremony() {
               <Label htmlFor="launch-manual-search">{t("launchManualSearchLabel")}</Label>
               <Switch
                 id="launch-manual-search"
+                disabled={!settingsReady}
                 checked={settingsForm.manual_search_enabled}
                 onCheckedChange={(next) => updateSetting("manual_search_enabled", next)}
               />
             </div>
             {saveSettings.isError ? <p className="text-body text-destructive">{t("settingsSaveError")}</p> : null}
             <div className="flex items-center gap-3">
-              <Button type="button" disabled={!settingsDirty || saveSettings.isPending} onClick={handleSaveSettings}>
+              <Button
+                type="button"
+                disabled={!settingsReady || !settingsDirty || saveSettings.isPending}
+                onClick={handleSaveSettings}
+              >
                 {t("settingsSave")}
               </Button>
               {settingsSaved ? <span className="text-caption text-muted-foreground">{t("settingsSaved")}</span> : null}

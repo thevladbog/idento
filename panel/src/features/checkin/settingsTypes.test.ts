@@ -98,6 +98,24 @@ describe("parseCheckinSettings", () => {
     expect(parseCheckinSettings({ verdict_auto_dismiss_sec: Infinity }).verdict_auto_dismiss_sec).toBe(4);
   });
 
+  // PR #77 bot-review round, Finding O -- the backend contract requires an
+  // INTEGER (openapi.yaml's putCheckinSettings 400 rule); a fractional value
+  // was previously accepted and merely clamped, letting it reach timer math
+  // (`verdict_auto_dismiss_sec * 1000` in useCheckinFlow.ts). Same fallback
+  // behavior as any other invalid case this parser already handles: discard
+  // to the default rather than round/truncate (rounding would silently
+  // invent a value the operator never actually set).
+  it("falls back to the default for a fractional verdict_auto_dismiss_sec, even when it's within the 1..30 range", () => {
+    expect(parseCheckinSettings({ verdict_auto_dismiss_sec: 4.5 }).verdict_auto_dismiss_sec).toBe(4);
+    expect(parseCheckinSettings({ verdict_auto_dismiss_sec: 1.1 }).verdict_auto_dismiss_sec).toBe(4);
+    expect(parseCheckinSettings({ verdict_auto_dismiss_sec: 29.9 }).verdict_auto_dismiss_sec).toBe(4);
+  });
+
+  it("still falls back to the default for a fractional AND out-of-range verdict_auto_dismiss_sec (fractional check runs before clamping)", () => {
+    expect(parseCheckinSettings({ verdict_auto_dismiss_sec: 0.5 }).verdict_auto_dismiss_sec).toBe(4);
+    expect(parseCheckinSettings({ verdict_auto_dismiss_sec: 30.5 }).verdict_auto_dismiss_sec).toBe(4);
+  });
+
   it("ignores unknown extra fields rather than throwing", () => {
     expect(parseCheckinSettings({ print_on_checkin: false, mystery: "field" })).toEqual({
       ...DEFAULT_CHECKIN_SETTINGS,

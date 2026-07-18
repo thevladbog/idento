@@ -149,6 +149,13 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
   }
 
   async function handleReprintConfirm() {
+    // PR #77 bot-review round, Finding L -- defense in depth alongside the
+    // confirm button's own `disabled` attribute below: guards against the
+    // edge case where connectivity drops AFTER the dialog opened but the
+    // button's disabled state hasn't re-rendered yet and the handler somehow
+    // still fires. Re-checked FIRST, before any other guard, so it can never
+    // be bypassed regardless of dialog/target state.
+    if (!online) return;
     if (!reprintTarget) return;
     const printerName = reprintTargetPrinter;
     if (!printerName) return;
@@ -242,6 +249,9 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
   }
 
   function handleUndoConfirm() {
+    // PR #77 bot-review round, Finding L -- same defense-in-depth re-check as
+    // handleReprintConfirm above.
+    if (!online) return;
     if (!undoTarget) return;
     const mySession = undoSessionRef.current;
     setUndoError(false);
@@ -463,7 +473,14 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
             <Button
               type="button"
               disabled={
-                reprintPrinting || !reprintTargetPrinter || agent.state !== "connected" || reprintFontsBlocking
+                // PR #77 bot-review round, Finding L -- a THIRD, additive
+                // condition alongside the pre-existing trigger-button
+                // connectivity gating and the Task 9 anyDialogOpen mutual-
+                // exclusion gating: if connectivity drops AFTER this dialog
+                // is already open (but before the operator confirms), the
+                // confirm button must also disable, not just the trigger
+                // that's no longer reachable behind it.
+                !online || reprintPrinting || !reprintTargetPrinter || agent.state !== "connected" || reprintFontsBlocking
               }
               onClick={() => void handleReprintConfirm()}
             >
@@ -501,7 +518,13 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
             >
               {t("createEventCancel")}
             </Button>
-            <Button type="button" disabled={undoCheckin.isPending} onClick={handleUndoConfirm}>
+            <Button
+              type="button"
+              // PR #77 bot-review round, Finding L -- same THIRD additive
+              // condition as the reprint confirm button above.
+              disabled={!online || undoCheckin.isPending}
+              onClick={handleUndoConfirm}
+            >
               {t("checkinUndoConfirm")}
             </Button>
           </DialogFooter>

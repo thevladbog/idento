@@ -92,18 +92,37 @@ export function ScanInput({
   // the search box itself is unmounted below when this setting is off, but
   // this also belt-and-suspenders-guards the request itself against firing
   // for anything that could still reach `debouncedSearch` (e.g. this prop
-  // flipping false mid-typing) while the setting is disabled.
+  // flipping false mid-typing) while the setting is disabled. `&& !readOnly`
+  // -- PR #77 bot-review round, Finding K: while degraded/offline, this is a
+  // READ-ONLY CACHED roster (this file's own header comment) -- a NEW search
+  // term must never issue an uncached network request that's just going to
+  // fail against an unreachable backend. Already-cached data for a term
+  // typed BEFORE going read-only stays visible regardless (react-query keeps
+  // serving `.data` for a disabled query from its cache), so this only stops
+  // FRESH fetches, never hides what's already loaded.
   const searchQuery = useAttendeesPage(eventId, {
     page: 1,
     perPage: SEARCH_RESULTS_LIMIT,
     search: debouncedSearch,
-    enabled: hasQuery && manualSearchEnabled,
+    enabled: hasQuery && manualSearchEnabled && !readOnly,
   });
 
   const results = hasQuery ? (searchQuery.data?.attendees ?? []) : [];
-  const showNoMatches = hasQuery && !searchQuery.isLoading && !searchQuery.isFetching && results.length === 0;
+  // PR #77 bot-review round, Finding K: gated on an actually-SUCCESSFUL
+  // query, not just "loading is false and results are empty" -- the old
+  // condition couldn't distinguish a genuine empty result from a query that
+  // FAILED (or, per the `enabled` change above, never even attempted) to
+  // fetch, presenting either as a false "no matching attendees."
+  const showNoMatches = hasQuery && searchQuery.isSuccess && results.length === 0;
 
   function pick(attendee: Attendee) {
+    // PR #77 bot-review round, Finding M -- defense in depth alongside the
+    // result button's own `disabled` attribute below: while a previous
+    // scan/pick is still resolving (`enabled` false, which already disables
+    // the wedge/scanner input), a manual-search pick must be an equally
+    // inert no-op, not a second, competing check-in racing the first one's
+    // verdict/print state.
+    if (!enabled) return;
     setSearchInput("");
     setDebouncedSearch("");
     onPickAttendee(attendee);
@@ -124,7 +143,15 @@ export function ScanInput({
 
       {mode === "scanner" ? (
         <p className="text-body text-muted-foreground">
-          {degraded ? t("checkinScanScannerDegradedHint") : t("checkinScanScannerHint")}
+          {degraded
+            ? // PR #77 bot-review round, Finding Q -- the "use manual search
+              // below" copy is actively wrong/misleading when
+              // manualSearchEnabled is false: ScanInput renders no manual
+              // search box in ANY mode in that configuration (the block
+              // below), so pointing the operator at a control that isn't
+              // there helps no one.
+              t(manualSearchEnabled ? "checkinScanScannerDegradedHint" : "checkinScanScannerDegradedHintNoManualSearch")
+            : t("checkinScanScannerHint")}
         </p>
       ) : null}
 
@@ -178,8 +205,9 @@ export function ScanInput({
                   <li key={attendee.id}>
                     <button
                       type="button"
+                      disabled={!enabled}
                       onClick={() => pick(attendee)}
-                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted"
+                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
                     >
                       {content}
                     </button>

@@ -77,7 +77,27 @@ export function StationPage() {
   // other one here, must be called on every render regardless of loading
   // state), and parseCheckinSettings' own defaults are exactly what an
   // event with no saved settings yet would resolve to server-side anyway.
+  //
+  // PR #77 bot-review round, Finding N -- that reasoning holds for an event
+  // that genuinely has never saved settings (GET returns `{settings: null}`,
+  // and parseCheckinSettings(null) IS the default), but not for the LOADING
+  // window of an event that HAS real, non-default settings that just
+  // haven't arrived yet -- scanning/searching against the wrong scan_input
+  // mode or print_on_checkin value for that brief race would be the exact
+  // "ungated load effect" bug class P3.1's badge editor hit (gate on
+  // isSuccess, don't silently operate on a fallback default while a real
+  // fetch is in flight). Judgment call (documented here per the task brief):
+  // this gates the LOADING window only (below, via `settingsQuery.isLoading`
+  // hiding the scan surface entirely) and deliberately does NOT also gate on
+  // ERROR -- unlike the badge editor's own full-page block, bouncing the
+  // WHOLE station to a dead end because one settings GET failed would
+  // violate this station's own no-scan-lost priority for what's often a
+  // transient/recoverable condition, and `settings.print_on_checkin`/
+  // `scan_input` defaulting to the same values a never-configured event
+  // would already use is a defensible fallback specifically for that
+  // narrower case.
   const settings = settingsQuery.data ?? DEFAULT_CHECKIN_SETTINGS;
+  const settingsLoading = settingsQuery.isLoading;
 
   const flow = useCheckinFlow({
     eventId,
@@ -114,13 +134,25 @@ export function StationPage() {
   // `enabled` prop below is untouched by `connection.online`) so a real
   // physical scan is always CONSUMED -- never silently dropped -- even
   // while offline; this is what shows the explicit offline verdict instead.
+  // PR #77 bot-review round, Finding F -- flow.submitCode/submitAttendee can
+  // reject (the API unreachable even though `connection.online` still reads
+  // true, or the backend rejects the station id) -- previously NEITHER call
+  // site here had a `.catch`, producing an unhandled promise rejection with
+  // NO visible verdict/error shown to the operator, silently dropping the
+  // scan. useCheckinFlow.ts's own catch already resets `state.status` back
+  // to "idle" (so scanning/searching immediately works again) and records
+  // `state.requestError` (which VerdictCard's idle view renders) BEFORE
+  // re-throwing -- this `.catch(() => {})` exists purely to stop that
+  // re-thrown rejection from going unhandled; it deliberately does nothing
+  // else, since the actual operator-visible surfacing already happened
+  // inside the hook.
   function handleCode(code: string) {
     if (!connection.online) {
       setOfflineBlocked(true);
       return;
     }
     setOfflineBlocked(false);
-    void flow.submitCode(code);
+    void flow.submitCode(code).catch(() => {});
   }
 
   function handlePickAttendee(attendee: Attendee) {
@@ -129,7 +161,7 @@ export function StationPage() {
       return;
     }
     setOfflineBlocked(false);
-    void flow.submitAttendee(attendee);
+    void flow.submitAttendee(attendee).catch(() => {});
   }
 
   if (eventQuery.isLoading) {
@@ -190,7 +222,24 @@ export function StationPage() {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto p-8">
-          {offlineBlocked ? (
+          {/* PR #77 bot-review round, Finding N -- while the REAL check-in
+              settings are still loading, this explicit loading state
+              replaces the verdict/scan surface outright rather than letting
+              a scan/search submit against DEFAULT_CHECKIN_SETTINGS (a
+              possibly-wrong scan_input mode or print_on_checkin value) for
+              that race window. The wedge/scanner capture mechanism briefly
+              not being mounted here is a deliberate trade against that
+              silent-wrong-settings risk -- this window is normally as short
+              as the event/settings fetches themselves. */}
+          {settingsLoading ? (
+            <div
+              className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-12 text-center"
+              data-testid="checkin-settings-loading"
+            >
+              <Skeleton className="h-10 w-40" />
+              <p className="text-body text-muted-foreground">{t("checkinSettingsLoading")}</p>
+            </div>
+          ) : offlineBlocked ? (
             <div
               className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-12 text-center"
               data-testid="checkin-verdict-offline"
@@ -201,15 +250,17 @@ export function StationPage() {
           ) : (
             <VerdictCard state={flow.state} />
           )}
-          <ScanInput
-            eventId={eventId}
-            mode={settings.scan_input}
-            enabled={scanEnabled}
-            readOnly={!connection.online}
-            manualSearchEnabled={settings.manual_search_enabled}
-            onCode={handleCode}
-            onPickAttendee={handlePickAttendee}
-          />
+          {settingsLoading ? null : (
+            <ScanInput
+              eventId={eventId}
+              mode={settings.scan_input}
+              enabled={scanEnabled}
+              readOnly={!connection.online}
+              manualSearchEnabled={settings.manual_search_enabled}
+              onCode={handleCode}
+              onPickAttendee={handlePickAttendee}
+            />
+          )}
         </div>
 
         {/* Task 9's recent-scans rail -- the last-50 check-in actions feed
