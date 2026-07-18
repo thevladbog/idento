@@ -98,6 +98,151 @@ type Store interface {
 	// on error rather than failing the legacy PUT itself.
 	SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.UUID, template json.RawMessage) (int, error)
 
+	// GetCheckinSettings reads the dedicated events.checkin_settings JSONB
+	// column (P4.1). Returns (nil, nil) when the column is NULL (no
+	// settings saved yet) or when no matching, non-deleted event exists —
+	// it never fabricates a settings object, mirroring
+	// GetEventBadgeTemplate's not-found idiom. Callers needing to
+	// distinguish "no settings" from "no such event" must check existence
+	// themselves (e.g. via requireEventOwnership).
+	GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (json.RawMessage, error)
+	// UpdateCheckinSettings persists settings verbatim (raw bytes, no
+	// re-encoding) under a `deleted_at IS NULL` guard — the same race-class
+	// guard as UpdateEventBadgeTemplate/IncrementAttendeePrintedCount, but
+	// with no optimistic-concurrency version: check-in settings are
+	// operator-only config with no concurrent-editor conflict class to
+	// guard against. Contract: the caller must already have confirmed the
+	// event exists (e.g. via requireEventOwnership) before calling; a
+	// 0-row result (the soft-delete race) returns the exported
+	// ErrEventNotFound sentinel (PR #77 bot-review round, Finding C — this
+	// used to be a silent no-op, the same idiom as SoftDeleteEvent, which
+	// let the handler respond 200 with settings that were never actually
+	// persisted). Handlers map ErrEventNotFound to the house 404 masking.
+	UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error
+
+	// UpsertCheckinStation registers a check-in station (P4.1 Task 2): a
+	// fresh (event_id, name) pair inserts a new row; re-registering the
+	// SAME name is idempotent — ON CONFLICT (event_id, name) DO UPDATE
+	// replaces zone_id (even back to nil) and refreshes last_seen_at,
+	// returning the SAME row/id rather than creating a duplicate. Contract:
+	// the caller must already have confirmed the event exists (e.g. via
+	// requireEventOwnership) and, when zoneID is non-nil, that it belongs
+	// to the SAME event (e.g. via GetEventZoneByID) — this method does not
+	// re-validate either.
+	UpsertCheckinStation(ctx context.Context, eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error)
+	// HeartbeatCheckinStation refreshes a station's last_seen_at, scoped to
+	// eventID so a station id belonging to a different event can never be
+	// touched. On 0 rows (unknown id, or an id that belongs to a different
+	// event) this returns the exported ErrCheckinStationNotFound sentinel —
+	// handlers map it to a 404, never a fabricated success.
+	HeartbeatCheckinStation(ctx context.Context, eventID, stationID uuid.UUID) error
+	// ListCheckinStations returns every station registered for eventID,
+	// ordered by name for a deterministic listing.
+	ListCheckinStations(ctx context.Context, eventID uuid.UUID) ([]*models.CheckinStation, error)
+	// GetCheckinStationByID looks up a single check-in station by id (P4.1
+	// Task 3) — used by the check-in/undo endpoints to resolve a
+	// caller-supplied station_id into its display name (persisted into
+	// checked_in_point_name) and to validate it belongs to the same event as
+	// the request path (a foreign station_id is a 400, decided by the
+	// handler comparing the returned CheckinStation.EventID). Mirrors
+	// GetEventZoneByID: on no matching row this surfaces the raw
+	// pgx.ErrNoRows rather than normalizing to (nil, nil) — callers
+	// distinguish "unknown id" from "found" via errors.Is(err, pgx.ErrNoRows).
+	GetCheckinStationByID(ctx context.Context, id uuid.UUID) (*models.CheckinStation, error)
+
+	// CheckInAttendee performs one station's single-scan check-in
+	// idempotently (P4.1 Task 3) — the zero-double-checkin guarantee at the
+	// source, mirroring ApplyBatchCheckin's guarded-UPDATE pattern
+	// (pg_store_batch.go) but with a RETURNING clause so the full row comes
+	// back in the same round trip. In one transaction: a guarded
+	// `UPDATE ... WHERE checkin_status = false AND blocked = false AND
+	// deleted_at IS NULL` RETURNING the row — the SET clause also clears
+	// checked_in_device_number (PR #77 bot-review round 2, Finding 2:
+	// mirrors UndoCheckin's clear, so a fresh panel check-in never inherits
+	// a stale device number left over from an earlier mobile check-in/undo
+	// cycle). When it matches (this call wins the race), the outcome is
+	// "checked_in" and a checkin_actions ('checkin') row is inserted in the
+	// SAME transaction. When it matches nothing, a fallback SELECT (LEFT
+	// JOINed to users for checked_in_by_email, mirroring
+	// attendeeListColumnsSQL/scanAttendeeRow — attendees has no
+	// checked_in_by_email COLUMN; it is always derived from users.email via
+	// checked_in_by) distinguishes FOUR cases: an attendee that is genuinely
+	// missing (soft-deleted, or the id doesn't belong to eventID — returns
+	// the exported ErrAttendeeNotFound, no retry); one that is newly
+	// blocked (checkin_status still false, blocked now true — outcome
+	// "blocked", PR #77 bot-review round 1 Finding A: closes the TOCTOU
+	// race where another operator blocks the SAME attendee in the window
+	// between the HANDLER's pre-read short-circuit and this guarded UPDATE
+	// actually running, so the blocked = false guard above is what makes
+	// this path reachable at all); one that is simply already checked in
+	// (outcome "already_checked_in", returning its ORIGINAL first-scan
+	// metadata — never overwritten); or — PR #77 bot-review round 2,
+	// Finding 1 — one that is neither checked in NOR blocked (checkin_status
+	// false, blocked false): a narrow race where the guarded UPDATE lost to
+	// something else that then resolved before the fallback SELECT ran.
+	// This last case is retried ONCE more against the now-current state
+	// (bounded: at most 2 total attempts) rather than being misreported as
+	// "already_checked_in" — reporting that outcome here would be doubly
+	// wrong: it's factually false, AND since printing only fires on
+	// "checked_in", the attendee would walk through with a false verdict and
+	// no badge. If the retry lands in the SAME state again, this method
+	// returns the exported ErrCheckinConflict for the handler to map to a
+	// retryable 409. No feed row is written for the "blocked",
+	// "already_checked_in", or ErrCheckinConflict paths. Contract: the
+	// caller must already have confirmed the attendee exists, belongs to
+	// eventID, and — at the time of its own pre-read — was NOT blocked (e.g.
+	// via requireAttendeeOwnership + an explicit attendee.Blocked check) —
+	// the HANDLER's pre-read short-circuit is still the primary "blocked"
+	// path; this method's own blocked = false guard is the second,
+	// race-closing path, not a replacement for the handler's check.
+	// staffEmail/stationName are resolved by the caller (via GetUserByID /
+	// GetCheckinStationByID); on the "checked_in" outcome they are attached
+	// to the returned row verbatim (an empty stationName leaves
+	// checked_in_point_name unset, matching the nullable column).
+	CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (outcome string, attendee *models.Attendee, err error)
+
+	// UndoCheckin clears a check-in idempotently (P4.1 Task 3): a guarded
+	// `UPDATE ... WHERE checkin_status = true AND deleted_at IS NULL`
+	// clearing checkin_status/checked_in_at/checked_in_by/
+	// checked_in_device_number/checked_in_point_name (fixing the legacy
+	// UpdateAttendeeHandler path's incomplete clear, which never touched
+	// checked_in_point_name; PR #77 bot-review round Finding B further
+	// added checked_in_device_number to this clear list — an attendee
+	// checked in via the mobile batch path otherwise kept stale device
+	// metadata after a panel undo). When it matches, a
+	// checkin_actions ('undo') row is inserted in the SAME transaction.
+	// When it matches nothing, a fallback SELECT distinguishes "genuinely
+	// missing" (ErrAttendeeNotFound) from "already not checked in"
+	// (idempotent no-op — 200, no feed row written). stationID/staffUserID
+	// are recorded on the feed row only; they play no part in the guard.
+	UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error)
+
+	// GetCheckinActions returns the newest `limit` rows of an event's
+	// check-in/undo/reprint feed (P4.1 Task 3), joined to a slim attendee
+	// projection — backs the station's recent-scans rail. Ordered newest
+	// first (created_at DESC, id DESC as a deterministic tie-breaker for
+	// rows sharing the same timestamp — PR #77 bot-review round, Finding
+	// E — otherwise concurrent actions at the same created_at could be
+	// arbitrarily reordered or omitted across repeated calls with the same
+	// LIMIT).
+	GetCheckinActions(ctx context.Context, eventID uuid.UUID, limit int) ([]CheckinActionRow, error)
+
+	// InsertCheckinAction records one checkin_actions feed row (P4.1 Task
+	// 4) — the single shared write path behind CheckInAttendee's 'checkin'
+	// row, UndoCheckin's 'undo' row, and the /printed endpoint's 'reprint'
+	// row. Called standalone (against the pool, not any existing
+	// transaction) by the reprint endpoint, since printed_count's
+	// increment and this insert are two separate store calls, not one
+	// atomic operation — CheckInAttendee/UndoCheckin do NOT call this
+	// method themselves; they run the same underlying insert directly
+	// against their own open tx so the feed row commits atomically with
+	// the state-changing UPDATE. Contract: the caller has already resolved
+	// staffUserID and validated a non-nil stationID belongs to the same
+	// event — this method does not re-validate either, and never fails
+	// the caller's primary operation (attendee_printed.go treats a
+	// failure here as best-effort/non-fatal).
+	InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
+
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,
@@ -253,4 +398,27 @@ type AttendeeFilter struct {
 	Status  *bool
 	Page    int
 	PerPage int
+}
+
+// CheckinActionAttendee is the slim attendee projection embedded in a
+// CheckinActionRow — just enough for the station's recent-scans rail to
+// render a name/code without pulling the full Attendee row. JSON tags
+// match the CheckinActionAttendee openapi schema verbatim.
+type CheckinActionAttendee struct {
+	ID        uuid.UUID `json:"id"`
+	FirstName string    `json:"first_name"`
+	LastName  string    `json:"last_name"`
+	Code      string    `json:"code"`
+}
+
+// CheckinActionRow is one joined row of GetCheckinActions' feed (P4.1 Task
+// 3): the checkin_actions row plus its attendee's slim projection. JSON
+// tags match the CheckinActionRow openapi schema verbatim (this struct is
+// serialized directly by handler.GetCheckinActions).
+type CheckinActionRow struct {
+	ID        uuid.UUID             `json:"id"`
+	Action    string                `json:"action"`
+	StationID *uuid.UUID            `json:"station_id,omitempty"`
+	CreatedAt time.Time             `json:"created_at"`
+	Attendee  CheckinActionAttendee `json:"attendee"`
 }

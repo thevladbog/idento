@@ -272,6 +272,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/{id}/checkin-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event's check-in station settings (P4.1) — reads the dedicated events.checkin_settings column. Consumed by Task 2+ (station registration) and the panel's check-in settings UI. */
+        get: operations["getCheckinSettings"];
+        /**
+         * Save the event's check-in station settings.
+         * @description Storage is verbatim: settings is persisted as the request's raw JSON bytes, byte-for-byte — the handler validates a parsed COPY against the CheckinSettings shape (all four fields required, unknown fields rejected) but never re-serializes before persisting. Unlike PUT /api/events/{id}/badge-template, there is no optimistic-concurrency version: check-in settings are operator-only config with no concurrent-editor conflict class to guard against.
+         */
+        put: operations["putCheckinSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/checkin-stations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List every check-in station registered for an event (P4.1 Task 2). */
+        get: operations["listCheckinStations"];
+        put?: never;
+        /** Register (or re-register) a named check-in station for an event (P4.1 Task 2). Registering the SAME name again is an upsert — the same station id is returned, zone_id is replaced by whatever this call submits (even back to null), and last_seen_at is refreshed; it never creates a duplicate row. */
+        post: operations["registerCheckinStation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/checkin-stations/{id}/heartbeat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh a check-in station's last_seen_at (P4.1 Task 2) — polled periodically by a running station so the panel can show online/offline state (a later task). */
+        post: operations["heartbeatCheckinStation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/checkin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Idempotent single-scan check-in (P4.1 Task 3) — the zero-double-checkin guarantee at the source, via a guarded `UPDATE ... WHERE checkin_status = false` in the store. Never touches printed_count and never prints; printing is a separate client step gated on the "checked_in" outcome only.
+         * @description A blocked attendee (attendee.blocked) is never checked in — the handler returns outcome "blocked" (with block_reason on attendee) without attempting the guarded write. Otherwise, the guarded UPDATE either performs the check-in (outcome "checked_in", and a checkin_actions row is inserted in the same transaction) or, if the attendee was already checked in, falls back to a read that returns the ORIGINAL first-scan metadata unchanged (outcome "already_checked_in", no new feed row).
+         */
+        post: operations["stationCheckin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/checkin/undo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear a check-in (P4.1 Task 3) — idempotent: undoing an attendee who is already not checked in still returns 200 with no checkin_actions row written. */
+        post: operations["undoCheckin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/checkin-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event's check-in/undo/reprint feed, newest first (P4.1 Task 3) — backs the station's recent-scans rail (last 50). */
+        get: operations["getCheckinActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/{id}/readiness": {
         parameters: {
             query?: never;
@@ -510,7 +620,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Increment an attendee's printed_count by one and return the new count. No request body. [Plan-time reconciliation #6, docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md] printed_count had NO write path anywhere before this endpoint (no handler field, no endpoint, no client bump) — the attendees table's Printed pill was decorative. This is the minimal increment so the pill becomes real once the panel's print flow calls it after a successful agent print. It is deliberately NOT a print journal (no per-print audit rows, no dedupe/job-status tracking) — the spec's "server-side print journal is out of scope" clause targets audit/dedupe journals, not this pre-existing counter. */
+        /** Increment an attendee's printed_count by one and return the new count. [Plan-time reconciliation #6, docs/superpowers/plans/2026-07-16-panel-p3.2-print-truth.md] printed_count had NO write path anywhere before this endpoint (no handler field, no endpoint, no client bump) — the attendees table's Printed pill was decorative. This is the minimal increment so the pill becomes real once the panel's print flow calls it after a successful agent print. It is deliberately NOT a print journal (no per-print audit rows, no dedupe/job-status tracking) — the spec's "server-side print journal is out of scope" clause targets audit/dedupe journals, not this pre-existing counter. P4.1 Task 4 adds an OPTIONAL request body: when event_id is present, after the counter increment succeeds, the handler ALSO inserts a checkin_actions ('reprint') feed row via store.InsertCheckinAction — this is how the station's recent-scans rail picks up a reprint. A body-less call (the pre-existing badge-editor bulk print path) stays counter-only, unchanged. The body is parsed leniently: unknown fields are ignored and a syntactically-malformed JSON body is treated the same as no body at all (the counter still increments). A present, well-formed body can still 400 in FOUR cases, all checked BEFORE the counter increments so a rejected request never partially applies — see MarkAttendeePrintedRequest's schema and its field descriptions for the full dependency/mismatch contract: (1) event_id or station_id is present but not a valid UUID string; (2) station_id is present without event_id (PR #77 bot-review round 1, Finding D); (3) event_id is present but does not match the attendee's actual event; (4) station_id, when present alongside a valid event_id, does not belong to that event. Reprint-logging failures (e.g. a transient store error resolving staffUserID from claims) never fail this endpoint — the counter has already committed by the time logging is attempted, so it is treated as best-effort. */
         post: operations["markAttendeePrinted"];
         delete?: never;
         options?: never;
@@ -1057,6 +1167,123 @@ export interface components {
         BadgeTemplateConflict: {
             error: string;
             current_version: number;
+        };
+        /** @description Per-event check-in station configuration (P4.1) — operator-only, no optimistic-concurrency version (unlike BadgeTemplateResponse): check-in settings have no concurrent-editor conflict class to guard against. Stored verbatim in events.checkin_settings JSONB. */
+        CheckinSettings: {
+            print_on_checkin: boolean;
+            verdict_auto_dismiss_sec: number;
+            /** @enum {string} */
+            scan_input: "wedge" | "scanner" | "manual";
+            manual_search_enabled: boolean;
+        };
+        /** @description GET/PUT /api/events/{id}/checkin-settings response. settings is the stored check-in settings verbatim — whatever object was last PUT — and is null when the event has never had settings saved. */
+        CheckinSettingsResponse: {
+            settings: components["schemas"]["CheckinSettings"] | null;
+        };
+        /** @description PUT /api/events/{id}/checkin-settings request body. settings is persisted verbatim (byte-for-byte, from the raw request bytes) after being validated against the CheckinSettings shape. */
+        CheckinSettingsPutRequest: {
+            settings: components["schemas"]["CheckinSettings"];
+        };
+        /** @description A registered check-in station (P4.1 Task 2) — distinct from the mobile-track Station (zone/kiosk devices): a checkin_station is name-scoped per event (UNIQUE(event_id, name)) and optionally bound to a zone. last_seen_at is refreshed by POST /api/events/{event_id}/checkin-stations/{id}/heartbeat. */
+        CheckinStation: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            name: string;
+            /** Format: uuid */
+            zone_id?: string | null;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description POST /api/events/{event_id}/checkin-stations request body. name identifies the station (UNIQUE per event) — registering the SAME name again is an upsert: zone_id is replaced (even back to null) and last_seen_at refreshed, never a duplicate row. zone_id, when present, must belong to the same event (400 otherwise). */
+        CheckinStationRegisterRequest: {
+            name: string;
+            /** Format: uuid */
+            zone_id?: string | null;
+        };
+        /** @description POST /api/events/{event_id}/checkin-stations' response envelope — station is the registered (or re-registered) row. */
+        CheckinStationResponse: {
+            station: components["schemas"]["CheckinStation"];
+        };
+        /** @description GET /api/events/{event_id}/checkin-stations' response envelope. */
+        CheckinStationListResponse: {
+            stations: components["schemas"]["CheckinStation"][];
+        };
+        /**
+         * @description Server-decided outcome of POST /api/events/{event_id}/checkin (P4.1 Task 3). "not_found" is deliberately NOT a value here — an unresolved scanned code is a client-side outcome (the code lookup itself returned empty) that never reaches this endpoint.
+         * @enum {string}
+         */
+        CheckinOutcome: "checked_in" | "already_checked_in" | "blocked";
+        /** @description POST /api/events/{event_id}/checkin request body (P4.1 Task 3). station_id, when present, must belong to the same event (400 otherwise); it is optional — a station-less check-in is valid. */
+        StationCheckinRequest: {
+            /** Format: uuid */
+            attendee_id: string;
+            /** Format: uuid */
+            station_id?: string | null;
+        };
+        /** @description The first-scan metadata block of StationCheckinResponse — for outcome checked_in this is THIS scan; for already_checked_in it is the ORIGINAL scan, never overwritten. */
+        CheckinInfo: {
+            /** Format: date-time */
+            at: string;
+            by_email: string;
+            point_name?: string | null;
+        };
+        /** @description POST /api/events/{event_id}/checkin response. checkin is the first-scan metadata for outcome checked_in/already_checked_in, and null for outcome blocked (block_reason is read from attendee instead — a blocked attendee is never checked in). */
+        StationCheckinResponse: {
+            outcome: components["schemas"]["CheckinOutcome"];
+            attendee: components["schemas"]["Attendee"];
+            checkin: components["schemas"]["CheckinInfo"] | null;
+        };
+        /** @description POST /api/events/{event_id}/checkin/undo request body (P4.1 Task 3). station_id, when present, must belong to the same event (400 otherwise); it is recorded on the checkin_actions feed row only. */
+        UndoCheckinRequest: {
+            /** Format: uuid */
+            attendee_id: string;
+            /** Format: uuid */
+            station_id?: string | null;
+        };
+        /** @description POST /api/events/{event_id}/checkin/undo response — always 200, idempotent: undoing an attendee who is already not checked in still returns 200 with the (unchanged) attendee. */
+        UndoCheckinResponse: {
+            attendee: components["schemas"]["Attendee"];
+        };
+        /** @description Slim attendee projection embedded in a CheckinActionRow. */
+        CheckinActionAttendee: {
+            /** Format: uuid */
+            id: string;
+            first_name: string;
+            last_name: string;
+            code: string;
+        };
+        /** @description One row of GET /api/events/{event_id}/checkin-actions' feed (P4.1 Task 3) — the durable check-in/undo/reprint audit trail backing the station's recent-scans rail. */
+        CheckinActionRow: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            action: "checkin" | "undo" | "reprint";
+            /** Format: uuid */
+            station_id?: string | null;
+            /** Format: date-time */
+            created_at: string;
+            attendee: components["schemas"]["CheckinActionAttendee"];
+        };
+        /** @description GET /api/events/{event_id}/checkin-actions' response envelope. */
+        CheckinActionsResponse: {
+            actions: components["schemas"]["CheckinActionRow"][];
+        };
+        /** @description POST /api/attendees/{attendee_id}/printed's OPTIONAL request body (P4.1 Task 4). Both fields are optional, but NOT independent of each other — the handler (attendee_printed.go) enforces two dependency/consistency constraints the schema below cannot express structurally (OpenAPI 3.0 has no clean native "field A requires field B" construct), documented in prose on each field and on the endpoint's 400 response instead: (1) station_id requires event_id to also be present — a station_id with no event_id is rejected with 400, not silently discarded (PR #77 bot-review round 1, Finding D); (2) event_id, when present, must match the attendee's actual event — a mismatched event_id is rejected with 400, never silently substituted (checked since this endpoint's reprint-logging was first built, Task 4). event_id is what actually gates the reprint-logging behavior — station_id is only meaningful (recorded on the feed row) when a validated event_id is also present. Absent entirely (or an absent/empty body) is the pre-existing back-compat path: counter-only, no checkin_actions row (the badge-editor's bulk print sends no body at all). */
+        MarkAttendeePrintedRequest: {
+            /**
+             * Format: uuid
+             * @description Optional. When present, must match the attendee's actual event — a mismatched event_id is rejected with 400 ("Attendee does not belong to this event"), never silently substituted. Gates reprint-logging: only when event_id is present (and valid) does the handler log a checkin_actions ('reprint') row after the printed_count increment succeeds.
+             */
+            event_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Optional, but REQUIRES event_id to also be present in the same request — station_id with no event_id is rejected with 400 ("event_id is required when station_id is supplied"), not silently discarded (PR #77 bot-review round 1, Finding D). When both are present, station_id must also belong to the same event_id (400 "Station not found in event" otherwise).
+             */
+            station_id?: string | null;
         };
         CreateProvisioningTokenResponse: {
             token: string;
@@ -2500,6 +2727,497 @@ export interface operations {
             };
         };
     };
+    getCheckinSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description settings is null when the event has never had settings saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckinSettingsResponse"];
+                };
+            };
+            /** @description id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing" — no existence oracle). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or reading check-in settings. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putCheckinSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckinSettingsPutRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved. settings echoes the request's raw bytes verbatim. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckinSettingsResponse"];
+                };
+            };
+            /** @description id is not a UUID, the body is malformed, settings is missing, or the parsed settings fail the CheckinSettings shape (a required field is missing, verdict_auto_dismiss_sec is outside 1..30, scan_input is not one of wedge/scanner/manual, or an unknown field is present). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing" — checked before any store call). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or persisting check-in settings. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listCheckinStations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registered stations. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckinStationListResponse"];
+                };
+            };
+            /** @description event_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing"). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or listing stations. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    registerCheckinStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckinStationRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Registered (or re-registered) station. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckinStationResponse"];
+                };
+            };
+            /** @description event_id is not a UUID, the body is malformed, name is missing or empty, or zone_id is present but does not belong to this event. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing" — checked before any store call). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership, verifying zone_id, or persisting the station. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    heartbeatCheckinStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description last_seen_at refreshed. No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description event_id or id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist / belongs to a different tenant, or the station id does not exist / belongs to a different event (store.ErrCheckinStationNotFound — both collapse to the same 404, no existence oracle). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or updating the station. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    stationCheckin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StationCheckinRequest"];
+            };
+        };
+        responses: {
+            /** @description checked_in, already_checked_in, or blocked — all three are 200, never an error; the station renders each as a distinct verdict. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationCheckinResponse"];
+                };
+            };
+            /** @description event_id is not a UUID, the body is malformed, attendee_id is missing, the attendee belongs to a different event than event_id, or station_id is present but does not belong to this event. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist / belongs to a different tenant, or attendee_id does not exist / belongs to a different tenant (both requireEventOwnership and requireAttendeeOwnership mask "foreign" as "missing" — no existence oracle), or the attendee was concurrently soft-deleted between the ownership check and the guarded write (store.ErrAttendeeNotFound). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description store.ErrCheckinConflict (PR #77 bot-review round 2, Finding 1): the guarded UPDATE's fallback read found the attendee neither checked in nor blocked — an extremely narrow, transient race (e.g. the UPDATE lost to a different concurrent attempt that itself then got undone, or a block/unblock cycle landed between the UPDATE and the fallback read). The store retries this state once internally before giving up; this 409 means both attempts landed on it. The caller should retry the scan. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving ownership, verifying station_id, resolving the staff user, or performing the check-in. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    undoCheckin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UndoCheckinRequest"];
+            };
+        };
+        responses: {
+            /** @description Check-in cleared (or already clear — idempotent). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UndoCheckinResponse"];
+                };
+            };
+            /** @description event_id is not a UUID, the body is malformed, attendee_id is missing, the attendee belongs to a different event than event_id, or station_id is present but does not belong to this event. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist / belongs to a different tenant, or attendee_id does not exist / belongs to a different tenant, or the attendee was concurrently soft-deleted (store.ErrAttendeeNotFound). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving ownership, verifying station_id, or clearing the check-in. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getCheckinActions: {
+        parameters: {
+            query?: {
+                /** @description Defaults to 50 and is clamped to a maximum of 50 (the rail never shows more). An invalid or non-positive value is ignored, falling back to the default, rather than 400ing this read-only feed endpoint. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newest (at most) `limit` check-in actions, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckinActionsResponse"];
+                };
+            };
+            /** @description event_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing"). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or fetching the feed. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     getEventReadiness: {
         parameters: {
             query?: never;
@@ -3641,7 +4359,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["MarkAttendeePrintedRequest"];
+            };
+        };
         responses: {
             /** @description printed_count incremented by one; response carries the new value. */
             200: {
@@ -3654,7 +4376,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description attendee_id is not a UUID. */
+            /** @description attendee_id is not a UUID; the optional body's event_id or station_id is present but not a valid UUID string; station_id is present without event_id ("event_id is required when station_id is supplied" — PR #77 bot-review round 1, Finding D); event_id is present but does not match the attendee's actual event ("Attendee does not belong to this event"); or station_id, alongside a valid event_id, does not belong to that event ("Station not found in event"). See MarkAttendeePrintedRequest for the full field-level dependency contract. */
             400: {
                 headers: {
                     [name: string]: unknown;

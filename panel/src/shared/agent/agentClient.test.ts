@@ -19,6 +19,10 @@ const server = startMswServer(
     HttpResponse.json({ default: "HP_Smart_Tank_790_series" }),
   ),
   http.post("http://agent.test/print", () => HttpResponse.json({ status: "printed" })),
+  http.get("http://agent.test/scan/last", () =>
+    HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" }),
+  ),
+  http.post("http://agent.test/scan/clear", () => HttpResponse.json({ status: "cleared" })),
 );
 
 describe("agentClient", () => {
@@ -159,6 +163,63 @@ describe("agentClient", () => {
       }
       expect(caught).toBeInstanceOf(Error);
       expect(caught).not.toBeInstanceOf(AgentPrintTimeoutError);
+    });
+  });
+
+  // P4.1 Task 7 -- the handheld-scanner check-in mode's polling primitives.
+  // Confirmed present in the agent's OWN contract (agent/openapi.yaml's
+  // /scan/last, /scan/clear, tag "Scan") -- not a panel-side invention.
+  describe("getLastScan", () => {
+    it("returns the empty sentinel when nothing has been scanned yet", async () => {
+      await expect(agentClient.getLastScan()).resolves.toEqual({
+        code: "",
+        time: "0001-01-01T00:00:00Z",
+      });
+    });
+
+    it("returns the last scanned code and time", async () => {
+      server.use(
+        http.get("http://agent.test/scan/last", () =>
+          HttpResponse.json({ code: "PD-0107", time: "2026-07-17T10:00:00Z" }),
+        ),
+      );
+      await expect(agentClient.getLastScan()).resolves.toEqual({
+        code: "PD-0107",
+        time: "2026-07-17T10:00:00Z",
+      });
+    });
+
+    it("throws on a non-2xx response (agent unreachable/error)", async () => {
+      server.use(http.get("http://agent.test/scan/last", () => new HttpResponse(null, { status: 500 })));
+      await expect(agentClient.getLastScan()).rejects.toThrow();
+    });
+
+    it("throws on a genuine network failure", async () => {
+      server.use(http.get("http://agent.test/scan/last", () => HttpResponse.error()));
+      await expect(agentClient.getLastScan()).rejects.toThrow();
+    });
+  });
+
+  describe("clearLastScan", () => {
+    it("resolves without throwing on 200", async () => {
+      await expect(agentClient.clearLastScan()).resolves.toBeUndefined();
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations, even with no body)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/scan/clear", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ status: "cleared" });
+        }),
+      );
+      await agentClient.clearLastScan();
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response", async () => {
+      server.use(http.post("http://agent.test/scan/clear", () => new HttpResponse(null, { status: 500 })));
+      await expect(agentClient.clearLastScan()).rejects.toThrow();
     });
   });
 });

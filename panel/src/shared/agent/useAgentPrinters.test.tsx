@@ -53,6 +53,7 @@ describe("useAgentPrinters", () => {
       printers: [],
       defaultPrinter: null,
       configuredDefault: null,
+      refetch: expect.any(Function),
     });
     expect(requestCounts.health).toBe(0);
   });

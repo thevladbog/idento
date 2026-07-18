@@ -141,6 +141,26 @@ describe("attendees hooks", () => {
       expect(result.current.data?.page).toBe(1);
       expect(result.current.data?.per_page).toBe(50);
     });
+
+    // P4.1 Task 7: ScanInput.tsx's manual-search fallback passes
+    // `enabled: false` while its search box is empty, so the check-in
+    // station doesn't fetch the roster's first page before the operator has
+    // typed anything.
+    it("does not fire the request at all when enabled is false", async () => {
+      const { result } = renderHook(() => useAttendeesPage("evt-1", { page: 1, enabled: false }), { wrapper });
+
+      // Give a (wrong) request a chance to fire before asserting its absence.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(attendeesFetchCount).toBe(0);
+      expect(result.current.isSuccess).toBe(false);
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    it("defaults enabled to true when omitted", async () => {
+      const { result } = renderHook(() => useAttendeesPage("evt-1", { page: 1 }), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(attendeesFetchCount).toBe(1);
+    });
   });
 
   describe("ATTENDEES_LIST_KEY", () => {

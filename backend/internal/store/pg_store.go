@@ -727,6 +727,505 @@ func (s *PGStore) SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.
 	return newVersion, nil
 }
 
+// GetCheckinSettings reads the dedicated events.checkin_settings JSONB
+// column (P4.1) directly. Both "column is NULL" (no settings saved yet)
+// and "no matching, non-deleted event" collapse to the same (nil, nil)
+// zero value — mirrors GetEventBadgeTemplate's not-found idiom: this
+// method never fabricates a settings object, and never reports
+// pgx.ErrNoRows to the caller. Callers that need to distinguish a missing
+// event from missing settings must check existence themselves (e.g.
+// requireEventOwnership).
+func (s *PGStore) GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (json.RawMessage, error) {
+	var settingsJSON []byte
+	query := `SELECT checkin_settings FROM events WHERE id = $1 AND deleted_at IS NULL`
+	err := s.db.QueryRow(ctx, query, eventID).Scan(&settingsJSON)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(settingsJSON) == 0 || string(settingsJSON) == "null" {
+		return nil, nil
+	}
+	return json.RawMessage(settingsJSON), nil
+}
+
+// ErrEventNotFound is returned by UpdateCheckinSettings when its guarded
+// UPDATE affects 0 rows — PR #77 bot-review round, Finding C. By contract
+// the caller has already confirmed the event exists (via
+// requireEventOwnership) before calling, so this sentinel is reachable
+// ONLY via the soft-delete race: the pre-check passes, a concurrent
+// SoftDeleteEvent lands, and the `deleted_at IS NULL` guard then matches
+// nothing. Mirrors ErrAttendeeNotFound/ErrVersionConflict's 0-row sentinel
+// pattern (UpdateEventBadgeTemplate/IncrementAttendeePrintedCount) — before
+// this, UpdateCheckinSettings silently swallowed the 0-row case (the same
+// idiom as SoftDeleteEvent's genuinely-idempotent delete), which meant the
+// handler responded 200 with settings that were never actually persisted.
+// Handlers map it to the house 404 masking ("Event not found"), identical
+// to requireEventOwnership's own wording.
+var ErrEventNotFound = errors.New("event not found")
+
+// UpdateCheckinSettings persists settings verbatim (raw bytes, no
+// re-encoding) — no optimistic-concurrency version, unlike
+// UpdateEventBadgeTemplate: check-in settings are operator-only config
+// with no concurrent-editor conflict class to guard against. The UPDATE
+// nevertheless carries a `deleted_at IS NULL` guard (same race class as
+// UpdateEventBadgeTemplate/IncrementAttendeePrintedCount): the caller's
+// requireEventOwnership pre-check can pass and a concurrent soft-delete
+// land before this UPDATE executes. Contract: the caller must already
+// have confirmed the event exists before calling — a 0-row result (the
+// soft-delete race) returns the exported ErrEventNotFound sentinel, never
+// a fabricated success (PR #77 bot-review round, Finding C).
+func (s *PGStore) UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE events SET checkin_settings = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`,
+		[]byte(settings), eventID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
+}
+
+// ErrCheckinStationNotFound is returned by HeartbeatCheckinStation when its
+// guarded UPDATE matches 0 rows — either the station id doesn't exist at
+// all, or it belongs to a different event than the caller's eventID (the
+// `AND event_id = $2` guard is what makes a foreign station id 404 rather
+// than silently heartbeating someone else's station). Handlers map it to
+// the house 404, never a fabricated success.
+var ErrCheckinStationNotFound = errors.New("check-in station not found")
+
+// UpsertCheckinStation registers a check-in station scoped to eventID
+// (P4.1 Task 2). A fresh name inserts a new row (last_seen_at defaults to
+// now() from the column default); re-registering the SAME name is
+// idempotent via ON CONFLICT (event_id, name) DO UPDATE — the SAME row/id
+// is returned, with zone_id replaced by the newly-submitted value (even
+// back to NULL) and last_seen_at refreshed, rather than erroring or
+// creating a duplicate row. Contract: the caller must already have
+// confirmed the event exists and, when zoneID is non-nil, that it belongs
+// to the SAME event (e.g. via requireEventOwnership + GetEventZoneByID) —
+// this method does not re-validate either.
+func (s *PGStore) UpsertCheckinStation(ctx context.Context, eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error) {
+	var st models.CheckinStation
+	query := `INSERT INTO checkin_stations (event_id, name, zone_id)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (event_id, name) DO UPDATE SET zone_id = EXCLUDED.zone_id, last_seen_at = now()
+		RETURNING id, event_id, name, zone_id, last_seen_at, created_at`
+	err := s.db.QueryRow(ctx, query, eventID, name, zoneID).
+		Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// HeartbeatCheckinStation refreshes a station's last_seen_at, scoped to
+// eventID so a station id belonging to a different event can never be
+// touched (the same tenant-isolation shape as
+// UpdateCheckinSettings/IncrementAttendeePrintedCount's guards, just on a
+// foreign-event axis instead of soft-delete). On 0 rows (unknown id, or an
+// id that belongs to a different event) this returns
+// ErrCheckinStationNotFound.
+func (s *PGStore) HeartbeatCheckinStation(ctx context.Context, eventID, stationID uuid.UUID) error {
+	tag, err := s.db.Exec(ctx,
+		`UPDATE checkin_stations SET last_seen_at = now() WHERE id = $1 AND event_id = $2`,
+		stationID, eventID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrCheckinStationNotFound
+	}
+	return nil
+}
+
+// ListCheckinStations returns every station registered for eventID,
+// ordered by name for a deterministic listing (stations have no natural
+// display order otherwise).
+func (s *PGStore) ListCheckinStations(ctx context.Context, eventID uuid.UUID) ([]*models.CheckinStation, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT id, event_id, name, zone_id, last_seen_at, created_at FROM checkin_stations WHERE event_id = $1 ORDER BY name`,
+		eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stations []*models.CheckinStation
+	for rows.Next() {
+		var st models.CheckinStation
+		if err := rows.Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt); err != nil {
+			return nil, err
+		}
+		stations = append(stations, &st)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return stations, nil
+}
+
+// GetCheckinStationByID looks up a single check-in station by id (P4.1
+// Task 3). Mirrors GetEventZoneByID: a no-match surfaces the raw
+// pgx.ErrNoRows rather than a normalized (nil, nil) — callers distinguish
+// "unknown id" from "found" via errors.Is(err, pgx.ErrNoRows).
+func (s *PGStore) GetCheckinStationByID(ctx context.Context, id uuid.UUID) (*models.CheckinStation, error) {
+	var st models.CheckinStation
+	query := `SELECT id, event_id, name, zone_id, last_seen_at, created_at FROM checkin_stations WHERE id = $1`
+	err := s.db.QueryRow(ctx, query, id).Scan(&st.ID, &st.EventID, &st.Name, &st.ZoneID, &st.LastSeenAt, &st.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
+// checkinAttendeeColumnsSQL is the plain (non-joined) attendee column list
+// (in scan order) shared by CheckInAttendee's and UndoCheckin's guarded
+// UPDATE ... RETURNING clauses — the same 19 columns as
+// GetAttendeeByID/GetAttendeeByCode. It deliberately excludes
+// checked_in_by_email: attendees has no such COLUMN — that field is always
+// derived from users.email via checked_in_by (see attendeeListColumnsSQL),
+// never persisted, so a RETURNING clause can't produce it.
+const checkinAttendeeColumnsSQL = `id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+
+// scanCheckinAttendeeRow scans one row shaped by checkinAttendeeColumnsSQL
+// into a fresh *models.Attendee, unmarshaling custom_fields.
+func scanCheckinAttendeeRow(row pgx.Row) (*models.Attendee, error) {
+	var a models.Attendee
+	var customFieldsJSON []byte
+	if err := row.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code,
+		&a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName,
+		&a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		return nil, err
+	}
+	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
+		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
+			return nil, err
+		}
+	}
+	return &a, nil
+}
+
+// scanAttendeeByEmailJoinRow scans one row shaped by attendeeListColumnsSQL
+// (the LEFT JOIN ... users u ON a.checked_in_by = u.id shape, including the
+// joined checked_in_by_email) from a pgx.Row — unlike scanAttendeeRow, which
+// takes pgx.Rows (the pgx.Rows.Scan and pgx.Row.Scan signatures match, but
+// QueryRow's pgx.Row does not satisfy the pgx.Rows interface, so it can't be
+// passed to scanAttendeeRow directly).
+func scanAttendeeByEmailJoinRow(row pgx.Row) (*models.Attendee, error) {
+	var a models.Attendee
+	var customFieldsJSON []byte
+	if err := row.Scan(&a.ID, &a.EventID, &a.FirstName, &a.LastName, &a.Email, &a.Company, &a.Position, &a.Code,
+		&a.CheckinStatus, &a.CheckedInAt, &a.CheckedInBy, &a.CheckedInDeviceNumber, &a.CheckedInPointName,
+		&a.PrintedCount, &customFieldsJSON, &a.Blocked, &a.BlockReason, &a.CreatedAt, &a.UpdatedAt, &a.CheckedInByEmail); err != nil {
+		return nil, err
+	}
+	if len(customFieldsJSON) > 0 && string(customFieldsJSON) != "null" {
+		if err := json.Unmarshal(customFieldsJSON, &a.CustomFields); err != nil {
+			return nil, err
+		}
+	}
+	return &a, nil
+}
+
+// checkinActionInsertSQL is the single INSERT shared by CheckInAttendee's
+// 'checkin' row, UndoCheckin's 'undo' row, and the standalone
+// InsertCheckinAction Store method's 'reprint' row (P4.1 Task 4
+// extraction) — action is a bind parameter so all three call sites run
+// byte-for-byte the same statement.
+const checkinActionInsertSQL = `INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id) VALUES ($1, $2, $3, $4, $5)`
+
+// checkinActionExecutor is the minimal subset of dbConn/pgx.Tx needed to run
+// checkinActionInsertSQL — satisfied by both *pgxpool.Pool (via PGStore.db,
+// InsertCheckinAction's standalone path used by the /printed reprint
+// endpoint, which is NOT inside any existing transaction) and pgx.Tx (the
+// open transaction CheckInAttendee/UndoCheckin already hold), so the exact
+// same insert runs either standalone or nested inside an existing
+// transaction. pgx.Tx does not implement dbConn itself (it has no Close
+// method), which is why this is its own narrower interface rather than
+// reusing dbConn.
+type checkinActionExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
+// insertCheckinAction is the shared implementation behind
+// PGStore.InsertCheckinAction, CheckInAttendee's 'checkin' row, and
+// UndoCheckin's 'undo' row (P4.1 Tasks 3-4) — one INSERT statement, one
+// place it's issued from. CheckInAttendee/UndoCheckin call this directly
+// with their own open tx (never through the InsertCheckinAction Store
+// method, which always runs against the pool) so the feed row commits
+// atomically with the state-changing UPDATE in the SAME transaction.
+func insertCheckinAction(ctx context.Context, exec checkinActionExecutor, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
+	_, err := exec.Exec(ctx, checkinActionInsertSQL, eventID, attendeeID, stationID, action, staffUserID)
+	return err
+}
+
+// InsertCheckinAction records one checkin_actions feed row standalone,
+// against the pool (P4.1 Task 4) — used by the /printed endpoint's reprint
+// logging, which happens as its own store call AFTER
+// IncrementAttendeePrintedCount's guarded UPDATE has already committed, not
+// nested inside it (there is no shared transaction to join). Contract: the
+// caller has already resolved staffUserID (e.g. from JWT claims) and
+// validated stationID, when non-nil, belongs to the same event — this
+// method does not re-validate either.
+func (s *PGStore) InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
+	return insertCheckinAction(ctx, s.db, eventID, attendeeID, action, stationID, staffUserID)
+}
+
+// ErrCheckinConflict is returned by CheckInAttendee when a bounded retry
+// (see checkInAttendeeMaxAttempts) still can't resolve the guarded UPDATE
+// to a definitive outcome — PR #77 bot-review round 2, Finding 1. It marks
+// an extremely narrow, transient race (not "already checked in", not
+// "blocked", not "missing"); callers should treat it as retryable rather
+// than as any of those three normal outcomes.
+var ErrCheckinConflict = errors.New("check-in conflict, please retry")
+
+// checkInAttendeeMaxAttempts bounds CheckInAttendee's retry of its own
+// guarded-UPDATE-then-fallback sequence to a single extra attempt (2 total)
+// when the fallback SELECT lands on the "neither checked in nor blocked"
+// race window (PR #77 bot-review round 2, Finding 1) — an unbounded/
+// infinite retry loop would be wrong, but the race window this closes is
+// narrow enough that a single retry against the now-current state resolves
+// the vast majority of real occurrences.
+const checkInAttendeeMaxAttempts = 2
+
+// checkInAttendeeGuardedUpdateSQL is CheckInAttendee's exact guarded UPDATE
+// — see the Store interface doc for the full guard/outcome contract.
+// blocked = false closes a TOCTOU race (PR #77 bot-review round 1, Finding
+// A): StationCheckin's handler reads the attendee and returns the "blocked"
+// outcome BEFORE calling here — but another operator's blocked/unblocked
+// toggle can land in the window between that pre-read and this UPDATE
+// actually running. Without this guard, the predicate would still match a
+// NOW-blocked attendee (it only checked checkin_status/deleted_at) and
+// check them in anyway, violating the endpoint's "blocked attendees are
+// never checked in" contract. checked_in_device_number = NULL (PR #77
+// bot-review round 2, Finding 2) mirrors UndoCheckin's clear, so a fresh
+// panel check-in never inherits a stale device number left over from an
+// earlier mobile check-in.
+const checkInAttendeeGuardedUpdateSQL = `UPDATE attendees
+	SET checkin_status = true, checked_in_at = now(), checked_in_by = $1, checked_in_device_number = NULL, checked_in_point_name = $2, updated_at = now()
+	WHERE id = $3 AND event_id = $4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL
+	RETURNING ` + checkinAttendeeColumnsSQL
+
+// checkInAttendeeAttempt runs ONE guarded-UPDATE-then-fallback sequence
+// inside tx and classifies the result into one of FOUR outcomes: "checked_in"
+// (this attempt's own guarded UPDATE won), "blocked" (fallback SELECT found
+// checkin_status = false, blocked = true — the TOCTOU race path), "conflict"
+// (fallback SELECT found checkin_status = false, blocked = false — neither
+// checked in nor blocked; PR #77 bot-review round 2, Finding 1, retried by
+// the caller), or "already_checked_in" (fallback SELECT found checkin_status
+// = true). A missing attendee returns ErrAttendeeNotFound directly (never
+// retried — see CheckInAttendee below). Does not touch checked_in_by_email
+// or insert any checkin_actions row; the caller (CheckInAttendee) owns both,
+// since they only apply once, after a final "checked_in" outcome.
+func checkInAttendeeAttempt(ctx context.Context, tx pgx.Tx, eventID, attendeeID uuid.UUID, pointName *string, staffUserID uuid.UUID) (string, *models.Attendee, error) {
+	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, checkInAttendeeGuardedUpdateSQL, staffUserID, pointName, attendeeID, eventID))
+	if err == nil {
+		return "checked_in", a, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, err
+	}
+
+	// 0 rows: the guarded UPDATE's predicate missed for one of FOUR
+	// reasons — already checked in (by this or another staff
+	// member/station), newly blocked (the TOCTOU race the blocked = false
+	// guard above closes), neither checked in nor blocked (a narrower,
+	// retryable race — Finding 1), or genuinely missing (soft-deleted, or
+	// doesn't belong to eventID). The fallback SELECT below (joined to
+	// users, same shape as attendeeListColumnsSQL/scanAttendeeRow)
+	// distinguishes all four: missing rows ErrAttendeeNotFound; a row with
+	// checkin_status = false AND blocked = true is the newly-blocked case
+	// (outcome "blocked" — this call never actually checked them in, so
+	// their pre-existing first-scan metadata, if any, is untouched); a row
+	// with checkin_status = false AND blocked = false is the conflict case
+	// (outcome "conflict" — genuinely not checked in, so reporting
+	// already_checked_in would be both factually wrong and would skip the
+	// only outcome that triggers printing); anything else (checkin_status =
+	// true) is already_checked_in, returning the ORIGINAL first-scan
+	// metadata untouched.
+	selectQuery := `SELECT` + attendeeListColumnsSQL + `
+		FROM attendees a
+		LEFT JOIN users u ON a.checked_in_by = u.id
+		WHERE a.id = $1 AND a.event_id = $2 AND a.deleted_at IS NULL`
+	existing, err := scanAttendeeByEmailJoinRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil, ErrAttendeeNotFound
+		}
+		return "", nil, err
+	}
+	if !existing.CheckinStatus && existing.Blocked {
+		return "blocked", existing, nil
+	}
+	if !existing.CheckinStatus && !existing.Blocked {
+		return "conflict", existing, nil
+	}
+	return "already_checked_in", existing, nil
+}
+
+// CheckInAttendee performs one station's single-scan check-in idempotently
+// (P4.1 Task 3) — see the Store interface doc for the full outcome
+// contract. This is the zero-double-checkin guarantee at the source,
+// mirroring ApplyBatchCheckin's guarded-UPDATE pattern (pg_store_batch.go)
+// but with a RETURNING clause so the full row comes back in the same round
+// trip as the write.
+func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID, staffEmail, stationName string) (string, *models.Attendee, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Printf("rollback check-in: %v", rbErr)
+		}
+	}()
+
+	var pointName *string
+	if stationName != "" {
+		pointName = &stationName
+	}
+
+	// Bounded retry (PR #77 bot-review round 2, Finding 1): the vast
+	// majority of calls resolve on the first attempt; only the "conflict"
+	// outcome (neither checked in nor blocked) loops back for one more
+	// attempt against the now-current state, all inside the SAME
+	// transaction.
+	var outcome string
+	var a *models.Attendee
+	for attempt := 0; attempt < checkInAttendeeMaxAttempts; attempt++ {
+		outcome, a, err = checkInAttendeeAttempt(ctx, tx, eventID, attendeeID, pointName, staffUserID)
+		if err != nil {
+			return "", nil, err
+		}
+		if outcome != "conflict" {
+			break
+		}
+	}
+	if outcome == "conflict" {
+		// The retry landed on the same unresolved state again — vanishingly
+		// unlikely, but must not recurse/loop forever. Roll back (via the
+		// deferred Rollback above) and surface a retryable sentinel rather
+		// than misreporting "already_checked_in".
+		return "", nil, ErrCheckinConflict
+	}
+
+	if outcome == "checked_in" {
+		// This call's own guarded UPDATE won the race — it just wrote
+		// checked_in_by = staffUserID, so its email IS staffEmail (the
+		// caller resolved it, e.g. via GetUserByID, before calling here).
+		// There is no checked_in_by_email COLUMN to read it back from.
+		if staffEmail != "" {
+			a.CheckedInByEmail = &staffEmail
+		}
+		if err := insertCheckinAction(ctx, tx, eventID, attendeeID, "checkin", stationID, staffUserID); err != nil {
+			return "", nil, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", nil, err
+	}
+	return outcome, a, nil
+}
+
+// UndoCheckin clears a check-in idempotently (P4.1 Task 3) — see the Store
+// interface doc for the full outcome contract. Fixes the legacy
+// UpdateAttendeeHandler path's incomplete clear, which never touched
+// checked_in_point_name.
+func (s *PGStore) UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Printf("rollback undo check-in: %v", rbErr)
+		}
+	}()
+
+	// checked_in_device_number is cleared alongside the rest (PR #77
+	// bot-review round, Finding B): an attendee checked in via the mobile
+	// batch path (ApplyBatchCheckin, pg_store_batch.go) carries a device
+	// number in this column — leaving it untouched here meant a panel undo
+	// of a mobile check-in left stale device metadata on an otherwise
+	// not-checked-in row.
+	updateQuery := `UPDATE attendees
+		SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_device_number = NULL, checked_in_point_name = NULL, updated_at = now()
+		WHERE id = $1 AND event_id = $2 AND checkin_status = true AND deleted_at IS NULL
+		RETURNING ` + checkinAttendeeColumnsSQL
+	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, attendeeID, eventID))
+	if err == nil {
+		if err := insertCheckinAction(ctx, tx, eventID, attendeeID, "undo", stationID, staffUserID); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return a, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	// 0 rows: either already not checked in (idempotent no-op — no feed
+	// row), or genuinely missing.
+	selectQuery := `SELECT ` + checkinAttendeeColumnsSQL + ` FROM attendees WHERE id = $1 AND event_id = $2 AND deleted_at IS NULL`
+	existing, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrAttendeeNotFound
+		}
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return existing, nil
+}
+
+// GetCheckinActions returns the newest `limit` rows of an event's
+// check-in/undo/reprint feed (P4.1 Task 3), joined to a slim attendee
+// projection — backs the station's recent-scans rail.
+func (s *PGStore) GetCheckinActions(ctx context.Context, eventID uuid.UUID, limit int) ([]CheckinActionRow, error) {
+	// ca.id DESC is a deterministic tie-breaker (PR #77 bot-review round,
+	// Finding E): ORDER BY created_at DESC alone can arbitrarily reorder or
+	// omit rows across repeated calls with the same LIMIT whenever two
+	// concurrent actions share the same timestamp (down to whatever
+	// precision created_at stores) — id is a UUID with no inherent
+	// ordering relationship to created_at, but it only needs to be SOME
+	// deterministic total order, not a meaningful one, to make the "last
+	// 50" feed stable. idx_checkin_actions_event_created (migration
+	// 000019) is defined on (event_id, created_at DESC, id DESC) to match.
+	rows, err := s.db.Query(ctx, `
+		SELECT ca.id, ca.action, ca.station_id, ca.created_at, a.id, a.first_name, a.last_name, a.code
+		FROM checkin_actions ca
+		JOIN attendees a ON ca.attendee_id = a.id
+		WHERE ca.event_id = $1
+		ORDER BY ca.created_at DESC, ca.id DESC
+		LIMIT $2`, eventID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []CheckinActionRow
+	for rows.Next() {
+		var row CheckinActionRow
+		if err := rows.Scan(&row.ID, &row.Action, &row.StationID, &row.CreatedAt,
+			&row.Attendee.ID, &row.Attendee.FirstName, &row.Attendee.LastName, &row.Attendee.Code); err != nil {
+			return nil, err
+		}
+		actions = append(actions, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return actions, nil
+}
+
 func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee) error {
 	var customFieldsJSON []byte
 	var err error

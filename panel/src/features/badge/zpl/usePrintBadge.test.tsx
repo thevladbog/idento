@@ -77,6 +77,11 @@ let markPrintedStatus = 200;
 let markPrintedHitCount = 0;
 let listHitCount = 0;
 let detailHitCount = 0;
+// P4.1 Task 6 -- captures whatever body (if any) reached POST
+// /attendees/{id}/printed, so tests can assert the printContext forwarding
+// (or its deliberate absence for back-compat callers) byte-for-byte, not
+// just the hit count.
+let markPrintedBodyCapture: unknown;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:id/badge-template", () => HttpResponse.json(templateResponse)),
@@ -89,8 +94,14 @@ const server = startMswServer(
     detailHitCount += 1;
     return HttpResponse.json(ATTENDEE);
   }),
-  http.post("http://api.test/api/attendees/:attendeeId/printed", () => {
+  http.post("http://api.test/api/attendees/:attendeeId/printed", async ({ request }) => {
     markPrintedHitCount += 1;
+    // A body-less call (openapi-fetch omits the body entirely when none is
+    // passed) has no JSON to parse -- `.text()` first lets an empty body
+    // resolve to `undefined` instead of `request.json()` throwing a
+    // SyntaxError on an empty string.
+    const raw = await request.text();
+    markPrintedBodyCapture = raw ? JSON.parse(raw) : undefined;
     if (markPrintedStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: markPrintedStatus });
     }
@@ -146,6 +157,7 @@ describe("usePrintBadge", () => {
     printStatus = 200;
     markPrintedStatus = 200;
     markPrintedHitCount = 0;
+    markPrintedBodyCapture = undefined;
     listHitCount = 0;
     detailHitCount = 0;
     stubFontFaceApi();
@@ -172,6 +184,12 @@ describe("usePrintBadge", () => {
     expect(printCapture?.zpl).toContain("^FDAda^FS");
     expect(printCapture?.zpl).not.toContain("Guest");
     expect(markPrintedHitCount).toBe(1);
+    // P4.1 Task 6 back-compat proof: a caller that passes no `printContext`
+    // (the badge editor's test-print/bulk-print, unchanged by this task)
+    // sends the exact same body it always did -- none at all -- so
+    // attendee_printed.go's back-compat (counter-only, no checkin_actions
+    // row) path is hit byte-identically.
+    expect(markPrintedBodyCapture).toBeUndefined();
 
     await waitFor(() => expect(listHitCount).toBeGreaterThan(1));
     await waitFor(() => expect(detailHitCount).toBeGreaterThan(1));
@@ -376,5 +394,64 @@ describe("usePrintBadge", () => {
     });
     expect(listHitCount).toBe(1);
     expect(detailHitCount).toBe(1);
+  });
+
+  // P4.1 Task 6: extends PrintAttendeeOptions with an OPTIONAL printContext,
+  // forwarded verbatim as {event_id, station_id} in the /printed body --
+  // this is how the station's reprint action (Task 9) logs a checkin_actions
+  // ('reprint') row via Task 4's already-extended endpoint. eventId is what
+  // gates the reprint-logging behavior server-side; station_id rides along
+  // and is only meaningful when event_id is present too.
+  it("forwards printContext as {event_id, station_id} in the /printed body when given", async () => {
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+    await waitFor(() => expect(listHitCount).toBe(1));
+    await waitFor(() => expect(detailHitCount).toBe(1));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421", {
+        printContext: { eventId: "evt-1", stationId: "st-1" },
+      });
+    });
+
+    expect(markPrintedHitCount).toBe(1);
+    expect(markPrintedBodyCapture).toEqual({ event_id: "evt-1", station_id: "st-1" });
+  });
+
+  // A station-less print (the ceremony/ ad-hoc reprint with no station
+  // context bound yet) is a valid printContext shape per schema.d.ts's
+  // MarkAttendeePrintedRequest -- station_id is independently optional/
+  // nullable of event_id.
+  it("forwards a null station_id verbatim when printContext has no station bound", async () => {
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    await act(async () => {
+      await result.current.printAttendee(ATTENDEE, "Zebra_ZD421", {
+        printContext: { eventId: "evt-1", stationId: null },
+      });
+    });
+
+    expect(markPrintedBodyCapture).toEqual({ event_id: "evt-1", station_id: null });
+  });
+
+  it("still throws MarkPrintedError (and still sent the badge) when the printed-count POST fails with a printContext present", async () => {
+    markPrintedStatus = 500;
+    const { result } = renderPrintBadge(true);
+    await waitFor(() => expect(result.current.fontsStatus).toBe("ready"));
+
+    let caught: unknown;
+    await act(async () => {
+      try {
+        await result.current.printAttendee(ATTENDEE, "Zebra_ZD421", {
+          printContext: { eventId: "evt-1", stationId: "st-1" },
+        });
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(MarkPrintedError);
+    expect(printHitCount).toBe(1);
   });
 });
