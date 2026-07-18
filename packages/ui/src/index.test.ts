@@ -3,7 +3,7 @@ import * as ui from "./index";
 describe("@idento/ui public API", () => {
   it.each([
     "cn",
-    "Button", "buttonVariants", "Label", "Input",
+    "Button", "buttonVariants", "Label", "Input", "Select", "selectVariants",
     "Card", "CardHeader", "CardTitle", "CardDescription", "CardContent", "CardFooter",
     "Dialog", "DialogTrigger", "DialogContent", "DialogHeader", "DialogFooter",
     "DialogTitle", "DialogDescription", "DialogClose",

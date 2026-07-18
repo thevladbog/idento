@@ -14,7 +14,7 @@
 // ZplPreviewModal consumes. Task 7's `markAttendeePrinted` endpoint is
 // reserved for the drawer/bulk ATTENDEE print flows (P3.2 Tasks 8/9).
 import {
-  AgentStatus, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Label,
+  AgentStatus, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Label, Select,
 } from "@idento/ui";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -42,12 +42,6 @@ type Generation =
   | { status: "loading" }
   | { status: "ready"; zpl: string }
   | { status: "error"; message: string };
-
-// Native <select>, styled to match PropertiesPane.tsx's own SELECT_CLASSNAME
-// (duplicated per-file on purpose -- see that file's comment: there's no
-// shared @idento/ui Select primitive yet).
-const SELECT_CLASSNAME =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 export function TestPrintDialog({
   open, onOpenChange, doc, config, previewData, previewName, eventId,
@@ -236,9 +230,8 @@ export function TestPrintDialog({
 
         <div className="flex flex-col gap-2">
           <Label htmlFor="test-print-printer">{t("printPrinterLabel")}</Label>
-          <select
+          <Select
             id="test-print-printer"
-            className={SELECT_CLASSNAME}
             value={selectedPrinter ?? ""}
             disabled={agent.state !== "connected" || agent.printers.length === 0 || printing}
             onChange={(event) => setSelectedPrinter(event.target.value)}
@@ -250,7 +243,7 @@ export function TestPrintDialog({
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
               ))
             )}
-          </select>
+          </Select>
         </div>
 
         {/* Same reconciliation #9 honesty as ZplPreviewModal.tsx: a fonts

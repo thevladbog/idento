@@ -1,5 +1,5 @@
 import {
-  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Progress,
+  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Progress, Select,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
@@ -996,14 +996,12 @@ function MappingRow({ header, target, samples, isInvalid, onChange }: MappingRow
       </span>
       <ArrowRight aria-hidden className="mt-1.5 size-3.5 shrink-0 text-muted-foreground" />
       <div className="flex flex-col gap-1.5">
-        <select
+        <Select
           aria-label={header}
           value={selectValue}
           onChange={handleSelectChange}
-          className={cn(
-            "h-9 rounded-md border bg-card px-2 text-body text-foreground",
-            hasWarning ? "border-dashed border-warning/40 text-warning" : "border-input",
-          )}
+          variant="compact"
+          className={hasWarning ? "border-dashed border-warning/40 text-warning" : undefined}
         >
           {/* Placeholder-only option: visually reads as "Don't import" (per
               board 3b's unmapped-column treatment) while the column is
@@ -1023,7 +1021,7 @@ function MappingRow({ header, target, samples, isInvalid, onChange }: MappingRow
           ))}
           <option value="custom">{t("importCustomField")}</option>
           <option value="skip">{t("importDontImport")}</option>
-        </select>
+        </Select>
         {isCustom ? (
           <Input
             aria-label={`${t("importCustomFieldNameLabel")}: ${header}`}

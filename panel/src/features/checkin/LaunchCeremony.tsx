@@ -42,7 +42,7 @@
 // mounted" wording.
 import * as React from "react";
 import {
-  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Skeleton, Switch,
+  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Skeleton, Switch,
 } from "@idento/ui";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -62,12 +62,6 @@ import { DEFAULT_CHECKIN_SETTINGS, type CheckinSettings } from "./settingsTypes"
 // circular import with app/router.tsx (which imports THIS component for
 // the route's `component:` field).
 const routeApi = getRouteApi("/_app/events/$eventId/checkin/launch");
-
-// Native <select>, styled to match TestPrintDialog.tsx's/PropertiesPane.tsx's
-// own SELECT_CLASSNAME (duplicated per-file on purpose -- see those files'
-// own comments: there's no shared @idento/ui Select primitive yet).
-const SELECT_CLASSNAME =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const SCAN_INPUT_MODES: CheckinSettings["scan_input"][] = ["wedge", "scanner", "manual"];
 
@@ -315,9 +309,8 @@ export function LaunchCeremony() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-zone">{t("launchZoneLabel")}</Label>
-              <select
+              <Select
                 id="launch-zone"
-                className={SELECT_CLASSNAME}
                 value={zoneId}
                 onChange={(e) => setZoneId(e.target.value)}
               >
@@ -327,7 +320,7 @@ export function LaunchCeremony() {
                     {zone.name}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -376,9 +369,8 @@ export function LaunchCeremony() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-scan-input">{t("launchScanInputLabel")}</Label>
-              <select
+              <Select
                 id="launch-scan-input"
-                className={SELECT_CLASSNAME}
                 disabled={!settingsReady}
                 value={settingsForm.scan_input}
                 onChange={(e) => updateSetting("scan_input", e.target.value as CheckinSettings["scan_input"])}
@@ -388,7 +380,7 @@ export function LaunchCeremony() {
                     {t(SCAN_INPUT_LABEL_KEYS[mode])}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="launch-manual-search">{t("launchManualSearchLabel")}</Label>

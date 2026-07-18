@@ -1,4 +1,4 @@
-import { Button, EmptyState, Skeleton } from "@idento/ui";
+import { Button, EmptyState, Select, Skeleton } from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { Users } from "lucide-react";
 import * as React from "react";
@@ -177,11 +177,11 @@ export function AttendeesPage() {
           className="h-9 w-[230px] rounded-md border border-input bg-card px-3 text-body text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
 
-        <select
+        <Select
           aria-label={t("attendeesZoneFilterAll")}
           value={search.zone ?? ""}
           onChange={(e) => updateFilter({ zone: e.target.value || undefined })}
-          className="h-9 rounded-full border border-input bg-card px-3 text-body text-foreground"
+          variant="pill"
         >
           <option value="">{t("attendeesZoneFilterAll")}</option>
           {(zonesQuery.data ?? []).map((entry) => {
@@ -192,18 +192,18 @@ export function AttendeesPage() {
               </option>
             );
           })}
-        </select>
+        </Select>
 
-        <select
+        <Select
           aria-label={t("attendeesStatusFilterAny")}
           value={search.status ?? ""}
           onChange={(e) => updateFilter({ status: (e.target.value || undefined) as AttendeeStatus | undefined })}
-          className="h-9 rounded-full border border-input bg-card px-3 text-body text-foreground"
+          variant="pill"
         >
           <option value="">{t("attendeesStatusFilterAny")}</option>
           <option value="checked_in">{t("attendeesStatusCheckedIn")}</option>
           <option value="not_checked_in">{t("attendeesStatusNotCheckedIn")}</option>
-        </select>
+        </Select>
 
         <div className="ml-auto flex items-center gap-2">
           {/* Import CSV opens the wizard to step 1 (Task 11); the wizard's

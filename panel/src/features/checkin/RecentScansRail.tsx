@@ -28,7 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-  DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, Label, Skeleton,
+  DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, Label, Select, Skeleton,
 } from "@idento/ui";
 import { useTranslation } from "react-i18next";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -39,13 +39,6 @@ import { MarkPrintedError, MissingFontError, NoTemplateError, usePrintBadge } fr
 import { CHECKIN_ACTIONS_KEY, useCheckinActions, useUndoCheckin } from "./hooks";
 
 type CheckinActionRow = components["schemas"]["CheckinActionRow"];
-
-// Native <select>, styled to match PropertiesPane.tsx's/TestPrintDialog.tsx's/
-// AttendeeDrawer.tsx's own SELECT_CLASSNAME (duplicated per-file on purpose --
-// see those files' own comments: there's no shared @idento/ui Select
-// primitive yet).
-const SELECT_CLASSNAME =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const ACTION_LABEL_KEY: Record<CheckinActionRow["action"], string> = {
   checkin: "checkinActionCheckin",
@@ -317,9 +310,8 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
       {!reprintConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
           <Label htmlFor="checkin-reprint-printer">{t("printPrinterLabel")}</Label>
-          <select
+          <Select
             id="checkin-reprint-printer"
-            className={SELECT_CLASSNAME}
             value={reprintPrinter ?? ""}
             disabled={agent.printers.length === 0 || reprintPrinting}
             onChange={(event) => setReprintPrinter(event.target.value)}
@@ -331,7 +323,7 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
               ))
             )}
-          </select>
+          </Select>
         </span>
       ) : null}
       {reprintPrinting ? <span className="mt-2 block">{t("printNoCancelHint")}</span> : null}
