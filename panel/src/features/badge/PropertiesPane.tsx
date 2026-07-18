@@ -1,4 +1,4 @@
-import { Button, Input, Label, cn } from "@idento/ui";
+import { Button, Input, Label, Select, cn } from "@idento/ui";
 import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -53,15 +53,6 @@ function fontOptionLabel(family: string, coverage: boolean | undefined, t: TFunc
   if (coverage === false) return `${family} (${t("badgeFontCoverageNo")})`;
   return family;
 }
-
-// Native <select>, styled to match `Input`'s own classes (packages/ui/src/
-// components/input.tsx) -- there is no shared `@idento/ui` Select primitive
-// yet (AttendeesPage.tsx's filters and ImportWizard.tsx's column mapper
-// style their own native selects inline the same way), so the exact Input
-// classes are duplicated here rather than reusing the Input *component*
-// (which always renders an `<input>`, never a `<select>`).
-const SELECT_CLASSNAME =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 const ROTATIONS: ReadonlyArray<0 | 90 | 180 | 270> = [0, 90, 180, 270];
 
@@ -270,9 +261,8 @@ export function PropertiesPane({
       {hasBindingSection && (
         <div className="flex flex-col gap-1">
           <Label htmlFor={IDS.binding}>{t("badgePropsBinding")}</Label>
-          <select
+          <Select
             id={IDS.binding}
-            className={SELECT_CLASSNAME}
             value={element.source ?? ""}
             onChange={handleBindingChange}
           >
@@ -282,7 +272,7 @@ export function PropertiesPane({
                 {displayBinding(name)}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
       )}
 
@@ -301,9 +291,8 @@ export function PropertiesPane({
 
           <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.font}>{t("badgePropsFont")}</Label>
-            <select
+            <Select
               id={IDS.font}
-              className={SELECT_CLASSNAME}
               value={fontSelectValue}
               onChange={handleFontChange}
             >
@@ -333,7 +322,7 @@ export function PropertiesPane({
                   ))}
                 </optgroup>
               )}
-            </select>
+            </Select>
           </div>
 
           <NumberField
@@ -378,9 +367,8 @@ export function PropertiesPane({
 
           <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.rotation}>{t("badgePropsRotation")}</Label>
-            <select
+            <Select
               id={IDS.rotation}
-              className={SELECT_CLASSNAME}
               value={String(element.rotation ?? 0)}
               onChange={(e) => patch({ rotation: Number(e.target.value) as 0 | 90 | 180 | 270 })}
             >
@@ -389,7 +377,7 @@ export function PropertiesPane({
                   {deg}°
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <NumberField
