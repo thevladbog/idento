@@ -64,8 +64,9 @@ go build -o idento-agent
 | GET | `/scanners/ports` | Доступные COM/USB порты |
 | POST | `/scanners/add` | Добавить сканер: `{port_name}` |
 | POST | `/scanners/remove` | Удалить сканер: `{port_name}` |
-| GET | `/scan/last` | Последний отсканированный код: `{code, time}` |
-| POST | `/scan/clear` | Очистить буфер последнего скана |
+| GET | `/scan/last` | Последний отсканированный код: `{code, time}` (не атомарно с `/scan/clear`, см. `/docs`) |
+| POST | `/scan/clear` | Очистить буфер последнего скана (безусловно) |
+| POST | `/scan/consume` | Атомарно получить и очистить последний скан — без риска потерять скан, пришедший между чтением и очисткой |
 
 Схемы запросов/ответов и коды ошибок — в `/docs`.
 
