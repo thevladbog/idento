@@ -8,9 +8,10 @@
 // hidden, always-focused text input and treat Enter as the scan boundary".
 // scanner: a handheld scanner the AGENT (not the browser) talks to over
 // serial/USB -- the panel has no direct hardware access, so it polls the
-// agent's last-scan buffer instead (agentClient.getLastScan/clearLastScan,
-// confirmed against agent/openapi.yaml's real /scan/last + /scan/clear
-// contract -- not an invented endpoint).
+// agent's last-scan buffer instead (agentClient.consumeLastScan, which
+// atomically reads AND clears in one request -- confirmed against
+// agent/openapi.yaml's real POST /scan/consume contract -- not an invented
+// endpoint).
 // manual: no auto-input at all; ScanInput.tsx's always-present search box
 // is the only path to a pick in this mode.
 import * as React from "react";
@@ -40,7 +41,7 @@ export interface WedgeInputProps {
 }
 
 export interface UseScanInputResult {
-  // True only in scanner mode, only once agentClient.getLastScan() itself
+  // True only in scanner mode, only once agentClient.consumeLastScan() itself
   // has failed (agent unreachable/erroring) -- ScanInput.tsx uses this to
   // hint the operator toward the always-present manual search fallback
   // rather than silently doing nothing.
@@ -53,7 +54,8 @@ export interface UseScanInputResult {
 }
 
 // Matches the brief verbatim ("scanner: single 200ms interval polling
-// agentClient.getLastScan()").
+// agentClient.getLastScan()") -- now agentClient.consumeLastScan(), same
+// 200ms interval, per the 2026-07-18 atomic-consume migration.
 const SCANNER_POLL_INTERVAL_MS = 200;
 
 // PR #77 bot-review round 2, Finding 5 -- the mount/`wedgeActive`-transition
@@ -168,21 +170,20 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
     if (code) onCodeRef.current(code);
   }
 
-  // Scanner-mode polling. A ref (not state) tracks the last {code, time}
-  // pair this hook has already acted on -- the dedup key the brief
-  // specifies ("dedup by {code, time} last-handled ... never double-
-  // consume"), since the agent's buffer can legitimately keep returning the
-  // SAME pair across several poll ticks (e.g. between this hook's own
-  // clearLastScan() request landing and the agent actually processing it,
-  // or simply because nothing new has been scanned since).
-  const lastHandledRef = React.useRef<{ code: string; time: string } | null>(null);
-  // PR #77 bot-review round, Finding P -- a transient clearLastScan()
-  // failure must be RETRIED, not abandoned. Tracks whether the clear for
-  // `lastHandledRef`'s current pair has actually succeeded yet; the dedup
-  // branch below only skips re-emitting `onCode` (the dedup check itself is
-  // untouched), it does NOT skip retrying the clear while this stays false.
-  const clearPendingRef = React.useRef(false);
-
+  // Scanner-mode polling. Each tick calls agentClient.consumeLastScan(),
+  // which atomically reads AND clears the agent's buffer in one request
+  // (agent/openapi.yaml's POST /scan/consume) -- so every non-empty
+  // response is guaranteed to be a scan this hook has never seen before.
+  // This replaces the earlier GET /scan/last + POST /scan/clear pair, which
+  // had a real race (a second physical scan arriving between this hook's
+  // read and its later clear call was silently erased by that clear -- the
+  // CodeRabbit finding fixed agent-side by
+  // docs/superpowers/plans/2026-07-18-agent-atomic-scan-consume.md) and
+  // needed a {code, time} dedup ref plus a separate retry-the-clear-on-
+  // failure ref to work around it. Neither is needed anymore: there is no
+  // separate clear step to retry, and a repeated poll can never re-observe
+  // an already-handled scan (the buffer is already empty after this hook
+  // consumed it).
   React.useEffect(() => {
     if (mode !== "scanner" || !enabled) {
       setDegraded(false);
@@ -196,43 +197,23 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
     // change -- the effect's own cleanup tears the whole interval down and a
     // fresh run gets a fresh `false`). Without this, the 200ms `setInterval`
     // below started a brand-new `poll()` on EVERY tick regardless of whether
-    // the PREVIOUS getLastScan()/clearLastScan() round trip had actually
-    // finished -- a local agent that accepts a request but stalls (a real
-    // possibility on a loaded/slow local network) could let in-flight
-    // requests accumulate indefinitely with no visible indication anything
-    // was wrong. A tick that lands while a poll is still outstanding simply
-    // no-ops now; the NEXT tick after the outstanding one finally
-    // resolves/rejects picks polling back up normally.
+    // the PREVIOUS consumeLastScan() round trip had actually finished -- a
+    // local agent that accepts a request but stalls (a real possibility on
+    // a loaded/slow local network) could let in-flight requests accumulate
+    // indefinitely with no visible indication anything was wrong. A tick
+    // that lands while a poll is still outstanding simply no-ops now; the
+    // NEXT tick after the outstanding one finally resolves/rejects picks
+    // polling back up normally.
     let pollInFlight = false;
 
     async function poll() {
       if (pollInFlight) return;
       pollInFlight = true;
       try {
-        const scan = await agentClient.getLastScan();
+        const scan = await agentClient.consumeLastScan();
         if (cancelled) return;
         setDegraded(false);
-
-        if (!scan.code) return; // steady state: nothing new since the last clear.
-
-        const last = lastHandledRef.current;
-        const isNewScan = !last || last.code !== scan.code || last.time !== scan.time;
-
-        if (isNewScan) {
-          lastHandledRef.current = { code: scan.code, time: scan.time };
-          clearPendingRef.current = true;
-          onCodeRef.current(scan.code);
-        }
-        // else: already consumed -- onCode must NOT fire again (the dedup
-        // check above is unchanged), but the clear may still be owed if a
-        // PREVIOUS attempt for this same pair failed (clearPendingRef still
-        // true) -- retry it below rather than leaving the agent's buffer
-        // stuck forever.
-
-        if (clearPendingRef.current) {
-          await agentClient.clearLastScan();
-          clearPendingRef.current = false;
-        }
+        if (scan.code) onCodeRef.current(scan.code);
       } catch {
         if (!cancelled) setDegraded(true);
       } finally {
