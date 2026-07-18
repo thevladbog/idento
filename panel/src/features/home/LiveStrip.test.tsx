@@ -9,14 +9,19 @@ import type { components } from "../../shared/api/schema";
 import "../../shared/i18n";
 
 type ApiEvent = components["schemas"]["Event"];
+type MonitorSnapshot = components["schemas"]["MonitorSnapshot"];
 
 function apiEvent(overrides: Partial<ApiEvent> & { id: string; name: string }): ApiEvent {
   return { tenant_id: "t1", created_at: "", updated_at: "", ...overrides };
 }
 
-// LiveStrip renders a `Link` to `/events/$eventId`, which needs a router
-// context to resolve — same minimal single-route harness LoginScreen.test.tsx
-// uses (these tests exercise LiveStrip's own rendering, not routing).
+// LiveStrip renders `Link`s to `/events/$eventId` and `/events/$eventId/monitor`,
+// which need a router context to resolve — same minimal single-route harness
+// LoginScreen.test.tsx uses (these tests exercise LiveStrip's own rendering,
+// not routing). `Link`'s `to` prop type-checks against the REAL registered
+// router (app/router.tsx's module augmentation), not this local test router,
+// so an unregistered-here-but-real route still type-checks and resolves an
+// href via path interpolation.
 const testRouter = createRouter({ routeTree: createRootRoute({ component: () => null }) });
 
 function renderWithProviders(ui: ReactNode) {
@@ -28,14 +33,49 @@ function renderWithProviders(ui: ReactNode) {
   );
 }
 
+function monitorSnapshotBody(overrides: Partial<MonitorSnapshot> = {}): MonitorSnapshot {
+  return {
+    totals: { checked_in: 120, total: 200, rate_per_min: 3.4, peak: null, est_done_at: null },
+    zones: [
+      { zone_id: "z-main", name: "Main hall", checked_in: 100 },
+      { zone_id: "z-vip", name: "VIP", checked_in: 15 },
+    ],
+    unattributed: 5,
+    stations: [],
+    recent: [],
+    ...overrides,
+  };
+}
+
+// Task 9 -- RunningCard mounts `useMonitorStream`, which opens a fetch-
+// streaming connection to `.../monitor/stream` unconditionally (same "mock
+// every endpoint this page/card hits" discipline MonitorPage.test.tsx's own
+// `monitorStreamHandler` documents) -- an empty, never-closing stream is
+// enough since these tests don't assert live-pill/reconnect nuances (that's
+// MonitorPage's own concern).
+function monitorStreamHandler() {
+  return http.get("http://api.test/api/events/:eventId/monitor/stream", () => {
+    const stream = new ReadableStream<Uint8Array>({ start() {} });
+    return new HttpResponse(stream, { headers: { "Content-Type": "text/event-stream" } });
+  });
+}
+
+let statsGetCount = 0;
+
 const server = startMswServer(
-  http.get("http://api.test/api/events/:eventId/stats", () =>
-    HttpResponse.json({
-      total_attendees: 200,
-      checked_in: 120,
-      zone_stats: { allowed: 100, no_access: 15, not_registered: 5 },
-    }),
-  ),
+  http.get("http://api.test/api/events/:eventId/monitor", () => HttpResponse.json(monitorSnapshotBody())),
+  monitorStreamHandler(),
+  // Task 9 dropped RunningCard's `useEventStats(poll)` call entirely -- this
+  // handler stays registered (not removed) specifically so the "no /stats
+  // request" test below has something concrete to count against, rather
+  // than a negative assertion that would pass just as well if the endpoint
+  // were unmocked (MSW's `onUnhandledRequest: "error"` would only catch a
+  // stray call if the harness happened to hit an unmocked URL by accident,
+  // not prove the absence of a request to a URL that IS mocked).
+  http.get("http://api.test/api/events/:eventId/stats", () => {
+    statsGetCount += 1;
+    return HttpResponse.json({ total_attendees: 200, checked_in: 120 });
+  }),
   http.get("http://api.test/api/events/:id/readiness", () =>
     HttpResponse.json({
       ready: false,
@@ -54,9 +94,10 @@ void server;
 describe("LiveStrip", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
+    statsGetCount = 0;
   });
 
-  it("renders the running-event card: LIVE NOW pill, name, checked-in counter, progress bar, Open-event link", async () => {
+  it("renders the running-event card: LIVE NOW pill, name, checked-in counter, progress bar, Open-event link, Open-monitor link", async () => {
     const running = apiEvent({
       id: "evt-running",
       name: "Tech Summit",
@@ -72,14 +113,48 @@ describe("LiveStrip", () => {
     expect(screen.getByText(/200/)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
 
-    const link = screen.getByRole("link", { name: /Open event/ });
-    expect(link).toHaveAttribute("href", "/events/evt-running");
+    const openEventLink = screen.getByRole("link", { name: /Open event/ });
+    expect(openEventLink).toHaveAttribute("href", "/events/evt-running");
 
-    // zone_stats is a per-VERDICT breakdown (allowed/no_access/not_registered),
-    // never per-zone-name — asserting the honest verdict labels render, and
-    // that no fabricated zone name (e.g. "Main hall") ever appears.
-    expect(await screen.findByText(/100/)).toBeInTheDocument();
-    expect(screen.queryByText(/Main hall/i)).not.toBeInTheDocument();
+    const openMonitorLink = screen.getByRole("link", { name: /Open monitor/ });
+    expect(openMonitorLink).toHaveAttribute("href", "/events/evt-running/monitor");
+
+    // Counters/progress now come from the monitor snapshot (Task 5/6), not
+    // the old per-verdict `zone_stats` read -- this is real zone-NAME data,
+    // so it's expected (and required) to render actual zone names now,
+    // unlike the pre-Task-9 test which asserted the opposite.
+    expect(await screen.findByTestId("home-zone-z-main")).toHaveTextContent("Main hall: 100");
+    expect(screen.getByTestId("home-zone-z-vip")).toHaveTextContent("VIP: 15");
+
+    // unattributed = 5 (> 0) in this fixture -- the mini zone line includes it.
+    expect(screen.getByTestId("home-zone-unattributed")).toHaveTextContent("Unattributed: 5");
+
+    // Binding regression: RunningCard must never hit the old per-event stats
+    // endpoint anymore.
+    expect(statsGetCount).toBe(0);
+  });
+
+  it("omits the unattributed mini-line when unattributed is 0", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor", () =>
+        HttpResponse.json(
+          monitorSnapshotBody({
+            zones: [{ zone_id: "z-main", name: "Main hall", checked_in: 120 }],
+            unattributed: 0,
+          }),
+        ),
+      ),
+    );
+    const running = apiEvent({
+      id: "evt-no-unattributed",
+      name: "Perfect Coverage Event",
+      start_date: "2026-07-14T09:00:00Z",
+      end_date: "2026-07-14T18:00:00Z",
+    });
+    renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
+
+    expect(await screen.findByTestId("home-zone-z-main")).toHaveTextContent("Main hall: 120");
+    expect(screen.queryByTestId("home-zone-unattributed")).not.toBeInTheDocument();
   });
 
   it("shows an 'All day' label instead of a fabricated midnight time range for a date-only running event", async () => {
@@ -98,7 +173,7 @@ describe("LiveStrip", () => {
     expect(screen.queryByText(/12:00 AM/)).not.toBeInTheDocument();
   });
 
-  it("shows a loading state (not fabricated zero check-ins) while stats are still loading", () => {
+  it("shows a loading state (not fabricated zero check-ins) while the monitor snapshot is still loading", () => {
     const running = apiEvent({
       id: "evt-loading",
       name: "Loading Event",
@@ -107,15 +182,17 @@ describe("LiveStrip", () => {
     });
     renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
 
-    // Before the MSW-mocked stats response resolves, the real counter/progress
-    // bar must not be visible with a misleading "0 / 0".
+    // Before the MSW-mocked snapshot response resolves, the real counter/
+    // progress bar/zone line must not be visible with misleading fabricated
+    // values.
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unattributed/)).not.toBeInTheDocument();
   });
 
-  it("shows an error message (not fabricated zero check-ins) when stats fail to load", async () => {
+  it("shows an error message (not fabricated zero check-ins) when the monitor snapshot fails to load", async () => {
     server.use(
-      http.get("http://api.test/api/events/:eventId/stats", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+      http.get("http://api.test/api/events/:eventId/monitor", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
     );
     const running = apiEvent({
       id: "evt-stats-error",
@@ -146,6 +223,10 @@ describe("LiveStrip", () => {
 
     const link = screen.getByRole("link", { name: /Open event/ });
     expect(link).toHaveAttribute("href", "/events/evt-upcoming");
+
+    // UpcomingCard regression: Task 9 is RunningCard-only -- no monitor CTA
+    // or snapshot data on the upcoming-fallback card.
+    expect(screen.queryByRole("link", { name: /Open monitor/ })).not.toBeInTheDocument();
   });
 
   it("renders nothing when there is neither a running nor an upcoming event", () => {
