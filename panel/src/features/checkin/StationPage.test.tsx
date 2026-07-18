@@ -374,15 +374,34 @@ describe("StationPage", () => {
   // name. The scan surface (not check-in itself) must stay gated behind an
   // explicit "waiting for printer" state until the agent actually resolves a
   // usable default -- same shape as the settingsLoading gate above.
+  // PR #77 bot-review round 3, Finding 7 (CodeRabbit) -- a manually-
+  // controlled deferred promise, not a fixed real-timer delay. This test
+  // used to `await delay(50)` on the printer endpoints, then assert
+  // `checkin-printer-waiting` immediately after `findByText("Main Door")`
+  // resolved -- but `findByText`'s own resolution time is UNBOUNDED (unlike
+  // a fixed sequence of interactions), so a sufficiently slow/loaded CI
+  // runner could still let the 50ms delay elapse before the assertion runs,
+  // OR let `findByText` itself resolve slowly enough that the delay expires
+  // either way. Same race-condition CLASS already confirmed to flake in CI
+  // (RecentScansRail.test.tsx's dismissal-guard tests, run 29632317448,
+  // fixed in commit 6f8b506 by widening a fixed delay) -- but widening
+  // wouldn't reliably close THIS one, since it races an unbounded wait, not
+  // a bounded interaction sequence. Holding the printer endpoints open with
+  // a promise this test releases itself, AFTER asserting the waiting state,
+  // removes the race entirely instead of just shrinking the window.
   it("shows a waiting-for-printer state (not a scannable surface) while print_on_checkin is true and the agent hasn't resolved a default printer yet, then enables scanning once it does", async () => {
     settingsOverride = { ...settingsOverride, print_on_checkin: true };
+    let resolvePrinters: (() => void) | undefined;
+    const printersGate = new Promise<void>((resolve) => {
+      resolvePrinters = resolve;
+    });
     server.use(
       http.get("http://agent.test/printers", async () => {
-        await delay(50);
+        await printersGate;
         return HttpResponse.json([{ name: "Zebra 1", type: "system" }]);
       }),
       http.get("http://agent.test/printers/default", async () => {
-        await delay(50);
+        await printersGate;
         return HttpResponse.json({ default: "Zebra 1" });
       }),
     );
@@ -393,9 +412,64 @@ describe("StationPage", () => {
     expect(screen.queryByLabelText("Badge scanner input")).not.toBeInTheDocument();
     expect(screen.queryByTestId("checkin-verdict-idle")).not.toBeInTheDocument();
 
+    resolvePrinters?.();
+
     await waitFor(() => expect(screen.queryByTestId("checkin-printer-waiting")).not.toBeInTheDocument());
     expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
     expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
+  });
+
+  // PR #77 bot-review round 3, Finding 3 -- `useAgentPrinters(true)` has no
+  // polling interval of its own, so without StationPage.tsx's own poll (see
+  // that file's own comment near `printerGateActive`), this gate would never
+  // re-check on its own once activated -- it would stay stuck until some
+  // UNRELATED trigger (a window focus, a manual remount) happened to cause a
+  // refetch. Fake timers here (unlike the test right above, and unlike most
+  // of this suite) -- same deviation, and the same reasoning, as
+  // useConnectionState.test.tsx's own dedicated fake-timer test for its
+  // analogous 20s health poll: waiting out a real 10s poll for real would
+  // make this suite unbearably slow, and `vi.advanceTimersByTimeAsync`
+  // (never the sync variant) flushes the pending MSW-intercepted refetch
+  // between simulated ticks. Deliberately triggers NO unrelated event (no
+  // window focus, no remount) -- the poll alone must be what lifts the gate.
+  it("lifts the printer-waiting gate on its own, via the periodic poll, once the agent becomes available -- no unrelated trigger", async () => {
+    settingsOverride = { ...settingsOverride, print_on_checkin: true };
+    server.use(
+      http.get("http://agent.test/printers", () => HttpResponse.json([])),
+      http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
+    );
+    vi.useFakeTimers();
+    try {
+      renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
+      // Flushes the router match + the event/stations/settings/agent
+      // queries' own microtask chains (none of this test's handlers use a
+      // real delay, so no further real-time wait is needed for the initial
+      // render to settle).
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(screen.getByText("Main Door")).toBeInTheDocument();
+      expect(screen.getByTestId("checkin-printer-waiting")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Badge scanner input")).not.toBeInTheDocument();
+
+      // The agent (and a printer) become available -- no window focus, no
+      // remount, nothing else that would otherwise trigger a refetch.
+      server.use(
+        http.get("http://agent.test/printers", () => HttpResponse.json([{ name: "Zebra 1", type: "system" }])),
+        http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: "Zebra 1" })),
+      );
+
+      // Crosses the 10s poll boundary, then flushes the notifyManager batch
+      // (a macrotask, not a microtask) so the component actually re-renders
+      // from it.
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(screen.queryByTestId("checkin-printer-waiting")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the scan surface enabled immediately when print_on_checkin is false, regardless of agent state (auto-print isn't happening, so nothing to wait for)", async () => {

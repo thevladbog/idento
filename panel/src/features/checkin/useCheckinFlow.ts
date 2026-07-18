@@ -148,6 +148,24 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
     setState(IDLE_STATE);
   }, [clearDismissTimer]);
 
+  // PR #77 bot-review round 3, Finding 5 -- the station route can be
+  // navigated directly from one station's URL to another (browser back/
+  // forward, a bookmarked link) without necessarily remounting the whole
+  // component tree (same route-reuse premise LaunchCeremony.tsx's own
+  // Finding 1 fix documents for its own route). Without this, a PREVIOUS
+  // station's lingering verdict -- and, critically, its still-pending
+  // auto-dismiss timer -- would keep rendering/firing against the NEW
+  // station's page until that timer happened to elapse. Resets to idle via
+  // the SAME `clear()` this hook's own caller-facing API already exposes
+  // (which itself reuses `clearDismissTimer` -- no duplicated timer-
+  // clearing logic), and clears the busy guard so the new station's own
+  // first scan isn't silently dropped by a stale "a request is still in
+  // flight" flag left over from whatever the previous station was doing.
+  React.useEffect(() => {
+    busyRef.current = false;
+    clear();
+  }, [eventId, stationId, clear]);
+
   async function resolveCheckin(attendee: Attendee): Promise<void> {
     const response = await stationCheckin.mutateAsync({
       params: { path: { event_id: eventId } },

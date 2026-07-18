@@ -8,7 +8,7 @@
 // generic here so this file has no dependency on that hook.
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { Input } from "@idento/ui";
+import { Button, Input } from "@idento/ui";
 import type { components } from "../../shared/api/schema";
 import { useAttendeesPage } from "../attendees/hooks";
 import { useScanInput, type ScanInputMode } from "./useScanInput";
@@ -203,14 +203,35 @@ export function ScanInput({
                   </li>
                 ) : (
                   <li key={attendee.id}>
-                    <button
+                    {/* PR #77 bot-review round 3, Finding 2 -- the shared
+                        @idento/ui Button (unlike the Select primitive a
+                        DIFFERENT, already-deferred finding flagged, Button
+                        genuinely exists) replaces the previous hand-rolled
+                        <button>. No pattern for a full-width, chrome-
+                        stripped, multi-line list row composed from Button
+                        exists elsewhere in this codebase to mirror (checked
+                        AttendeesPage.tsx/AttendeeTable.tsx's own row --
+                        actually a raw `<li role="button">`, not a Button --
+                        and RecentScansRail.tsx's row actions, which are
+                        ordinary single-line `size="sm"` buttons INSIDE a
+                        row, not shaped like this one) -- `variant="ghost"`
+                        (no background/border chrome, `hover:bg-muted`
+                        already built in) plus a className override defeats
+                        `buttonVariants`' `inline-flex items-center
+                        justify-center` centering and `h-9 px-4 py-2` sizing
+                        to reproduce this row's exact prior visual shape
+                        (full-width, left-aligned, multi-line, disabled
+                        opacity/cursor). `disabled`/`onClick` behavior is
+                        unchanged -- a pure component swap. */}
+                    <Button
                       type="button"
+                      variant="ghost"
                       disabled={!enabled}
                       onClick={() => pick(attendee)}
-                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+                      className="h-auto w-full flex-col items-start justify-start gap-0.5 rounded-none px-3 py-2 text-left font-normal disabled:cursor-not-allowed disabled:hover:bg-transparent"
                     >
                       {content}
-                    </button>
+                    </Button>
                   </li>
                 );
               })}

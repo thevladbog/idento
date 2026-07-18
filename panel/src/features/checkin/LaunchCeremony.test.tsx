@@ -307,6 +307,44 @@ describe("LaunchCeremony", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
   });
 
+  // PR #77 bot-review round 3, Finding 6 -- while settings are still loading
+  // (or have failed), the form's current values equal DEFAULT_CHECKIN_
+  // SETTINGS and so does the baseline it diffs against, so `settingsDirty`
+  // computes to false and Start check-in could previously be clicked with
+  // settings that were NEVER actually confirmed from the server. Readiness
+  // and station name both already pass here -- only the settings query's own
+  // resolution state should be gating Start.
+  it("keeps Start check-in disabled while the settings query is still loading, even though readiness and station name already pass -- then governs it by the ordinary dirty/pending checks once settings load", async () => {
+    readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
+    server.use(
+      http.get("http://api.test/api/events/:id/checkin-settings", async () => {
+        await delay(50);
+        return HttpResponse.json({ settings: settingsResponse });
+      }),
+    );
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    // `launch-ceremony`'s own testid renders for BOTH the eventQuery-loading
+    // skeleton and the real page -- `launch-col-settings` only exists once
+    // the event itself has resolved, same precedent as this file's other
+    // settings-loading test above.
+    await screen.findByTestId("launch-col-settings");
+
+    expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
+  });
+
+  it("keeps Start check-in disabled when the settings query has failed, even though readiness and station name already pass", async () => {
+    readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
+    server.use(
+      http.get("http://api.test/api/events/:id/checkin-settings", () => new HttpResponse(null, { status: 500 })),
+    );
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-col-settings");
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled());
+  });
+
   // PR #77 bot-review round 2, Finding 3 -- Start check-in navigates to the
   // station, which fetches the PERSISTED settings from the server -- an
   // unsaved edit (or a save still in flight) here must never be silently
@@ -493,6 +531,35 @@ describe("LaunchCeremony", () => {
       expect(printedZpl).toContain("^PW1063");
       expect(printedZpl).toContain("^LL650");
     });
+  });
+
+  // PR #77 bot-review round 3, Finding 1 -- `settingsSeededRef` was a plain
+  // "seeded at all, ever" boolean, never reset per event. This router does
+  // NOT remount LaunchCeremony across a param-only eventId change (same
+  // premise as BadgeEditorPage.test.tsx's own cross-event navigation
+  // coverage), so navigating from one event's ceremony to another's must
+  // re-seed the form from the NEW event's real settings rather than leaving
+  // it stuck on the FIRST event's.
+  it("re-seeds the settings form from the new event's own settings after navigating to a different event's launch ceremony (no remount)", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:id/checkin-settings", ({ params }) => {
+        const settings =
+          params.id === "evt-2"
+            ? { print_on_checkin: false, verdict_auto_dismiss_sec: 12, scan_input: "manual", manual_search_enabled: false }
+            : settingsResponse;
+        return HttpResponse.json({ settings });
+      }),
+    );
+    const router = renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-ceremony");
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeChecked());
+
+    await router.navigate({ to: "/events/$eventId/checkin/launch", params: { eventId: "evt-2" } });
+
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).not.toBeChecked());
+    expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(12);
+    expect(screen.getByLabelText("Scan input")).toHaveValue("manual");
+    expect(screen.getByRole("switch", { name: "Allow manual search" })).not.toBeChecked();
   });
 
   it("sends a null zone_id when no zone is picked", async () => {

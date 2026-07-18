@@ -190,8 +190,24 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
     }
 
     let cancelled = false;
+    // PR #77 bot-review round 3, Finding 4 -- an in-flight guard, scoped to
+    // this one effect run (mirrors `cancelled` above: a plain closure
+    // variable, not a ref, since neither needs to survive a `mode`/`enabled`
+    // change -- the effect's own cleanup tears the whole interval down and a
+    // fresh run gets a fresh `false`). Without this, the 200ms `setInterval`
+    // below started a brand-new `poll()` on EVERY tick regardless of whether
+    // the PREVIOUS getLastScan()/clearLastScan() round trip had actually
+    // finished -- a local agent that accepts a request but stalls (a real
+    // possibility on a loaded/slow local network) could let in-flight
+    // requests accumulate indefinitely with no visible indication anything
+    // was wrong. A tick that lands while a poll is still outstanding simply
+    // no-ops now; the NEXT tick after the outstanding one finally
+    // resolves/rejects picks polling back up normally.
+    let pollInFlight = false;
 
     async function poll() {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const scan = await agentClient.getLastScan();
         if (cancelled) return;
@@ -219,6 +235,8 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
         }
       } catch {
         if (!cancelled) setDegraded(true);
+      } finally {
+        pollInFlight = false;
       }
     }
 

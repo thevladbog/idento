@@ -47,6 +47,15 @@ type Attendee = components["schemas"]["Attendee"];
 // (which imports THIS component for the route's `component:` field).
 const routeApi = getRouteApi("/_app/events/$eventId/checkin");
 
+// PR #77 bot-review round 3, Finding 3 -- see the printer-readiness poll
+// effect below (near `printerGateActive`) for the full rationale. 10s, not
+// the 20s heartbeat/connection-health cadence useHeartbeat.ts/
+// useConnectionState.ts already establish, since this poll only ever runs
+// during an already-exceptional "still waiting for a printer" state, where
+// an operator expects to see a just-plugged-in/started agent come online
+// reasonably quickly.
+const PRINTER_GATE_POLL_INTERVAL_MS = 10_000;
+
 export function StationPage() {
   const { t } = useTranslation();
   const { eventId } = routeApi.useParams();
@@ -115,6 +124,38 @@ export function StationPage() {
   // is only ever evaluated once settings themselves have already resolved).
   const printerGateActive =
     settings.print_on_checkin && (agent.state !== "connected" || !agent.defaultPrinter);
+
+  // PR #77 bot-review round 3, Finding 3 -- `useAgentPrinters(true)` above
+  // uses `retry: false` with NO polling interval of its own, so once
+  // `printerGateActive` flips true it never re-checks on its own: an
+  // operator who opens this page BEFORE starting the local print agent app
+  // (or whose agent/printer connects moments after the page loads) would
+  // otherwise stay stuck on "waiting for printer" until some UNRELATED
+  // trigger (a window focus, a manual remount) happened to cause a refetch
+  // -- turning a transient wait into a potentially permanent block. Same
+  // self-managed-interval-calling-`.refetch()` pattern useConnectionState.ts
+  // already established for its own 20s health poll (including the
+  // ref-mirrors-latest-callback idiom, since `agent.refetch` is a fresh
+  // function reference every render) -- except only active WHILE this
+  // specific gate is actually blocking (not for the station's whole
+  // lifetime), and on a SHORTER interval: 10s, not the 20s heartbeat/
+  // connection-health cadence those OTHER polls match, since an operator who
+  // just plugged in/started the agent expects to see it come online
+  // reasonably quickly, and this poll only ever runs during an already-
+  // exceptional "still waiting" state, not for the ordinary lifetime of the
+  // station page.
+  const agentRefetchRef = React.useRef(agent.refetch);
+  React.useEffect(() => {
+    agentRefetchRef.current = agent.refetch;
+  }, [agent.refetch]);
+
+  React.useEffect(() => {
+    if (!printerGateActive) return;
+    const timer = window.setInterval(() => {
+      void agentRefetchRef.current();
+    }, PRINTER_GATE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [printerGateActive]);
 
   const flow = useCheckinFlow({
     eventId,

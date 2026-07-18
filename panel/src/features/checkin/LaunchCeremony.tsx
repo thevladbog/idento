@@ -99,22 +99,36 @@ export function LaunchCeremony() {
   // baseline/dirty/Save pattern) -------------------------------------------
   const [settingsForm, setSettingsForm] = React.useState<CheckinSettings>(DEFAULT_CHECKIN_SETTINGS);
   const [settingsBaseline, setSettingsBaseline] = React.useState<CheckinSettings>(DEFAULT_CHECKIN_SETTINGS);
-  const settingsSeededRef = React.useRef(false);
+  // PR #77 bot-review round 3, Finding 1 -- tracks WHICH event's settings
+  // this form was last seeded for (not just a plain "seeded at all, ever"
+  // boolean). `app/router.tsx` registers this route the same way it
+  // registers the badge editor's -- a param-only URL change (this event's
+  // launch ceremony to a DIFFERENT event's) reuses the SAME LaunchCeremony
+  // instance rather than remounting it, so a plain boolean ref would stay
+  // `true` forever after the first event and silently never re-seed for any
+  // event navigated to afterward. Same bug class, same fix shape as
+  // BadgeEditorPage.tsx's own `initializedForEventId` (see that file's
+  // comment) -- a plain ref (not reactive state) is enough here since
+  // nothing outside the seeding effect itself needs to read this reactively
+  // on the very next render (unlike BadgeEditorPage's Save-gating need).
+  const settingsSeededForEventIdRef = React.useRef<string | null>(null);
   const [settingsSaved, setSettingsSaved] = React.useState(false);
   const savedTimeoutRef = React.useRef<number | undefined>(undefined);
 
   React.useEffect(() => () => window.clearTimeout(savedTimeoutRef.current), []);
 
-  // Seed the editable form from the server's response exactly ONCE it
-  // first resolves -- a later background refetch (e.g. another operator's
-  // save) must never clobber whatever this operator is mid-editing.
+  // Seed the editable form from the server's response exactly ONCE per
+  // event it first resolves for -- a later background refetch of the SAME
+  // event's settings (e.g. another operator's save) must never clobber
+  // whatever this operator is mid-editing, but navigating to a DIFFERENT
+  // event's ceremony must always re-seed from THAT event's real settings.
   React.useEffect(() => {
-    if (settingsQuery.data && !settingsSeededRef.current) {
-      settingsSeededRef.current = true;
+    if (settingsQuery.data && settingsSeededForEventIdRef.current !== eventId) {
+      settingsSeededForEventIdRef.current = eventId;
       setSettingsForm(settingsQuery.data);
       setSettingsBaseline(settingsQuery.data);
     }
-  }, [settingsQuery.data]);
+  }, [settingsQuery.data, eventId]);
 
   // PR #77 bot-review round, Finding N -- the SAME "ungated load effect" bug
   // class as P3.1's badge editor: `settingsForm`/`settingsBaseline` start
@@ -207,8 +221,24 @@ export function LaunchCeremony() {
   // behalf) -- the Save button is one click away and right next to it, and
   // silently saving-on-navigate would itself be a surprising side effect for
   // a CTA whose own label says nothing about saving.
+  //
+  // PR #77 bot-review round 3, Finding 6 -- `!settingsReady` closes a gap the
+  // round 2 fix above left open: while `settingsQuery` is still loading (or
+  // has failed), `settingsForm` AND `settingsBaseline` are BOTH still
+  // `DEFAULT_CHECKIN_SETTINGS` (the seeding effect hasn't run yet), so
+  // `settingsDirty` computes to `false` -- no difference detected -- and
+  // Start check-in could previously be clicked with settings that were never
+  // actually confirmed from the server. `settingsReady` is the same
+  // `settingsQuery.isSuccess` flag every settings control in column 2 is
+  // already gated on (see their own `disabled={!settingsReady}`), so this
+  // adds no new tracked value, just extends the existing gate.
   const startDisabled =
-    !ready || trimmedStationName === "" || registerStation.isPending || settingsDirty || saveSettings.isPending;
+    !ready ||
+    !settingsReady ||
+    trimmedStationName === "" ||
+    registerStation.isPending ||
+    settingsDirty ||
+    saveSettings.isPending;
 
   function handleStart() {
     if (startDisabled) return;

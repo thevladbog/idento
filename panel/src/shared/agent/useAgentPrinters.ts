@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryObserverResult } from "@tanstack/react-query";
 import { agentClient, type AgentPrinter } from "./agentClient";
 
 // One connectivity state shared by every print surface (test-print dialog,
@@ -23,6 +23,16 @@ export interface UseAgentPrintersResult {
   // showing its own inline <select> only when this is null, never silently
   // picking "first in the list" on the operator's behalf.
   configuredDefault: string | null;
+  // PR #77 bot-review round 3, Finding 3 -- exposed so a caller gating a UI
+  // surface on this hook's own connectivity/printer state (StationPage.tsx's
+  // printer-readiness gate) can re-probe on its own schedule while that gate
+  // is active, WITHOUT this hook itself having an opinion on when that
+  // should happen (every other consumer -- LaunchCeremony.tsx,
+  // AttendeeDrawer.tsx, BulkBar.tsx, RecentScansRail.tsx, TestPrintDialog.tsx
+  // -- already gets a fresh probe for free via `refetchOnWindowFocus`, so
+  // this stays additive/opt-in rather than changing this hook's own default
+  // polling behavior for everyone).
+  refetch: () => Promise<QueryObserverResult<AgentPrintersData>>;
 }
 
 export const AGENT_PRINTERS_KEY = ["agent", "printers"] as const;
@@ -105,5 +115,5 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
     state = "checking";
   }
 
-  return { state, printers, defaultPrinter, configuredDefault };
+  return { state, printers, defaultPrinter, configuredDefault, refetch: query.refetch };
 }

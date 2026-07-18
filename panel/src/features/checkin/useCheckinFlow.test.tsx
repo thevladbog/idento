@@ -457,6 +457,78 @@ describe("useCheckinFlow", () => {
     expect(result.current.state.verdict).toBeUndefined();
   });
 
+  // PR #77 bot-review round 3, Finding 5 -- the station route can be
+  // navigated directly from one station's URL to another (browser back/
+  // forward, a bookmarked link) without necessarily remounting the whole
+  // component tree -- a lingering verdict/pending auto-dismiss timer from
+  // the PREVIOUS station must never bleed into a DIFFERENT station's page.
+  it("resets to idle and clears the previous station's pending auto-dismiss timer when eventId/stationId change (no remount)", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    function wrapper({ children }: { children: ReactNode }) {
+      return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+    }
+    // A dismiss window for the FIRST station long enough that it must NOT
+    // have naturally elapsed by the time the tight-timeout check just below
+    // observes "idle" -- that check must only be satisfiable by the
+    // explicit navigation-reset effect, never by this timer coincidentally
+    // firing on its own schedule.
+    const stationOneSettings: CheckinSettings = { ...DEFAULT_CHECKIN_SETTINGS, verdict_auto_dismiss_sec: 0.3 };
+    // A much longer window for the SECOND station -- irrelevant to this
+    // test's own assertions, just far enough out that it can't itself fire
+    // during the window being observed below.
+    const stationTwoSettings: CheckinSettings = { ...DEFAULT_CHECKIN_SETTINGS, verdict_auto_dismiss_sec: 5 };
+
+    const { result, rerender } = renderHook(
+      (props: UseCheckinFlowOptions) => useCheckinFlow(props),
+      {
+        wrapper,
+        initialProps: {
+          eventId: "evt-1",
+          stationId: "st-1",
+          settings: stationOneSettings,
+          printerName: "Zebra_ZD421",
+        },
+      },
+    );
+
+    void result.current.submitCode(ATTENDEE.code);
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.verdict).toBe("allowed");
+
+    rerender({
+      eventId: "evt-2",
+      stationId: "st-2",
+      settings: stationTwoSettings,
+      printerName: "Zebra_ZD421",
+    });
+
+    // A DELIBERATELY tight timeout (well under station one's own 300ms
+    // dismiss window) -- this can only pass via the explicit
+    // navigation-triggered reset, never via station one's timer happening
+    // to elapse on its own natural schedule.
+    await waitFor(() => expect(result.current.state.status).toBe("idle"), { timeout: 150 });
+    expect(result.current.state.verdict).toBeUndefined();
+
+    // A fresh scan on the NEW station, started well before station one's
+    // original ~300ms deadline -- proves the busy guard was also reset (a
+    // stale "request in flight" flag from station one must not silently
+    // drop this), and gives station one's still-pending timer something to
+    // wrongly clobber if it was never actually cleared.
+    void result.current.submitCode("NO-SUCH-CODE");
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.verdict).toBe("not_registered");
+
+    // Past station one's original (now-stale) ~300ms dismiss deadline, but
+    // well before station two's own real 5s one -- if the stale timer had
+    // NOT been cleared, it fires here and wipes the verdict just set above
+    // back to idle.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(result.current.state.status).toBe("verdict");
+    expect(result.current.state.verdict).toBe("not_registered");
+  });
+
   it("auto-dismisses back to idle after settings.verdict_auto_dismiss_sec, without an explicit clear()", async () => {
     // A short-but-real interval rather than fake timers (no fake-timer
     // precedent exists anywhere in this repo, and this hook's dismiss timer

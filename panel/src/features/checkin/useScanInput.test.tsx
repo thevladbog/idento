@@ -280,6 +280,40 @@ describe("useScanInput", () => {
       expect(scanClearHitCount).toBe(2);
       expect(onCode).toHaveBeenCalledTimes(1);
     }, 15000);
+
+    // PR #77 bot-review round 3, Finding 4 -- the 200ms poll interval
+    // previously started a new `poll()` on every tick regardless of whether
+    // the PREVIOUS `getLastScan()`/`clearLastScan()` round trip had actually
+    // finished. A local agent that accepts a request but stalls (a real
+    // possibility on a loaded/slow local network) could otherwise let
+    // in-flight requests accumulate indefinitely.
+    it("does not start a new poll while the previous getLastScan() round trip is still outstanding, and resumes once it resolves", async () => {
+      let releaseScanLast: (() => void) | undefined;
+      const hang = new Promise<void>((resolve) => {
+        releaseScanLast = resolve;
+      });
+      server.use(
+        http.get("http://agent.test/scan/last", async () => {
+          scanLastHitCount += 1;
+          await hang;
+          return HttpResponse.json(scanLastResponse);
+        }),
+      );
+      const onCode = vi.fn();
+      render(<ScannerHarness onCode={onCode} />);
+
+      // The first poll starts (and hangs on the still-unresolved response).
+      await waitFor(() => expect(scanLastHitCount).toBe(1));
+
+      // Well past several 200ms poll intervals -- a NEW poll must never
+      // start while the first one is still outstanding.
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      expect(scanLastHitCount).toBe(1);
+
+      // Releasing the hung request lets normal polling resume.
+      releaseScanLast?.();
+      await waitFor(() => expect(scanLastHitCount).toBeGreaterThan(1));
+    }, 10000);
   });
 
   describe("manual mode", () => {
