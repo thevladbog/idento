@@ -34,8 +34,8 @@ const ADA: Attendee = {
 let attendeesHitCount = 0;
 let lastSearchParam: string | null = null;
 let attendeesShouldError = false;
-let scanLastResponse: { code: string; time: string } = { code: "", time: "0001-01-01T00:00:00Z" };
-let scanLastShouldError = false;
+let scanConsumeResponse: { code: string; time: string } = { code: "", time: "0001-01-01T00:00:00Z" };
+let scanConsumeShouldError = false;
 
 const server = startMswServer(
   http.get("http://api.test/api/events/:eventId/attendees", ({ request }) => {
@@ -46,11 +46,10 @@ const server = startMswServer(
     const matches = lastSearchParam && "Ada Lovelace ada@example.com PD-0107".includes(lastSearchParam) ? [ADA] : [];
     return HttpResponse.json({ attendees: matches, total: matches.length, page: 1, per_page: 8 });
   }),
-  http.get("http://agent.test/scan/last", () => {
-    if (scanLastShouldError) return new HttpResponse(null, { status: 500 });
-    return HttpResponse.json(scanLastResponse);
+  http.post("http://agent.test/scan/consume", () => {
+    if (scanConsumeShouldError) return new HttpResponse(null, { status: 500 });
+    return HttpResponse.json(scanConsumeResponse);
   }),
-  http.post("http://agent.test/scan/clear", () => HttpResponse.json({ status: "cleared" })),
 );
 void server;
 
@@ -91,8 +90,8 @@ describe("ScanInput", () => {
     attendeesHitCount = 0;
     lastSearchParam = null;
     attendeesShouldError = false;
-    scanLastResponse = { code: "", time: "0001-01-01T00:00:00Z" };
-    scanLastShouldError = false;
+    scanConsumeResponse = { code: "", time: "0001-01-01T00:00:00Z" };
+    scanConsumeShouldError = false;
   });
 
   it.each(["wedge", "scanner", "manual"] as const)(
@@ -117,7 +116,7 @@ describe("ScanInput", () => {
   });
 
   it("scanner mode: shows a waiting hint normally, and a degraded hint once the agent is unreachable", async () => {
-    scanLastShouldError = true;
+    scanConsumeShouldError = true;
     renderScanInput({ mode: "scanner" });
 
     await waitFor(() =>
@@ -308,7 +307,7 @@ describe("ScanInput", () => {
     // mode, per the block above). A dedicated key with no manual-search
     // reference is shown instead.
     it("shows manual-search-free degraded copy when the scanner fails AND manualSearchEnabled is false", async () => {
-      scanLastShouldError = true;
+      scanConsumeShouldError = true;
       renderScanInput({ mode: "scanner", manualSearchEnabled: false });
 
       expect(

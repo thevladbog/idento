@@ -15,29 +15,21 @@ import { http, HttpResponse } from "msw";
 import { useScanInput, type UseScanInputOptions } from "./useScanInput";
 import { startMswServer } from "../../test/msw";
 
-let scanLastResponse: { code: string; time: string } = { code: "", time: "0001-01-01T00:00:00Z" };
-let scanLastHitCount = 0;
-let scanLastShouldError = false;
-let scanClearHitCount = 0;
-// PR #77 bot-review round, Finding P -- lets a test make the NEXT
-// `/scan/clear` call fail without touching `/scan/last`'s own error toggle
-// above (a clear failure must not also look like the agent being
-// unreachable for `getLastScan`).
-let scanClearShouldFailNext = false;
+let scanConsumeResponse: { code: string; time: string } = { code: "", time: "0001-01-01T00:00:00Z" };
+let scanConsumeHitCount = 0;
+let scanConsumeShouldError = false;
 
 const server = startMswServer(
-  http.get("http://agent.test/scan/last", () => {
-    scanLastHitCount += 1;
-    if (scanLastShouldError) return new HttpResponse(null, { status: 500 });
-    return HttpResponse.json(scanLastResponse);
-  }),
-  http.post("http://agent.test/scan/clear", () => {
-    scanClearHitCount += 1;
-    if (scanClearShouldFailNext) {
-      scanClearShouldFailNext = false;
-      return new HttpResponse(null, { status: 500 });
-    }
-    return HttpResponse.json({ status: "cleared" });
+  http.post("http://agent.test/scan/consume", () => {
+    scanConsumeHitCount += 1;
+    if (scanConsumeShouldError) return new HttpResponse(null, { status: 500 });
+    const response = scanConsumeResponse;
+    // Real /scan/consume atomically clears the buffer server-side -- mimic
+    // that here so a static scanConsumeResponse doesn't keep getting
+    // "re-consumed" forever, matching how the real agent behaves and
+    // proving the client no longer needs its own client-side dedup.
+    scanConsumeResponse = { code: "", time: "0001-01-01T00:00:00Z" };
+    return HttpResponse.json(response);
   }),
 );
 void server;
@@ -80,11 +72,9 @@ function ManualHarness({ onCode }: { onCode: (code: string) => void }) {
 describe("useScanInput", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
-    scanLastResponse = { code: "", time: "0001-01-01T00:00:00Z" };
-    scanLastHitCount = 0;
-    scanLastShouldError = false;
-    scanClearHitCount = 0;
-    scanClearShouldFailNext = false;
+    scanConsumeResponse = { code: "", time: "0001-01-01T00:00:00Z" };
+    scanConsumeHitCount = 0;
+    scanConsumeShouldError = false;
   });
 
   describe("wedge mode", () => {
@@ -206,40 +196,39 @@ describe("useScanInput", () => {
   });
 
   describe("scanner mode", () => {
-    it("polls agentClient.getLastScan, emits onCode once for a new scan, and clears the agent buffer", async () => {
-      scanLastResponse = { code: "PD-0107", time: "2026-07-17T10:00:00Z" };
+    it("polls agentClient.consumeLastScan, emits onCode exactly once for a scan", async () => {
+      scanConsumeResponse = { code: "PD-0107", time: "2026-07-17T10:00:00Z" };
       const onCode = vi.fn();
       render(<ScannerHarness onCode={onCode} />);
 
       await waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
       expect(onCode).toHaveBeenCalledWith("PD-0107");
-      await waitFor(() => expect(scanClearHitCount).toBe(1));
 
-      // A second (and third) poll cycle sees the SAME {code, time} pair
-      // (this mock never changes) -- must never re-emit or re-clear.
+      // The mock already cleared its own state on that first consume
+      // (mirroring the real agent's atomic consume) -- further poll ticks
+      // see the empty sentinel and must never re-emit.
       await new Promise((resolve) => setTimeout(resolve, 500));
       expect(onCode).toHaveBeenCalledTimes(1);
-      expect(scanClearHitCount).toBe(1);
-      expect(scanLastHitCount).toBeGreaterThan(1);
+      expect(scanConsumeHitCount).toBeGreaterThan(1);
     }, 10000);
 
     it("does not emit while the buffer is empty (the sentinel no-scan-yet state)", async () => {
       const onCode = vi.fn();
       render(<ScannerHarness onCode={onCode} />);
 
-      await waitFor(() => expect(scanLastHitCount).toBeGreaterThan(1));
+      await waitFor(() => expect(scanConsumeHitCount).toBeGreaterThan(1));
       expect(onCode).not.toHaveBeenCalled();
     });
 
     it("sets degraded:true when the agent is unreachable, and clears it again once reachable", async () => {
-      scanLastShouldError = true;
+      scanConsumeShouldError = true;
       const onCode = vi.fn();
       render(<ScannerHarness onCode={onCode} />);
 
       await waitFor(() => expect(screen.getByTestId("degraded")).toHaveTextContent("true"));
       expect(onCode).not.toHaveBeenCalled();
 
-      scanLastShouldError = false;
+      scanConsumeShouldError = false;
       await waitFor(() => expect(screen.getByTestId("degraded")).toHaveTextContent("false"));
     }, 10000);
 
@@ -248,71 +237,72 @@ describe("useScanInput", () => {
       render(<ScannerHarness onCode={onCode} enabled={false} />);
 
       await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(scanLastHitCount).toBe(0);
+      expect(scanConsumeHitCount).toBe(0);
       expect(onCode).not.toHaveBeenCalled();
     });
 
-    // PR #77 bot-review round, Finding P -- the CURRENT code's dedup check
-    // (`last.code === scan.code && last.time === scan.time`) previously
-    // caused the poll to see the same still-uncleared pair and exit early
-    // WITHOUT re-attempting the clear (since it's already in
-    // `lastHandledRef`), leaving the agent's buffer stuck forever after a
-    // single transient clear failure -- even though the scan itself was
-    // correctly consumed exactly once (no double-emit).
-    it("retries a failed clearLastScan() on the next poll of the SAME scan, without re-emitting onCode", async () => {
-      scanLastResponse = { code: "PD-0107", time: "2026-07-17T10:00:00Z" };
-      scanClearShouldFailNext = true;
+    // Migration note: the OLD getLastScan/clearLastScan pair needed a
+    // "retry the clear" mechanism, because a transient clearLastScan()
+    // failure right after a successful getLastScan() left the scan already
+    // fired to onCode but the agent's buffer still holding it (a stuck
+    // buffer). The atomic consumeLastScan() has no equivalent failure mode:
+    // if a poll's consumeLastScan() call fails, nothing was consumed
+    // server-side at all -- the scan is still sitting untouched in the
+    // agent's buffer, and the very next successful poll consumes and emits
+    // it exactly once. No retry bookkeeping is needed on the client at all.
+    it("does not lose a scan when a poll's consumeLastScan() call fails -- the next poll consumes and emits it", async () => {
+      scanConsumeResponse = { code: "PD-0107", time: "2026-07-17T10:00:00Z" };
+      scanConsumeShouldError = true;
       const onCode = vi.fn();
       render(<ScannerHarness onCode={onCode} />);
 
-      // First poll: onCode fires once, the clear is attempted and FAILS.
+      // The failing poll(s) never reach the mock's clearing line -- the
+      // scan is untouched, and onCode must not fire.
+      await waitFor(() => expect(scanConsumeHitCount).toBeGreaterThan(0));
+      expect(onCode).not.toHaveBeenCalled();
+
+      scanConsumeShouldError = false;
       await waitFor(() => expect(onCode).toHaveBeenCalledTimes(1));
-      await waitFor(() => expect(scanClearHitCount).toBe(1));
+      expect(onCode).toHaveBeenCalledWith("PD-0107");
 
-      // A later poll sees the SAME {code, time} pair (this mock never
-      // changes it) -- the clear is retried (a second /scan/clear hit),
-      // but onCode must NOT fire again.
-      await waitFor(() => expect(scanClearHitCount).toBe(2), { timeout: 10000 });
-      expect(onCode).toHaveBeenCalledTimes(1);
-
-      // And once the clear finally succeeds, no FURTHER retries happen.
+      // And no further re-emission on later polls.
       await new Promise((resolve) => setTimeout(resolve, 500));
-      expect(scanClearHitCount).toBe(2);
       expect(onCode).toHaveBeenCalledTimes(1);
-    }, 15000);
+    }, 10000);
 
     // PR #77 bot-review round 3, Finding 4 -- the 200ms poll interval
     // previously started a new `poll()` on every tick regardless of whether
-    // the PREVIOUS `getLastScan()`/`clearLastScan()` round trip had actually
-    // finished. A local agent that accepts a request but stalls (a real
-    // possibility on a loaded/slow local network) could otherwise let
-    // in-flight requests accumulate indefinitely.
-    it("does not start a new poll while the previous getLastScan() round trip is still outstanding, and resumes once it resolves", async () => {
-      let releaseScanLast: (() => void) | undefined;
+    // the PREVIOUS round trip had actually finished. A local agent that
+    // accepts a request but stalls (a real possibility on a loaded/slow
+    // local network) could otherwise let in-flight requests accumulate
+    // indefinitely. This guard is untouched by the migration -- still
+    // verified here against the new endpoint.
+    it("does not start a new poll while the previous consumeLastScan() round trip is still outstanding, and resumes once it resolves", async () => {
+      let releaseScanConsume: (() => void) | undefined;
       const hang = new Promise<void>((resolve) => {
-        releaseScanLast = resolve;
+        releaseScanConsume = resolve;
       });
       server.use(
-        http.get("http://agent.test/scan/last", async () => {
-          scanLastHitCount += 1;
+        http.post("http://agent.test/scan/consume", async () => {
+          scanConsumeHitCount += 1;
           await hang;
-          return HttpResponse.json(scanLastResponse);
+          return HttpResponse.json(scanConsumeResponse);
         }),
       );
       const onCode = vi.fn();
       render(<ScannerHarness onCode={onCode} />);
 
       // The first poll starts (and hangs on the still-unresolved response).
-      await waitFor(() => expect(scanLastHitCount).toBe(1));
+      await waitFor(() => expect(scanConsumeHitCount).toBe(1));
 
       // Well past several 200ms poll intervals -- a NEW poll must never
       // start while the first one is still outstanding.
       await new Promise((resolve) => setTimeout(resolve, 700));
-      expect(scanLastHitCount).toBe(1);
+      expect(scanConsumeHitCount).toBe(1);
 
       // Releasing the hung request lets normal polling resume.
-      releaseScanLast?.();
-      await waitFor(() => expect(scanLastHitCount).toBeGreaterThan(1));
+      releaseScanConsume?.();
+      await waitFor(() => expect(scanConsumeHitCount).toBeGreaterThan(1));
     }, 10000);
   });
 
@@ -322,7 +312,7 @@ describe("useScanInput", () => {
       render(<ManualHarness onCode={onCode} />);
 
       await new Promise((resolve) => setTimeout(resolve, 300));
-      expect(scanLastHitCount).toBe(0);
+      expect(scanConsumeHitCount).toBe(0);
       expect(onCode).not.toHaveBeenCalled();
       expect(screen.getByTestId("degraded")).toHaveTextContent("false");
     });
