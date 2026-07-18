@@ -21,7 +21,7 @@ export interface SelectProps
     VariantProps<typeof selectVariants> {}
 
 // Wraps a native <select> rather than a custom listbox: every call site this
-// replaces (packages/ui/AGENTS.md's "primitives only from @idento/ui" rule,
+// replaces (panel/AGENTS.md's "primitives only from @idento/ui" rule,
 // closing a CodeRabbit finding on PR #77) already relies on native keyboard
 // nav, the OS's own mobile picker, and plain <option>/<optgroup> children --
 // and every one of those call sites' tests already assert via
