@@ -232,9 +232,7 @@ func main() {
 	sm := scanner.NewManager()
 
 	// For storing scanned data temporarily
-	var scanDataMutex sync.Mutex
-	var lastScannedCode string
-	var lastScanTime time.Time
+	scanBuf := newScanBuffer()
 
 	if *useMock {
 		log.Println("Running in MOCK mode (no real printers)")
@@ -289,10 +287,7 @@ func main() {
 				scannerName := fmt.Sprintf("Scanner_%s", sanitizePortName(portName))
 				s := scanner.NewScanner(scannerName, portName, 9600)
 				s.OnScan(func(data string) {
-					scanDataMutex.Lock()
-					lastScannedCode = data
-					lastScanTime = time.Now()
-					scanDataMutex.Unlock()
+					scanBuf.Set(data)
 					log.Printf("📋 Scan received: %s", data)
 				})
 				if err := s.Open(); err != nil {
@@ -835,47 +830,7 @@ func main() {
 		}
 	})
 
-	mux.HandleFunc("/scan/last", func(w http.ResponseWriter, r *http.Request) {
-		scanDataMutex.Lock()
-		defer scanDataMutex.Unlock()
-
-		// Return last scanned code (for polling)
-		response := map[string]interface{}{
-			"code": lastScannedCode,
-			"time": lastScanTime,
-		}
-
-		// Marshal response to bytes first to avoid partial writes on error
-		data, err := json.Marshal(response)
-		if err != nil {
-			log.Printf("Failed to marshal scan response: %v", err)
-			http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write(data); err != nil {
-			log.Printf("Failed to write scan response: %v", err)
-		}
-	})
-
-	mux.HandleFunc("/scan/clear", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		scanDataMutex.Lock()
-		lastScannedCode = ""
-		lastScanTime = time.Time{}
-		scanDataMutex.Unlock()
-
-		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": "cleared"}); err != nil {
-			log.Printf("Failed to encode response: %v", err)
-		}
-	})
+	registerScanRoutes(mux, scanBuf)
 
 	mux.HandleFunc("/scanners/add", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -942,10 +897,7 @@ func main() {
 		// Open scanner outside lock so config mutations are not blocked
 		s := scanner.NewScanner(scannerName, req.PortName, 9600)
 		s.OnScan(func(data string) {
-			scanDataMutex.Lock()
-			lastScannedCode = data
-			lastScanTime = time.Now()
-			scanDataMutex.Unlock()
+			scanBuf.Set(data)
 			log.Printf("📷 Scanned: %s", data)
 		})
 		if err := s.Open(); err != nil {
