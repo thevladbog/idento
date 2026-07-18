@@ -623,5 +623,15 @@
   "launchTestBadgeNoTemplate": "Сначала создайте шаблон бейджа, чтобы протестировать печать.",
   "launchStartCheckin": "Начать регистрацию",
   "launchUnsavedSettingsHint": "Сохраните настройки регистрации перед запуском.",
-  "launchRegisterError": "Не удалось зарегистрировать станцию. Попробуйте ещё раз."
+  "launchRegisterError": "Не удалось зарегистрировать станцию. Попробуйте ещё раз.",
+  "monitorLive": "В ЭФИРЕ",
+  "monitorUpdatedAgo": "Обновлено {{seconds}} с назад",
+  "monitorExit": "Выход",
+  "monitorTotalsTitle": "Итоги",
+  "monitorZonesTitle": "По зонам",
+  "monitorRate": "{{rate}} сканов/мин",
+  "monitorPeakAt": "пик {{rate}} в {{time}}",
+  "monitorEstDone": "ожид. завершение {{time}}",
+  "monitorUnattributed": "Без зоны",
+  "monitorSnapshotLoadError": "Не удалось загрузить данные монитора."
 }

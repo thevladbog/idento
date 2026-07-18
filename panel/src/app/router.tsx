@@ -16,6 +16,7 @@ import { OrganizationPage } from "../features/organization/OrganizationPage";
 import { StationPage } from "../features/checkin/StationPage";
 import { checkinStationBeforeLoad, validateCheckinStationSearch } from "../features/checkin/searchParams";
 import { LaunchCeremony } from "../features/checkin/LaunchCeremony";
+import { MonitorPage } from "../features/monitor/MonitorPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -170,6 +171,23 @@ const eventCheckinLaunchRoute = createRoute({
   component: LaunchCeremony,
 });
 
+// P4.2 Task 7 -- the live monitor (board 7e). Same TOP-LEVEL, sibling-of-
+// eventWorkspaceRoute registration as eventCheckinRoute/
+// eventCheckinLaunchRoute above (plan-time fact 7: mirror that exact
+// pattern, don't invent a new technique) -- registered directly under
+// protectedLayoutRoute.addChildren, NOT nested inside
+// eventWorkspaceRoute.addChildren, so `/events/$eventId/monitor` renders
+// chrome-less/rail-less too: a glanceable, read-only tablet screen, not
+// another workspace tab. MonitorPage.test.tsx's routing-proof harness
+// mirrors StationPage.test.tsx's own (a real competing eventWorkspaceRoute
+// sibling + a misregistration counter-example) to prove this registration
+// discriminates correctly.
+const eventMonitorRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/events/$eventId/monitor",
+  component: MonitorPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
@@ -181,6 +199,7 @@ const routeTree = rootRoute.addChildren([
     ]),
     eventCheckinRoute,
     eventCheckinLaunchRoute,
+    eventMonitorRoute,
   ]),
   loginRoute,
   registerRoute,

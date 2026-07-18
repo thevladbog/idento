@@ -621,5 +621,15 @@
   "launchTestBadgeNoTemplate": "Design a badge template first to test print it.",
   "launchStartCheckin": "Start check-in",
   "launchUnsavedSettingsHint": "Save your check-in settings before starting check-in.",
-  "launchRegisterError": "Couldn't register the station. Try again."
+  "launchRegisterError": "Couldn't register the station. Try again.",
+  "monitorLive": "LIVE",
+  "monitorUpdatedAgo": "Updated {{seconds}} s ago",
+  "monitorExit": "Exit",
+  "monitorTotalsTitle": "Totals",
+  "monitorZonesTitle": "By zone",
+  "monitorRate": "{{rate}} scans/min",
+  "monitorPeakAt": "peak {{rate}} at {{time}}",
+  "monitorEstDone": "est. done {{time}}",
+  "monitorUnattributed": "Unattributed",
+  "monitorSnapshotLoadError": "Couldn't load the live monitor data."
 }
