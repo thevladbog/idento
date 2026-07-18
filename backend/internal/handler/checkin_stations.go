@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -114,6 +115,18 @@ func (h *Handler) HeartbeatCheckinStation(c echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Check-in station not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update check-in station"})
+	}
+
+	// Publish on every successful heartbeat (P4.2 Task 4, self-review
+	// notes): unlike check-in/undo/reprint, a heartbeat's ONLY effect is
+	// bumping last_seen_at — but the monitor's stations card renders that
+	// exact field (liveness dot + staleness), so it IS monitor-visible
+	// state and every 204 here is worth a signal. Nil-safe, best-effort,
+	// after the store call already committed.
+	if h.Broker != nil {
+		if pubErr := h.Broker.Publish(c.Request().Context(), eventID); pubErr != nil {
+			log.Printf("heartbeat checkin station: broker publish failed: %v", pubErr)
+		}
 	}
 
 	return c.NoContent(http.StatusNoContent)

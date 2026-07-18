@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -170,6 +171,19 @@ func (h *Handler) StationCheckin(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check in attendee"})
 	}
 
+	// Publish only on outcome "checked_in" (P4.2 Task 4, plan-time fact 3 +
+	// self-review notes): "already_checked_in" and "blocked" both leave the
+	// monitor-visible state completely unchanged, so signaling the monitor
+	// to re-fetch a snapshot that will come back identical would just be
+	// wasted work on every subscriber. Nil-safe, best-effort, AFTER the
+	// store call already committed — a publish failure never turns a
+	// successful check-in into an error response.
+	if outcome == "checked_in" && h.Broker != nil {
+		if pubErr := h.Broker.Publish(c.Request().Context(), eventID); pubErr != nil {
+			log.Printf("station checkin: broker publish failed: %v", pubErr)
+		}
+	}
+
 	var checkin *CheckinInfo
 	if updated.CheckedInAt != nil {
 		byEmail := ""
@@ -229,6 +243,17 @@ func (h *Handler) UndoCheckin(c echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to undo check-in"})
+	}
+
+	// Publish on every 200 (P4.2 Task 4) — including the idempotent
+	// already-clear case: a redundant signal just costs subscribers one
+	// harmless snapshot re-fetch that comes back unchanged, which is
+	// strictly cheaper than trying to detect "did this undo actually
+	// change anything" here. Nil-safe, best-effort, AFTER the store call.
+	if h.Broker != nil {
+		if pubErr := h.Broker.Publish(c.Request().Context(), eventID); pubErr != nil {
+			log.Printf("undo checkin: broker publish failed: %v", pubErr)
+		}
 	}
 
 	return c.JSON(http.StatusOK, UndoCheckinResponse{Attendee: updated})

@@ -33,5 +33,11 @@ type Broker interface {
 	// re-fetch on every "update" frame, so a coalesced signal never means
 	// stale data). The returned unsubscribe func is idempotent and safe to
 	// call concurrently with Publish and with itself.
+	//
+	// The channel is NEVER closed — not by Publish, not by unsubscribe, not
+	// by the broker shutting down. A consumer MUST therefore select on it
+	// alongside at least one other case (a request context's Done() and/or
+	// a keep-alive ticker, as the P4.2 SSE handler does) and never `range`
+	// over it, which would block forever instead of observing shutdown.
 	Subscribe(eventID uuid.UUID) (<-chan struct{}, func())
 }

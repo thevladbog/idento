@@ -399,6 +399,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/{event_id}/monitor/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live monitor SSE stream (P4.2 Task 4, spec §3.3) — the codebase's first Server-Sent Events endpoint. This is a deliberately "thin-ping" stream: it never carries monitor state itself, only signals telling the client when to re-fetch GET /api/events/{event_id}/monitor (this operation's sibling above). requireEventOwnership is checked BEFORE any stream header is written, so a foreign/missing event still gets a plain 404 JSON body rather than a half-open event-stream response. */
+        get: operations["getEventMonitorStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/{id}/readiness": {
         parameters: {
             query?: never;
@@ -3324,6 +3341,64 @@ export interface operations {
                 };
             };
             /** @description Store failure resolving event ownership or any aggregation. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventMonitorStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An open text/event-stream connection that stays open until the client disconnects or the request context is cancelled. Three frame types, each terminated by a blank line (`\n\n`) and flushed individually the moment it's written: (1) `event: hello\ndata: {}\n\n` — sent once, immediately, so the client can confirm the connection is live; (2) `event: update\ndata: {"at":"<RFC3339>"}\n\n` — sent whenever the broker publishes a change for this event (check-in, undo, reprint, or station heartbeat); the timestamp is informational only; the client always responds by re-fetching the snapshot endpoint above, never by trying to derive state from this payload; (3) `: ping\n\n` — a comment line (no `event:` field, so it is invisible to an EventSource's message handlers) sent every 25 seconds as a keep-alive, purely to stop an intermediary proxy/load balancer from reaping an idle-looking connection. This operation's contract test cannot run the streamed body through openapi3filter.ValidateResponse, which validates one complete response, not an indefinite byte sequence — see the documented direct-coverage-map exception in monitor_stream_test.go; the real frame-by-frame assertions live in that same file's httptest.Server-backed tests. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description event_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing") — checked before any stream header is written. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership. */
             500: {
                 headers: {
                     [name: string]: unknown;

@@ -2281,6 +2281,80 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/events/{event_id}/monitor/stream:
+    get:
+      operationId: getEventMonitorStream
+      summary: >
+        Live monitor SSE stream (P4.2 Task 4, spec §3.3) — the codebase's
+        first Server-Sent Events endpoint. This is a deliberately
+        "thin-ping" stream: it never carries monitor state itself, only
+        signals telling the client when to re-fetch GET
+        /api/events/{event_id}/monitor (this operation's sibling above).
+        requireEventOwnership is checked BEFORE any stream header is
+        written, so a foreign/missing event still gets a plain 404 JSON
+        body rather than a half-open event-stream response.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: >
+            An open text/event-stream connection that stays open until the
+            client disconnects or the request context is cancelled. Three
+            frame types, each terminated by a blank line (`\n\n`) and
+            flushed individually the moment it's written: (1)
+            `event: hello\ndata: {}\n\n` — sent once, immediately, so the
+            client can confirm the connection is live; (2)
+            `event: update\ndata: {"at":"<RFC3339>"}\n\n` — sent whenever
+            the broker publishes a change for this event (check-in, undo,
+            reprint, or station heartbeat); the timestamp is informational
+            only; the client always responds by re-fetching the snapshot
+            endpoint above, never by trying to derive state from this
+            payload; (3) `: ping\n\n` — a comment line (no `event:` field,
+            so it is invisible to an EventSource's message handlers) sent
+            every 25 seconds as a keep-alive, purely to stop an
+            intermediary proxy/load balancer from reaping an idle-looking
+            connection. This operation's contract test cannot run the
+            streamed body through openapi3filter.ValidateResponse, which
+            validates one complete response, not an indefinite byte
+            sequence — see the documented direct-coverage-map exception in
+            monitor_stream_test.go; the real frame-by-frame assertions
+            live in that same file's httptest.Server-backed tests.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  A sequence of hello / update / ping SSE frames as
+                  described above — not a single JSON document, and not
+                  validated against this schema by the contract harness
+                  (see the "200" description).
+        "400":
+          description: event_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            Event does not exist, or belongs to a different tenant
+            (requireEventOwnership masks "foreign" as "missing") — checked
+            before any stream header is written.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure resolving event ownership.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/events/{id}/readiness:
     get:
       operationId: getEventReadiness
