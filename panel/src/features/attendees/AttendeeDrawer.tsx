@@ -1,7 +1,7 @@
 import {
   Avatar, AvatarFallback, Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Label,
-  Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
+  Select, Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -25,12 +25,6 @@ type AttendeeZoneAccess = components["schemas"]["AttendeeZoneAccess"];
 type MovementHistoryEntry = components["schemas"]["MovementHistoryEntry"];
 
 const RECENT_ACTIVITY_LIMIT = 3;
-
-// Native <select>, styled to match PropertiesPane.tsx's/TestPrintDialog.tsx's
-// own SELECT_CLASSNAME (duplicated per-file on purpose -- see those files'
-// own comments: there's no shared @idento/ui Select primitive yet).
-const REPRINT_SELECT_CLASSNAME =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-body text-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 
 // Board 3e / task brief: times are rendered "HH:MM" pinned to UTC (same
 // rationale as EventRow.tsx/eventDates.ts — a viewer's local timezone must
@@ -483,9 +477,8 @@ function DrawerBody({
       {!reprintConfiguredDefault ? (
         <span className="mt-2 flex flex-col gap-2">
           <Label htmlFor="reprint-printer">{t("printPrinterLabel")}</Label>
-          <select
+          <Select
             id="reprint-printer"
-            className={REPRINT_SELECT_CLASSNAME}
             value={reprintPrinter ?? ""}
             disabled={agent.printers.length === 0 || reprintPrinting}
             onChange={(event) => setReprintPrinter(event.target.value)}
@@ -497,7 +490,7 @@ function DrawerBody({
                 <option key={printer.name} value={printer.name}>{printer.name}</option>
               ))
             )}
-          </select>
+          </Select>
         </span>
       ) : null}
       {reprintPrinting ? (
