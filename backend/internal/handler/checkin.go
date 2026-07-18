@@ -158,6 +158,15 @@ func (h *Handler) StationCheckin(c echo.Context) error {
 		if errors.Is(err, store.ErrAttendeeNotFound) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Attendee not found"})
 		}
+		// ErrCheckinConflict (PR #77 bot-review round 2, Finding 1) is the
+		// store's bounded-retry exhaustion: the guarded UPDATE and its ONE
+		// retry both landed on "neither checked in nor blocked" — an
+		// extremely narrow, transient race. 409, mirroring
+		// store.ErrVersionConflict's precedent (badge_template.go), signals
+		// the caller (the station) should retry the scan.
+		if errors.Is(err, store.ErrCheckinConflict) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "Check-in conflict, please retry"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check in attendee"})
 	}
 

@@ -975,6 +975,98 @@ func (s *PGStore) InsertCheckinAction(ctx context.Context, eventID, attendeeID u
 	return insertCheckinAction(ctx, s.db, eventID, attendeeID, action, stationID, staffUserID)
 }
 
+// ErrCheckinConflict is returned by CheckInAttendee when a bounded retry
+// (see checkInAttendeeMaxAttempts) still can't resolve the guarded UPDATE
+// to a definitive outcome — PR #77 bot-review round 2, Finding 1. It marks
+// an extremely narrow, transient race (not "already checked in", not
+// "blocked", not "missing"); callers should treat it as retryable rather
+// than as any of those three normal outcomes.
+var ErrCheckinConflict = errors.New("check-in conflict, please retry")
+
+// checkInAttendeeMaxAttempts bounds CheckInAttendee's retry of its own
+// guarded-UPDATE-then-fallback sequence to a single extra attempt (2 total)
+// when the fallback SELECT lands on the "neither checked in nor blocked"
+// race window (PR #77 bot-review round 2, Finding 1) — an unbounded/
+// infinite retry loop would be wrong, but the race window this closes is
+// narrow enough that a single retry against the now-current state resolves
+// the vast majority of real occurrences.
+const checkInAttendeeMaxAttempts = 2
+
+// checkInAttendeeGuardedUpdateSQL is CheckInAttendee's exact guarded UPDATE
+// — see the Store interface doc for the full guard/outcome contract.
+// blocked = false closes a TOCTOU race (PR #77 bot-review round 1, Finding
+// A): StationCheckin's handler reads the attendee and returns the "blocked"
+// outcome BEFORE calling here — but another operator's blocked/unblocked
+// toggle can land in the window between that pre-read and this UPDATE
+// actually running. Without this guard, the predicate would still match a
+// NOW-blocked attendee (it only checked checkin_status/deleted_at) and
+// check them in anyway, violating the endpoint's "blocked attendees are
+// never checked in" contract. checked_in_device_number = NULL (PR #77
+// bot-review round 2, Finding 2) mirrors UndoCheckin's clear, so a fresh
+// panel check-in never inherits a stale device number left over from an
+// earlier mobile check-in.
+const checkInAttendeeGuardedUpdateSQL = `UPDATE attendees
+	SET checkin_status = true, checked_in_at = now(), checked_in_by = $1, checked_in_device_number = NULL, checked_in_point_name = $2, updated_at = now()
+	WHERE id = $3 AND event_id = $4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL
+	RETURNING ` + checkinAttendeeColumnsSQL
+
+// checkInAttendeeAttempt runs ONE guarded-UPDATE-then-fallback sequence
+// inside tx and classifies the result into one of FOUR outcomes: "checked_in"
+// (this attempt's own guarded UPDATE won), "blocked" (fallback SELECT found
+// checkin_status = false, blocked = true — the TOCTOU race path), "conflict"
+// (fallback SELECT found checkin_status = false, blocked = false — neither
+// checked in nor blocked; PR #77 bot-review round 2, Finding 1, retried by
+// the caller), or "already_checked_in" (fallback SELECT found checkin_status
+// = true). A missing attendee returns ErrAttendeeNotFound directly (never
+// retried — see CheckInAttendee below). Does not touch checked_in_by_email
+// or insert any checkin_actions row; the caller (CheckInAttendee) owns both,
+// since they only apply once, after a final "checked_in" outcome.
+func checkInAttendeeAttempt(ctx context.Context, tx pgx.Tx, eventID, attendeeID uuid.UUID, pointName *string, staffUserID uuid.UUID) (string, *models.Attendee, error) {
+	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, checkInAttendeeGuardedUpdateSQL, staffUserID, pointName, attendeeID, eventID))
+	if err == nil {
+		return "checked_in", a, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", nil, err
+	}
+
+	// 0 rows: the guarded UPDATE's predicate missed for one of FOUR
+	// reasons — already checked in (by this or another staff
+	// member/station), newly blocked (the TOCTOU race the blocked = false
+	// guard above closes), neither checked in nor blocked (a narrower,
+	// retryable race — Finding 1), or genuinely missing (soft-deleted, or
+	// doesn't belong to eventID). The fallback SELECT below (joined to
+	// users, same shape as attendeeListColumnsSQL/scanAttendeeRow)
+	// distinguishes all four: missing rows ErrAttendeeNotFound; a row with
+	// checkin_status = false AND blocked = true is the newly-blocked case
+	// (outcome "blocked" — this call never actually checked them in, so
+	// their pre-existing first-scan metadata, if any, is untouched); a row
+	// with checkin_status = false AND blocked = false is the conflict case
+	// (outcome "conflict" — genuinely not checked in, so reporting
+	// already_checked_in would be both factually wrong and would skip the
+	// only outcome that triggers printing); anything else (checkin_status =
+	// true) is already_checked_in, returning the ORIGINAL first-scan
+	// metadata untouched.
+	selectQuery := `SELECT` + attendeeListColumnsSQL + `
+		FROM attendees a
+		LEFT JOIN users u ON a.checked_in_by = u.id
+		WHERE a.id = $1 AND a.event_id = $2 AND a.deleted_at IS NULL`
+	existing, err := scanAttendeeByEmailJoinRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil, ErrAttendeeNotFound
+		}
+		return "", nil, err
+	}
+	if !existing.CheckinStatus && existing.Blocked {
+		return "blocked", existing, nil
+	}
+	if !existing.CheckinStatus && !existing.Blocked {
+		return "conflict", existing, nil
+	}
+	return "already_checked_in", existing, nil
+}
+
 // CheckInAttendee performs one station's single-scan check-in idempotently
 // (P4.1 Task 3) — see the Store interface doc for the full outcome
 // contract. This is the zero-double-checkin guarantee at the source,
@@ -997,22 +1089,31 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 		pointName = &stationName
 	}
 
-	// blocked = false closes a TOCTOU race (PR #77 bot-review round, Finding
-	// A): StationCheckin's handler reads the attendee and returns the
-	// "blocked" outcome BEFORE calling here — but another operator's
-	// blocked/unblocked toggle can land in the window between that pre-read
-	// and this UPDATE actually running. Without this guard, the predicate
-	// would still match a NOW-blocked attendee (it only checked
-	// checkin_status/deleted_at) and check them in anyway, violating the
-	// endpoint's "blocked attendees are never checked in" contract. The
-	// 0-row fallback below distinguishes this newly-blocked case from
-	// already_checked_in.
-	updateQuery := `UPDATE attendees
-		SET checkin_status = true, checked_in_at = now(), checked_in_by = $1, checked_in_point_name = $2, updated_at = now()
-		WHERE id = $3 AND event_id = $4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL
-		RETURNING ` + checkinAttendeeColumnsSQL
-	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, staffUserID, pointName, attendeeID, eventID))
-	if err == nil {
+	// Bounded retry (PR #77 bot-review round 2, Finding 1): the vast
+	// majority of calls resolve on the first attempt; only the "conflict"
+	// outcome (neither checked in nor blocked) loops back for one more
+	// attempt against the now-current state, all inside the SAME
+	// transaction.
+	var outcome string
+	var a *models.Attendee
+	for attempt := 0; attempt < checkInAttendeeMaxAttempts; attempt++ {
+		outcome, a, err = checkInAttendeeAttempt(ctx, tx, eventID, attendeeID, pointName, staffUserID)
+		if err != nil {
+			return "", nil, err
+		}
+		if outcome != "conflict" {
+			break
+		}
+	}
+	if outcome == "conflict" {
+		// The retry landed on the same unresolved state again — vanishingly
+		// unlikely, but must not recurse/loop forever. Roll back (via the
+		// deferred Rollback above) and surface a retryable sentinel rather
+		// than misreporting "already_checked_in".
+		return "", nil, ErrCheckinConflict
+	}
+
+	if outcome == "checked_in" {
 		// This call's own guarded UPDATE won the race — it just wrote
 		// checked_in_by = staffUserID, so its email IS staffEmail (the
 		// caller resolved it, e.g. via GetUserByID, before calling here).
@@ -1023,44 +1124,11 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 		if err := insertCheckinAction(ctx, tx, eventID, attendeeID, "checkin", stationID, staffUserID); err != nil {
 			return "", nil, err
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return "", nil, err
-		}
-		return "checked_in", a, nil
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", nil, err
-	}
-
-	// 0 rows: the guarded UPDATE's predicate missed for one of THREE
-	// reasons — already checked in (by this or another staff
-	// member/station), newly blocked (the TOCTOU race the blocked = false
-	// guard above closes), or genuinely missing (soft-deleted, or doesn't
-	// belong to eventID). The fallback SELECT below (joined to users, same
-	// shape as attendeeListColumnsSQL/scanAttendeeRow) distinguishes all
-	// three: missing rows ErrAttendeeNotFound; a row with checkin_status =
-	// false is the newly-blocked case (outcome "blocked" — this call never
-	// actually checked them in, so their pre-existing first-scan metadata,
-	// if any, is untouched); anything else is already_checked_in, returning
-	// the ORIGINAL first-scan metadata untouched.
-	selectQuery := `SELECT` + attendeeListColumnsSQL + `
-		FROM attendees a
-		LEFT JOIN users u ON a.checked_in_by = u.id
-		WHERE a.id = $1 AND a.event_id = $2 AND a.deleted_at IS NULL`
-	existing, err := scanAttendeeByEmailJoinRow(tx.QueryRow(ctx, selectQuery, attendeeID, eventID))
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", nil, ErrAttendeeNotFound
-		}
-		return "", nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", nil, err
 	}
-	if !existing.CheckinStatus && existing.Blocked {
-		return "blocked", existing, nil
-	}
-	return "already_checked_in", existing, nil
+	return outcome, a, nil
 }
 
 // UndoCheckin clears a check-in idempotently (P4.1 Task 3) — see the Store

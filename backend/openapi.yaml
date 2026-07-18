@@ -468,16 +468,46 @@ components:
       type: object
       description: >
         POST /api/attendees/{attendee_id}/printed's OPTIONAL request body
-        (P4.1 Task 4). Both fields are optional and independent of each
-        other; event_id is what actually gates the reprint-logging
-        behavior — station_id is only meaningful (recorded on the feed
-        row) when event_id is also present. Absent entirely (or an absent/
-        empty body) is the pre-existing back-compat path: counter-only,
-        no checkin_actions row (the badge-editor's bulk print sends no
-        body at all).
+        (P4.1 Task 4). Both fields are optional, but NOT independent of
+        each other — the handler (attendee_printed.go) enforces two
+        dependency/consistency constraints the schema below cannot express
+        structurally (OpenAPI 3.0 has no clean native "field A requires
+        field B" construct), documented in prose on each field and on the
+        endpoint's 400 response instead: (1) station_id requires event_id
+        to also be present — a station_id with no event_id is rejected
+        with 400, not silently discarded (PR #77 bot-review round 1,
+        Finding D); (2) event_id, when present, must match the attendee's
+        actual event — a mismatched event_id is rejected with 400, never
+        silently substituted (checked since this endpoint's reprint-logging
+        was first built, Task 4). event_id is what actually gates the
+        reprint-logging behavior — station_id is only meaningful (recorded
+        on the feed row) when a validated event_id is also present. Absent
+        entirely (or an absent/empty body) is the pre-existing back-compat
+        path: counter-only, no checkin_actions row (the badge-editor's bulk
+        print sends no body at all).
       properties:
-        event_id: { type: string, format: uuid, nullable: true }
-        station_id: { type: string, format: uuid, nullable: true }
+        event_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Optional. When present, must match the attendee's actual event
+            — a mismatched event_id is rejected with 400 ("Attendee does
+            not belong to this event"), never silently substituted. Gates
+            reprint-logging: only when event_id is present (and valid) does
+            the handler log a checkin_actions ('reprint') row after the
+            printed_count increment succeeds.
+        station_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: >
+            Optional, but REQUIRES event_id to also be present in the same
+            request — station_id with no event_id is rejected with 400
+            ("event_id is required when station_id is supplied"), not
+            silently discarded (PR #77 bot-review round 1, Finding D). When
+            both are present, station_id must also belong to the same
+            event_id (400 "Station not found in event" otherwise).
     CreateProvisioningTokenResponse:
       type: object
       properties:
@@ -2006,6 +2036,19 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: >
+            store.ErrCheckinConflict (PR #77 bot-review round 2, Finding 1):
+            the guarded UPDATE's fallback read found the attendee neither
+            checked in nor blocked — an extremely narrow, transient race
+            (e.g. the UPDATE lost to a different concurrent attempt that
+            itself then got undone, or a block/unblock cycle landed between
+            the UPDATE and the fallback read). The store retries this
+            state once internally before giving up; this 409 means both
+            attempts landed on it. The caller should retry the scan.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: >
             Store failure resolving ownership, verifying station_id,
@@ -3148,12 +3191,20 @@ paths:
         A body-less call (the pre-existing badge-editor bulk print path)
         stays counter-only, unchanged. The body is parsed leniently: unknown
         fields are ignored and a syntactically-malformed JSON body is
-        treated the same as no body at all (the counter still increments) —
-        the ONLY 400 this body can trigger is a present event_id/station_id
-        value that isn't a valid UUID string. Reprint-logging failures
-        (e.g. a transient store error resolving staffUserID from claims)
-        never fail this endpoint — the counter has already committed by
-        the time logging is attempted, so it is treated as best-effort.
+        treated the same as no body at all (the counter still increments).
+        A present, well-formed body can still 400 in FOUR cases, all
+        checked BEFORE the counter increments so a rejected request never
+        partially applies — see MarkAttendeePrintedRequest's schema and its
+        field descriptions for the full dependency/mismatch contract: (1)
+        event_id or station_id is present but not a valid UUID string; (2)
+        station_id is present without event_id (PR #77 bot-review round 1,
+        Finding D); (3) event_id is present but does not match the
+        attendee's actual event; (4) station_id, when present alongside a
+        valid event_id, does not belong to that event. Reprint-logging
+        failures (e.g. a transient store error resolving staffUserID from
+        claims) never fail this endpoint — the counter has already
+        committed by the time logging is attempted, so it is treated as
+        best-effort.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: attendee_id
@@ -3177,8 +3228,16 @@ paths:
                 required: [printed_count]
         "400":
           description: >
-            attendee_id is not a UUID, or the optional body's event_id/
-            station_id is present but not a valid UUID string.
+            attendee_id is not a UUID; the optional body's event_id or
+            station_id is present but not a valid UUID string; station_id
+            is present without event_id ("event_id is required when
+            station_id is supplied" — PR #77 bot-review round 1, Finding
+            D); event_id is present but does not match the attendee's
+            actual event ("Attendee does not belong to this event"); or
+            station_id, alongside a valid event_id, does not belong to that
+            event ("Station not found in event"). See
+            MarkAttendeePrintedRequest for the full field-level dependency
+            contract.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

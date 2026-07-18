@@ -449,13 +449,16 @@ var checkinAttendeeReturningColumns = []string{
 
 // checkInAttendeeUpdateSQL matches CheckInAttendee's exact guarded UPDATE —
 // including the `checkin_status = false` guard that makes this the
-// zero-double-checkin write, AND the `blocked = false` guard (PR #77
-// bot-review round, Finding A) that closes the TOCTOU race where another
-// operator blocks the SAME attendee between StationCheckin's pre-read and
-// this UPDATE actually running — without this guard the UPDATE's predicate
-// would still match a newly-blocked attendee and check them in anyway
-// (P2.1 lesson: assert real SQL text, not a loose matcher).
-const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, checked_in_at = now\(\), checked_in_by = \$1, checked_in_point_name = \$2, updated_at = now\(\)\s+WHERE id = \$3 AND event_id = \$4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+// zero-double-checkin write, the `blocked = false` guard (PR #77 bot-review
+// round 1, Finding A) that closes the TOCTOU race where another operator
+// blocks the SAME attendee between StationCheckin's pre-read and this
+// UPDATE actually running — without this guard the UPDATE's predicate would
+// still match a newly-blocked attendee and check them in anyway — AND the
+// `checked_in_device_number = NULL` clear (PR #77 bot-review round 2,
+// Finding 2) that mirrors UndoCheckin's clear, so a fresh panel check-in
+// never inherits a stale device number left over from an earlier mobile
+// check-in (P2.1 lesson: assert real SQL text, not a loose matcher).
+const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, checked_in_at = now\(\), checked_in_by = \$1, checked_in_device_number = NULL, checked_in_point_name = \$2, updated_at = now\(\)\s+WHERE id = \$3 AND event_id = \$4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
 
 // checkInAttendeeFallbackSelectSQL matches the 0-row fallback SELECT — the
 // same LEFT JOIN ... users shape as attendeeListColumnsSQL/scanAttendeeRow,
@@ -560,6 +563,54 @@ func TestCheckInAttendeeNoStationLeavesPointNameNull(t *testing.T) {
 	}
 }
 
+// TestCheckInAttendeeClearsStaleDeviceNumber is the round-trip proof for PR
+// #77 bot-review round 2, Finding 2: an attendee arriving at the guarded
+// UPDATE with a pre-existing non-null checked_in_device_number (left over
+// from an earlier mobile check-in, or an unbind/rebind cycle via the legacy
+// PUT /api/attendees/{id} path) must have that column cleared to NULL by a
+// FRESH panel check-in, exactly as UndoCheckin already clears it on undo.
+// CheckInAttendee takes no device-number argument at all, so — mirroring
+// TestUndoCheckinClearsDeviceNumber's reasoning — the only way the returned
+// row's CheckedInDeviceNumber ends up nil is the UPDATE's own
+// `checked_in_device_number = NULL` clearing it (the mocked RETURNING row
+// stands in for what a real Postgres UPDATE would hand back).
+func TestCheckInAttendeeClearsStaleDeviceNumber(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				true, &now, &staffID, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertCheckinSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "checkin", staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "ada.staff@example.com", "")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "checked_in" {
+		t.Errorf("outcome = %q, want checked_in", outcome)
+	}
+	if a.CheckedInDeviceNumber != nil {
+		t.Errorf("CheckedInDeviceNumber = %v, want nil (a fresh panel check-in must clear stale mobile device metadata)", *a.CheckedInDeviceNumber)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 // TestCheckInAttendeeAlreadyCheckedInFallsBackNoFeedRow covers the 0-row
 // path: the guarded UPDATE affects nothing (already checked in), so
 // CheckInAttendee falls back to the joined SELECT and returns the
@@ -657,6 +708,119 @@ func TestCheckInAttendeeNewlyBlockedReturnsBlockedOutcome(t *testing.T) {
 	}
 	if a.BlockReason == nil || *a.BlockReason != blockReason {
 		t.Errorf("a.BlockReason = %v, want %q", a.BlockReason, blockReason)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestCheckInAttendeeConflictStateRetriesAndSucceeds covers PR #77
+// bot-review round 2, Finding 1: the guarded UPDATE misses (0 rows), and the
+// fallback SELECT lands on a shape that is NEITHER "already checked in" NOR
+// "blocked" — checkin_status = false AND blocked = false. This is reachable
+// via a genuine narrow race (e.g. the UPDATE lost to a different concurrent
+// attempt that itself then got undone, or a block/unblock cycle landed in
+// the window between the UPDATE and this fallback SELECT) — the attendee is
+// demonstrably NOT checked in, so reporting "already_checked_in" here would
+// be factually false and would mean the attendee walks through the door
+// with no badge (printing is gated on the "checked_in" outcome only).
+// CheckInAttendee must retry the entire guarded-UPDATE-then-fallback
+// sequence exactly once more (asserted here via TWO checkInAttendeeUpdateSQL
+// expectations from pgxmock's ordered call tracking), and when the retry's
+// guarded UPDATE succeeds, return "checked_in" normally with a
+// checkin_actions row logged — never "already_checked_in", never an
+// infinite retry loop.
+func TestCheckInAttendeeConflictStateRetriesAndSucceeds(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	// Attempt 1: guarded UPDATE misses.
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns)) // 0 rows
+	// Attempt 1's fallback SELECT: neither checked in nor blocked.
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(addAttendeeRow(pgxmock.NewRows(attendeesByEventColumns), attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "CODE1", now))
+	// Attempt 2 (the single retry): guarded UPDATE now succeeds against the
+	// now-current state.
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				true, &now, &staffID, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertCheckinSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "checkin", staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "ada.staff@example.com", "")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "checked_in" {
+		t.Errorf("outcome = %q, want checked_in (never already_checked_in for a non-checked-in, non-blocked attendee)", outcome)
+	}
+	if a.CheckedInByEmail == nil || *a.CheckedInByEmail != "ada.staff@example.com" {
+		t.Errorf("CheckedInByEmail = %v, want ada.staff@example.com", a.CheckedInByEmail)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestCheckInAttendeeConflictStateExhaustsRetryReturnsErrCheckinConflict
+// covers the vanishingly-unlikely-but-must-be-handled case where the SINGLE
+// retry (PR #77 bot-review round 2, Finding 1) lands on the exact same
+// "neither checked in nor blocked" shape again. This must NOT recurse or
+// loop forever, and must NOT be misreported as "already_checked_in" — the
+// store surfaces the exported ErrCheckinConflict sentinel (bounded: exactly
+// 2 total guarded-UPDATE attempts, asserted via pgxmock's ordered
+// expectations) for the handler to map to a retryable response, and the
+// transaction rolls back (no ExpectCommit is set).
+func TestCheckInAttendeeConflictStateExhaustsRetryReturnsErrCheckinConflict(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	// Attempt 1: guarded UPDATE misses, fallback lands on the conflict shape.
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns))
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(addAttendeeRow(pgxmock.NewRows(attendeesByEventColumns), attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "CODE1", now))
+	// Attempt 2 (the single retry): STILL misses, STILL lands on the same
+	// conflict shape.
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns))
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(addAttendeeRow(pgxmock.NewRows(attendeesByEventColumns), attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "CODE1", now))
+	mock.ExpectRollback()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "ada.staff@example.com", "")
+	if !errors.Is(err, ErrCheckinConflict) {
+		t.Fatalf("err = %v, want ErrCheckinConflict", err)
+	}
+	if outcome != "" || a != nil {
+		t.Errorf("outcome/attendee = %q/%v, want empty/nil on ErrCheckinConflict", outcome, a)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)

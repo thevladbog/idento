@@ -156,30 +156,45 @@ type Store interface {
 	// (pg_store_batch.go) but with a RETURNING clause so the full row comes
 	// back in the same round trip. In one transaction: a guarded
 	// `UPDATE ... WHERE checkin_status = false AND blocked = false AND
-	// deleted_at IS NULL` RETURNING the row. When it matches (this call wins
-	// the race), the outcome is "checked_in" and a checkin_actions
-	// ('checkin') row is inserted in the SAME transaction. When it matches
-	// nothing, a fallback SELECT (LEFT JOINed to users for
-	// checked_in_by_email, mirroring attendeeListColumnsSQL/scanAttendeeRow
-	// — attendees has no checked_in_by_email COLUMN; it is always derived
-	// from users.email via checked_in_by) distinguishes THREE cases: an
-	// attendee that is genuinely missing (soft-deleted, or the id doesn't
-	// belong to eventID — returns the exported ErrAttendeeNotFound); one
-	// that is newly blocked (checkin_status still false, blocked now true —
-	// outcome "blocked", PR #77 bot-review round Finding A: closes the
-	// TOCTOU race where another operator blocks the SAME attendee in the
-	// window between the HANDLER's pre-read short-circuit and this guarded
-	// UPDATE actually running, so the blocked = false guard above is what
-	// makes this path reachable at all); or one that is simply already
-	// checked in (outcome "already_checked_in", returning its ORIGINAL
-	// first-scan metadata — never overwritten). No feed row is written for
-	// either the "blocked" or "already_checked_in" fallback path. Contract:
-	// the caller must already have confirmed the attendee exists, belongs
-	// to eventID, and — at the time of its own pre-read — was NOT blocked
-	// (e.g. via requireAttendeeOwnership + an explicit attendee.Blocked
-	// check) — the HANDLER's pre-read short-circuit is still the primary
-	// "blocked" path; this method's own blocked = false guard is the
-	// second, race-closing path, not a replacement for the handler's check.
+	// deleted_at IS NULL` RETURNING the row — the SET clause also clears
+	// checked_in_device_number (PR #77 bot-review round 2, Finding 2:
+	// mirrors UndoCheckin's clear, so a fresh panel check-in never inherits
+	// a stale device number left over from an earlier mobile check-in/undo
+	// cycle). When it matches (this call wins the race), the outcome is
+	// "checked_in" and a checkin_actions ('checkin') row is inserted in the
+	// SAME transaction. When it matches nothing, a fallback SELECT (LEFT
+	// JOINed to users for checked_in_by_email, mirroring
+	// attendeeListColumnsSQL/scanAttendeeRow — attendees has no
+	// checked_in_by_email COLUMN; it is always derived from users.email via
+	// checked_in_by) distinguishes FOUR cases: an attendee that is genuinely
+	// missing (soft-deleted, or the id doesn't belong to eventID — returns
+	// the exported ErrAttendeeNotFound, no retry); one that is newly
+	// blocked (checkin_status still false, blocked now true — outcome
+	// "blocked", PR #77 bot-review round 1 Finding A: closes the TOCTOU
+	// race where another operator blocks the SAME attendee in the window
+	// between the HANDLER's pre-read short-circuit and this guarded UPDATE
+	// actually running, so the blocked = false guard above is what makes
+	// this path reachable at all); one that is simply already checked in
+	// (outcome "already_checked_in", returning its ORIGINAL first-scan
+	// metadata — never overwritten); or — PR #77 bot-review round 2,
+	// Finding 1 — one that is neither checked in NOR blocked (checkin_status
+	// false, blocked false): a narrow race where the guarded UPDATE lost to
+	// something else that then resolved before the fallback SELECT ran.
+	// This last case is retried ONCE more against the now-current state
+	// (bounded: at most 2 total attempts) rather than being misreported as
+	// "already_checked_in" — reporting that outcome here would be doubly
+	// wrong: it's factually false, AND since printing only fires on
+	// "checked_in", the attendee would walk through with a false verdict and
+	// no badge. If the retry lands in the SAME state again, this method
+	// returns the exported ErrCheckinConflict for the handler to map to a
+	// retryable 409. No feed row is written for the "blocked",
+	// "already_checked_in", or ErrCheckinConflict paths. Contract: the
+	// caller must already have confirmed the attendee exists, belongs to
+	// eventID, and — at the time of its own pre-read — was NOT blocked (e.g.
+	// via requireAttendeeOwnership + an explicit attendee.Blocked check) —
+	// the HANDLER's pre-read short-circuit is still the primary "blocked"
+	// path; this method's own blocked = false guard is the second,
+	// race-closing path, not a replacement for the handler's check.
 	// staffEmail/stationName are resolved by the caller (via GetUserByID /
 	// GetCheckinStationByID); on the "checked_in" outcome they are attached
 	// to the returned row verbatim (an empty stationName leaves
