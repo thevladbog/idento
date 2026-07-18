@@ -1,9 +1,6 @@
-import {
-  Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Skeleton,
-} from "@idento/ui";
+import { Button, Skeleton } from "@idento/ui";
 import { Link, Outlet, getRouteApi, useRouterState } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
-import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { formatDateRange } from "../events/eventDates";
@@ -42,7 +39,6 @@ export function EventWorkspaceLayout() {
   const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
   const readiness = useEventReadiness(eventId);
   const active = useActiveRailTab();
-  const [launchDialogOpen, setLaunchDialogOpen] = React.useState(false);
 
   if (eventQuery.isLoading) {
     return (
@@ -77,7 +73,17 @@ export function EventWorkspaceLayout() {
         ) : null}
         <div className="ml-auto">
           {ready ? (
-            <Button onClick={() => setLaunchDialogOpen(true)}>{t("workspaceLaunchCheckin")}</Button>
+            // P4.1 Task 11: this header CTA is the "Launch check-in" gate
+            // WorkspaceOverview.tsx's own `workspaceAllReady` copy already
+            // promises ("launch check-in from the header when doors
+            // open") — it now navigates straight to the real launch
+            // ceremony (app/router.tsx's eventCheckinLaunchRoute) instead
+            // of the P1.1-era "coming soon" placeholder dialog.
+            <Button asChild>
+              <Link to="/events/$eventId/checkin/launch" params={{ eventId }}>
+                {t("workspaceLaunchCheckin")}
+              </Link>
+            </Button>
           ) : (
             // Locked state: disabled, but the "locked" reason is real text
             // (sr-only, not just the dimmed/disabled look or the padlock
@@ -96,14 +102,6 @@ export function EventWorkspaceLayout() {
           <Outlet />
         </div>
       </div>
-      <Dialog open={launchDialogOpen} onOpenChange={setLaunchDialogOpen}>
-        <DialogContent closeLabel={t("workspaceDialogClose")}>
-          <DialogHeader>
-            <DialogTitle>{t("workspaceLaunchComingSoonTitle")}</DialogTitle>
-            <DialogDescription>{t("workspaceLaunchComingSoonBody")}</DialogDescription>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

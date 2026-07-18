@@ -1,6 +1,7 @@
 import { editorReducer, initialEditorState } from "./editorState";
 import {
   parseTemplateDoc,
+  resolveBadgeConfig,
   serializeTemplateDoc,
   ZPL_FONTS,
   type BadgeTemplateDoc,
@@ -406,6 +407,52 @@ describe("serializeTemplateDoc — verbatim-preservation round-trip", () => {
     const serialized = serializeTemplateDoc(doc, raw);
 
     expect(serialized.elements).toEqual([{ id: "ok", type: "text", x: 0, y: 0 }]);
+  });
+});
+
+// PR #77 bot-review round 2, Finding 4 -- the backend-parity "configless
+// legacy template" fallback, extracted out of usePrintBadge.ts's own inline
+// resolution so the launch ceremony's Test badge action can reuse the
+// IDENTICAL logic. This is deliberately NOT parseTemplateDoc's own
+// width_mm/height_mm/dpi narrowing (see that describe block above for its
+// 90x55mm @ 300dpi editor default) -- these two functions intentionally
+// disagree on the fallback for the exact same "field missing" input.
+describe("resolveBadgeConfig", () => {
+  it("falls back to the backend's 50x30mm @ 203dpi for a configless legacy template (width_mm/height_mm/dpi all missing)", () => {
+    expect(resolveBadgeConfig({ elements: [] })).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
+  });
+
+  it("falls back to the same 50x30mm @ 203dpi for null/non-object raw values", () => {
+    expect(resolveBadgeConfig(null)).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
+    expect(resolveBadgeConfig(undefined)).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
+    expect(resolveBadgeConfig("not an object")).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
+  });
+
+  it("uses an explicit modern template's real width_mm/height_mm/dpi verbatim (no regression for the common case)", () => {
+    expect(resolveBadgeConfig({ width_mm: 90, height_mm: 55, dpi: 300, elements: [] })).toEqual({
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+    });
+  });
+
+  it("falls back per-field independently for a partially-configured template", () => {
+    expect(resolveBadgeConfig({ width_mm: 100 })).toEqual({ width_mm: 100, height_mm: 30, dpi: 203 });
+    expect(resolveBadgeConfig({ dpi: 300 })).toEqual({ width_mm: 50, height_mm: 30, dpi: 300 });
+  });
+
+  it("treats a <= 0 width/height/dpi the same as missing (backend tolerates both the same way)", () => {
+    expect(resolveBadgeConfig({ width_mm: 0, height_mm: -5, dpi: 0 })).toEqual({
+      width_mm: 50,
+      height_mm: 30,
+      dpi: 203,
+    });
+  });
+
+  it("truncates a fractional dpi toward zero BEFORE its own <= 0 fallback check, mirroring the backend's int(d) cast", () => {
+    expect(resolveBadgeConfig({ dpi: 203.7 })).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
+    // 0.9 truncates to 0 first, THEN falls back to 203 -- not "kept" as 0.
+    expect(resolveBadgeConfig({ dpi: 0.9 })).toEqual({ width_mm: 50, height_mm: 30, dpi: 203 });
   });
 });
 

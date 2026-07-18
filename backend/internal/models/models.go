@@ -75,9 +75,18 @@ type Event struct {
 	// store.UpdateEventBadgeTemplate, not via the general Event CRUD paths.
 	BadgeTemplate        json.RawMessage `json:"-"`
 	BadgeTemplateVersion int             `json:"-"`
-	CreatedAt            time.Time       `json:"created_at"`
-	UpdatedAt            time.Time       `json:"updated_at"`
-	DeletedAt            *time.Time      `json:"deleted_at,omitempty"`
+	// CheckinSettings (P4.1) is excluded from generic event JSON (json:"-")
+	// the same way BadgeTemplate is above — the dedicated GET/PUT
+	// /api/events/{id}/checkin-settings endpoint is the only read/write
+	// surface. Populate via store.GetCheckinSettings /
+	// store.UpdateCheckinSettings, not via the general Event CRUD paths.
+	// Unlike BadgeTemplate, there is no version column: settings are
+	// operator-only config with no concurrent-editor conflict class to
+	// guard against.
+	CheckinSettings json.RawMessage `json:"-"`
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	DeletedAt       *time.Time      `json:"deleted_at,omitempty"`
 }
 
 type Attendee struct {
@@ -409,4 +418,30 @@ type EventStatsResponse struct {
 	TotalAttendees int            `json:"total_attendees"`
 	CheckedIn      int            `json:"checked_in"`
 	ZoneStats      *ZoneScanStats `json:"zone_stats,omitempty"`
+}
+
+// CheckinStation is a registered check-in station (P4.1) — distinct from
+// the mobile-track Station (zone/kiosk devices): a checkin_station is
+// name-scoped per event (UNIQUE(event_id, name)) and optionally bound to a
+// zone, with LastSeenAt updated by a heartbeat endpoint (Task 2).
+type CheckinStation struct {
+	ID         uuid.UUID  `json:"id"`
+	EventID    uuid.UUID  `json:"event_id"`
+	Name       string     `json:"name"`
+	ZoneID     *uuid.UUID `json:"zone_id,omitempty"`
+	LastSeenAt time.Time  `json:"last_seen_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// CheckinAction is one row of the durable check-in/undo/reprint feed
+// (P4.1) backing checkin_actions — the audit trail a station's "recent
+// scans" rail (Task 9) and any reprint logging (Task 4) read from.
+type CheckinAction struct {
+	ID          uuid.UUID  `json:"id"`
+	EventID     uuid.UUID  `json:"event_id"`
+	AttendeeID  uuid.UUID  `json:"attendee_id"`
+	StationID   *uuid.UUID `json:"station_id,omitempty"`
+	Action      string     `json:"action"` // "checkin" | "undo" | "reprint"
+	StaffUserID *uuid.UUID `json:"staff_user_id,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
