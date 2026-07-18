@@ -9,16 +9,21 @@
 //
 // Wires together Task 5/6's data layer (`useMonitorSnapshot` for the
 // numbers, `useMonitorStream` for the header's LIVE pill + as the thing
-// that keeps the snapshot fresh via invalidation elsewhere) with this
-// task's own header chrome and left-column cards (TotalsCard, ZonesCard).
-// The right column renders ONLY stable, content-free placeholders here --
-// Task 8 owns the Stations/Last-scans cards and the reconnecting badge.
+// that keeps the snapshot fresh via invalidation elsewhere) with the left-
+// column cards (TotalsCard, ZonesCard, Task 7) and the right-column cards
+// (StationsCard, RecentFeedCard, Task 8) plus the header's amber
+// `monitorReconnecting` badge (also Task 8) -- shown whenever
+// `stream.status === "reconnecting"`, with the already-fetched snapshot
+// content staying rendered underneath it (a dead stream degrades the
+// header, never blanks the body).
 import * as React from "react";
 import { Button, Card, CardContent, Skeleton } from "@idento/ui";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { $api } from "../../shared/api/query";
+import { RecentFeedCard } from "./RecentFeedCard";
+import { StationsCard } from "./StationsCard";
 import { TotalsCard } from "./TotalsCard";
 import { ZonesCard } from "./ZonesCard";
 import { useMonitorSnapshot } from "./hooks";
@@ -79,7 +84,8 @@ export function MonitorPage() {
   return (
     <div className="flex h-full flex-col" data-testid="monitor-page">
       {/* Header (56px per the board) -- LIVE pill · event name · "Updated
-          Ns ago" staleness label · Exit. */}
+          Ns ago" staleness label · (reconnecting badge, when the stream is
+          down) · Exit. */}
       <div className="flex h-14 flex-none items-center gap-3 border-b border-border px-4">
         <span
           className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-caption font-bold uppercase text-success"
@@ -87,7 +93,10 @@ export function MonitorPage() {
         >
           <span className="relative flex size-2">
             {live ? (
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
+              <span
+                data-testid="monitor-live-ring"
+                className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75"
+              />
             ) : null}
             <span className="relative inline-flex size-2 rounded-full bg-success" />
           </span>
@@ -97,6 +106,17 @@ export function MonitorPage() {
         {updatedSeconds !== null ? (
           <span className="text-caption text-muted-foreground" data-testid="monitor-updated-ago">
             {t("monitorUpdatedAgo", { seconds: updatedSeconds })}
+          </span>
+        ) : null}
+        {/* Global Constraints: a dead stream shows a reconnecting badge
+            OVER stale data -- the body below keeps rendering whatever
+            snapshot was last fetched, unconditionally on stream.status. */}
+        {stream.status === "reconnecting" ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-0.5 text-caption font-bold uppercase text-warning"
+            data-testid="monitor-reconnecting-badge"
+          >
+            {t("monitorReconnecting")}
           </span>
         ) : null}
         <div className="ml-auto">
@@ -113,40 +133,55 @@ export function MonitorPage() {
           already that exact value), 2-column grid (1.15fr 1fr) per board
           7e. */}
       <div className="grid flex-1 gap-4 overflow-y-auto bg-background p-6" style={{ gridTemplateColumns: "1.15fr 1fr" }}>
-        <div className="flex flex-col gap-4">
-          {snapshotQuery.isLoading ? (
-            <>
+        {snapshotQuery.isLoading ? (
+          <>
+            <div className="flex flex-col gap-4">
               <Skeleton className="h-40 w-full" />
               <Skeleton className="h-40 w-full" />
-            </>
-          ) : snapshotQuery.isError || !snapshot ? (
-            <Card>
-              <CardContent className="p-6">
-                <p className="text-body text-destructive" data-testid="monitor-snapshot-error">
-                  {t("monitorSnapshotLoadError")}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <>
+            </div>
+            <div className="flex flex-col gap-4">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-40 flex-1 w-full" />
+            </div>
+          </>
+        ) : snapshotQuery.isError || !snapshot ? (
+          <>
+            <div className="flex flex-col gap-4">
+              <Card>
+                <CardContent className="p-6">
+                  <p className="text-body text-destructive" data-testid="monitor-snapshot-error">
+                    {t("monitorSnapshotLoadError")}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+            <div className="flex flex-col gap-4" />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-4">
               <TotalsCard totals={snapshot.totals} />
               <ZonesCard
                 zones={snapshot.zones}
                 unattributed={snapshot.unattributed}
                 checkedInTotal={snapshot.totals.checked_in}
               />
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* Right column -- Task 8 fills these with the Stations and
-            Last-scans cards (+ the reconnecting badge in the header
-            above). Stable, content-free placeholders only: no fake
-            station/feed rows to invent and then throw away next task. */}
-        <div className="flex flex-col gap-4">
-          <div data-testid="monitor-stations-placeholder" />
-          <div className="flex-1" data-testid="monitor-recent-placeholder" />
-        </div>
+            {/* Right column (board 7e) -- Stations card (liveness, Task 8)
+                above the read-only Last-scans card, which grows to fill
+                the remaining height (`flex-1` on the wrapper, matching the
+                board's own "flex:1" note on this card). */}
+            <div className="flex flex-col gap-4">
+              <div data-testid="monitor-stations-placeholder">
+                <StationsCard stations={snapshot.stations} now={now} />
+              </div>
+              <div className="flex flex-1 flex-col" data-testid="monitor-recent-placeholder">
+                <RecentFeedCard recent={snapshot.recent} stations={snapshot.stations} zones={snapshot.zones} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

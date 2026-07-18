@@ -21,7 +21,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { MonitorPage } from "./MonitorPage";
 import { startMswServer } from "../../test/msw";
@@ -147,6 +147,45 @@ function monitorStreamHandler() {
   return http.get("http://api.test/api/events/:eventId/monitor/stream", () => {
     const stream = new ReadableStream<Uint8Array>({ start() {} });
     return new HttpResponse(stream, { headers: { "Content-Type": "text/event-stream" } });
+  });
+}
+
+// P4.2 Task 8's carried-over BINDING item from Task 7's review: at least
+// one test where the stream mock emits a real "hello" frame and the
+// header's live-state ring appears (Task 7 wired the ring but never
+// exercised it). The "MonitorPage -- stream status" describe block below
+// overrides the always-open, never-framed `monitorStreamHandler()` above
+// with THIS hand-driven, controlled stream -- same deferred/controlled
+// `ReadableStream` idiom as useMonitorStream.test.tsx's own
+// `makeSseStream` (real timers throughout, no fake clock, per that file's
+// own documented rationale: fake timers + MSW streaming don't mix here).
+function makeSseStream() {
+  let controllerRef!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller;
+    },
+  });
+  const encoder = new TextEncoder();
+  return {
+    stream,
+    push(frame: string) {
+      controllerRef.enqueue(encoder.encode(frame));
+    },
+    close() {
+      controllerRef.close();
+    },
+  };
+}
+
+type StreamConnection = ReturnType<typeof makeSseStream>;
+let streamConnections: StreamConnection[] = [];
+
+function controlledMonitorStreamHandler() {
+  return http.get("http://api.test/api/events/:eventId/monitor/stream", () => {
+    const conn = makeSseStream();
+    streamConnections.push(conn);
+    return new HttpResponse(conn.stream, { headers: { "Content-Type": "text/event-stream" } });
   });
 }
 
@@ -297,4 +336,227 @@ describe("MonitorPage", () => {
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-totals-card")).not.toBeInTheDocument();
   });
+});
+
+// P4.2 Task 8 -- Stations card: board 7e's own answer to "how stale is
+// stale" (p4.2-board-7e-extract.md) is a per-row amber dot PLUS a text
+// duration label, never color alone. `last_seen_at` timestamps below are
+// either "right now" (always fresh, however slowly this test itself runs)
+// or a fixed far-past date (always stale by any realistic wall clock) --
+// deliberately far enough from the 45s threshold in either direction that
+// this doesn't need to control MonitorPage's own `Date.now()`-seeded
+// ticker state (liveness.test.ts already pins the exact 44.9s/45.1s
+// boundary in isolation).
+describe("MonitorPage -- Stations card (liveness)", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+  });
+
+  it("shows a fresh station's green dot and count, with NO stale-duration label", async () => {
+    monitorSnapshot = snapshotBody({
+      stations: [
+        { id: "st-1", name: "Kiosk A", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 12 },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    expect(await screen.findByText("Kiosk A")).toBeInTheDocument();
+    expect(screen.getByTestId("monitor-station-dot-st-1")).toHaveClass("bg-success");
+    expect(screen.getByTestId("monitor-station-dot-st-1")).not.toHaveClass("bg-warning");
+    expect(screen.queryByTestId("monitor-station-stale-st-1")).not.toBeInTheDocument();
+    expect(screen.queryByText(/stale/i)).not.toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+  });
+
+  it("shows a stale station's amber dot AND a text 'stale Ns' duration label -- never color alone", async () => {
+    monitorSnapshot = snapshotBody({
+      stations: [
+        { id: "st-2", name: "Mobile 1", zone_id: null, last_seen_at: "2000-01-01T00:00:00.000Z", checkin_count: 3 },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    expect(await screen.findByText("Mobile 1")).toBeInTheDocument();
+    expect(screen.getByTestId("monitor-station-dot-st-2")).toHaveClass("bg-warning");
+    expect(screen.getByTestId("monitor-station-dot-st-2")).not.toHaveClass("bg-success");
+    expect(screen.getByTestId("monitor-station-stale-st-2")).toHaveTextContent(/stale \d+ s/);
+  });
+});
+
+// P4.2 Task 8 -- Last-scans (Recent feed) card: board 7e's own copy is
+// explicit -- "compact rows: bare stroke icon (no circle badge) + name/
+// zone + mono timestamp, no action buttons (read-only)". CheckinActionRow's
+// `action` is "checkin" | "undo" | "reprint" -- and checkin_actions only
+// ever logs a 'checkin' row on outcome "checked_in" (backend
+// pg_store_checkin_test.go's own comment: "never already_checked_in, never
+// an [other outcome]"), so a checkin row is ALWAYS the `allowed` verdict --
+// the ONLY verdict this card ever renders. undo/reprint are explicitly NOT
+// verdicts (Global Constraints) -- neutral muted icons, asserted below as
+// carrying no `text-verdict-*` class at all, not just "a different one".
+describe("MonitorPage -- Recent feed card (read-only)", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+  });
+
+  it("renders a checkin row with the verdictClasses.allowed icon/color, a mono HH:MM:SS timestamp, and NO action buttons anywhere in the card", async () => {
+    monitorSnapshot = snapshotBody({
+      recent: [
+        {
+          id: "act-1",
+          action: "checkin",
+          station_id: null,
+          created_at: "2026-07-18T09:05:03.000Z",
+          attendee: { id: "att-1", first_name: "Ada", last_name: "Lovelace", code: "C1" },
+        },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    const row = await screen.findByTestId("monitor-recent-row-act-1");
+    expect(row).toHaveTextContent("Ada Lovelace");
+    expect(row).toHaveTextContent("09:05:03");
+
+    const icon = row.querySelector("svg");
+    expect(icon).toHaveClass("text-verdict-allowed");
+
+    expect(within(screen.getByTestId("monitor-recent-card")).queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("renders undo/reprint rows with a neutral muted icon -- asserted as carrying NO verdict color class at all", async () => {
+    monitorSnapshot = snapshotBody({
+      recent: [
+        {
+          id: "act-2",
+          action: "undo",
+          station_id: null,
+          created_at: "2026-07-18T09:06:00.000Z",
+          attendee: { id: "att-2", first_name: "Grace", last_name: "Hopper", code: "C2" },
+        },
+        {
+          id: "act-3",
+          action: "reprint",
+          station_id: null,
+          created_at: "2026-07-18T09:07:00.000Z",
+          attendee: { id: "att-3", first_name: "Alan", last_name: "Turing", code: "C3" },
+        },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    const undoRow = await screen.findByTestId("monitor-recent-row-act-2");
+    const undoIcon = undoRow.querySelector("svg");
+    expect(undoIcon).toHaveClass("text-muted-foreground");
+    expect(Array.from(undoIcon?.classList ?? []).some((c) => c.startsWith("text-verdict-"))).toBe(false);
+
+    const reprintRow = screen.getByTestId("monitor-recent-row-act-3");
+    const reprintIcon = reprintRow.querySelector("svg");
+    expect(reprintIcon).toHaveClass("text-muted-foreground");
+    expect(Array.from(reprintIcon?.classList ?? []).some((c) => c.startsWith("text-verdict-"))).toBe(false);
+  });
+
+  it("derives the zone name for a row via its station's zone when derivable, and omits it (no placeholder) when the chain is broken", async () => {
+    monitorSnapshot = snapshotBody({
+      zones: [{ zone_id: "z-1", name: "Main hall", checked_in: 1 }],
+      stations: [
+        { id: "st-1", name: "Kiosk A", zone_id: "z-1", last_seen_at: new Date().toISOString(), checkin_count: 1 },
+        { id: "st-2", name: "Kiosk B", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 0 },
+      ],
+      recent: [
+        {
+          id: "act-4",
+          action: "checkin",
+          station_id: "st-1", // has a zone -> derivable.
+          created_at: "2026-07-18T09:08:00.000Z",
+          attendee: { id: "att-4", first_name: "Rosalind", last_name: "Franklin", code: "C4" },
+        },
+        {
+          id: "act-5",
+          action: "checkin",
+          station_id: "st-2", // station has no zone -> not derivable.
+          created_at: "2026-07-18T09:09:00.000Z",
+          attendee: { id: "att-5", first_name: "Katherine", last_name: "Johnson", code: "C5" },
+        },
+        {
+          id: "act-6",
+          action: "checkin",
+          station_id: null, // station-less row -> not derivable.
+          created_at: "2026-07-18T09:10:00.000Z",
+          attendee: { id: "att-6", first_name: "Dorothy", last_name: "Vaughan", code: "C6" },
+        },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByTestId("monitor-recent-row-act-4");
+    expect(screen.getByTestId("monitor-recent-zone-act-4")).toHaveTextContent("Main hall");
+    expect(screen.queryByTestId("monitor-recent-zone-act-5")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-recent-zone-act-6")).not.toBeInTheDocument();
+  });
+});
+
+// P4.2 Task 8 -- header stream-status coverage (connecting/live/
+// reconnecting), including the carried-over BINDING item from Task 7's own
+// review: at least one test proving the header's live-state ring actually
+// appears once a real "hello" frame arrives (Task 7 wired it but never
+// exercised the `live` branch). Overrides the module-level
+// `monitorStreamHandler()` (always-open, never-framed -- "connecting"
+// forever, used by every OTHER describe block above) with the
+// hand-driven `controlledMonitorStreamHandler()` so this block alone can
+// drive hello/close frames and observe connecting -> live -> reconnecting
+// -> live.
+describe("MonitorPage -- stream status (connecting/live/reconnecting)", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+    monitorSnapshot = snapshotBody();
+    streamConnections = [];
+    server.use(controlledMonitorStreamHandler());
+  });
+
+  it("shows no reconnecting badge and no live ring while still connecting, then shows the live ring once the hello frame arrives", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    expect(screen.queryByTestId("monitor-live-ring")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+
+    await waitFor(() => expect(screen.getByTestId("monitor-live-ring")).toBeInTheDocument());
+    expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
+  });
+
+  it(
+    "shows the amber reconnecting badge over the already-fetched (now stale) snapshot data once the stream disconnects, and hides it again after a successful reconnect",
+    async () => {
+      renderCorrectAt("/events/evt-1/monitor");
+
+      await screen.findByText("1,284 / 2,410");
+      await waitFor(() => expect(streamConnections.length).toBe(1));
+      streamConnections[0].push("event: hello\ndata: {}\n\n");
+      await waitFor(() => expect(screen.getByTestId("monitor-live-ring")).toBeInTheDocument());
+
+      streamConnections[0].close();
+
+      await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
+      // Global Constraints: "on stream failure show a reconnecting badge
+      // over stale data" -- the totals card's own numbers must still be
+      // on screen, not blanked out just because the stream is down.
+      expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
+
+      // Backoff is 1s base +/-25% jitter (max 1250ms) -- bounded wait for
+      // the retried connect() to land as a brand-new request.
+      await waitFor(() => expect(streamConnections.length).toBe(2), { timeout: 3000 });
+      streamConnections[1].push("event: hello\ndata: {}\n\n");
+
+      await waitFor(() => expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument());
+    },
+    8000,
+  );
 });

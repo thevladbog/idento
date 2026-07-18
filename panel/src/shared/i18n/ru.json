@@ -633,5 +633,11 @@
   "monitorPeakAt": "пик {{rate}} в {{time}}",
   "monitorEstDone": "ожид. завершение {{time}}",
   "monitorUnattributed": "Без зоны",
-  "monitorSnapshotLoadError": "Не удалось загрузить данные монитора."
+  "monitorSnapshotLoadError": "Не удалось загрузить данные монитора.",
+  "monitorStationsTitle": "Станции",
+  "monitorStationsEmpty": "Пока нет станций.",
+  "monitorStaleFor": "устарело {{s}} с",
+  "monitorRecentTitle": "Последние сканирования",
+  "monitorRecentEmpty": "Пока нет сканирований.",
+  "monitorReconnecting": "Переподключение"
 }

@@ -631,5 +631,11 @@
   "monitorPeakAt": "peak {{rate}} at {{time}}",
   "monitorEstDone": "est. done {{time}}",
   "monitorUnattributed": "Unattributed",
-  "monitorSnapshotLoadError": "Couldn't load the live monitor data."
+  "monitorSnapshotLoadError": "Couldn't load the live monitor data.",
+  "monitorStationsTitle": "Stations",
+  "monitorStationsEmpty": "No stations yet.",
+  "monitorStaleFor": "stale {{s}} s",
+  "monitorRecentTitle": "Last scans",
+  "monitorRecentEmpty": "No scans yet.",
+  "monitorReconnecting": "Reconnecting"
 }
