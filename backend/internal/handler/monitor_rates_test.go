@@ -167,3 +167,65 @@ func TestComputeRates_RateRoundedToOneDecimal(t *testing.T) {
 		t.Errorf("rate = %v, want 1.4", rate)
 	}
 }
+
+func TestComputeRates_RateWindowBoundaryPins(t *testing.T) {
+	// The rate window is half-open [now-5m, now): a bucket at EXACTLY now-5m
+	// IS counted (inclusive boundary); a bucket at EXACTLY now is NOT counted
+	// (exclusive boundary). These tests pin the contract against future off-by-one refactors.
+	windowStart := fixedNow.Add(-5 * time.Minute)
+
+	tests := []struct {
+		name        string
+		bucketTime  time.Time
+		bucketCount int
+		wantRate    float64
+	}{
+		{
+			name:        "bucket at exactly now-5m (windowStart) IS counted",
+			bucketTime:  windowStart,
+			bucketCount: 5,
+			wantRate:    1.0, // 5/5 = 1.0
+		},
+		{
+			name:        "bucket at exactly now is NOT counted",
+			bucketTime:  fixedNow,
+			bucketCount: 5,
+			wantRate:    0.0, // excluded from window
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buckets := []store.MinuteBucket{{Minute: tt.bucketTime, Count: tt.bucketCount}}
+			rate, _, _ := computeRates(buckets, fixedNow, 1000, 0)
+			if rate != tt.wantRate {
+				t.Errorf("rate = %v, want %v", rate, tt.wantRate)
+			}
+		})
+	}
+}
+
+func TestComputeRates_PeakTieBreakerPin(t *testing.T) {
+	// When two buckets have equal counts, peak returns the earlier bucket's
+	// timestamp (first-wins convention, since buckets are iterated in ascending
+	// time order and peak only updates on strictly greater count, not equal).
+	earlierBucket := fixedNow.Add(-3 * time.Minute)
+	laterBucket := fixedNow.Add(-2 * time.Minute)
+
+	buckets := []store.MinuteBucket{
+		{Minute: earlierBucket, Count: 10},
+		{Minute: laterBucket, Count: 10},
+	}
+
+	_, peak, _ := computeRates(buckets, fixedNow, 1000, 0)
+
+	if peak == nil {
+		t.Fatalf("peak = nil, want non-nil")
+	}
+	if peak.Rate != 10 {
+		t.Errorf("peak.Rate = %v, want 10", peak.Rate)
+	}
+	if !peak.At.Equal(earlierBucket) {
+		t.Errorf("peak.At = %v, want %v (earlier bucket wins on tie)", peak.At, earlierBucket)
+	}
+}
