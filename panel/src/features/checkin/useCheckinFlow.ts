@@ -70,6 +70,24 @@ export interface CheckinFlowState {
   // verbatim (that copy is printer-name-parameterized) rather than a
   // parallel printer-less message.
   printMarkFailed?: { printer: string };
+  // PR #77 bot-review round 2, Finding 2 -- set (instead of even ATTEMPTING
+  // the print, so never alongside printError/printMarkFailed) when a
+  // checked_in scan resolves while `printBadge.fontsStatus` hasn't reached a
+  // terminal state (`ready`/`error`) yet. usePrintBadge.printAttendee
+  // internally awaits font readiness before generating, but it does so
+  // through a closure captured AT CALL TIME -- calling it while fonts are
+  // still loading risks that closure's own `fontFaces.families` being the
+  // STALE (pre-load) snapshot from the render printAttendee was created in,
+  // even after the internal wait resolves, which can produce a spurious
+  // MissingFontError for a purely timing reason. Checking `fontsStatus` here
+  // BEFORE ever calling printAttendee (mirroring how every OTHER print
+  // surface -- TestPrintDialog, the drawer's reprint confirm, RecentScansRail
+  // -- gates its own print action on this exact terminal-state check) avoids
+  // the call entirely rather than trusting the internal wait. This is a
+  // third, distinct case from printError/printMarkFailed -- no print was
+  // attempted at all, so telling the operator "reprint it" (printError's
+  // copy) would be accurate advice but wrongly implies a genuine failure.
+  printFontsPending?: boolean;
   // PR #77 bot-review round, Finding F -- set when submitCode/submitAttendee
   // ITSELF fails (network error, 5xx on the check-in POST, or the code
   // lookup GET) -- NOT a print failure, which never reverts status. `status`
@@ -138,42 +156,57 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
 
     let printError: unknown;
     let printMarkFailed: { printer: string } | undefined;
+    let printFontsPending = false;
     // Zero-double-print at the source (plan global constraint): printing
     // fires ONLY on the server's own "checked_in" outcome -- never
     // "already_checked_in"/"blocked", regardless of settings.
     if (response.outcome === "checked_in" && settings.print_on_checkin) {
-      try {
-        // Deliberately NO `printContext` here. This is the IMPLICIT
-        // auto-print that fulfills the check-in that just happened --
-        // `stationCheckin.mutateAsync` above already logged a `checkin` row
-        // in the same DB transaction as the state change (Task 3's
-        // CheckInAttendee). Passing `printContext` would make the backend's
-        // /printed endpoint (Task 4) log an ADDITIONAL `reprint` row for
-        // this same event, double-logging the feed for a single check-in
-        // (final cross-task review finding). Falling back to no
-        // `printContext` keeps this call on the pre-existing P3.2
-        // counter-only behavior: bumps `printed_count`, no feed row. The
-        // Recent-Scans-Rail's OWN Reprint button (RecentScansRail.tsx) is
-        // the genuine, distinct, operator-initiated reprint action and
-        // correctly keeps passing `printContext` there.
-        await printBadge.printAttendee(response.attendee, printerName);
-      } catch (error) {
-        // The check-in already committed server-side -- a print failure
-        // here must never look like (or cause) an undone check-in. The
-        // person is in; this is surfaced separately, not as a verdict
-        // change.
-        //
-        // PR #77 bot-review round, Finding I -- a MarkPrintedError means the
-        // agent print itself SUCCEEDED and only the later /printed
-        // counter-update call failed -- collapsing it into the same
-        // `printError` VerdictCard renders as "reprint it" would invite an
-        // unnecessary duplicate print for a badge that may already be
-        // printing/printed. Kept mutually exclusive from `printError` (only
-        // one of the two is ever set).
-        if (error instanceof MarkPrintedError) {
-          printMarkFailed = { printer: printerName };
-        } else {
-          printError = error;
+      // PR #77 bot-review round 2, Finding 2 -- read fresh HERE, at call
+      // time, not before: `printBadge.fontsStatus` reflects THIS render of
+      // useCheckinFlow, so gating on it before ever calling printAttendee
+      // means printAttendee (when it IS called) always closes over an
+      // already-terminal `fontFaces`/`families` snapshot -- see the
+      // `printFontsPending` field's own doc comment above for why that
+      // matters (a call made while fonts are still loading can race its own
+      // internal wait). "idle" counts as pending too (fonts haven't even
+      // started loading) -- only "ready"/"error" are terminal.
+      const fontsReady = printBadge.fontsStatus === "ready" || printBadge.fontsStatus === "error";
+      if (!fontsReady) {
+        printFontsPending = true;
+      } else {
+        try {
+          // Deliberately NO `printContext` here. This is the IMPLICIT
+          // auto-print that fulfills the check-in that just happened --
+          // `stationCheckin.mutateAsync` above already logged a `checkin` row
+          // in the same DB transaction as the state change (Task 3's
+          // CheckInAttendee). Passing `printContext` would make the backend's
+          // /printed endpoint (Task 4) log an ADDITIONAL `reprint` row for
+          // this same event, double-logging the feed for a single check-in
+          // (final cross-task review finding). Falling back to no
+          // `printContext` keeps this call on the pre-existing P3.2
+          // counter-only behavior: bumps `printed_count`, no feed row. The
+          // Recent-Scans-Rail's OWN Reprint button (RecentScansRail.tsx) is
+          // the genuine, distinct, operator-initiated reprint action and
+          // correctly keeps passing `printContext` there.
+          await printBadge.printAttendee(response.attendee, printerName);
+        } catch (error) {
+          // The check-in already committed server-side -- a print failure
+          // here must never look like (or cause) an undone check-in. The
+          // person is in; this is surfaced separately, not as a verdict
+          // change.
+          //
+          // PR #77 bot-review round, Finding I -- a MarkPrintedError means the
+          // agent print itself SUCCEEDED and only the later /printed
+          // counter-update call failed -- collapsing it into the same
+          // `printError` VerdictCard renders as "reprint it" would invite an
+          // unnecessary duplicate print for a badge that may already be
+          // printing/printed. Kept mutually exclusive from `printError` (only
+          // one of the two is ever set).
+          if (error instanceof MarkPrintedError) {
+            printMarkFailed = { printer: printerName };
+          } else {
+            printError = error;
+          }
         }
       }
     }
@@ -185,6 +218,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
       checkin: response.checkin,
       printError,
       printMarkFailed,
+      printFontsPending,
     });
     scheduleAutoDismiss();
   }

@@ -563,6 +563,7 @@
   "checkinExit": "Exit",
   "checkinIdleHint": "Ready for the next scan.",
   "checkinSettingsLoading": "Loading check-in settings…",
+  "checkinPrinterWaiting": "Waiting for the printer to connect before scanning can resume.",
   "checkinResolvingHint": "Checking…",
   "checkinVerdictAllowed": "Checked in",
   "checkinVerdictNoAccess": "Access denied",
@@ -570,6 +571,7 @@
   "checkinVerdictAlreadyCheckedIn": "Already checked in",
   "checkinFirstScanAt": "First checked in at {{time}}",
   "checkinPrintFailedWarning": "Badge didn't print — reprint it from the recent scans list.",
+  "checkinPrintFontsPendingWarning": "Badge didn't print — event fonts were still loading. Reprint it from the recent scans list.",
   "checkinBlockReason": "Reason: {{reason}}",
   "checkinRequestError": "Couldn't complete the check-in. Try scanning again.",
   "checkinRailTitle": "Recent scans",
@@ -618,5 +620,6 @@
   "launchTestBadgeButton": "Test badge",
   "launchTestBadgeNoTemplate": "Design a badge template first to test print it.",
   "launchStartCheckin": "Start check-in",
+  "launchUnsavedSettingsHint": "Save your check-in settings before starting check-in.",
   "launchRegisterError": "Couldn't register the station. Try again."
 }

@@ -307,6 +307,53 @@ describe("LaunchCeremony", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
   });
 
+  // PR #77 bot-review round 2, Finding 3 -- Start check-in navigates to the
+  // station, which fetches the PERSISTED settings from the server -- an
+  // unsaved edit (or a save still in flight) here must never be silently
+  // discarded by that navigation.
+  it("disables Start check-in while a settings edit is unsaved, with an explanatory hint, and re-enables it once the edit is saved", async () => {
+    readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-ceremony");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
+    expect(screen.queryByTestId("launch-unsaved-settings-hint")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("switch", { name: "Print badge on check-in" }));
+
+    expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled();
+    expect(screen.getByTestId("launch-unsaved-settings-hint")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
+    expect(screen.queryByTestId("launch-unsaved-settings-hint")).not.toBeInTheDocument();
+  });
+
+  it("keeps Start check-in disabled while a settings save is pending (in flight), even after the request resolves successfully", async () => {
+    readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
+    server.use(
+      http.put("http://api.test/api/events/:id/checkin-settings", async ({ request }) => {
+        await delay(50);
+        const body = (await request.json()) as { settings: unknown };
+        capturedSettingsPut = body;
+        return HttpResponse.json({ settings: body.settings });
+      }),
+    );
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-ceremony");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
+
+    await user.click(screen.getByRole("switch", { name: "Print badge on check-in" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled();
+
+    await waitFor(() => expect(capturedSettingsPut).not.toBeNull());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
+  });
+
   it("Start check-in registers the station (upsert body {name, zone_id}) then navigates to the station with ?station=", async () => {
     readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
     registeredStationId = "st-42";
@@ -352,6 +399,100 @@ describe("LaunchCeremony", () => {
     await user.click(screen.getByRole("button", { name: "Test badge" }));
 
     expect(await screen.findByText("Printing a test badge for Sample data")).toBeInTheDocument();
+  });
+
+  // PR #77 bot-review round 2, Finding 4 -- for an event whose saved badge
+  // template came from the LEGACY path (no width_mm/height_mm/dpi ever set),
+  // the REAL check-in/reprint print path (usePrintBadge.printAttendee)
+  // deliberately falls back to the backend's own 50x30mm @ 203dpi (P3.2's
+  // established backend-parity fallback), NOT parseTemplateDoc's editor
+  // default (90x55mm @ 300dpi). "Test badge" must validate the SAME
+  // resolution, or the test can pass while production output uses a
+  // different label size/DPI. jsdom has neither FontFace nor document.fonts,
+  // so this stubs both (same minimal mock every OTHER print-generation test
+  // in this codebase uses) to let TestPrintDialog's own font-readiness gate
+  // reach a terminal state and actually generate/send.
+  describe("Test badge config resolution for a configless legacy template", () => {
+    class MockFontFace {
+      constructor(_family: string, _source: unknown, _descriptors?: { weight?: string; style?: string }) {}
+      load(): Promise<MockFontFace> {
+        return Promise.resolve(this);
+      }
+    }
+
+    beforeEach(() => {
+      (globalThis as unknown as { FontFace: unknown }).FontFace = MockFontFace;
+      Object.defineProperty(document, "fonts", { value: { add: () => {} }, configurable: true, writable: true });
+    });
+
+    afterEach(() => {
+      delete (globalThis as unknown as { FontFace?: unknown }).FontFace;
+      // @ts-expect-error -- test-only cleanup of the jsdom `document.fonts`
+      // stub; real jsdom has no `fonts` property to restore.
+      delete document.fonts;
+    });
+
+    it("uses the backend's 50x30mm @ 203dpi fallback (^PW400/^LL240), not the editor's 90x55mm @ 300dpi default (^PW1063/^LL650), for a configless legacy template", async () => {
+      let printedZpl: string | null = null;
+      server.use(
+        http.get("http://api.test/api/events/:id/badge-template", () =>
+          // Configless legacy shape -- a real saved template with no
+          // width_mm/height_mm/dpi keys at all, exactly what P3.1 predates.
+          HttpResponse.json({ template: { elements: [] }, version: 1 }),
+        ),
+        http.get("http://agent.test/printers", () => HttpResponse.json([{ name: "Zebra 1", type: "system" }])),
+        http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: "Zebra 1" })),
+        http.post("http://agent.test/print", async ({ request }) => {
+          const body = (await request.json()) as { printer_name: string; zpl: string };
+          printedZpl = body.zpl;
+          return HttpResponse.json({ status: "printed" });
+        }),
+      );
+      const user = userEvent.setup();
+      renderCorrectAt("/events/evt-1/checkin/launch");
+      await screen.findByTestId("launch-ceremony");
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Test badge" })).toBeEnabled());
+      await user.click(screen.getByRole("button", { name: "Test badge" }));
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Print test badge" })).toBeEnabled());
+      await user.click(screen.getByRole("button", { name: "Print test badge" }));
+
+      await waitFor(() => expect(printedZpl).not.toBeNull());
+      expect(printedZpl).toContain("^PW400");
+      expect(printedZpl).toContain("^LL240");
+      expect(printedZpl).not.toContain("^PW1063");
+      expect(printedZpl).not.toContain("^LL650");
+    });
+
+    it("uses the template's own explicit width_mm/height_mm/dpi (^PW1063/^LL650) when it's a modern, explicitly-configured template (no regression)", async () => {
+      let printedZpl: string | null = null;
+      server.use(
+        http.get("http://api.test/api/events/:id/badge-template", () =>
+          HttpResponse.json({ template: { width_mm: 90, height_mm: 55, dpi: 300, elements: [] }, version: 1 }),
+        ),
+        http.get("http://agent.test/printers", () => HttpResponse.json([{ name: "Zebra 1", type: "system" }])),
+        http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: "Zebra 1" })),
+        http.post("http://agent.test/print", async ({ request }) => {
+          const body = (await request.json()) as { printer_name: string; zpl: string };
+          printedZpl = body.zpl;
+          return HttpResponse.json({ status: "printed" });
+        }),
+      );
+      const user = userEvent.setup();
+      renderCorrectAt("/events/evt-1/checkin/launch");
+      await screen.findByTestId("launch-ceremony");
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Test badge" })).toBeEnabled());
+      await user.click(screen.getByRole("button", { name: "Test badge" }));
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Print test badge" })).toBeEnabled());
+      await user.click(screen.getByRole("button", { name: "Print test badge" }));
+
+      await waitFor(() => expect(printedZpl).not.toBeNull());
+      expect(printedZpl).toContain("^PW1063");
+      expect(printedZpl).toContain("^LL650");
+    });
   });
 
   it("sends a null zone_id when no zone is picked", async () => {

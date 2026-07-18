@@ -131,9 +131,22 @@ export function VerdictCard({ state }: VerdictCardProps) {
           duplicate print. Mirrors RecentScansRail.tsx's own MarkPrintedError
           handling for the SAME distinction on that surface (reuses its
           exact `checkinReprintMarkPrintedWarning` copy for consistency). */}
+      {/* PR #77 bot-review round 2, Finding 2 -- a checked_in scan that
+          resolved while event fonts were still loading skips the print
+          attempt entirely (useCheckinFlow's own `printFontsPending` doc
+          comment) rather than risking a spurious MissingFontError from a
+          stale font-list race. Mutually exclusive with printMarkFailed/
+          printError (useCheckinFlow never sets more than one of the three),
+          but checked first here purely for a stable branch order -- distinct
+          copy from `checkinPrintFailedWarning` since NO print was attempted
+          at all, unlike a genuine failure. */}
       {state.printMarkFailed ? (
         <p className="text-caption text-warning" role="status" data-testid="checkin-print-mark-warning">
           {t("checkinReprintMarkPrintedWarning", { printer: state.printMarkFailed.printer })}
+        </p>
+      ) : state.printFontsPending ? (
+        <p className="text-caption text-warning" role="status" data-testid="checkin-print-fonts-pending">
+          {t("checkinPrintFontsPendingWarning")}
         </p>
       ) : state.printError ? (
         <p className="text-caption text-warning" role="status">

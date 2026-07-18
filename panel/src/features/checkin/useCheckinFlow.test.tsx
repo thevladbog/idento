@@ -8,7 +8,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { waitFor } from "@testing-library/react";
 import { renderHook } from "@testing-library/react";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { startMswServer } from "../../test/msw";
 import type { components } from "../../shared/api/schema";
@@ -78,6 +78,60 @@ let printedBodyCapture: unknown;
 let agentPrintHitCount = 0;
 let agentPrintStatus = 200;
 
+// Factored out of the default checkin POST handler below so a Finding-2 test
+// can reuse the exact same response-shaping logic behind an ARTIFICIALLY
+// DELAYED handler (server.use override) -- forcing a real, deterministic
+// window where a checked_in scan resolves while the fonts fetch (delayed
+// separately, see that test) is still in flight, rather than relying on
+// incidental timing.
+function buildCheckinResponse(body: { attendee_id: string; station_id?: string | null }) {
+  checkinHitCount += 1;
+  checkinCapturedBody = body;
+  const attendee: Attendee = {
+    ...ATTENDEE,
+    id: body.attendee_id,
+    checkin_status: checkinOutcome !== "blocked",
+    blocked: checkinOutcome === "blocked",
+  };
+  const checkin =
+    checkinOutcome === "blocked"
+      ? null
+      : { at: "2026-01-01T00:00:00Z", by_email: "staff@example.com", point_name: "Main Door" };
+  return { outcome: checkinOutcome, attendee, checkin };
+}
+
+// PR #77 bot-review round 2, Finding 2 -- useCheckinFlow's auto-print gate
+// now reads `printBadge.fontsStatus` SYNCHRONOUSLY the instant a checked_in
+// scan resolves (no internal wait -- see useCheckinFlow.ts's own
+// `printFontsPending` doc comment for why). A scan fired the INSTANT a hook
+// mounts genuinely races the (still in-flight) fonts-list fetch reaching a
+// terminal status, even with an empty list and zero artificial delay --
+// react-query's own scheduling for that `useQuery` measurably lags this
+// hook's two sequential raw calls (the code lookup GET, then the checkin
+// POST mutation). Tests exercising the SUCCESS path settle the fonts fetch
+// first, matching a REAL station where an operator's first physical scan
+// happens well after mount, not the mount-instant race the dedicated
+// "still loading" test below is specifically about.
+async function settleFonts() {
+  await new Promise((resolve) => setTimeout(resolve, 150));
+}
+
+// Same minimal FontListItem/font-bytes fixtures useEventFontFaces.test.tsx
+// uses -- only needed by the Finding-2 "fonts still loading" test below.
+function fontListItem(id: string, family: string) {
+  return {
+    id,
+    name: family,
+    family,
+    weight: "normal",
+    style: "normal",
+    format: "opentype" as const,
+    size: 1000,
+    created_at: "2026-01-01T00:00:00Z",
+  };
+}
+const FAKE_FONT_BYTES = new TextEncoder().encode("fake-font-bytes").buffer as ArrayBuffer;
+
 const server = startMswServer(
   http.get("http://api.test/api/events/:id/badge-template", () =>
     HttpResponse.json({ template: TEMPLATE_DOC, version: 1 }),
@@ -93,20 +147,8 @@ const server = startMswServer(
     return HttpResponse.json([]);
   }),
   http.post("http://api.test/api/events/:eventId/checkin", async ({ request }) => {
-    checkinHitCount += 1;
     const body = (await request.json()) as { attendee_id: string; station_id?: string | null };
-    checkinCapturedBody = body;
-    const attendee: Attendee = {
-      ...ATTENDEE,
-      id: body.attendee_id,
-      checkin_status: checkinOutcome !== "blocked",
-      blocked: checkinOutcome === "blocked",
-    };
-    const checkin =
-      checkinOutcome === "blocked"
-        ? null
-        : { at: "2026-01-01T00:00:00Z", by_email: "staff@example.com", point_name: "Main Door" };
-    return HttpResponse.json({ outcome: checkinOutcome, attendee, checkin });
+    return HttpResponse.json(buildCheckinResponse(body));
   }),
   http.post("http://api.test/api/attendees/:attendeeId/printed", async ({ request }) => {
     printedHitCount += 1;
@@ -161,6 +203,14 @@ describe("useCheckinFlow", () => {
 
   it("resolves a fresh scanned code to the checked_in (allowed) verdict and prints WITHOUT a printContext (the checkin row was already logged by the check-in call itself)", async () => {
     const { result } = renderFlow();
+    // PR #77 bot-review round 2, Finding 2 -- auto-print now only fires once
+    // `printBadge.fontsStatus` has ALREADY reached a terminal state (see that
+    // finding's own dedicated "still loading" test below); this settles the
+    // (empty, undelayed) fonts fetch to "ready" first, matching a REAL
+    // station where fonts finish loading well before an operator's first
+    // physical scan, rather than testing the mount-instant race this finding
+    // is specifically about.
+    await settleFonts();
 
     void result.current.submitCode(ATTENDEE.code);
 
@@ -262,6 +312,7 @@ describe("useCheckinFlow", () => {
   it("keeps the checked_in verdict when the print step fails -- the check-in already committed", async () => {
     agentPrintStatus = 500;
     const { result } = renderFlow();
+    await settleFonts();
 
     void result.current.submitCode(ATTENDEE.code);
 
@@ -287,6 +338,7 @@ describe("useCheckinFlow", () => {
       ),
     );
     const { result } = renderFlow();
+    await settleFonts();
 
     void result.current.submitCode(ATTENDEE.code);
 
@@ -295,6 +347,83 @@ describe("useCheckinFlow", () => {
     await waitFor(() => expect(agentPrintHitCount).toBe(1));
     expect(result.current.state.printMarkFailed).toEqual({ printer: "Zebra_ZD421" });
     expect(result.current.state.printError).toBeUndefined();
+  });
+
+  // PR #77 bot-review round 2, Finding 2 -- auto-print must not be ATTEMPTED
+  // at all while `printBadge.fontsStatus` hasn't reached a terminal state
+  // yet (`ready`/`error`) -- calling printAttendee while fonts are still
+  // loading risks its own internal wait resolving against a stale,
+  // pre-load `fontFaces.families` closure and throwing a spurious
+  // MissingFontError for a purely timing reason. The checkin POST is
+  // artificially delayed (buildCheckinResponse-based override) so the
+  // checked_in outcome deterministically resolves WHILE the (separately
+  // delayed) font-file fetch below is still in flight.
+  it("does not call printAttendee (and sets printFontsPending) when a checked_in scan resolves while event fonts are still loading", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json([fontListItem("f1", "TestFont")])),
+      http.get("http://api.test/api/fonts/:id/file", async () => {
+        await delay(300);
+        return HttpResponse.arrayBuffer(FAKE_FONT_BYTES);
+      }),
+      http.post("http://api.test/api/events/:eventId/checkin", async ({ request }) => {
+        const body = (await request.json()) as { attendee_id: string; station_id?: string | null };
+        await delay(100);
+        return HttpResponse.json(buildCheckinResponse(body));
+      }),
+    );
+    const { result } = renderFlow();
+
+    void result.current.submitCode(ATTENDEE.code);
+
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.verdict).toBe("allowed");
+    expect(result.current.state.printFontsPending).toBe(true);
+    expect(result.current.state.printError).toBeUndefined();
+    expect(result.current.state.printMarkFailed).toBeUndefined();
+
+    // Give a (wrong) print attempt a chance to fire (and the delayed font
+    // file fetch a chance to finish) before asserting the print never
+    // happened -- this is a hard skip, not a deferred retry.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(agentPrintHitCount).toBe(0);
+    expect(printedHitCount).toBe(0);
+  });
+
+  // Regression guard for the fix above: once fonts have genuinely settled to
+  // "ready" (settleFonts(), matching a real station where an operator's
+  // first physical scan happens well after mount), auto-print must still
+  // proceed exactly as before.
+  it("still calls printAttendee when fonts are already ready by the time a checked_in scan resolves (no regression)", async () => {
+    const { result } = renderFlow();
+    await settleFonts();
+
+    void result.current.submitCode(ATTENDEE.code);
+
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.printFontsPending).toBeFalsy();
+    await waitFor(() => expect(agentPrintHitCount).toBe(1));
+    await waitFor(() => expect(printedHitCount).toBe(1));
+  });
+
+  // PR #77 bot-review round 2, Finding 2 -- "terminal" per the OTHER print
+  // surfaces' own `fontsStatus !== "ready" && fontsStatus !== "error"`
+  // gating (AttendeeDrawer.tsx's reprintFontsBlocking / BulkBar.tsx's
+  // printFontsBlocking) means "error" counts as terminal too, not just
+  // "ready" -- an errored fonts fetch still unblocks the gate (matching
+  // their exact behavior) since generation proceeds native-only rather than
+  // waiting forever on a list that will never load.
+  it("still attempts auto-print when fontsStatus is 'error' (a terminal state, not loading)", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/fonts", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    const { result } = renderFlow();
+    await settleFonts();
+
+    void result.current.submitCode(ATTENDEE.code);
+
+    await waitFor(() => expect(result.current.state.status).toBe("verdict"));
+    expect(result.current.state.printFontsPending).toBeFalsy();
+    await waitFor(() => expect(agentPrintHitCount).toBe(1));
   });
 
   // PR #77 bot-review round, Finding F -- a genuine failure resolving the

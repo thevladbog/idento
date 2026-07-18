@@ -47,6 +47,26 @@ function WedgeHarness({ onCode, enabled = true }: { onCode: (code: string) => vo
   return <input aria-label="wedge-input" {...wedgeInputProps} />;
 }
 
+// PR #77 bot-review round 2, Finding 5 -- a stand-in for the OTHER
+// focusable surfaces that actually exist alongside the wedge input on the
+// real station page (ScanInput.tsx's manual search box, RecentScansRail.tsx's
+// rail buttons and confirm dialogs): an unrelated plain button, a text input
+// (standing in for the manual search box), and a `role="dialog"` region
+// (standing in for a Reprint/Undo confirm dialog's content).
+function WedgeWithOtherControlsHarness({ onCode, enabled = true }: { onCode: (code: string) => void; enabled?: boolean }) {
+  const { wedgeInputProps } = useScanInput({ mode: "wedge", onCode, enabled });
+  return (
+    <div>
+      <input aria-label="wedge-input" {...wedgeInputProps} />
+      <button type="button">Other button</button>
+      <input aria-label="manual-search" type="text" />
+      <div role="dialog">
+        <button type="button">Dialog confirm</button>
+      </div>
+    </div>
+  );
+}
+
 function ScannerHarness({ onCode, enabled = true }: { onCode: (code: string) => void; enabled?: boolean }) {
   const { degraded } = useScanInput({ mode: "scanner", onCode, enabled });
   return <div data-testid="degraded">{String(degraded)}</div>;
@@ -117,6 +137,71 @@ describe("useScanInput", () => {
       const input = screen.getByLabelText("wedge-input");
       expect(input).not.toHaveFocus();
       expect(input).toBeDisabled();
+    });
+
+    // PR #77 bot-review round 2, Finding 5 -- focus must return to the
+    // hidden wedge capture input after the operator clicks ANY unrelated,
+    // non-text focusable element, not just on a `wedgeActive` transition --
+    // otherwise a physical scan typed afterward lands nowhere and `onCode`
+    // never fires.
+    it("returns focus to the wedge input a short beat after the operator clicks an unrelated, non-text focusable element", async () => {
+      const user = userEvent.setup();
+      const onCode = vi.fn();
+      render(<WedgeWithOtherControlsHarness onCode={onCode} />);
+      expect(screen.getByLabelText("wedge-input")).toHaveFocus();
+
+      await user.click(screen.getByRole("button", { name: "Other button" }));
+      expect(screen.getByRole("button", { name: "Other button" })).toHaveFocus();
+
+      await waitFor(() => expect(screen.getByLabelText("wedge-input")).toHaveFocus());
+    });
+
+    // The manual search box counterpart: focus must NOT be yanked away while
+    // the operator is actively using it (they clicked in specifically to
+    // type a name/email/code).
+    it("does not yank focus away from a text input the operator just clicked into (the manual search box)", async () => {
+      const user = userEvent.setup();
+      const onCode = vi.fn();
+      render(<WedgeWithOtherControlsHarness onCode={onCode} />);
+      expect(screen.getByLabelText("wedge-input")).toHaveFocus();
+
+      await user.click(screen.getByLabelText("manual-search"));
+      expect(screen.getByLabelText("manual-search")).toHaveFocus();
+
+      // Give the refocus timer every chance to fire before asserting it did
+      // NOT -- this is the actual regression this test guards against.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(screen.getByLabelText("manual-search")).toHaveFocus();
+    });
+
+    // Same "don't fight an active interaction" rule, but for a dialog that's
+    // now open (e.g. a Reprint/Undo confirm dialog) rather than a text
+    // field -- the operator clicking its Confirm button must not have focus
+    // yanked back to the (invisible) wedge input mid-interaction.
+    it("does not yank focus away from a control inside an open dialog", async () => {
+      const user = userEvent.setup();
+      const onCode = vi.fn();
+      render(<WedgeWithOtherControlsHarness onCode={onCode} />);
+      expect(screen.getByLabelText("wedge-input")).toHaveFocus();
+
+      await user.click(screen.getByRole("button", { name: "Dialog confirm" }));
+      expect(screen.getByRole("button", { name: "Dialog confirm" })).toHaveFocus();
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(screen.getByRole("button", { name: "Dialog confirm" })).toHaveFocus();
+    });
+
+    it("does not refocus after a blur once wedge mode is no longer active (enabled flips false)", async () => {
+      const user = userEvent.setup();
+      const onCode = vi.fn();
+      const { rerender } = render(<WedgeWithOtherControlsHarness onCode={onCode} />);
+      expect(screen.getByLabelText("wedge-input")).toHaveFocus();
+
+      rerender(<WedgeWithOtherControlsHarness onCode={onCode} enabled={false} />);
+      await user.click(screen.getByRole("button", { name: "Other button" }));
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(screen.getByRole("button", { name: "Other button" })).toHaveFocus();
     });
   });
 

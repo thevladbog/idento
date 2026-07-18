@@ -565,6 +565,7 @@
   "checkinExit": "Выход",
   "checkinIdleHint": "Готово к следующему сканированию.",
   "checkinSettingsLoading": "Загрузка настроек регистрации…",
+  "checkinPrinterWaiting": "Ожидание подключения принтера — после этого сканирование возобновится.",
   "checkinResolvingHint": "Проверка…",
   "checkinVerdictAllowed": "Зарегистрирован",
   "checkinVerdictNoAccess": "Доступ запрещён",
@@ -572,6 +573,7 @@
   "checkinVerdictAlreadyCheckedIn": "Уже зарегистрирован",
   "checkinFirstScanAt": "Первый скан в {{time}}",
   "checkinPrintFailedWarning": "Бейдж не был напечатан — перепечатайте его из списка последних сканирований.",
+  "checkinPrintFontsPendingWarning": "Бейдж не был напечатан — шрифты мероприятия ещё загружались. Перепечатайте его из списка последних сканирований.",
   "checkinBlockReason": "Причина: {{reason}}",
   "checkinRequestError": "Не удалось завершить регистрацию. Попробуйте отсканировать ещё раз.",
   "checkinRailTitle": "Недавние сканирования",
@@ -620,5 +622,6 @@
   "launchTestBadgeButton": "Тестовый бейдж",
   "launchTestBadgeNoTemplate": "Сначала создайте шаблон бейджа, чтобы протестировать печать.",
   "launchStartCheckin": "Начать регистрацию",
+  "launchUnsavedSettingsHint": "Сохраните настройки регистрации перед запуском.",
   "launchRegisterError": "Не удалось зарегистрировать станцию. Попробуйте ещё раз."
 }

@@ -51,7 +51,7 @@ import { $api } from "../../shared/api/query";
 import { useEventZones } from "../attendees/hooks";
 import { TestPrintDialog } from "../badge/TestPrintDialog";
 import { useBadgeTemplate } from "../badge/hooks";
-import { parseTemplateDoc, serializeTemplateDoc } from "../badge/templateTypes";
+import { parseTemplateDoc, resolveBadgeConfig, serializeTemplateDoc } from "../badge/templateTypes";
 import { usePreviewAttendee } from "../badge/usePreviewAttendee";
 import { useEventReadiness } from "../events/hooks";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
@@ -165,6 +165,18 @@ export function LaunchCeremony() {
   const rawTemplate = templateQuery.data?.template ?? null;
   const hasTemplate = rawTemplate !== null;
   const parsedDoc = React.useMemo(() => parseTemplateDoc(rawTemplate), [rawTemplate]);
+  // PR #77 bot-review round 2, Finding 4 -- `parsedDoc`'s own width_mm/
+  // height_mm/dpi (parseTemplateDoc's EDITOR defaults, 90x55mm @ 300dpi) are
+  // the right fallback for `doc.elements` above (there's no editor open
+  // here, so this is only used for the elements array), but the WRONG
+  // fallback for what TestPrintDialog actually validates a printer against:
+  // the REAL check-in/reprint print path (usePrintBadge.printAttendee) uses
+  // `resolveBadgeConfig`'s backend-parity 50x30mm @ 203dpi fallback for a
+  // configless legacy template. Resolving it separately here (same raw
+  // template, same shared function) means "Test badge" genuinely validates
+  // what will actually print during check-in, not a different label size/
+  // DPI that happens to also pass.
+  const testPrintConfig = React.useMemo(() => resolveBadgeConfig(rawTemplate), [rawTemplate]);
   const previewName =
     preview.mode === "attendee" && preview.attendee
       ? `${preview.attendee.first_name} ${preview.attendee.last_name}`.trim()
@@ -182,7 +194,21 @@ export function LaunchCeremony() {
 
   // --- CTA: Start check-in -------------------------------------------------
   const trimmedStationName = stationName.trim();
-  const startDisabled = !ready || trimmedStationName === "" || registerStation.isPending;
+  // PR #77 bot-review round 2, Finding 3 -- "Start check-in" registers the
+  // station and immediately navigates to it, where StationPage fetches the
+  // PERSISTED settings from the server -- an operator who just edited a
+  // setting in THIS form (e.g. turned print_on_checkin off) without saving
+  // yet would have that visible edit silently discarded, launching with
+  // whatever's actually still saved. Reuses this file's own pre-existing
+  // `settingsDirty`/`saveSettings.isPending` (the SAME dirty/pending
+  // tracking the Save button below is already gated on -- no parallel
+  // tracked value invented) rather than a new state. Judgment call: this
+  // BLOCKS Start outright (as opposed to auto-saving on the operator's
+  // behalf) -- the Save button is one click away and right next to it, and
+  // silently saving-on-navigate would itself be a surprising side effect for
+  // a CTA whose own label says nothing about saving.
+  const startDisabled =
+    !ready || trimmedStationName === "" || registerStation.isPending || settingsDirty || saveSettings.isPending;
 
   function handleStart() {
     if (startDisabled) return;
@@ -376,6 +402,15 @@ export function LaunchCeremony() {
         {!ready ? (
           <p className="text-caption text-muted-foreground">{t("workspaceUnlockHint")}</p>
         ) : null}
+        {/* PR #77 bot-review round 2, Finding 3 -- explains why Start is
+            disabled even once `ready` is true: an unsaved settings edit (or
+            a save still in flight) would otherwise be silently discarded by
+            navigating to the station, which reads the PERSISTED settings. */}
+        {ready && (settingsDirty || saveSettings.isPending) ? (
+          <p className="text-caption text-muted-foreground" data-testid="launch-unsaved-settings-hint">
+            {t("launchUnsavedSettingsHint")}
+          </p>
+        ) : null}
         <Button type="button" className="ml-auto" disabled={startDisabled} onClick={handleStart}>
           {t("launchStartCheckin")}
         </Button>
@@ -385,7 +420,7 @@ export function LaunchCeremony() {
         open={testPrintOpen}
         onOpenChange={setTestPrintOpen}
         doc={serializeTemplateDoc(parsedDoc, rawTemplate)}
-        config={parsedDoc}
+        config={testPrintConfig}
         previewData={preview.data}
         previewName={previewName}
         eventId={eventId}

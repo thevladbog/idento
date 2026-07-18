@@ -18,7 +18,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useBadgeTemplate } from "../hooks";
 import { attendeeToPreviewData } from "../usePreviewAttendee";
-import type { BadgeConfig } from "../templateTypes";
+import { resolveBadgeConfig } from "../templateTypes";
 import { generateZpl, type RawBadgeElement } from "./generateZpl";
 import { collectMissingCustomFonts } from "./missingFonts";
 import { rasterizeText } from "./canvasRasterizer";
@@ -177,20 +177,13 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
     // dpi)`) silently produces NaN -- `^PWNaN`/`^LLNaN`/`^FONaN,NaN` ZPL that
     // the agent still accepts and sends to the physical printer, reporting
     // "Sent to {{printer}}" and incrementing printed_count even though
-    // nothing legible printed. Mirroring the backend's exact fallback here
-    // keeps this path's config honest without reintroducing element-level
-    // narrowing.
-    const rawWidthMM = typeof raw.width_mm === "number" && raw.width_mm > 0 ? raw.width_mm : 50;
-    const rawHeightMM = typeof raw.height_mm === "number" && raw.height_mm > 0 ? raw.height_mm : 30;
-    // dpi mirrors the backend even more literally than width/height (which
-    // stay float64 there): ParseBadgeTemplate casts with Go's int(d) —
-    // truncation toward zero — BEFORE its <= 0 fallback check, so a
-    // pathological fractional dpi must truncate first (203.7 -> 203) and
-    // only then fall back (0.9 -> 0 -> 203), or this path's ZPL diverges
-    // from what the backend's own generator would emit for the same doc.
-    const truncatedDpi = typeof raw.dpi === "number" ? Math.trunc(raw.dpi) : 0;
-    const rawDpi = truncatedDpi > 0 ? truncatedDpi : 203;
-    const config: BadgeConfig = { width_mm: rawWidthMM, height_mm: rawHeightMM, dpi: rawDpi };
+    // nothing legible printed. `resolveBadgeConfig` (templateTypes.ts)
+    // mirrors the backend's exact fallback -- PR #77 bot-review round 2,
+    // Finding 4 extracted it out of this call site so the launch ceremony's
+    // own "Test badge" action (LaunchCeremony.tsx) can resolve the SAME
+    // config for the SAME raw template, rather than validating a different
+    // (editor-default) label size/DPI than what actually prints here.
+    const config = resolveBadgeConfig(raw);
     const elements = Array.isArray(raw.elements) ? (raw.elements as RawBadgeElement[]) : [];
 
     // PR #74 review round Fix 8: checked AFTER fonts have reached a terminal

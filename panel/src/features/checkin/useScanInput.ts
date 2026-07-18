@@ -34,6 +34,9 @@ export interface WedgeInputProps {
   disabled: boolean;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  // PR #77 bot-review round 2, Finding 5 -- see WEDGE_REFOCUS_DELAY_MS's own
+  // comment below for what this does and why.
+  onBlur: () => void;
 }
 
 export interface UseScanInputResult {
@@ -53,6 +56,49 @@ export interface UseScanInputResult {
 // agentClient.getLastScan()").
 const SCANNER_POLL_INTERVAL_MS = 200;
 
+// PR #77 bot-review round 2, Finding 5 -- the mount/`wedgeActive`-transition
+// effect above only re-focuses the hidden wedge capture input on a
+// TRANSITION into wedge mode -- once an operator clicks ANYTHING else on the
+// page (the manual search box, a Details/Reprint/Undo rail button, a dialog
+// control, ...) without `wedgeActive` ever changing, focus moves away and is
+// NEVER returned. A keyboard-wedge scan typed after that lands nowhere (or
+// in the wrong control) and `onCode` never fires -- a silently dropped scan,
+// exactly the "no-scan-lost" violation this station exists to prevent.
+//
+// The fix: a `blur` handler on the capture input itself (spread via
+// `wedgeInputProps.onBlur`) that returns focus to it a SHORT BEAT after it
+// loses focus, while wedge mode is still active -- UNLESS the element that
+// just gained focus is something the operator is plainly, deliberately
+// using right now. Two judgment calls here, documented since this is a UX
+// heuristic, not a pure correctness fix:
+//
+// 1. WHAT counts as "deliberately in use" (isDeliberateFocusTarget below):
+//    a text-entry control (the manual search box, a printer <select>, any
+//    future contentEditable) the operator might be about to type into, OR
+//    anything inside an open dialog/menu/listbox (a Reprint/Undo confirm
+//    dialog's Cancel/Confirm buttons, the Details dropdown) -- read from
+//    ScanInput.tsx and RecentScansRail.tsx, these are the other focusable
+//    surfaces that actually exist on this page. Refocusing THROUGH one of
+//    these would fight the operator mid-interaction (e.g. yanking focus out
+//    of the manual search box the instant they click into it to type).
+// 2. WHY a delay, not a synchronous re-focus: a dialog/menu that's ABOUT to
+//    open (Radix moves focus into it via its own effect, shortly after the
+//    triggering click -- e.g. clicking the Reprint rail button blurs THIS
+//    input before the Dialog has even mounted) needs time to actually
+//    receive that focus first. A synchronous steal here would race Radix's
+//    own initial-focus management and could yank focus back out of a dialog
+//    the instant it opens. The delay is imperceptible to a human operator
+//    but generous enough for that race to settle.
+const WEDGE_REFOCUS_DELAY_MS = 50;
+
+function isDeliberateFocusTarget(el: Element | null): boolean {
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if ((el as HTMLElement).isContentEditable) return true;
+  return el.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]') !== null;
+}
+
 export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): UseScanInputResult {
   const [degraded, setDegraded] = React.useState(false);
   const [wedgeValue, setWedgeValue] = React.useState("");
@@ -68,6 +114,14 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
   }, [onCode]);
 
   const wedgeActive = mode === "wedge" && enabled;
+  // PR #77 bot-review round 2, Finding 5 -- mirrors onCodeRef's own
+  // rationale: `handleWedgeBlur`'s delayed callback runs LATER, after
+  // `wedgeActive` may have already changed (a scan resolving, or `mode`
+  // switching away from wedge entirely) -- a ref (not a closure over the
+  // render that scheduled the timeout) is what lets it re-check the CURRENT
+  // value rather than an unmount-stale one.
+  const wedgeActiveRef = React.useRef(wedgeActive);
+  wedgeActiveRef.current = wedgeActive;
 
   // Autofocus on mount/whenever the wedge input becomes active -- a
   // keyboard-wedge scanner only "types" into whatever element currently has
@@ -77,6 +131,25 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
     if (!wedgeActive) return;
     wedgeRef.current?.focus();
   }, [wedgeActive]);
+
+  // PR #77 bot-review round 2, Finding 5 -- returns focus to the wedge input
+  // a short beat after it loses focus for ANY reason, not just the
+  // `wedgeActive`-transition case the effect above already covers. See
+  // WEDGE_REFOCUS_DELAY_MS's own comment for the full rationale (what counts
+  // as a "deliberate" focus target to leave alone, and why this is delayed
+  // rather than synchronous).
+  const refocusTimerRef = React.useRef<number | undefined>(undefined);
+  React.useEffect(() => () => window.clearTimeout(refocusTimerRef.current), []);
+
+  function handleWedgeBlur() {
+    if (!wedgeActiveRef.current) return;
+    window.clearTimeout(refocusTimerRef.current);
+    refocusTimerRef.current = window.setTimeout(() => {
+      if (!wedgeActiveRef.current) return;
+      if (isDeliberateFocusTarget(document.activeElement)) return;
+      wedgeRef.current?.focus();
+    }, WEDGE_REFOCUS_DELAY_MS);
+  }
 
   function handleWedgeChange(event: React.ChangeEvent<HTMLInputElement>) {
     setWedgeValue(event.target.value);
@@ -165,6 +238,7 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
       disabled: !wedgeActive,
       onChange: handleWedgeChange,
       onKeyDown: handleWedgeKeyDown,
+      onBlur: handleWedgeBlur,
     },
   };
 }

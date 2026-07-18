@@ -366,6 +366,49 @@ describe("StationPage", () => {
     expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
   });
 
+  // PR #77 bot-review round 2, Finding 1 -- `agent.defaultPrinter` is `null`
+  // while the agent printer probe is still resolving/disconnected/has no
+  // printers, so `printerName` would fall back to `""` -- if a scan resolved
+  // to checked_in with print_on_checkin true during that window, the
+  // auto-print call would silently fail against a literal empty printer
+  // name. The scan surface (not check-in itself) must stay gated behind an
+  // explicit "waiting for printer" state until the agent actually resolves a
+  // usable default -- same shape as the settingsLoading gate above.
+  it("shows a waiting-for-printer state (not a scannable surface) while print_on_checkin is true and the agent hasn't resolved a default printer yet, then enables scanning once it does", async () => {
+    settingsOverride = { ...settingsOverride, print_on_checkin: true };
+    server.use(
+      http.get("http://agent.test/printers", async () => {
+        await delay(50);
+        return HttpResponse.json([{ name: "Zebra 1", type: "system" }]);
+      }),
+      http.get("http://agent.test/printers/default", async () => {
+        await delay(50);
+        return HttpResponse.json({ default: "Zebra 1" });
+      }),
+    );
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
+    await screen.findByText("Main Door");
+
+    expect(screen.getByTestId("checkin-printer-waiting")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Badge scanner input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("checkin-verdict-idle")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.queryByTestId("checkin-printer-waiting")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
+    expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
+  });
+
+  it("keeps the scan surface enabled immediately when print_on_checkin is false, regardless of agent state (auto-print isn't happening, so nothing to wait for)", async () => {
+    settingsOverride = { ...settingsOverride, print_on_checkin: false };
+    server.use(http.get("http://agent.test/health", () => new HttpResponse(null, { status: 500 })));
+    renderCorrectAt("/events/evt-1/checkin?station=11111111-1111-4111-8111-111111111111");
+    await screen.findByText("Main Door");
+
+    expect(screen.queryByTestId("checkin-printer-waiting")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Badge scanner input")).toBeInTheDocument();
+    expect(screen.getByTestId("checkin-verdict-idle")).toBeInTheDocument();
+  });
+
   // PR #77 bot-review round, Finding F -- flow.submitCode/submitAttendee can
   // reject (the API unreachable even though the browser still reports
   // itself online, or the backend rejects the request) -- previously

@@ -26,7 +26,7 @@
 import * as React from "react";
 import { Button, Skeleton } from "@idento/ui";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { ArrowLeft, WifiOff } from "lucide-react";
+import { ArrowLeft, Printer, WifiOff } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../shared/api/schema";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -98,6 +98,23 @@ export function StationPage() {
   // narrower case.
   const settings = settingsQuery.data ?? DEFAULT_CHECKIN_SETTINGS;
   const settingsLoading = settingsQuery.isLoading;
+
+  // PR #77 bot-review round 2, Finding 1 -- `agent.defaultPrinter` is `null`
+  // while the agent printer probe is still `checking`, disconnected, or has
+  // resolved but found no printers -- `printerName` below then falls back to
+  // `""`, and if a scan resolves to `checked_in` with `print_on_checkin` true
+  // DURING that window, the auto-print call reaches the agent with a literal
+  // empty printer name and silently fails a print that a moment later would
+  // have had a real default to target. Check-in itself must NEVER be gated
+  // on the printer (the state machine below is untouched), so this only
+  // gates the SCAN SURFACE -- and only when auto-print is actually
+  // configured (`settings.print_on_checkin`); a station with auto-print off
+  // has nothing to wait for and must stay scannable immediately regardless
+  // of agent state. Same "don't operate on an unresolved precondition" shape
+  // as `settingsLoading` above (and composes additively with it below: this
+  // is only ever evaluated once settings themselves have already resolved).
+  const printerGateActive =
+    settings.print_on_checkin && (agent.state !== "connected" || !agent.defaultPrinter);
 
   const flow = useCheckinFlow({
     eventId,
@@ -239,6 +256,21 @@ export function StationPage() {
               <Skeleton className="h-10 w-40" />
               <p className="text-body text-muted-foreground">{t("checkinSettingsLoading")}</p>
             </div>
+          ) : printerGateActive ? (
+            // PR #77 bot-review round 2, Finding 1 -- auto-print is
+            // configured (`settings.print_on_checkin`) but the agent hasn't
+            // resolved a usable default printer yet: same "explicit blocked
+            // state, scan surface not mounted" shape as the settingsLoading
+            // branch above, so a scan/search can never race an unresolved
+            // printer name into an auto-print call that's doomed to target
+            // `""`.
+            <div
+              className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border p-12 text-center"
+              data-testid="checkin-printer-waiting"
+            >
+              <Printer aria-hidden className="size-10 text-muted-foreground" />
+              <p className="text-body text-muted-foreground">{t("checkinPrinterWaiting")}</p>
+            </div>
           ) : offlineBlocked ? (
             <div
               className="flex flex-1 flex-col items-center justify-center gap-3 rounded-lg border border-warning/40 bg-warning/10 p-12 text-center"
@@ -250,7 +282,7 @@ export function StationPage() {
           ) : (
             <VerdictCard state={flow.state} />
           )}
-          {settingsLoading ? null : (
+          {settingsLoading || printerGateActive ? null : (
             <ScanInput
               eventId={eventId}
               mode={settings.scan_input}

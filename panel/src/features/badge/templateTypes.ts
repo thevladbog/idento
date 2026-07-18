@@ -247,6 +247,32 @@ export function serializeTemplateDoc(doc: BadgeTemplateDoc, originalRaw: unknown
   };
 }
 
+// PR #77 bot-review round 2, Finding 4 -- the backend-compatible "configless
+// legacy template" fallback (50mm x 30mm @ 203dpi), extracted out of
+// usePrintBadge.ts's own inline width_mm/height_mm/dpi resolution (P3.2
+// Task 8, final-review Important fix -- see that call site's own comment for
+// the full backend-parity rationale, including WHY dpi truncates before its
+// own <= 0 fallback check) so BOTH the real check-in/reprint print path
+// (usePrintBadge.printAttendee) and the launch ceremony's own Test badge
+// action (LaunchCeremony.tsx) resolve a raw template's physical label
+// config THE SAME WAY. Deliberately NOT parseTemplateDoc's own
+// width_mm/height_mm/dpi narrowing above -- that function's fallback
+// (NEW_DOC_DEFAULT, 90x55mm @ 300dpi) is the EDITOR's UI-only default, which
+// zpl.ParseBadgeTemplate (backend/internal/zpl/zpl.go:334-364) never
+// actually produces: a template that predates P3.1's explicit config (width/
+// height/dpi genuinely missing or <= 0) resolves server-side to 50x30@203,
+// not 90x55@300. A caller that validates/prints against parseTemplateDoc's
+// default for such a template is checking a DIFFERENT label size/DPI than
+// what will actually print.
+export function resolveBadgeConfig(raw: unknown): BadgeConfig {
+  const source = isPlainObject(raw) ? raw : {};
+  const width_mm = typeof source.width_mm === "number" && source.width_mm > 0 ? source.width_mm : 50;
+  const height_mm = typeof source.height_mm === "number" && source.height_mm > 0 ? source.height_mm : 30;
+  const truncatedDpi = typeof source.dpi === "number" ? Math.trunc(source.dpi) : 0;
+  const dpi = truncatedDpi > 0 ? truncatedDpi : 203;
+  return { width_mm, height_mm, dpi };
+}
+
 // ZPL bitmap font choices for the properties inspector's font picker
 // (reconciliation #6) — mirrors zpl.go's getZPLFont: "0" is the scalable
 // fallback used whenever fontSize doesn't exactly match one of the fixed
