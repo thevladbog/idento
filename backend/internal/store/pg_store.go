@@ -751,6 +751,21 @@ func (s *PGStore) GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (js
 	return json.RawMessage(settingsJSON), nil
 }
 
+// ErrEventNotFound is returned by UpdateCheckinSettings when its guarded
+// UPDATE affects 0 rows — PR #77 bot-review round, Finding C. By contract
+// the caller has already confirmed the event exists (via
+// requireEventOwnership) before calling, so this sentinel is reachable
+// ONLY via the soft-delete race: the pre-check passes, a concurrent
+// SoftDeleteEvent lands, and the `deleted_at IS NULL` guard then matches
+// nothing. Mirrors ErrAttendeeNotFound/ErrVersionConflict's 0-row sentinel
+// pattern (UpdateEventBadgeTemplate/IncrementAttendeePrintedCount) — before
+// this, UpdateCheckinSettings silently swallowed the 0-row case (the same
+// idiom as SoftDeleteEvent's genuinely-idempotent delete), which meant the
+// handler responded 200 with settings that were never actually persisted.
+// Handlers map it to the house 404 masking ("Event not found"), identical
+// to requireEventOwnership's own wording.
+var ErrEventNotFound = errors.New("event not found")
+
 // UpdateCheckinSettings persists settings verbatim (raw bytes, no
 // re-encoding) — no optimistic-concurrency version, unlike
 // UpdateEventBadgeTemplate: check-in settings are operator-only config
@@ -760,13 +775,19 @@ func (s *PGStore) GetCheckinSettings(ctx context.Context, eventID uuid.UUID) (js
 // requireEventOwnership pre-check can pass and a concurrent soft-delete
 // land before this UPDATE executes. Contract: the caller must already
 // have confirmed the event exists before calling — a 0-row result (the
-// soft-delete race) is a silent no-op here, the same idiom as
-// SoftDeleteEvent (there is no version/sentinel to report a miss with).
+// soft-delete race) returns the exported ErrEventNotFound sentinel, never
+// a fabricated success (PR #77 bot-review round, Finding C).
 func (s *PGStore) UpdateCheckinSettings(ctx context.Context, eventID uuid.UUID, settings json.RawMessage) error {
-	_, err := s.db.Exec(ctx,
+	tag, err := s.db.Exec(ctx,
 		`UPDATE events SET checkin_settings = $1, updated_at = now() WHERE id = $2 AND deleted_at IS NULL`,
 		[]byte(settings), eventID)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
 }
 
 // ErrCheckinStationNotFound is returned by HeartbeatCheckinStation when its
@@ -976,9 +997,19 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 		pointName = &stationName
 	}
 
+	// blocked = false closes a TOCTOU race (PR #77 bot-review round, Finding
+	// A): StationCheckin's handler reads the attendee and returns the
+	// "blocked" outcome BEFORE calling here — but another operator's
+	// blocked/unblocked toggle can land in the window between that pre-read
+	// and this UPDATE actually running. Without this guard, the predicate
+	// would still match a NOW-blocked attendee (it only checked
+	// checkin_status/deleted_at) and check them in anyway, violating the
+	// endpoint's "blocked attendees are never checked in" contract. The
+	// 0-row fallback below distinguishes this newly-blocked case from
+	// already_checked_in.
 	updateQuery := `UPDATE attendees
 		SET checkin_status = true, checked_in_at = now(), checked_in_by = $1, checked_in_point_name = $2, updated_at = now()
-		WHERE id = $3 AND event_id = $4 AND checkin_status = false AND deleted_at IS NULL
+		WHERE id = $3 AND event_id = $4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL
 		RETURNING ` + checkinAttendeeColumnsSQL
 	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, staffUserID, pointName, attendeeID, eventID))
 	if err == nil {
@@ -1001,12 +1032,17 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 		return "", nil, err
 	}
 
-	// 0 rows: either the attendee is already checked in (by this or another
-	// staff member/station), or it's genuinely missing (soft-deleted, or
-	// doesn't belong to eventID) — the fallback SELECT below (joined to
-	// users, same shape as attendeeListColumnsSQL/scanAttendeeRow)
-	// distinguishes the two and, for the former, returns the ORIGINAL
-	// first-scan metadata untouched.
+	// 0 rows: the guarded UPDATE's predicate missed for one of THREE
+	// reasons — already checked in (by this or another staff
+	// member/station), newly blocked (the TOCTOU race the blocked = false
+	// guard above closes), or genuinely missing (soft-deleted, or doesn't
+	// belong to eventID). The fallback SELECT below (joined to users, same
+	// shape as attendeeListColumnsSQL/scanAttendeeRow) distinguishes all
+	// three: missing rows ErrAttendeeNotFound; a row with checkin_status =
+	// false is the newly-blocked case (outcome "blocked" — this call never
+	// actually checked them in, so their pre-existing first-scan metadata,
+	// if any, is untouched); anything else is already_checked_in, returning
+	// the ORIGINAL first-scan metadata untouched.
 	selectQuery := `SELECT` + attendeeListColumnsSQL + `
 		FROM attendees a
 		LEFT JOIN users u ON a.checked_in_by = u.id
@@ -1020,6 +1056,9 @@ func (s *PGStore) CheckInAttendee(ctx context.Context, eventID, attendeeID uuid.
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", nil, err
+	}
+	if !existing.CheckinStatus && existing.Blocked {
+		return "blocked", existing, nil
 	}
 	return "already_checked_in", existing, nil
 }
@@ -1039,8 +1078,14 @@ func (s *PGStore) UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID
 		}
 	}()
 
+	// checked_in_device_number is cleared alongside the rest (PR #77
+	// bot-review round, Finding B): an attendee checked in via the mobile
+	// batch path (ApplyBatchCheckin, pg_store_batch.go) carries a device
+	// number in this column — leaving it untouched here meant a panel undo
+	// of a mobile check-in left stale device metadata on an otherwise
+	// not-checked-in row.
 	updateQuery := `UPDATE attendees
-		SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_point_name = NULL, updated_at = now()
+		SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_device_number = NULL, checked_in_point_name = NULL, updated_at = now()
 		WHERE id = $1 AND event_id = $2 AND checkin_status = true AND deleted_at IS NULL
 		RETURNING ` + checkinAttendeeColumnsSQL
 	a, err := scanCheckinAttendeeRow(tx.QueryRow(ctx, updateQuery, attendeeID, eventID))
@@ -1077,12 +1122,21 @@ func (s *PGStore) UndoCheckin(ctx context.Context, eventID, attendeeID uuid.UUID
 // check-in/undo/reprint feed (P4.1 Task 3), joined to a slim attendee
 // projection — backs the station's recent-scans rail.
 func (s *PGStore) GetCheckinActions(ctx context.Context, eventID uuid.UUID, limit int) ([]CheckinActionRow, error) {
+	// ca.id DESC is a deterministic tie-breaker (PR #77 bot-review round,
+	// Finding E): ORDER BY created_at DESC alone can arbitrarily reorder or
+	// omit rows across repeated calls with the same LIMIT whenever two
+	// concurrent actions share the same timestamp (down to whatever
+	// precision created_at stores) — id is a UUID with no inherent
+	// ordering relationship to created_at, but it only needs to be SOME
+	// deterministic total order, not a meaningful one, to make the "last
+	// 50" feed stable. idx_checkin_actions_event_created (migration
+	// 000019) is defined on (event_id, created_at DESC, id DESC) to match.
 	rows, err := s.db.Query(ctx, `
 		SELECT ca.id, ca.action, ca.station_id, ca.created_at, a.id, a.first_name, a.last_name, a.code
 		FROM checkin_actions ca
 		JOIN attendees a ON ca.attendee_id = a.id
 		WHERE ca.event_id = $1
-		ORDER BY ca.created_at DESC
+		ORDER BY ca.created_at DESC, ca.id DESC
 		LIMIT $2`, eventID, limit)
 	if err != nil {
 		return nil, err

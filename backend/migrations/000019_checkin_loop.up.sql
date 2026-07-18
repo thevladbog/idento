@@ -27,4 +27,9 @@ CREATE TABLE checkin_actions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_checkin_actions_event_created ON checkin_actions(event_id, created_at DESC);
+-- id DESC is a deterministic tie-breaker (PR #77 bot-review round, Finding
+-- E): GetCheckinActions orders ORDER BY created_at DESC, id DESC so
+-- concurrent actions sharing the same timestamp can't be arbitrarily
+-- reordered or omitted across repeated calls with the same LIMIT — this
+-- index is extended to match so the query still hits it efficiently.
+CREATE INDEX idx_checkin_actions_event_created ON checkin_actions(event_id, created_at DESC, id DESC);

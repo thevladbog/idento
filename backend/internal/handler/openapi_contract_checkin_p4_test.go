@@ -148,6 +148,37 @@ func TestOpenAPIContract_PutCheckinSettings_HappyPathIsVerbatim(t *testing.T) {
 	validateResponse(t, http.MethodPut, path, rec)
 }
 
+// TestOpenAPIContract_PutCheckinSettings_SoftDeleteRace404 is the PR #77
+// bot-review round Finding C regression test: requireEventOwnership's
+// pre-check passed (this is a legitimately-authorized request), but the
+// store's guarded UPDATE affects 0 rows anyway — the store maps that to
+// store.ErrEventNotFound, and the handler must map it to a 404, not a
+// fabricated 200 with settings that were never actually persisted.
+func TestOpenAPIContract_PutCheckinSettings_SoftDeleteRace404(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+
+	h := newCheckinSettingsHandler(event,
+		nil,
+		func(uuid.UUID, json.RawMessage) error { return store.ErrEventNotFound },
+	)
+
+	requestBody := `{"settings":{"print_on_checkin":true,"verdict_auto_dismiss_sec":5,"scan_input":"wedge","manual_search_enabled":false}}`
+
+	e := echo.New()
+	path := checkinSettingsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPut, path, requestBody, tenantID.String(), "admin")
+	setCheckinSettingsPathParams(c, event.ID)
+
+	if err := h.PutCheckinSettings(c); err != nil {
+		t.Fatalf("PutCheckinSettings: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodPut, path, rec)
+}
+
 // PUT with verdict_auto_dismiss_sec outside [1, 30] → 400, for both the
 // low and high boundary violations.
 func TestOpenAPIContract_PutCheckinSettings_VerdictAutoDismissSecOutOfRange400(t *testing.T) {

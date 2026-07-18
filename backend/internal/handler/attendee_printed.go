@@ -47,9 +47,14 @@ type markAttendeePrintedRequest struct {
 // body, an empty body, and a syntactically malformed body are ALL treated
 // as "no context" (unknown fields are ignored by plain encoding/json
 // decoding too) — the counter still increments in every case. A present
-// event_id/station_id value is rejected with 400 in two cases, BOTH before
+// event_id/station_id value is rejected with 400 in FOUR cases, ALL before
 // the counter increments so a rejected request never partially applies:
-// (1) it fails uuid.Parse, or (2) it parses but doesn't belong to the
+// (1) station_id is present but event_id is absent — a caller supplying
+// station_id clearly intended it to be logged, so silently discarding it
+// (the reprint-logging path is gated on event_id != nil) would hide a
+// client-side mistake rather than surface it (PR #77 bot-review round,
+// Finding D; checked FIRST, before the event_id-parsing cases below); (2)
+// event_id fails uuid.Parse, or (3) it parses but doesn't belong to the
 // attendee's own event — event_id is NEVER trusted as the source of truth
 // for which event the feed row belongs to (fix round 1: the body used to
 // be passed straight to InsertCheckinAction, letting an authenticated
@@ -58,14 +63,14 @@ type markAttendeePrintedRequest struct {
 // same-file precedent set by StationCheckin/UndoCheckin (checkin.go) and
 // BadgeZPL (badge_zpl.go), which all 400 with "Attendee does not belong to
 // this event" on an attendee/event scope mismatch rather than silently
-// substituting the correct event. station_id, when present, is validated
-// the same way its siblings do — via resolveCheckinStation, 400ing
-// "Station not found in event" for a station belonging to a different
-// event. Once both parse and validate, logging itself is best-effort: the
-// counter has already committed by the time logging is attempted, so a
-// failure resolving staff claims or writing the feed row is logged
-// server-side and never turns the response into an error or changes its
-// shape.
+// substituting the correct event. (4) station_id, when present alongside a
+// valid event_id, is validated the same way its siblings do — via
+// resolveCheckinStation, 400ing "Station not found in event" for a station
+// belonging to a different event. Once all four checks pass, logging
+// itself is best-effort: the counter has already committed by the time
+// logging is attempted, so a failure resolving staff claims or writing the
+// feed row is logged server-side and never turns the response into an
+// error or changes its shape.
 func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 	attendeeID, err := uuid.Parse(c.Param("attendee_id"))
 	if err != nil {
@@ -89,6 +94,17 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 	var req markAttendeePrintedRequest
 	if err := c.Bind(&req); err != nil {
 		req = markAttendeePrintedRequest{}
+	}
+
+	// station_id is only ever meaningful alongside event_id (it's used
+	// solely by the feed-row insert below, gated on eventID != nil) — a
+	// caller supplying station_id without event_id clearly intended it to
+	// be logged, so silently discarding it would hide a client-side
+	// mistake rather than surface it (PR #77 bot-review round, Finding D).
+	// This check runs BEFORE the event_id-mismatch-with-attendee
+	// validation below so a malformed combination never partially applies.
+	if req.StationID != nil && req.EventID == nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "event_id is required when station_id is supplied"})
 	}
 
 	var eventID *uuid.UUID

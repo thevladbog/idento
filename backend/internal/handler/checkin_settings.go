@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"idento/backend/internal/store"
+
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
@@ -138,6 +140,15 @@ func (h *Handler) PutCheckinSettings(c echo.Context) error {
 	}
 
 	if err := h.Store.UpdateCheckinSettings(c.Request().Context(), eventID, req.Settings); err != nil {
+		// ErrEventNotFound is reachable only via the soft-delete race
+		// (PR #77 bot-review round, Finding C): the requireEventOwnership
+		// pre-check above passed, then a concurrent DELETE soft-deleted the
+		// event before the guarded UPDATE ran — map it to the same 404
+		// masking (and wording) as requireEventOwnership, not a fabricated
+		// 200 with settings that were never actually persisted.
+		if errors.Is(err, store.ErrEventNotFound) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Event not found"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save check-in settings"})
 	}
 

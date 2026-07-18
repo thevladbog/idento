@@ -131,14 +131,18 @@ func TestUpdateCheckinSettingsIssuesGuardedUpdate(t *testing.T) {
 	}
 }
 
-// TestUpdateCheckinSettingsSoftDeleteRaceIsSilentNoOp covers the 0-row
+// TestUpdateCheckinSettingsSoftDeleteRaceReturnsSentinel covers the 0-row
 // case (the caller's requireEventOwnership pre-check passed, then a
-// concurrent soft-delete landed before this UPDATE ran). Unlike
-// UpdateEventBadgeTemplate/IncrementAttendeePrintedCount, there is no
-// RETURNING clause and no sentinel error here — Exec succeeds regardless
-// of rows affected, so this is a silent no-op (the same idiom as
-// SoftDeleteEvent), never a fabricated error.
-func TestUpdateCheckinSettingsSoftDeleteRaceIsSilentNoOp(t *testing.T) {
+// concurrent soft-delete landed before this UPDATE ran) — PR #77
+// bot-review round, Finding C. This used to be a silent no-op (Exec
+// succeeds regardless of RowsAffected), which meant the handler responded
+// 200 with settings that were never actually persisted. Now it mirrors the
+// UpdateEventBadgeTemplate/IncrementAttendeePrintedCount 0-row sentinel
+// pattern: 0 RowsAffected() maps to the exported ErrEventNotFound, which
+// the handler (checkin_settings.go) maps to a 404 — the same soft-delete
+// race class every other guarded UPDATE in this file already reports
+// honestly, instead of a fabricated success.
+func TestUpdateCheckinSettingsSoftDeleteRaceReturnsSentinel(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("pgxmock.NewPool: %v", err)
@@ -152,8 +156,9 @@ func TestUpdateCheckinSettingsSoftDeleteRaceIsSilentNoOp(t *testing.T) {
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
 
 	s := &PGStore{db: mock}
-	if err := s.UpdateCheckinSettings(context.Background(), eventID, settings); err != nil {
-		t.Fatalf("UpdateCheckinSettings: %v (want nil — silent no-op)", err)
+	err = s.UpdateCheckinSettings(context.Background(), eventID, settings)
+	if !errors.Is(err, ErrEventNotFound) {
+		t.Fatalf("err = %v, want ErrEventNotFound", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
@@ -444,9 +449,13 @@ var checkinAttendeeReturningColumns = []string{
 
 // checkInAttendeeUpdateSQL matches CheckInAttendee's exact guarded UPDATE —
 // including the `checkin_status = false` guard that makes this the
-// zero-double-checkin write (P2.1 lesson: assert real SQL text, not a loose
-// matcher).
-const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, checked_in_at = now\(\), checked_in_by = \$1, checked_in_point_name = \$2, updated_at = now\(\)\s+WHERE id = \$3 AND event_id = \$4 AND checkin_status = false AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+// zero-double-checkin write, AND the `blocked = false` guard (PR #77
+// bot-review round, Finding A) that closes the TOCTOU race where another
+// operator blocks the SAME attendee between StationCheckin's pre-read and
+// this UPDATE actually running — without this guard the UPDATE's predicate
+// would still match a newly-blocked attendee and check them in anyway
+// (P2.1 lesson: assert real SQL text, not a loose matcher).
+const checkInAttendeeUpdateSQL = `UPDATE attendees\s+SET checkin_status = true, checked_in_at = now\(\), checked_in_by = \$1, checked_in_point_name = \$2, updated_at = now\(\)\s+WHERE id = \$3 AND event_id = \$4 AND checkin_status = false AND blocked = false AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
 
 // checkInAttendeeFallbackSelectSQL matches the 0-row fallback SELECT — the
 // same LEFT JOIN ... users shape as attendeeListColumnsSQL/scanAttendeeRow,
@@ -601,6 +610,59 @@ func TestCheckInAttendeeAlreadyCheckedInFallsBackNoFeedRow(t *testing.T) {
 	}
 }
 
+// TestCheckInAttendeeNewlyBlockedReturnsBlockedOutcome covers the TOCTOU
+// race (PR #77 bot-review round, Finding A): StationCheckin's handler
+// pre-read saw attendee.Blocked == false and proceeded to call
+// CheckInAttendee, but another operator's blocked/unblocked toggle landed
+// in the window before the guarded UPDATE ran — so the UPDATE's now
+// `blocked = false` predicate matches 0 rows even though checkin_status is
+// still false (the attendee was never actually checked in). The fallback
+// SELECT finds exactly that shape (checkin_status = false, blocked = true)
+// and this is the second path to outcome "blocked", beyond the handler's
+// own pre-read short-circuit — never "already_checked_in", and never a feed
+// row (no ExpectExec is set for the checkin_actions INSERT).
+func TestCheckInAttendeeNewlyBlockedReturnsBlockedOutcome(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+	blockReason := "Ticket refunded"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(checkInAttendeeUpdateSQL).
+		WithArgs(staffID, (*string)(nil), attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns)) // 0 rows: blocked = false guard missed
+	mock.ExpectQuery(checkInAttendeeFallbackSelectSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(attendeesByEventColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				false, nil, nil, nil, nil, 0, nil, true, &blockReason, now, now,
+				nil))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	outcome, a, err := s.CheckInAttendee(context.Background(), eventID, attendeeID, nil, staffID, "staff@example.com", "")
+	if err != nil {
+		t.Fatalf("CheckInAttendee: %v", err)
+	}
+	if outcome != "blocked" {
+		t.Errorf("outcome = %q, want blocked", outcome)
+	}
+	if a == nil || !a.Blocked {
+		t.Fatalf("a.Blocked = %v, want true", a)
+	}
+	if a.BlockReason == nil || *a.BlockReason != blockReason {
+		t.Errorf("a.BlockReason = %v, want %q", a.BlockReason, blockReason)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
 // TestCheckInAttendeeMissingReturnsErrAttendeeNotFound covers the
 // soft-delete-race / foreign-event 0-row-on-both-queries case: the guarded
 // UPDATE and the fallback SELECT both match nothing, so the transaction
@@ -635,8 +697,12 @@ func TestCheckInAttendeeMissingReturnsErrAttendeeNotFound(t *testing.T) {
 
 // undoCheckinUpdateSQL matches UndoCheckin's exact guarded UPDATE — guarded
 // on checkin_status = true (the mirror-image guard of CheckInAttendee's
-// checkin_status = false).
-const undoCheckinUpdateSQL = `UPDATE attendees\s+SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_point_name = NULL, updated_at = now\(\)\s+WHERE id = \$1 AND event_id = \$2 AND checkin_status = true AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
+// checkin_status = false), and clearing checked_in_device_number alongside
+// the other check-in metadata (PR #77 bot-review round, Finding B): an
+// attendee checked in via the mobile batch path carries a
+// checked_in_device_number that UndoCheckin used to leave stale — this
+// column must be nulled out in the SAME UPDATE as the rest.
+const undoCheckinUpdateSQL = `UPDATE attendees\s+SET checkin_status = false, checked_in_at = NULL, checked_in_by = NULL, checked_in_device_number = NULL, checked_in_point_name = NULL, updated_at = now\(\)\s+WHERE id = \$1 AND event_id = \$2 AND checkin_status = true AND deleted_at IS NULL\s+RETURNING id, event_id, first_name, last_name, email, company, position, code, checkin_status, checked_in_at, checked_in_by, checked_in_device_number, checked_in_point_name, printed_count, custom_fields, blocked, block_reason, created_at, updated_at`
 
 // undoCheckinFallbackSelectSQL matches the 0-row fallback SELECT (plain,
 // non-joined — an undone/never-checked-in attendee has no email to show).
@@ -681,6 +747,51 @@ func TestUndoCheckinClearsAndLogsFeedRow(t *testing.T) {
 	}
 	if a.CheckedInAt != nil || a.CheckedInBy != nil || a.CheckedInPointName != nil {
 		t.Errorf("undo left stale metadata: CheckedInAt=%v CheckedInBy=%v CheckedInPointName=%v", a.CheckedInAt, a.CheckedInBy, a.CheckedInPointName)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// TestUndoCheckinClearsDeviceNumber is the round-trip proof for PR #77
+// bot-review round Finding B: an attendee checked in via the mobile batch
+// path (ApplyBatchCheckin) carries a non-nil checked_in_device_number.
+// UndoCheckin's guarded UPDATE must clear that column in the SAME
+// statement as checkin_status/checked_in_at/checked_in_by/
+// checked_in_point_name — the mocked RETURNING row (standing in for what a
+// real Postgres UPDATE ... SET checked_in_device_number = NULL would hand
+// back) has a nil device number, and this proves UndoCheckin scans that nil
+// through untouched rather than preserving whatever the caller happened to
+// pass in (UndoCheckin takes no device-number argument at all — the ONLY
+// way it ends up nil on the returned row is the UPDATE itself clearing it).
+func TestUndoCheckinClearsDeviceNumber(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("pgxmock.NewPool: %v", err)
+	}
+	defer mock.Close()
+
+	eventID, attendeeID, staffID := uuid.New(), uuid.New(), uuid.New()
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(undoCheckinUpdateSQL).
+		WithArgs(attendeeID, eventID).
+		WillReturnRows(pgxmock.NewRows(checkinAttendeeReturningColumns).
+			AddRow(attendeeID, eventID, "Ada", "Lovelace", "ada@example.com", "Acme", "Eng", "CODE1",
+				false, nil, nil, nil, nil, 0, nil, false, nil, now, now))
+	mock.ExpectExec(checkinActionsInsertUndoSQL).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "undo", staffID).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	s := &PGStore{db: mock}
+	a, err := s.UndoCheckin(context.Background(), eventID, attendeeID, nil, staffID)
+	if err != nil {
+		t.Fatalf("UndoCheckin: %v", err)
+	}
+	if a.CheckedInDeviceNumber != nil {
+		t.Errorf("CheckedInDeviceNumber = %v, want nil (undo must clear the mobile-checkin device number, not just leave it stale)", *a.CheckedInDeviceNumber)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
@@ -756,8 +867,13 @@ func TestUndoCheckinMissingReturnsErrAttendeeNotFound(t *testing.T) {
 	}
 }
 
-// getCheckinActionsSQL matches GetCheckinActions' exact joined SELECT.
-const getCheckinActionsSQL = `SELECT ca\.id, ca\.action, ca\.station_id, ca\.created_at, a\.id, a\.first_name, a\.last_name, a\.code\s+FROM checkin_actions ca\s+JOIN attendees a ON ca\.attendee_id = a\.id\s+WHERE ca\.event_id = \$1\s+ORDER BY ca\.created_at DESC\s+LIMIT \$2`
+// getCheckinActionsSQL matches GetCheckinActions' exact joined SELECT —
+// including the `ca.id DESC` tie-breaker (PR #77 bot-review round, Finding
+// E): ORDER BY created_at DESC alone has no deterministic tie-breaker for
+// concurrent actions sharing the same timestamp (down to whatever
+// precision created_at stores), which matters for a "last 50" feed that's
+// supposed to be stable across repeated calls with the same LIMIT.
+const getCheckinActionsSQL = `SELECT ca\.id, ca\.action, ca\.station_id, ca\.created_at, a\.id, a\.first_name, a\.last_name, a\.code\s+FROM checkin_actions ca\s+JOIN attendees a ON ca\.attendee_id = a\.id\s+WHERE ca\.event_id = \$1\s+ORDER BY ca\.created_at DESC, ca\.id DESC\s+LIMIT \$2`
 
 // TestGetCheckinActionsReturnsNewestFirstJoinedRows proves the exact SQL
 // (including LIMIT $2) and that rows scan into the joined

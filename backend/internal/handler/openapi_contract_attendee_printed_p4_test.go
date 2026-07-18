@@ -285,6 +285,54 @@ func TestOpenAPIContract_MarkAttendeePrinted_PresentButInvalidEventID400s(t *tes
 	validateResponse(t, http.MethodPost, path, rec)
 }
 
+// TestOpenAPIContract_MarkAttendeePrinted_StationIDWithoutEventID400s covers
+// PR #77 bot-review round Finding D: station_id present but event_id
+// absent used to be silently accepted — station_id was simply discarded
+// (the reprint-logging path is gated on event_id != nil), hiding a
+// client-side mistake (a caller supplying station_id clearly intended it to
+// be logged). This must now 400 BEFORE the counter increments, checked
+// before the existing event_id-mismatch-with-attendee validation — neither
+// the counter nor the feed insert may be reached.
+func TestOpenAPIContract_MarkAttendeePrinted_StationIDWithoutEventID400s(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	stationID := uuid.New()
+
+	h := New(&fakeStore{
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		incrementAttendeePrintedCount: func(uuid.UUID) (int, error) {
+			t.Fatal("IncrementAttendeePrintedCount should not be called when station_id is supplied without event_id")
+			return 0, nil
+		},
+		insertCheckinAction: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, uuid.UUID) error {
+			t.Fatal("InsertCheckinAction should not be called when station_id is supplied without event_id")
+			return nil
+		},
+	})
+	e := echo.New()
+	path := markPrintedPath(attendee.ID)
+	body := `{"station_id":"` + stationID.String() + `"}`
+
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "admin")
+	setMarkPrintedPathParams(c, attendee.ID)
+	if err := h.MarkAttendeePrinted(c); err != nil {
+		t.Fatalf("MarkAttendeePrinted: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var got map[string]string
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["error"] != "event_id is required when station_id is supplied" {
+		t.Errorf("error = %q, want %q", got["error"], "event_id is required when station_id is supplied")
+	}
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
 // TestOpenAPIContract_MarkAttendeePrinted_PresentButInvalidStationID400s
 // mirrors the event_id case for station_id — a valid event_id alongside an
 // invalid station_id must still 400 before incrementing.
