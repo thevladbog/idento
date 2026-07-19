@@ -243,42 +243,56 @@ type Store interface {
 	// failure here as best-effort/non-fatal).
 	InsertCheckinAction(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
 
-	// GetMonitorCounts returns the total non-deleted attendee count and the
-	// currently-checked-in count for eventID (P4.2 Task 2) from ONE query —
-	// COUNT(*) and COUNT(*) FILTER (WHERE checkin_status) over the same
-	// attendees row set — so the two numbers can never disagree the way two
-	// separate queries against a live, concurrently-changing event could (a
-	// check-in landing between them). Backs the monitor snapshot's
-	// totals.total/totals.checked_in.
-	GetMonitorCounts(ctx context.Context, eventID uuid.UUID) (total int, checkedIn int, err error)
-
-	// GetMonitorZones returns every zone's currently-checked-in count, plus
-	// the count of checked-in attendees that can't be attributed to any zone
-	// (unattributed) — from ONE statement (P4.2 Task 2), so
+	// GetMonitorOverview returns the monitor snapshot's total attendee
+	// count, currently-checked-in count, every zone's currently-checked-in
+	// count, and the count of checked-in attendees that can't be
+	// attributed to any zone (unattributed) — ALL FOUR from ONE statement
+	// (PR #81 bot-review round, Finding A1; supersedes the former
+	// GetMonitorCounts + GetMonitorZones pair), so
 	// sum(zones[].CheckedIn) + unattributed == checkedIn holds BY
-	// CONSTRUCTION: both numbers are aggregated from the SAME "attributed"
-	// CTE (one row per currently-checked-in attendee — checkin_status = true
-	// AND deleted_at IS NULL — carrying that attendee's zone, or NULL)
-	// rather than from two independently-issued queries that a future edit
-	// could let drift apart. An attendee's zone comes from their MOST RECENT
-	// 'checkin' action — DISTINCT ON (ca.attendee_id) ... ORDER BY
-	// ca.attendee_id, ca.created_at DESC, ca.id DESC, the same id
+	// CONSTRUCTION and total/checkedIn can never transiently disagree with
+	// zones/unattributed the way two independently-issued statements
+	// against a live, concurrently-changing event could (a check-in/undo
+	// landing between them). An attendee's zone comes from their MOST
+	// RECENT 'checkin' action, but only when no LATER 'undo' supersedes it
+	// (Finding A2: a 'reprint' action never participates in this
+	// state-changing lookup, since it doesn't change check-in state) —
+	// DISTINCT ON (ca.attendee_id) over ('checkin', 'undo') actions, ORDER
+	// BY ca.attendee_id, ca.created_at DESC, ca.id DESC, the same id
 	// tie-breaker as GetCheckinActions (PR #77 bot-review round, Finding E)
-	// — joined through checkin_stations.zone_id to event_zones; a checked-in
-	// attendee with no 'checkin' action row, a station-less action, or a
+	// — joined through checkin_stations.zone_id to event_zones; a
+	// checked-in attendee with no 'checkin' action row, whose latest
+	// state-changing action is 'undo' (e.g. checked in, undone, then
+	// re-checked-in via a path — like the legacy PUT /api/attendees/{id} —
+	// that writes no new action row), a station-less action, or a
 	// zone-less station all count into unattributed rather than any zone.
 	// Zones are listed in event_zones.order_index order and INCLUDE
 	// zero-count zones (LEFT JOIN FROM event_zones, not the other way
 	// around, so an empty zone never silently disappears from the list).
-	GetMonitorZones(ctx context.Context, eventID uuid.UUID) (zones []MonitorZoneCount, unattributed int, err error)
+	GetMonitorOverview(ctx context.Context, eventID uuid.UUID) (total int, checkedIn int, zones []MonitorZoneCount, unattributed int, err error)
 
 	// GetMonitorMinuteBuckets returns one row per minute (ascending) holding
 	// the count of 'checkin' actions in that minute, for created_at >= since
 	// (P4.2 Task 2) — a date_trunc('minute', created_at) GROUP BY. The
 	// caller passes a UTC start-of-day for the monitor's today's-peak
-	// computation; the per-5-minute rate reuses these SAME buckets rather
-	// than issuing a second query.
+	// computation ONLY — totals.rate_per_min no longer reuses these buckets
+	// (PR #81 bot-review round, Finding A3 moved rate_per_min to the exact
+	// CountRecentCheckins query below); GetMonitorMinuteBuckets now backs
+	// peak alone.
 	GetMonitorMinuteBuckets(ctx context.Context, eventID uuid.UUID, since time.Time) ([]MinuteBucket, error)
+
+	// CountRecentCheckins returns the exact count of 'checkin' actions for
+	// eventID at/after since — COUNT(*) FROM checkin_actions WHERE
+	// event_id=$1 AND action='checkin' AND created_at>=$2, no minute
+	// truncation and no day clamp (PR #81 bot-review round, Finding A3).
+	// Backs totals.rate_per_min: the caller passes since =
+	// now.Add(-5*time.Minute) and divides the result by 5.0. Replaces the
+	// previous bucket-window approach, which (a) excluded an entire
+	// minute-START bucket even when most of its seconds fell inside the
+	// window (systematic undercount up to ~20%), and (b) clamped to UTC
+	// start-of-day, losing the window's reach into "yesterday" for ~5
+	// minutes after midnight.
+	CountRecentCheckins(ctx context.Context, eventID uuid.UUID, since time.Time) (int, error)
 
 	// GetMonitorStations returns every check-in station for eventID (P4.2
 	// Task 2) with its LEFT JOINed 'checkin'-action count — COUNT(...)

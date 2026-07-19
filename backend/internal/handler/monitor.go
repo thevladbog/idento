@@ -50,8 +50,11 @@ type MonitorStationRow struct {
 // /api/events/{event_id}/monitor (P4.2 Task 3, spec §3.1) — everything
 // screen 7e (the live monitor) renders in one request. Invariant:
 // sum(Zones[].CheckedIn) + Unattributed == Totals.CheckedIn, which holds by
-// construction because both halves come from the SAME GetMonitorZones call
-// (see store.GetMonitorZones' doc comment).
+// construction because Total, CheckedIn, Zones, AND Unattributed all come
+// from the SAME store.GetMonitorOverview call (see its doc comment; PR #81
+// bot-review round, Finding A1 — previously totals came from a separate
+// GetMonitorCounts call that could transiently disagree with a concurrent
+// GetMonitorZones call).
 type MonitorSnapshot struct {
 	Totals       MonitorTotals            `json:"totals"`
 	Zones        []MonitorZone            `json:"zones"`
@@ -75,24 +78,25 @@ func (h *Handler) GetEventMonitor(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
-	total, checkedIn, err := h.Store.GetMonitorCounts(ctx, eventID)
+	total, checkedIn, zoneCounts, unattributed, err := h.Store.GetMonitorOverview(ctx, eventID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch monitor counts"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch monitor overview"})
 	}
 
-	zoneCounts, unattributed, err := h.Store.GetMonitorZones(ctx, eventID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch monitor zones"})
-	}
-
-	// since is UTC start-of-day: the domain for "today's" peak bucket
-	// (spec §3.1); computeRates derives the 5-minute rate window from
-	// this SAME bucket set rather than issuing a second query.
+	// dayStart is UTC start-of-day: the domain for "today's" peak bucket
+	// (spec §3.1) — GetMonitorMinuteBuckets backs peak ONLY now (PR #81
+	// bot-review round, Finding A3 moved rate_per_min off buckets onto the
+	// exact CountRecentCheckins query below).
 	now := time.Now().UTC()
-	since := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	buckets, err := h.Store.GetMonitorMinuteBuckets(ctx, eventID, since)
+	dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	buckets, err := h.Store.GetMonitorMinuteBuckets(ctx, eventID, dayStart)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch monitor rate buckets"})
+	}
+
+	recentCount, err := h.Store.CountRecentCheckins(ctx, eventID, now.Add(-rateWindow))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to fetch monitor recent check-in count"})
 	}
 
 	stations, err := h.Store.GetMonitorStations(ctx, eventID)
@@ -108,7 +112,7 @@ func (h *Handler) GetEventMonitor(c echo.Context) error {
 		recent = []store.CheckinActionRow{}
 	}
 
-	ratePerMin, peak, estDoneAt := computeRates(buckets, now, total, checkedIn)
+	ratePerMin, peak, estDoneAt := computeRates(recentCount, buckets, now, total, checkedIn)
 
 	zones := make([]MonitorZone, 0, len(zoneCounts))
 	for _, z := range zoneCounts {

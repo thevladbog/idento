@@ -74,9 +74,9 @@ type fakeStore struct {
 	undoCheckin                   func(eventID, attendeeID uuid.UUID, stationID *uuid.UUID, staffUserID uuid.UUID) (*models.Attendee, error)
 	getCheckinActions             func(eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error)
 	insertCheckinAction           func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
-	getMonitorCounts              func(eventID uuid.UUID) (int, int, error)
-	getMonitorZones               func(eventID uuid.UUID) ([]store.MonitorZoneCount, int, error)
+	getMonitorOverview            func(eventID uuid.UUID) (int, int, []store.MonitorZoneCount, int, error)
 	getMonitorMinuteBuckets       func(eventID uuid.UUID, since time.Time) ([]store.MinuteBucket, error)
+	countRecentCheckins           func(eventID uuid.UUID, since time.Time) (int, error)
 	getMonitorStations            func(eventID uuid.UUID) ([]store.MonitorStation, error)
 
 	createTenantWithDefaultSubscription func(tenant *models.Tenant) error
@@ -317,14 +317,14 @@ func (f *fakeStore) GetCheckinActions(_ context.Context, eventID uuid.UUID, limi
 func (f *fakeStore) InsertCheckinAction(_ context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error {
 	return f.insertCheckinAction(eventID, attendeeID, action, stationID, staffUserID)
 }
-func (f *fakeStore) GetMonitorCounts(_ context.Context, eventID uuid.UUID) (int, int, error) {
-	return f.getMonitorCounts(eventID)
-}
-func (f *fakeStore) GetMonitorZones(_ context.Context, eventID uuid.UUID) ([]store.MonitorZoneCount, int, error) {
-	return f.getMonitorZones(eventID)
+func (f *fakeStore) GetMonitorOverview(_ context.Context, eventID uuid.UUID) (int, int, []store.MonitorZoneCount, int, error) {
+	return f.getMonitorOverview(eventID)
 }
 func (f *fakeStore) GetMonitorMinuteBuckets(_ context.Context, eventID uuid.UUID, since time.Time) ([]store.MinuteBucket, error) {
 	return f.getMonitorMinuteBuckets(eventID, since)
+}
+func (f *fakeStore) CountRecentCheckins(_ context.Context, eventID uuid.UUID, since time.Time) (int, error) {
+	return f.countRecentCheckins(eventID, since)
 }
 func (f *fakeStore) GetMonitorStations(_ context.Context, eventID uuid.UUID) ([]store.MonitorStation, error) {
 	return f.getMonitorStations(eventID)

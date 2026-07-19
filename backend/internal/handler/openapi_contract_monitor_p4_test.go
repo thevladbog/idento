@@ -47,19 +47,13 @@ func TestOpenAPIContract_GetEventMonitor_SeededInvariantHolds(t *testing.T) {
 
 	h := New(&fakeStore{
 		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getMonitorCounts: func(eventID uuid.UUID) (int, int, error) {
+		getMonitorOverview: func(eventID uuid.UUID) (int, int, []store.MonitorZoneCount, int, error) {
 			if eventID != event.ID {
-				t.Fatalf("GetMonitorCounts eventID = %s, want %s", eventID, event.ID)
-			}
-			return 100, 60, nil
-		},
-		getMonitorZones: func(eventID uuid.UUID) ([]store.MonitorZoneCount, int, error) {
-			if eventID != event.ID {
-				t.Fatalf("GetMonitorZones eventID = %s, want %s", eventID, event.ID)
+				t.Fatalf("GetMonitorOverview eventID = %s, want %s", eventID, event.ID)
 			}
 			// 25 + 30 + 5 (unattributed) == 60 (checked_in) — the
 			// invariant the response is expected to preserve verbatim.
-			return []store.MonitorZoneCount{
+			return 100, 60, []store.MonitorZoneCount{
 				{ZoneID: zoneAID, Name: "Zone A", CheckedIn: 25},
 				{ZoneID: zoneBID, Name: "Zone B", CheckedIn: 30},
 			}, 5, nil
@@ -69,6 +63,12 @@ func TestOpenAPIContract_GetEventMonitor_SeededInvariantHolds(t *testing.T) {
 				t.Fatalf("GetMonitorMinuteBuckets eventID = %s, want %s", eventID, event.ID)
 			}
 			return []store.MinuteBucket{{Minute: now.Add(-1 * time.Minute), Count: 4}}, nil
+		},
+		countRecentCheckins: func(eventID uuid.UUID, since time.Time) (int, error) {
+			if eventID != event.ID {
+				t.Fatalf("CountRecentCheckins eventID = %s, want %s", eventID, event.ID)
+			}
+			return 4, nil
 		},
 		getMonitorStations: func(eventID uuid.UUID) ([]store.MonitorStation, error) {
 			if eventID != event.ID {
@@ -140,10 +140,12 @@ func TestOpenAPIContract_GetEventMonitor_EmptyEventZerosAndNulls(t *testing.T) {
 	event := contractEvent(tenantID, "Fresh Event")
 
 	h := New(&fakeStore{
-		getEventByID:            func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getMonitorCounts:        func(uuid.UUID) (int, int, error) { return 0, 0, nil },
-		getMonitorZones:         func(uuid.UUID) ([]store.MonitorZoneCount, int, error) { return nil, 0, nil },
+		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getMonitorOverview: func(uuid.UUID) (int, int, []store.MonitorZoneCount, int, error) {
+			return 0, 0, nil, 0, nil
+		},
 		getMonitorMinuteBuckets: func(uuid.UUID, time.Time) ([]store.MinuteBucket, error) { return nil, nil },
+		countRecentCheckins:     func(uuid.UUID, time.Time) (int, error) { return 0, nil },
 		getMonitorStations:      func(uuid.UUID) ([]store.MonitorStation, error) { return nil, nil },
 		getCheckinActions:       func(uuid.UUID, int) ([]store.CheckinActionRow, error) { return nil, nil },
 	})
@@ -203,9 +205,9 @@ func TestOpenAPIContract_GetEventMonitor_ForeignEvent404(t *testing.T) {
 
 	h := New(&fakeStore{
 		getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getMonitorCounts: func(uuid.UUID) (int, int, error) {
-			t.Fatalf("GetMonitorCounts should not be called for a foreign event")
-			return 0, 0, nil
+		getMonitorOverview: func(uuid.UUID) (int, int, []store.MonitorZoneCount, int, error) {
+			t.Fatalf("GetMonitorOverview should not be called for a foreign event")
+			return 0, 0, nil, 0, nil
 		},
 	})
 

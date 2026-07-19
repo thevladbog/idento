@@ -10,12 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction proves,
+// TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction proves,
 // against a REAL Postgres database, the load-bearing correctness property
-// of GetMonitorZones: sum(zones[].CheckedIn) + unattributed == checkedIn.
-// pgxmock (used by every other test in this file) only echoes back rows
-// it's told to return — it can prove the SQL's exact text and this
-// package's row-scanning logic, but it cannot execute the DISTINCT ON
+// of GetMonitorOverview: sum(zones[].CheckedIn) + unattributed == checkedIn
+// (PR #81 bot-review round, Finding A1 — this now also covers total and
+// checkedIn, since GetMonitorCounts and GetMonitorZones were merged into
+// this one statement so all four numbers share one snapshot). pgxmock
+// (used by every other test in this file) only echoes back rows it's told
+// to return — it can prove the SQL's exact text and this package's
+// row-scanning logic, but it cannot execute the DISTINCT ON
 // most-recent-action tie-breaking or the UNION ALL aggregation for real, so
 // it cannot prove the query is even syntactically valid, let alone that it
 // picks the right zone per attendee. This is the only test in the repo that
@@ -24,16 +27,19 @@ import (
 //
 // The fixture also proves the DISTINCT ON tie-breaker matters: attendee A1
 // has an OLDER 'checkin' action pointing at Station 2 / Zone Two, then a
-// NEWER one pointing at Station 1 / Zone One — GetMonitorZones must
-// attribute A1 to Zone One (the most recent), not Zone Two.
+// NEWER one pointing at Station 1 / Zone One — GetMonitorOverview must
+// attribute A1 to Zone One (the most recent), not Zone Two. Attendee A7
+// proves Finding A2: a LATER 'undo' must supersede an EARLIER 'checkin' for
+// attribution purposes even when the attendee is (via an out-of-band
+// UPDATE) currently checked in again — see A7's fixture comment below.
 //
 // Gated behind TEST_DATABASE_URL (this codebase has no real-database CI
 // harness — see pg_store_attendees_page_integration_test.go) and SKIPS, not
 // fails, when it's unset. To run it locally against the docker-compose db:
 //
 //	TEST_DATABASE_URL="postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable" \
-//	  go test ./internal/store/ -run TestGetMonitorZones_RealPostgres -v
-func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T) {
+//	  go test ./internal/store/ -run TestGetMonitorOverview_RealPostgres -v
+func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing.T) {
 	dbURL := os.Getenv("TEST_DATABASE_URL")
 	if dbURL == "" {
 		t.Skip("TEST_DATABASE_URL not set; skipping real-Postgres monitor-aggregation test (see doc comment for how to run it)")
@@ -129,6 +135,14 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 	// A4: checked in, only an 'undo' action (no 'checkin' row at all) -> unattributed.
 	// A5: NOT checked in -> excluded entirely from every count.
 	// A6: soft-deleted -> excluded entirely from every count.
+	// A7: checked in, undo-supersedes-checkin (PR #81 bot-review round,
+	// Finding A2) — checked in at station1/zoneOne, undone, THEN
+	// re-checked-in via a direct UPDATE that writes NO new checkin_actions
+	// row (simulating a legacy path like PUT /api/attendees/{id} or a
+	// mobile batch write that bypasses CheckInAttendee). checkin_status is
+	// currently true, but the latest STATE-CHANGING action is the 'undo' —
+	// attribution must fall to unattributed, NOT to station1/zoneOne from
+	// the now-superseded 'checkin' row.
 	attendees := []struct {
 		id        uuid.UUID
 		checkedIn bool
@@ -140,6 +154,7 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 		{uuid.New(), true, false},  // A4
 		{uuid.New(), false, false}, // A5
 		{uuid.New(), true, true},   // A6
+		{uuid.New(), false, false}, // A7 (flipped to checked-in below via a direct UPDATE)
 	}
 	for i, a := range attendees {
 		var deletedAt *time.Time
@@ -154,7 +169,7 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 			t.Fatalf("insert attendee[%d]: %v", i, err)
 		}
 	}
-	a1, a2, a3, a4 := attendees[0].id, attendees[1].id, attendees[2].id, attendees[3].id
+	a1, a2, a3, a4, a7 := attendees[0].id, attendees[1].id, attendees[2].id, attendees[3].id, attendees[6].id
 
 	insertAction := func(attendeeID uuid.UUID, stationID *uuid.UUID, action string, createdAt time.Time) {
 		t.Helper()
@@ -169,23 +184,30 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 	insertAction(a1, &station1, "checkin", now.Add(-1*time.Minute))  // wins: most recent
 	insertAction(a2, &station2, "checkin", now.Add(-5*time.Minute))
 	insertAction(a3, &stationless, "checkin", now.Add(-3*time.Minute))
-	insertAction(a4, &station1, "undo", now.Add(-2*time.Minute)) // no 'checkin' row for A4 at all
+	insertAction(a4, &station1, "undo", now.Add(-2*time.Minute))    // no 'checkin' row for A4 at all
+	insertAction(a7, &station1, "checkin", now.Add(-8*time.Minute)) // superseded by the undo below
+	insertAction(a7, &station1, "undo", now.Add(-6*time.Minute))    // latest state-changing action for A7
 
-	total, checkedIn, err := s.GetMonitorCounts(ctx, eventID)
-	if err != nil {
-		t.Fatalf("GetMonitorCounts: %v", err)
-	}
-	if total != 5 {
-		t.Errorf("total = %d, want 5 (excludes the soft-deleted A6)", total)
-	}
-	if checkedIn != 4 {
-		t.Errorf("checkedIn = %d, want 4 (A1-A4; A5 not checked in, A6 soft-deleted)", checkedIn)
+	// Legacy re-checkin: flips checkin_status back to true WITHOUT writing a
+	// new checkin_actions row — the scenario Finding A2 targets.
+	if _, err := pool.Exec(ctx,
+		`UPDATE attendees SET checkin_status = true, checked_in_at = $2 WHERE id = $1`,
+		a7, now,
+	); err != nil {
+		t.Fatalf("legacy re-checkin UPDATE for A7: %v", err)
 	}
 
-	zones, unattributed, err := s.GetMonitorZones(ctx, eventID)
+	total, checkedIn, zones, unattributed, err := s.GetMonitorOverview(ctx, eventID)
 	if err != nil {
-		t.Fatalf("GetMonitorZones: %v", err)
+		t.Fatalf("GetMonitorOverview: %v", err)
 	}
+	if total != 6 {
+		t.Errorf("total = %d, want 6 (excludes the soft-deleted A6)", total)
+	}
+	if checkedIn != 5 {
+		t.Errorf("checkedIn = %d, want 5 (A1-A4, A7; A5 not checked in, A6 soft-deleted)", checkedIn)
+	}
+
 	if len(zones) != 3 {
 		t.Fatalf("len(zones) = %d, want 3 (all event_zones, including the empty one)", len(zones))
 	}
@@ -194,13 +216,13 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 		t.Errorf("zones[0] = %+v, want Zone Two with CheckedIn=1 (A2)", zones[0])
 	}
 	if zones[1].ZoneID != zoneOne || zones[1].CheckedIn != 1 {
-		t.Errorf("zones[1] = %+v, want Zone One with CheckedIn=1 (A1, via its MOST RECENT action)", zones[1])
+		t.Errorf("zones[1] = %+v, want Zone One with CheckedIn=1 (A1, via its MOST RECENT action — A7's OLDER checkin at the same station/zone must NOT also land here)", zones[1])
 	}
 	if zones[2].ZoneID != zoneEmpty || zones[2].CheckedIn != 0 {
 		t.Errorf("zones[2] = %+v, want the empty zone with CheckedIn=0 (zero-count zones must still be listed)", zones[2])
 	}
-	if unattributed != 2 {
-		t.Errorf("unattributed = %d, want 2 (A3: station-less action; A4: no 'checkin' action row at all)", unattributed)
+	if unattributed != 3 {
+		t.Errorf("unattributed = %d, want 3 (A3: station-less action; A4: no 'checkin' action row at all; A7: latest state-changing action is 'undo')", unattributed)
 	}
 
 	sum := 0
@@ -222,8 +244,20 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 			t.Errorf("buckets not strictly ascending at index %d: %v then %v", i, buckets[i-1].Minute, b.Minute)
 		}
 	}
-	if bucketTotal != 4 {
-		t.Errorf("sum of bucket counts = %d, want 4 (A1 has 2 'checkin' rows, A2 and A3 have 1 each; A4's only action is 'undo', excluded)", bucketTotal)
+	if bucketTotal != 5 {
+		t.Errorf("sum of bucket counts = %d, want 5 (A1 has 2 'checkin' rows, A2/A3/A7 have 1 each; A4's only action and A7's second action are 'undo', excluded)", bucketTotal)
+	}
+
+	// CountRecentCheckins (PR #81 bot-review round, Finding A3) must agree
+	// with the same 'checkin'-action population GetMonitorMinuteBuckets
+	// summed above — an exact COUNT over a wide-enough window is just an
+	// unbucketed version of the same query.
+	recentCount, err := s.CountRecentCheckins(ctx, eventID, now.Add(-24*time.Hour))
+	if err != nil {
+		t.Fatalf("CountRecentCheckins: %v", err)
+	}
+	if recentCount != bucketTotal {
+		t.Errorf("CountRecentCheckins = %d, want %d (must match the bucketed 'checkin'-action total)", recentCount, bucketTotal)
 	}
 
 	stations, err := s.GetMonitorStations(ctx, eventID)
@@ -237,10 +271,11 @@ func TestGetMonitorZones_RealPostgres_InvariantHoldsByConstruction(t *testing.T)
 	for _, st := range stations {
 		byID[st.ID] = st
 	}
-	// Station 1 received A1's newer 'checkin' AND A4's 'undo' — the FILTER
-	// must count only the 'checkin' row.
-	if got := byID[station1].CheckinCount; got != 1 {
-		t.Errorf("station1.CheckinCount = %d, want 1 (the 'undo' row must not inflate it)", got)
+	// Station 1 received A1's newer 'checkin', A4's 'undo', and A7's
+	// 'checkin'+'undo' pair — the FILTER must count only the two 'checkin'
+	// rows (A1's and A7's).
+	if got := byID[station1].CheckinCount; got != 2 {
+		t.Errorf("station1.CheckinCount = %d, want 2 (the 'undo' rows must not inflate it)", got)
 	}
 	// Station 2 received A1's older 'checkin' AND A2's 'checkin'.
 	if got := byID[station2].CheckinCount; got != 2 {
