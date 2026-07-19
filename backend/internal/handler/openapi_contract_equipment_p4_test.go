@@ -247,33 +247,42 @@ func TestOpenAPIContract_GetEquipmentMachine_Unregistered404(t *testing.T) {
 
 // --- POST /api/equipment/machines/{machine_id}/devices ---
 
+// TestOpenAPIContract_CreateEquipmentDevice_201Printer additionally guards
+// Finding 2 (bot review, PR #83 round 2): test_passed:true must stamp
+// test_passed_at atomically INSIDE the CreateEquipmentDevice store call
+// (its testPassed param) — MarkEquipmentDeviceTestPassed must never be
+// called as a second, separate write afterward. The fake store's
+// createEquipmentDevice closure plays the role of the real INSERT...
+// RETURNING test_passed_at, stamping d.TestPassedAt itself only when
+// testPassed is true, exactly as store.insertEquipmentDeviceRow does.
 func TestOpenAPIContract_CreateEquipmentDevice_201Printer(t *testing.T) {
 	tenantID := uuid.New()
 	machineID := uuid.New()
 	now := time.Now().UTC()
 
-	var created *models.EquipmentDevice
-	markedTestPassed := false
 	h := New(&fakeStore{
-		createEquipmentDevice: func(d *models.EquipmentDevice, makeDefault bool) error {
+		createEquipmentDevice: func(d *models.EquipmentDevice, makeDefault bool, testPassed bool) error {
 			if d.TenantID != tenantID || d.MachineID != machineID {
 				t.Fatalf("scoping mismatch: %s/%s", d.TenantID, d.MachineID)
 			}
 			if !makeDefault {
 				t.Fatalf("makeDefault = false, want true")
 			}
+			if !testPassed {
+				t.Fatalf("testPassed = false, want true")
+			}
 			d.ID = uuid.New()
 			d.IsDefault = makeDefault
 			d.CreatedAt = now
 			d.UpdatedAt = now
-			created = d
+			if testPassed {
+				stampedAt := now
+				d.TestPassedAt = &stampedAt
+			}
 			return nil
 		},
-		markEquipmentDeviceTestPassed: func(tid, did uuid.UUID) error {
-			if tid != tenantID || created == nil || did != created.ID {
-				t.Fatalf("mark test-passed scoping mismatch")
-			}
-			markedTestPassed = true
+		markEquipmentDeviceTestPassed: func(uuid.UUID, uuid.UUID) error {
+			t.Fatalf("MarkEquipmentDeviceTestPassed must not be called — Finding 2 requires the stamp be atomic with CreateEquipmentDevice's INSERT, not a separate follow-up write")
 			return nil
 		},
 	})
@@ -290,9 +299,6 @@ func TestOpenAPIContract_CreateEquipmentDevice_201Printer(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("want 201, got %d, body=%s", rec.Code, rec.Body.String())
 	}
-	if !markedTestPassed {
-		t.Fatalf("MarkEquipmentDeviceTestPassed was not called")
-	}
 
 	var got models.EquipmentDevice
 	if err := jsonUnmarshalBody(rec, &got); err != nil {
@@ -303,6 +309,56 @@ func TestOpenAPIContract_CreateEquipmentDevice_201Printer(t *testing.T) {
 	}
 	if got.TestPassedAt == nil {
 		t.Fatalf("test_passed_at = nil, want set")
+	}
+
+	validateResponse(t, http.MethodPost, path, rec)
+}
+
+// TestOpenAPIContract_CreateEquipmentDevice_201TestPassedFalseLeavesStampNil
+// covers the false branch: test_passed omitted/false must leave
+// test_passed_at NULL in the very same create — no second call, no
+// after-the-fact stamp.
+func TestOpenAPIContract_CreateEquipmentDevice_201TestPassedFalseLeavesStampNil(t *testing.T) {
+	tenantID := uuid.New()
+	machineID := uuid.New()
+	now := time.Now().UTC()
+
+	h := New(&fakeStore{
+		createEquipmentDevice: func(d *models.EquipmentDevice, makeDefault bool, testPassed bool) error {
+			if testPassed {
+				t.Fatalf("testPassed = true, want false")
+			}
+			d.ID = uuid.New()
+			d.IsDefault = makeDefault
+			d.CreatedAt = now
+			d.UpdatedAt = now
+			return nil
+		},
+		markEquipmentDeviceTestPassed: func(uuid.UUID, uuid.UUID) error {
+			t.Fatalf("MarkEquipmentDeviceTestPassed must not be called when test_passed is false")
+			return nil
+		},
+	})
+
+	e := echo.New()
+	path := equipmentMachineDevicesPath(machineID)
+	body := `{"class":"scanner","kind":"com","display_name":"COM3 Scanner","config":{"port_name":"COM3"}}`
+	c, rec := newAuthedContext(e, http.MethodPost, path, body, tenantID.String(), "staff")
+	setEquipmentMachineDevicesPathParams(c, machineID)
+
+	if err := h.CreateEquipmentDevice(c); err != nil {
+		t.Fatalf("CreateEquipmentDevice: %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got models.EquipmentDevice
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.TestPassedAt != nil {
+		t.Fatalf("test_passed_at = %v, want nil", got.TestPassedAt)
 	}
 
 	validateResponse(t, http.MethodPost, path, rec)
@@ -340,7 +396,7 @@ func TestOpenAPIContract_CreateEquipmentDevice_400(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := New(&fakeStore{
-				createEquipmentDevice: func(*models.EquipmentDevice, bool) error {
+				createEquipmentDevice: func(*models.EquipmentDevice, bool, bool) error {
 					t.Fatalf("CreateEquipmentDevice store call should not happen for an invalid request")
 					return nil
 				},
@@ -374,7 +430,7 @@ func TestOpenAPIContract_CreateEquipmentDevice_DefaultConflict409(t *testing.T) 
 	machineID := uuid.New()
 
 	h := New(&fakeStore{
-		createEquipmentDevice: func(*models.EquipmentDevice, bool) error {
+		createEquipmentDevice: func(*models.EquipmentDevice, bool, bool) error {
 			return fmt.Errorf("insert equipment device: %w", &pgconn.PgError{Code: "23505", ConstraintName: "equipment_devices_one_default"})
 		},
 	})

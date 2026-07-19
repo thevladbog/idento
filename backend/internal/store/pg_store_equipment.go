@@ -115,17 +115,26 @@ type equipmentDeviceInserter interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-func insertEquipmentDeviceRow(ctx context.Context, q equipmentDeviceInserter, d *models.EquipmentDevice) error {
+// insertEquipmentDeviceRow's testPassed stamps test_passed_at = now() IN
+// THE SAME INSERT when true (NULL otherwise) — Finding 2 (bot review PR
+// #83 round 2): a create-then-separate-mark-test-passed two-write sequence
+// left a window where the first write's success and the second's failure
+// produced a half-created, already-visible device with no test stamp (and
+// a retry would then 409/duplicate against it). Folding the stamp into the
+// INSERT's own VALUES list makes "created" and "stamped" atomically the
+// same write — there is no longer a second statement that can fail
+// independently.
+func insertEquipmentDeviceRow(ctx context.Context, q equipmentDeviceInserter, d *models.EquipmentDevice, testPassed bool) error {
 	config := d.Config
 	if len(config) == 0 {
 		config = json.RawMessage(`{}`)
 	}
 	return q.QueryRow(ctx,
-		`INSERT INTO equipment_devices (tenant_id, machine_id, class, kind, display_name, config, is_default)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
-		 RETURNING id, created_at, updated_at`,
-		d.TenantID, d.MachineID, d.Class, d.Kind, d.DisplayName, []byte(config), d.IsDefault,
-	).Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt)
+		`INSERT INTO equipment_devices (tenant_id, machine_id, class, kind, display_name, config, is_default, test_passed_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $8 THEN now() ELSE NULL END)
+		 RETURNING id, created_at, updated_at, test_passed_at`,
+		d.TenantID, d.MachineID, d.Class, d.Kind, d.DisplayName, []byte(config), d.IsDefault, testPassed,
+	).Scan(&d.ID, &d.CreatedAt, &d.UpdatedAt, &d.TestPassedAt)
 }
 
 // clearDefaultEquipmentPrinter unsets whatever device currently holds
@@ -143,15 +152,22 @@ func clearDefaultEquipmentPrinter(ctx context.Context, ex interface {
 }
 
 // CreateEquipmentDevice inserts a new device, filling d.ID/d.CreatedAt/
-// d.UpdatedAt from the RETURNING clause and stamping d.IsDefault =
-// makeDefault. When makeDefault is true, the clear-existing-default and
-// insert statements run inside one transaction so a crash between them can
-// never leave two printers marked default.
-func (s *PGStore) CreateEquipmentDevice(ctx context.Context, d *models.EquipmentDevice, makeDefault bool) error {
+// d.UpdatedAt/d.TestPassedAt from the RETURNING clause and stamping
+// d.IsDefault = makeDefault. testPassed, when true, stamps
+// test_passed_at = now() IN THE SAME INSERT (Finding 2, bot review PR #83
+// round 2) — the caller must NOT separately call
+// MarkEquipmentDeviceTestPassed after this returns; that would reintroduce
+// the two-write window this atomicity fix closes (create succeeds, the
+// separate stamp write fails, and a retry then 409s/duplicates against the
+// already-created, wrongly-unstamped device). When makeDefault is true,
+// the clear-existing-default and insert statements run inside one
+// transaction so a crash between them can never leave two printers marked
+// default.
+func (s *PGStore) CreateEquipmentDevice(ctx context.Context, d *models.EquipmentDevice, makeDefault bool, testPassed bool) error {
 	d.IsDefault = makeDefault
 
 	if !makeDefault {
-		return insertEquipmentDeviceRow(ctx, s.db, d)
+		return insertEquipmentDeviceRow(ctx, s.db, d, testPassed)
 	}
 
 	tx, err := s.db.Begin(ctx)
@@ -167,17 +183,37 @@ func (s *PGStore) CreateEquipmentDevice(ctx context.Context, d *models.Equipment
 	if err := clearDefaultEquipmentPrinter(ctx, tx, d.TenantID, d.MachineID); err != nil {
 		return err
 	}
-	if err := insertEquipmentDeviceRow(ctx, tx, d); err != nil {
+	if err := insertEquipmentDeviceRow(ctx, tx, d, testPassed); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-// UpdateEquipmentDevice renames a device and/or replaces its config. On 0
-// rows this returns ErrDeviceNotFound.
+// UpdateEquipmentDevice renames a device and/or replaces its config.
+// test_passed_at is cleared UNCONDITIONALLY whenever the supplied config
+// differs from the device's CURRENT (pre-update) config — a stamp recorded
+// against one config must never be left describing DIFFERENT hardware
+// after a PATCH swaps in a new agent_name/ip/port (Finding 1, bot review
+// PR #83 round 2): TenantHasTestedDefaultPrinter's readiness check reads
+// straight off this column, so the invariant has to hold at the row level,
+// not just be something callers are expected to remember. Every
+// expression in a Postgres UPDATE's SET list is evaluated against the
+// row's OLD values simultaneously — so `config IS DISTINCT FROM $4::jsonb`
+// in the test_passed_at CASE compares the OLD config to the NEW value even
+// though `config` is ALSO being set to $4 earlier in this same SET list.
+// jsonb equality here is semantic (key order and whitespace insensitive,
+// not a byte comparison) — which is the RIGHT equality for this check: a
+// PATCH that reserializes the SAME logical config (e.g. a rename-only
+// request that round-trips config unchanged) must preserve the stamp, and
+// jsonb IS DISTINCT FROM does exactly that. On 0 rows this returns
+// ErrDeviceNotFound. Real-Postgres behavior (pgxmock cannot evaluate a
+// CASE expression, only pin the SQL text) is proven by
+// TestEquipmentRegistry_RealPostgres_SchemaGuarantees's
+// "UpdateEquipmentDevice clears test_passed_at only when config actually
+// changed" subtest.
 func (s *PGStore) UpdateEquipmentDevice(ctx context.Context, tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error {
 	tag, err := s.db.Exec(ctx,
-		`UPDATE equipment_devices SET display_name = $3, config = $4, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+		`UPDATE equipment_devices SET display_name = $3, config = $4, test_passed_at = CASE WHEN config IS DISTINCT FROM $4::jsonb THEN NULL ELSE test_passed_at END, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
 		tenantID, deviceID, displayName, []byte(config))
 	if err != nil {
 		return err

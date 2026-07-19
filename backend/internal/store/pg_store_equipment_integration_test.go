@@ -138,7 +138,7 @@ func TestEquipmentRegistry_RealPostgres_SchemaGuarantees(t *testing.T) {
 		TenantID: tenantA, MachineID: sharedMachineID, Class: "printer", Kind: "network",
 		DisplayName: "Front Desk Printer", Config: json.RawMessage(`{"agent_name":"Zebra ZD420"}`),
 	}
-	if err := s.CreateEquipmentDevice(ctx, printer1, true); err != nil {
+	if err := s.CreateEquipmentDevice(ctx, printer1, true, false); err != nil {
 		t.Fatalf("CreateEquipmentDevice printer1 (makeDefault): %v", err)
 	}
 	if !printer1.IsDefault {
@@ -149,7 +149,7 @@ func TestEquipmentRegistry_RealPostgres_SchemaGuarantees(t *testing.T) {
 		TenantID: tenantA, MachineID: sharedMachineID, Class: "scanner", Kind: "usb_wedge",
 		DisplayName: "Handheld Scanner", Config: json.RawMessage(`{}`),
 	}
-	if err := s.CreateEquipmentDevice(ctx, scanner1, false); err != nil {
+	if err := s.CreateEquipmentDevice(ctx, scanner1, false, false); err != nil {
 		t.Fatalf("CreateEquipmentDevice scanner1: %v", err)
 	}
 
@@ -158,7 +158,7 @@ func TestEquipmentRegistry_RealPostgres_SchemaGuarantees(t *testing.T) {
 		TenantID: tenantA, MachineID: cascadeMachineID, Class: "camera", Kind: "usb_wedge",
 		DisplayName: "Badge Camera", Config: json.RawMessage(`{}`),
 	}
-	if err := s.CreateEquipmentDevice(ctx, cascadeDevice, false); err != nil {
+	if err := s.CreateEquipmentDevice(ctx, cascadeDevice, false, false); err != nil {
 		t.Fatalf("CreateEquipmentDevice cascadeDevice: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestEquipmentRegistry_RealPostgres_SchemaGuarantees(t *testing.T) {
 			TenantID: tenantA, MachineID: sharedMachineID, Class: "printer", Kind: "system",
 			DisplayName: "Second Printer", Config: json.RawMessage(`{}`),
 		}
-		if err := s.CreateEquipmentDevice(ctx, printer2, false); err != nil {
+		if err := s.CreateEquipmentDevice(ctx, printer2, false, false); err != nil {
 			t.Fatalf("CreateEquipmentDevice printer2: %v", err)
 		}
 		printer2ID = printer2.ID
@@ -354,6 +354,109 @@ func TestEquipmentRegistry_RealPostgres_SchemaGuarantees(t *testing.T) {
 		// deletable), and GetEquipmentDeviceForTenant must not leak it.
 		if got, err := s.GetEquipmentDeviceForTenant(ctx, tenantB, printer1.ID); err != nil || got != nil {
 			t.Errorf("GetEquipmentDeviceForTenant(tenantB, printer1.ID) = %+v, %v, want nil, nil (printer1 belongs to tenantA)", got, err)
+		}
+	})
+
+	// Finding 2 (bot review, PR #83 round 2): test_passed=true must stamp
+	// test_passed_at atomically in CreateEquipmentDevice's own INSERT —
+	// there is no separate MarkEquipmentDeviceTestPassed call to fail
+	// independently and leave a wrongly-unstamped, already-visible device
+	// behind. Proven here against a real Postgres, not just pinned SQL
+	// text (pgxmock cannot evaluate the CASE WHEN $8 THEN now() ELSE NULL
+	// END expression).
+	t.Run("CreateEquipmentDevice testPassed=true stamps test_passed_at atomically in the same INSERT", func(t *testing.T) {
+		testPassedDevice := &models.EquipmentDevice{
+			TenantID: tenantA, MachineID: sharedMachineID, Class: "printer", Kind: "system",
+			DisplayName: "Pre-Tested Printer", Config: json.RawMessage(`{"agent_name":"Zebra ZD888"}`),
+		}
+		if err := s.CreateEquipmentDevice(ctx, testPassedDevice, false, true); err != nil {
+			t.Fatalf("CreateEquipmentDevice(testPassed=true): %v", err)
+		}
+		if testPassedDevice.TestPassedAt == nil {
+			t.Fatalf("testPassedDevice.TestPassedAt = nil immediately after create, want set")
+		}
+
+		var storedTestPassedAt *time.Time
+		if err := pool.QueryRow(ctx, `SELECT test_passed_at FROM equipment_devices WHERE id = $1`, testPassedDevice.ID).Scan(&storedTestPassedAt); err != nil {
+			t.Fatalf("read test_passed_at: %v", err)
+		}
+		if storedTestPassedAt == nil {
+			t.Fatalf("stored test_passed_at = nil, want set (same INSERT, not a separate write)")
+		}
+
+		notTestPassedDevice := &models.EquipmentDevice{
+			TenantID: tenantA, MachineID: sharedMachineID, Class: "printer", Kind: "system",
+			DisplayName: "Never-Tested Printer", Config: json.RawMessage(`{"agent_name":"Zebra ZD889"}`),
+		}
+		if err := s.CreateEquipmentDevice(ctx, notTestPassedDevice, false, false); err != nil {
+			t.Fatalf("CreateEquipmentDevice(testPassed=false): %v", err)
+		}
+		if notTestPassedDevice.TestPassedAt != nil {
+			t.Errorf("notTestPassedDevice.TestPassedAt = %v, want nil (testPassed=false)", notTestPassedDevice.TestPassedAt)
+		}
+	})
+
+	// Finding 1 (bot review, PR #83 round 2): a PATCH (UpdateEquipmentDevice)
+	// that actually changes the device's config must unconditionally clear
+	// test_passed_at — the stamp must never be left describing DIFFERENT
+	// hardware. A rename-only call that resends the SAME config (even
+	// reserialized with different key order/whitespace, proving the
+	// comparison is jsonb-semantic, not a byte comparison) must preserve
+	// it.
+	t.Run("UpdateEquipmentDevice clears test_passed_at only when config actually changed", func(t *testing.T) {
+		device := &models.EquipmentDevice{
+			TenantID: tenantA, MachineID: sharedMachineID, Class: "printer", Kind: "network",
+			DisplayName: "Patch-Target Printer",
+			Config:      json.RawMessage(`{"agent_name":"Zebra ZD500","ip":"192.168.1.50","port":9100}`),
+		}
+		if err := s.CreateEquipmentDevice(ctx, device, false, false); err != nil {
+			t.Fatalf("CreateEquipmentDevice: %v", err)
+		}
+		if err := s.MarkEquipmentDeviceTestPassed(ctx, tenantA, device.ID); err != nil {
+			t.Fatalf("MarkEquipmentDeviceTestPassed: %v", err)
+		}
+
+		var beforeRename *time.Time
+		if err := pool.QueryRow(ctx, `SELECT test_passed_at FROM equipment_devices WHERE id = $1`, device.ID).Scan(&beforeRename); err != nil {
+			t.Fatalf("read test_passed_at before rename: %v", err)
+		}
+		if beforeRename == nil {
+			t.Fatalf("test_passed_at before rename = nil, want set (MarkEquipmentDeviceTestPassed just stamped it)")
+		}
+
+		// Rename-only: resend the SAME config, but reserialized with
+		// different key order and extra whitespace — proves the CASE's
+		// `IS DISTINCT FROM` is jsonb-semantic equality, not a raw byte
+		// comparison, since a byte comparison would (wrongly) see this as
+		// changed and clear the stamp.
+		reserializedSameConfig := json.RawMessage(`{ "port": 9100, "ip": "192.168.1.50", "agent_name": "Zebra ZD500" }`)
+		if err := s.UpdateEquipmentDevice(ctx, tenantA, device.ID, "Renamed, Same Config", reserializedSameConfig); err != nil {
+			t.Fatalf("UpdateEquipmentDevice (rename-only): %v", err)
+		}
+		var afterRename *time.Time
+		if err := pool.QueryRow(ctx, `SELECT test_passed_at FROM equipment_devices WHERE id = $1`, device.ID).Scan(&afterRename); err != nil {
+			t.Fatalf("read test_passed_at after rename-only: %v", err)
+		}
+		if afterRename == nil {
+			t.Fatalf("test_passed_at after rename-only PATCH = nil, want PRESERVED (config is semantically unchanged)")
+		}
+		if !afterRename.Equal(*beforeRename) {
+			t.Errorf("test_passed_at changed on a rename-only PATCH: before=%v after=%v", beforeRename, afterRename)
+		}
+
+		// Now actually change the config (different ip) — the stamp must
+		// be cleared, since it can no longer be trusted to describe this
+		// device's current hardware.
+		changedConfig := json.RawMessage(`{"agent_name":"Zebra ZD500","ip":"192.168.1.51","port":9100}`)
+		if err := s.UpdateEquipmentDevice(ctx, tenantA, device.ID, "Renamed, Same Config", changedConfig); err != nil {
+			t.Fatalf("UpdateEquipmentDevice (config changed): %v", err)
+		}
+		var afterConfigChange *time.Time
+		if err := pool.QueryRow(ctx, `SELECT test_passed_at FROM equipment_devices WHERE id = $1`, device.ID).Scan(&afterConfigChange); err != nil {
+			t.Fatalf("read test_passed_at after config change: %v", err)
+		}
+		if afterConfigChange != nil {
+			t.Errorf("test_passed_at after a config-changing PATCH = %v, want nil (cleared — stamp can no longer describe this device's hardware)", afterConfigChange)
 		}
 	})
 }

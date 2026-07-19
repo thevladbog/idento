@@ -1055,6 +1055,10 @@ components:
         settable here). When config IS supplied, it is validated against
         the device's EXISTING class/kind shape rules (the same rules as
         EquipmentDeviceCreateRequest.config), unknown keys rejected.
+        Replacing config with a value that actually differs from the
+        device's current one unconditionally resets test_passed_at to
+        null, since the previous test result can no longer be trusted to
+        describe this (possibly different) hardware.
       properties:
         display_name: { type: string }
         config: { type: object, additionalProperties: true }

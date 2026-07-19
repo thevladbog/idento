@@ -498,25 +498,41 @@ type Store interface {
 	// GetEventByIDForTenant/GetAttendeeByIDForTenant).
 	GetEquipmentDeviceForTenant(ctx context.Context, tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
 	// CreateEquipmentDevice inserts a new device under d.TenantID/d.MachineID
-	// and fills d.ID/d.CreatedAt/d.UpdatedAt from the INSERT's RETURNING
-	// clause (all three are DB-generated). d.IsDefault is set to
-	// makeDefault, overwriting whatever the caller had set on d. When
-	// makeDefault is true this runs inside a transaction that first clears
-	// any existing default printer for the SAME (tenant_id, machine_id) —
-	// the same clear-then-set shape as SetDefaultEquipmentPrinter — so a
-	// crash between the two statements can never leave two printers marked
-	// default; when false it is a plain, non-transactional INSERT. The
-	// caller is responsible for only passing makeDefault=true for a
-	// class="printer" device — this method does not itself re-validate
-	// class, relying on the equipment_devices_default_is_printer CHECK
-	// constraint as the last-resort guard.
-	CreateEquipmentDevice(ctx context.Context, d *models.EquipmentDevice, makeDefault bool) error
+	// and fills d.ID/d.CreatedAt/d.UpdatedAt/d.TestPassedAt from the
+	// INSERT's RETURNING clause (all four are DB-generated/DB-computed).
+	// d.IsDefault is set to makeDefault, overwriting whatever the caller
+	// had set on d. testPassed, when true, stamps test_passed_at = now()
+	// IN THE SAME INSERT statement (Finding 2, bot review PR #83 round 2)
+	// — callers must NOT additionally call MarkEquipmentDeviceTestPassed
+	// after a testPassed=true create; that would reintroduce the
+	// create-then-separate-stamp window this atomicity exists to close
+	// (the create committing while the second write fails, leaving an
+	// already-visible, wrongly-unstamped device that a retry then
+	// 409s/duplicates against). When makeDefault is true this runs inside
+	// a transaction that first clears any existing default printer for the
+	// SAME (tenant_id, machine_id) — the same clear-then-set shape as
+	// SetDefaultEquipmentPrinter — so a crash between the two statements
+	// can never leave two printers marked default; when false it is a
+	// plain, non-transactional INSERT. The caller is responsible for only
+	// passing makeDefault=true for a class="printer" device — this method
+	// does not itself re-validate class, relying on the
+	// equipment_devices_default_is_printer CHECK constraint as the
+	// last-resort guard.
+	CreateEquipmentDevice(ctx context.Context, d *models.EquipmentDevice, makeDefault bool, testPassed bool) error
 	// UpdateEquipmentDevice renames a device and/or replaces its config —
 	// the only two caller-editable columns (class/kind/machine_id are
 	// immutable once created; is_default is repointed only via
-	// SetDefaultEquipmentPrinter, never here). On 0 rows (unknown id, or an
-	// id belonging to a different tenant) this returns the exported
-	// ErrDeviceNotFound sentinel.
+	// SetDefaultEquipmentPrinter, never here). test_passed_at is cleared
+	// UNCONDITIONALLY whenever the supplied config differs (by jsonb-
+	// semantic equality — key order/whitespace insensitive) from the
+	// device's CURRENT config: a stamp recorded against one config must
+	// never be left describing DIFFERENT hardware after a config swap
+	// (Finding 1, bot review PR #83 round 2) — this is enforced at the SQL
+	// level (an UPDATE ... CASE over the OLD row), not left to callers to
+	// remember. A rename-only call (config unchanged) preserves the
+	// existing stamp. On 0 rows (unknown id, or an id belonging to a
+	// different tenant) this returns the exported ErrDeviceNotFound
+	// sentinel.
 	UpdateEquipmentDevice(ctx context.Context, tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error
 	// DeleteEquipmentDevice removes a device outright. No special-case code
 	// exists for "was this the default printer" — the row (and the partial

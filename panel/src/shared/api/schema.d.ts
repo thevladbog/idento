@@ -1792,7 +1792,7 @@ export interface components {
             make_default?: boolean;
             test_passed?: boolean;
         };
-        /** @description PATCH /api/equipment/devices/{device_id} request body. Both fields are optional — an omitted field keeps the device's current value (class/kind/machine_id are immutable and not settable here). When config IS supplied, it is validated against the device's EXISTING class/kind shape rules (the same rules as EquipmentDeviceCreateRequest.config), unknown keys rejected. */
+        /** @description PATCH /api/equipment/devices/{device_id} request body. Both fields are optional — an omitted field keeps the device's current value (class/kind/machine_id are immutable and not settable here). When config IS supplied, it is validated against the device's EXISTING class/kind shape rules (the same rules as EquipmentDeviceCreateRequest.config), unknown keys rejected. Replacing config with a value that actually differs from the device's current one unconditionally resets test_passed_at to null, since the previous test result can no longer be trusted to describe this (possibly different) hardware. */
         EquipmentDevicePatchRequest: {
             display_name?: string;
             config?: {

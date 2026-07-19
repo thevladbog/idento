@@ -53,9 +53,15 @@ const getEquipmentDeviceForTenantSQLPattern = `SELECT id, machine_id, class, kin
 const clearDefaultEquipmentPrinterSQLPattern = `UPDATE equipment_devices SET is_default = false, updated_at = now\(\) WHERE tenant_id = \$1 AND machine_id = \$2 AND is_default`
 
 // createEquipmentDeviceSQLPattern pins CreateEquipmentDevice's INSERT —
-// RETURNING id/created_at/updated_at since all three are DB-generated
-// (gen_random_uuid() / now() defaults).
-const createEquipmentDeviceSQLPattern = `INSERT INTO equipment_devices \(tenant_id, machine_id, class, kind, display_name, config, is_default\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7\) RETURNING id, created_at, updated_at`
+// RETURNING id/created_at/updated_at/test_passed_at since all four are
+// DB-generated/DB-computed (gen_random_uuid() / now() defaults / the
+// testPassed CASE). Finding 2 (bot review PR #83 round 2): test_passed_at
+// is stamped IN THIS SAME INSERT (a CASE on $8, the testPassed arg) —
+// never via a separate follow-up MarkEquipmentDeviceTestPassed write —
+// closing the create-then-mark window where the create could commit and
+// a second, independent write could fail, leaving an already-visible,
+// wrongly-unstamped device behind.
+const createEquipmentDeviceSQLPattern = `INSERT INTO equipment_devices \(tenant_id, machine_id, class, kind, display_name, config, is_default, test_passed_at\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, CASE WHEN \$8 THEN now\(\) ELSE NULL END\) RETURNING id, created_at, updated_at, test_passed_at`
 
 // setDefaultEquipmentPrinterSQLPattern pins SetDefaultEquipmentPrinter's
 // set-the-new-default statement — guarded on class = 'printer' so a
@@ -66,8 +72,21 @@ const setDefaultEquipmentPrinterSQLPattern = `UPDATE equipment_devices SET is_de
 // updateEquipmentDeviceSQLPattern pins UpdateEquipmentDevice — display_name
 // and config are the only caller-editable columns (class/kind/machine_id
 // are immutable once created; is_default is repointed only via
-// SetDefaultEquipmentPrinter).
-const updateEquipmentDeviceSQLPattern = `UPDATE equipment_devices SET display_name = \$3, config = \$4, updated_at = now\(\) WHERE tenant_id = \$1 AND id = \$2`
+// SetDefaultEquipmentPrinter). Finding 1 (bot review PR #83 round 2):
+// test_passed_at is cleared UNCONDITIONALLY whenever the supplied config
+// (the NEW value, $4) differs from the row's CURRENT (OLD, pre-update)
+// config — `config IS DISTINCT FROM $4::jsonb` reads the OLD config
+// because every SET-list expression in a Postgres UPDATE is evaluated
+// against the row's values before the statement runs (simultaneously,
+// including the config = $4 assignment appearing earlier in this same SET
+// list). jsonb IS DISTINCT FROM is semantic equality (key order/whitespace
+// insensitive) — the RIGHT equality here, since a rename-only PATCH that
+// merely reserializes the SAME config must preserve the stamp. pgxmock
+// cannot evaluate this CASE (it only pins SQL text/args and returns canned
+// results) — the real conditional behavior is proven against a real
+// Postgres by pg_store_equipment_integration_test.go's
+// TestEquipmentRegistry_RealPostgres_SchemaGuarantees subtest.
+const updateEquipmentDeviceSQLPattern = `UPDATE equipment_devices SET display_name = \$3, config = \$4, test_passed_at = CASE WHEN config IS DISTINCT FROM \$4::jsonb THEN NULL ELSE test_passed_at END, updated_at = now\(\) WHERE tenant_id = \$1 AND id = \$2`
 
 // deleteEquipmentDeviceSQLPattern pins DeleteEquipmentDevice. Deleting the
 // current default printer needs no special-case code: the row (and the
@@ -275,7 +294,11 @@ func TestGetEquipmentDeviceForTenant_FoundAndMissingOrForeign(t *testing.T) {
 // TestCreateEquipmentDevice_MakeDefaultIsTransactional covers both branches:
 // makeDefault=true wraps the clear-then-insert pair in a transaction (so a
 // crash between the two statements can never leave two printers marked
-// default), makeDefault=false is a plain, non-transactional INSERT.
+// default), makeDefault=false is a plain, non-transactional INSERT. Every
+// subtest also pins the testPassed arg ($8) and the test_passed_at column
+// RETURNING gives back — Finding 2 (bot review PR #83 round 2): the stamp
+// is now part of THIS INSERT, not a second MarkEquipmentDeviceTestPassed
+// write.
 func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 	t.Run("MakeDefault", func(t *testing.T) {
 		mock, s := newEquipmentMock(t)
@@ -288,8 +311,8 @@ func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 			WithArgs(tenantID, machineID).
 			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 		mock.ExpectQuery(createEquipmentDeviceSQLPattern).
-			WithArgs(tenantID, machineID, "printer", "network", "Badge Printer", []byte(`{}`), true).
-			WillReturnRows(pgxmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(deviceID, now, now))
+			WithArgs(tenantID, machineID, "printer", "network", "Badge Printer", []byte(`{}`), true, false).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "created_at", "updated_at", "test_passed_at"}).AddRow(deviceID, now, now, nil))
 		mock.ExpectCommit()
 
 		d := &models.EquipmentDevice{
@@ -300,7 +323,7 @@ func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 			DisplayName: "Badge Printer",
 			Config:      json.RawMessage(`{}`),
 		}
-		if err := s.CreateEquipmentDevice(context.Background(), d, true); err != nil {
+		if err := s.CreateEquipmentDevice(context.Background(), d, true, false); err != nil {
 			t.Fatalf("CreateEquipmentDevice: %v", err)
 		}
 		if d.ID != deviceID {
@@ -311,6 +334,9 @@ func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 		}
 		if !d.IsDefault {
 			t.Errorf("d.IsDefault = false, want true (makeDefault=true)")
+		}
+		if d.TestPassedAt != nil {
+			t.Errorf("d.TestPassedAt = %v, want nil (testPassed=false)", d.TestPassedAt)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unmet expectations: %v", err)
@@ -325,8 +351,8 @@ func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 
 		// No ExpectBegin/ExpectCommit queued — a plain INSERT.
 		mock.ExpectQuery(createEquipmentDeviceSQLPattern).
-			WithArgs(tenantID, machineID, "scanner", "com", "COM3 Scanner", []byte(`{}`), false).
-			WillReturnRows(pgxmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow(deviceID, now, now))
+			WithArgs(tenantID, machineID, "scanner", "com", "COM3 Scanner", []byte(`{}`), false, false).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "created_at", "updated_at", "test_passed_at"}).AddRow(deviceID, now, now, nil))
 
 		d := &models.EquipmentDevice{
 			TenantID:    tenantID,
@@ -336,11 +362,51 @@ func TestCreateEquipmentDevice_MakeDefaultIsTransactional(t *testing.T) {
 			DisplayName: "COM3 Scanner",
 			Config:      json.RawMessage(`{}`),
 		}
-		if err := s.CreateEquipmentDevice(context.Background(), d, false); err != nil {
+		if err := s.CreateEquipmentDevice(context.Background(), d, false, false); err != nil {
 			t.Fatalf("CreateEquipmentDevice: %v", err)
 		}
 		if d.ID != deviceID {
 			t.Errorf("d.ID = %v, want %v", d.ID, deviceID)
+		}
+		if d.TestPassedAt != nil {
+			t.Errorf("d.TestPassedAt = %v, want nil (testPassed=false)", d.TestPassedAt)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
+	// TestPassedTrueStampsAtomically guards Finding 2 directly: testPassed
+	// = true must pass $8 = true into the SAME INSERT and fill
+	// d.TestPassedAt straight from the RETURNING clause — no second
+	// MarkEquipmentDeviceTestPassed statement is queued on the mock, so if
+	// the implementation ever regresses to issuing one, pgxmock's
+	// ordered-expectation queue fails this test outright (an unexpected
+	// query with none queued, or ExpectationsWereMet failing on an unmet
+	// expectation).
+	t.Run("TestPassedTrueStampsAtomically", func(t *testing.T) {
+		mock, s := newEquipmentMock(t)
+
+		tenantID, machineID, deviceID := uuid.New(), uuid.New(), uuid.New()
+		now := time.Now()
+
+		mock.ExpectQuery(createEquipmentDeviceSQLPattern).
+			WithArgs(tenantID, machineID, "printer", "system", "Lobby Printer", []byte(`{"agent_name":"A"}`), false, true).
+			WillReturnRows(pgxmock.NewRows([]string{"id", "created_at", "updated_at", "test_passed_at"}).AddRow(deviceID, now, now, &now))
+
+		d := &models.EquipmentDevice{
+			TenantID:    tenantID,
+			MachineID:   machineID,
+			Class:       "printer",
+			Kind:        "system",
+			DisplayName: "Lobby Printer",
+			Config:      json.RawMessage(`{"agent_name":"A"}`),
+		}
+		if err := s.CreateEquipmentDevice(context.Background(), d, false, true); err != nil {
+			t.Fatalf("CreateEquipmentDevice: %v", err)
+		}
+		if d.TestPassedAt == nil || !d.TestPassedAt.Equal(now) {
+			t.Errorf("d.TestPassedAt = %v, want %v (filled from RETURNING, same INSERT)", d.TestPassedAt, now)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unmet expectations: %v", err)
@@ -420,8 +486,19 @@ func TestSetDefaultEquipmentPrinter_ClearThenSet(t *testing.T) {
 }
 
 // TestUpdateEquipmentDevice_ZeroRowsIsErrDeviceNotFound pins
-// UpdateEquipmentDevice's statement and proves the 0-row -> ErrDeviceNotFound
-// mapping alongside the ordinary success path.
+// UpdateEquipmentDevice's statement (now including Finding 1's
+// test_passed_at-clearing CASE — see updateEquipmentDeviceSQLPattern's doc
+// comment) and proves the 0-row -> ErrDeviceNotFound mapping alongside the
+// ordinary success path. The "ConfigChanged"/"IdenticalConfigRename"
+// subtests below pin the SAME statement/args shape for those two named
+// scenarios from a real caller's point of view (PatchEquipmentDevice
+// always sends the resolved display_name/config pair, whether or not
+// config actually changed) — pgxmock cannot evaluate the CASE's jsonb
+// comparison itself (it has no real row to compare against, only canned
+// results), so the actual clear-vs-preserve behavior is proven against a
+// real Postgres by TestEquipmentRegistry_RealPostgres_SchemaGuarantees's
+// "UpdateEquipmentDevice clears test_passed_at only when config actually
+// changed" subtest in pg_store_equipment_integration_test.go.
 func TestUpdateEquipmentDevice_ZeroRowsIsErrDeviceNotFound(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mock, s := newEquipmentMock(t)
@@ -452,6 +529,53 @@ func TestUpdateEquipmentDevice_ZeroRowsIsErrDeviceNotFound(t *testing.T) {
 		err := s.UpdateEquipmentDevice(context.Background(), tenantID, deviceID, "Ghost Device", cfg)
 		if !errors.Is(err, ErrDeviceNotFound) {
 			t.Fatalf("err = %v, want ErrDeviceNotFound", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
+	// ConfigChangedClearsStamp: a device previously stamped tested is
+	// PATCHed with a genuinely different config (different agent_name/ip)
+	// — the SQL sent is the SAME statement (the CASE lives entirely in the
+	// SQL text, not branched in Go), so at the pgxmock level this proves
+	// the Go caller passes the new config straight through as $4 (which is
+	// what the CASE compares the stored/OLD config against); the actual
+	// NULL-out is a real-Postgres-only behavior (see doc comment above).
+	t.Run("ConfigChangedClearsStamp", func(t *testing.T) {
+		mock, s := newEquipmentMock(t)
+
+		tenantID, deviceID := uuid.New(), uuid.New()
+		newCfg := json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.99","port":9100}`)
+		mock.ExpectExec(updateEquipmentDeviceSQLPattern).
+			WithArgs(tenantID, deviceID, "Front Desk Printer", []byte(newCfg)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+		if err := s.UpdateEquipmentDevice(context.Background(), tenantID, deviceID, "Front Desk Printer", newCfg); err != nil {
+			t.Fatalf("UpdateEquipmentDevice: %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet expectations: %v", err)
+		}
+	})
+
+	// IdenticalConfigRenamePreservesStamp: a rename-only PATCH resends the
+	// device's UNCHANGED config bytes alongside a new display_name (the
+	// handler's own contract — PatchEquipmentDevice always resolves config
+	// to "existing.Config when the request omits it"). Same statement
+	// shape again; real-Postgres preserves test_passed_at here because
+	// config IS DISTINCT FROM $4::jsonb is false.
+	t.Run("IdenticalConfigRenamePreservesStamp", func(t *testing.T) {
+		mock, s := newEquipmentMock(t)
+
+		tenantID, deviceID := uuid.New(), uuid.New()
+		unchangedCfg := json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.44","port":9100}`)
+		mock.ExpectExec(updateEquipmentDeviceSQLPattern).
+			WithArgs(tenantID, deviceID, "Renamed Printer", []byte(unchangedCfg)).
+			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+		if err := s.UpdateEquipmentDevice(context.Background(), tenantID, deviceID, "Renamed Printer", unchangedCfg); err != nil {
+			t.Fatalf("UpdateEquipmentDevice: %v", err)
 		}
 		if err := mock.ExpectationsWereMet(); err != nil {
 			t.Errorf("unmet expectations: %v", err)

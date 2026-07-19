@@ -270,8 +270,12 @@ func validateEquipmentDeviceConfig(class, kind string, raw json.RawMessage) erro
 // /api/equipment/machines/{machine_id}/devices (spec §4.1). Config is
 // stored verbatim (the request's raw bytes, unmodified) after being
 // validated against a parsed COPY — checkin_settings.go's
-// verbatim-storage precedent. TestPassed, when true, additionally stamps
-// test_passed_at at create time.
+// verbatim-storage precedent. TestPassed, when true, stamps test_passed_at
+// ATOMICALLY as part of the same INSERT (store.CreateEquipmentDevice's
+// testPassed param) — never via a separate follow-up write (Finding 2, bot
+// review PR #83 round 2): a two-write create-then-mark sequence could
+// leave a committed, unstamped device behind if only the second write
+// failed.
 type EquipmentDeviceCreateRequest struct {
 	Class       string          `json:"class"`
 	Kind        string          `json:"kind"`
@@ -338,7 +342,15 @@ func (h *Handler) CreateEquipmentDevice(c echo.Context) error {
 		Config:      req.Config,
 	}
 
-	if err := h.Store.CreateEquipmentDevice(c.Request().Context(), d, req.MakeDefault); err != nil {
+	// Finding 2 (bot review, PR #83 round 2): test_passed is stamped INSIDE
+	// this same store call's INSERT (store.CreateEquipmentDevice's testPassed
+	// param), not via a separate MarkEquipmentDeviceTestPassed call after —
+	// a create-then-mark two-write sequence left a window where the create
+	// could commit and the mark could fail, 500ing with an already-visible,
+	// wrongly-unstamped device that a retry would then 409/duplicate
+	// against. d.TestPassedAt comes back filled (or nil) straight from the
+	// INSERT's RETURNING clause.
+	if err := h.Store.CreateEquipmentDevice(c.Request().Context(), d, req.MakeDefault, req.TestPassed); err != nil {
 		// 23505 is the partial unique index (equipment_devices_one_default)
 		// firing on a race with a concurrent default-printer write — the
 		// pre-validation above already rejected the ordinary
@@ -350,14 +362,6 @@ func (h *Handler) CreateEquipmentDevice(c echo.Context) error {
 			return c.JSON(http.StatusConflict, map[string]string{"error": "This machine already has a default printer"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create device"})
-	}
-
-	if req.TestPassed {
-		if err := h.Store.MarkEquipmentDeviceTestPassed(c.Request().Context(), tenantID, d.ID); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record test result"})
-		}
-		now := time.Now().UTC()
-		d.TestPassedAt = &now
 	}
 
 	return c.JSON(http.StatusCreated, d)

@@ -129,7 +129,7 @@ type fakeStore struct {
 	upsertEquipmentMachine        func(m *models.EquipmentMachine, seenDeviceIDs []uuid.UUID) error
 	getEquipmentMachine           func(tenantID, machineID uuid.UUID) (*models.EquipmentMachine, []models.EquipmentDevice, error)
 	getEquipmentDeviceForTenant   func(tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
-	createEquipmentDevice         func(d *models.EquipmentDevice, makeDefault bool) error
+	createEquipmentDevice         func(d *models.EquipmentDevice, makeDefault bool, testPassed bool) error
 	updateEquipmentDevice         func(tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error
 	deleteEquipmentDevice         func(tenantID, deviceID uuid.UUID) error
 	setDefaultEquipmentPrinter    func(tenantID, machineID uuid.UUID, deviceID *uuid.UUID) error
@@ -473,8 +473,8 @@ func (f *fakeStore) GetEquipmentMachine(_ context.Context, tenantID, machineID u
 func (f *fakeStore) GetEquipmentDeviceForTenant(_ context.Context, tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error) {
 	return f.getEquipmentDeviceForTenant(tenantID, deviceID)
 }
-func (f *fakeStore) CreateEquipmentDevice(_ context.Context, d *models.EquipmentDevice, makeDefault bool) error {
-	return f.createEquipmentDevice(d, makeDefault)
+func (f *fakeStore) CreateEquipmentDevice(_ context.Context, d *models.EquipmentDevice, makeDefault bool, testPassed bool) error {
+	return f.createEquipmentDevice(d, makeDefault, testPassed)
 }
 func (f *fakeStore) UpdateEquipmentDevice(_ context.Context, tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error {
 	return f.updateEquipmentDevice(tenantID, deviceID, displayName, config)
