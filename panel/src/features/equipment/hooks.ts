@@ -1,7 +1,16 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { $api } from "../../shared/api/query";
-import { ApiError } from "../../shared/api/ApiError";
 import type { components } from "../../shared/api/schema";
+// P4.3 Task 10: useEquipmentMachine/EQUIPMENT_MACHINE_KEY/isEmptyRegistry
+// moved to shared/agent/useEquipmentMachine.ts so useAgentPrinters (shared/
+// agent) can consume the machine registry query without a shared/ ->
+// features/ import (layering) -- imported (for EQUIPMENT_MACHINE_KEY's own
+// use below in every mutation's invalidateQueries) and re-exported here so
+// every existing import in this feature (EquipmentPage.tsx,
+// PrinterWizard.tsx, ScannerWizard.tsx, hooks.test.tsx) keeps compiling
+// unchanged.
+import { EQUIPMENT_MACHINE_KEY, isEmptyRegistry, useEquipmentMachine } from "../../shared/agent/useEquipmentMachine";
+export { EQUIPMENT_MACHINE_KEY, isEmptyRegistry, useEquipmentMachine };
 
 // Re-exported schema types for Task 7+ consumers (mirrors checkin/hooks.ts's
 // CheckinStation/staff/hooks.ts's StaffUser precedent) — keeps the generated
@@ -15,45 +24,12 @@ export type EquipmentMachineResponse = components["schemas"]["EquipmentMachineRe
 // ---------------------------------------------------------------------------
 // Machine registry root — GET/PUT /api/equipment/machines/{machine_id}
 // (P4.3 spec §4.1). An ORG-level resource (tenant_id from the JWT is the
-// ownership check), not tied to any one event.
+// ownership check), not tied to any one event. useEquipmentMachine/
+// EQUIPMENT_MACHINE_KEY/isEmptyRegistry themselves now live in
+// shared/agent/useEquipmentMachine.ts (re-exported above) — the mutations
+// below still import EQUIPMENT_MACHINE_KEY from this file's own re-export
+// so their invalidation calls need no import changes.
 // ---------------------------------------------------------------------------
-
-// `machineId` is nullable because the hub (Task 7) doesn't know its own
-// machine_id until the agent's GET /info resolves (useAgentInfo) — this
-// query stays disabled (never fetches) until that identity is known, same
-// "enabled on a not-yet-known id" idiom as OrganizationPage.tsx's
-// `$api.useQuery("get", "/api/tenants/{id}", { params: { path: { id:
-// tenant?.id ?? "" } } }, { enabled: tenant !== null })`. A 404 here is NOT
-// an application error — it means this (tenant, machine_id) has simply
-// never been registered — see isEmptyRegistry below, which callers use to
-// render the "empty registry" state instead of a generic error banner.
-export function useEquipmentMachine(machineId: string | null) {
-  return $api.useQuery(
-    "get",
-    "/api/equipment/machines/{machine_id}",
-    { params: { path: { machine_id: machineId ?? "" } } },
-    { enabled: machineId != null },
-  );
-}
-
-// Query-key for GET /api/equipment/machines/{machine_id}, matching
-// useEquipmentMachine's exact params shape. Same verified [method, path,
-// init] shape MONITOR_SNAPSHOT_KEY documents (monitor/hooks.ts) — every
-// mutation below invalidates this to keep a mounted hub in sync.
-export function EQUIPMENT_MACHINE_KEY(machineId: string) {
-  return ["get", "/api/equipment/machines/{machine_id}", { params: { path: { machine_id: machineId } } }] as const;
-}
-
-// True exactly when `error` is the "(tenant_id, machine_id) has never been
-// registered" 404 from GET /api/equipment/machines/{machine_id}
-// (schema.d.ts's getEquipmentMachine 404 doc comment) — every non-2xx
-// response from `$api` throws an ApiError (shared/api/http.ts's `errors`
-// middleware), so this is a plain status check, same idiom as
-// OrganizationPage.tsx's `updateTenant.error instanceof ApiError &&
-// updateTenant.error.status === 403`.
-export function isEmptyRegistry(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
-}
 
 // Register/refresh a machine (spec §4.1) — idempotent upsert, called once
 // per hub visit with the agent's self-reported hostname/agent_version and
