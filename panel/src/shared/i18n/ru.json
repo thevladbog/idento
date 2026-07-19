@@ -642,6 +642,7 @@
   "monitorRecentTitle": "Последние сканирования",
   "monitorRecentEmpty": "Пока нет сканирований.",
   "monitorStationFresh": "В сети",
+  "monitorStationOnline": "В сети",
   "monitorRecentActionCheckin": "Зарегистрирован",
   "monitorRecentActionUndo": "Отменено",
   "monitorRecentActionReprint": "Перепечатано",

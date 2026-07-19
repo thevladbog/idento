@@ -640,6 +640,7 @@
   "monitorRecentTitle": "Last scans",
   "monitorRecentEmpty": "No scans yet.",
   "monitorStationFresh": "Online",
+  "monitorStationOnline": "Online",
   "monitorRecentActionCheckin": "Checked in",
   "monitorRecentActionUndo": "Undone",
   "monitorRecentActionReprint": "Reprinted",

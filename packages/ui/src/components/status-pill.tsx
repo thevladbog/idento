@@ -42,14 +42,22 @@ export interface StatusPillProps {
    * PR #81 round-2 convergence Finding 5: "pill" (default) is the original
    * API -- full badge chrome (border/background/padding) with `label`
    * always rendered as visible text next to the icon/dot. "bare" renders
-   * ONLY a status-colored dot -- no chrome, no icon, no inline label -- for
-   * a caller embedding a compact liveness dot in its OWN row layout
-   * alongside a name and a SEPARATE, conditional text label (e.g.
-   * StationsCard.tsx's per-station dot: green/fresh renders no text at all,
-   * amber/stale renders its own "stale Ns" span elsewhere in the row).
-   * `indicator` is ignored in this variant (bare is always a dot). `label`
-   * stays required and is applied as `aria-label` on the root element, so
-   * assistive tech still gets a description even though nothing is drawn.
+   * ONLY a status-colored dot plus its accessible label -- no chrome, no
+   * icon -- for a caller embedding a compact liveness dot in its OWN row
+   * layout alongside a name and (per PR #81 round-3 convergence, UI
+   * Finding 4) its OWN separately-composed visible status text.
+   * `indicator` is ignored in this variant (bare is always a dot).
+   *
+   * `label` stays required, but (Finding 4, Codex facet) is rendered as
+   * REAL visually-hidden (`sr-only`) DOM text on a nested span -- not as an
+   * `aria-label` attribute on the generic, non-focusable root `<span>`,
+   * which many assistive-tech paths don't reliably announce. The dot itself
+   * carries no visible text (Finding 4, CodeRabbit facet: a colorblind
+   * sighted user still gets nothing from the dot alone) -- callers that
+   * need a color-independent VISIBLE cue must render their own text next to
+   * `bare` (see StationsCard.tsx, which does exactly this for its fresh/
+   * stale station rows).
+   *
    * `className` merges onto the root element, same as "pill".
    */
   variant?: "pill" | "bare";
@@ -62,7 +70,7 @@ export function StatusPill({
 
   if (variant === "bare") {
     return (
-      <span aria-label={label} className={cn("relative inline-flex shrink-0", className)}>
+      <span className={cn("relative inline-flex shrink-0", className)}>
         {pulse ? (
           <span
             aria-hidden
@@ -73,6 +81,10 @@ export function StatusPill({
           />
         ) : null}
         <span aria-hidden className={cn("relative inline-flex size-2.5 rounded-full", config[status].dotClassName)} />
+        {/* Finding 4 (Codex facet): real DOM text, not aria-label on this
+            generic span -- matches the sr-only idiom already used by
+            RecentFeedCard.tsx/WorkspaceRail.tsx elsewhere in this codebase. */}
+        <span className="sr-only">{label}</span>
       </span>
     );
   }

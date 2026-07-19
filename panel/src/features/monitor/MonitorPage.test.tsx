@@ -382,6 +382,11 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     expect(dot1).not.toHaveClass("bg-warning");
     expect(screen.queryByTestId("monitor-station-stale-st-1")).not.toBeInTheDocument();
     expect(screen.queryByText(/stale/i)).not.toBeInTheDocument();
+    // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
+    // row now ALSO renders its own visible muted "Online" status word next
+    // to the dot -- the green dot is never the sole channel conveying
+    // liveness (never color alone).
+    expect(screen.getByTestId("monitor-station-online-st-1")).toHaveTextContent("Online");
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 
@@ -400,11 +405,13 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     expect(screen.getByTestId("monitor-station-stale-st-2")).toHaveTextContent(/stale \d+ s/);
   });
 
-  // PR #81 round-2 convergence Finding 5: the primitive's `label` (applied
-  // as `aria-label` by StatusPill's `variant="bare"`) still gives assistive
-  // tech a description of the dot even for a fresh station, which renders NO
-  // visible text at all next to it.
-  it("exposes an accessible label on the dot even when fresh (no visible text rendered)", async () => {
+  // PR #81 round-3 convergence, UI Finding 4 (Codex facet): the primitive's
+  // `label` is now rendered as REAL, visually-hidden (sr-only) DOM text
+  // inside StatusPill's bare-variant root -- not an `aria-label` attribute
+  // on a generic, non-focusable span, which many assistive-tech paths don't
+  // reliably announce. This still gives assistive tech a description of the
+  // dot even for a fresh station.
+  it("exposes an sr-only accessible label on the dot even when fresh, as real DOM text (not aria-label)", async () => {
     monitorSnapshot = snapshotBody({
       stations: [
         { id: "st-3", name: "Kiosk C", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 0 },
@@ -413,13 +420,31 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     renderCorrectAt("/events/evt-1/monitor");
 
     await screen.findByText("Kiosk C");
-    // The `aria-label` lives on StatusPill's own bare-variant root node, a
+    // The sr-only label lives on StatusPill's own bare-variant root node, a
     // child of StationsCard's testid'd wrapper span -- same "reach into the
     // primitive via querySelector" idiom as the color-class assertions
     // above.
-    const labelled = screen.getByTestId("monitor-station-dot-st-3").querySelector("[aria-label]");
-    expect(labelled).not.toBeNull();
-    expect(labelled?.getAttribute("aria-label")).not.toBe("");
+    const dotRoot = screen.getByTestId("monitor-station-dot-st-3");
+    expect(dotRoot.querySelector("[aria-label]")).toBeNull();
+    const srOnlyLabel = dotRoot.querySelector(".sr-only");
+    expect(srOnlyLabel).not.toBeNull();
+    expect(srOnlyLabel?.textContent).not.toBe("");
+  });
+
+  // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
+  // row's dot alone must never be the ONLY channel conveying "online" --
+  // this station's row also carries its own separate, VISIBLE muted status
+  // word (distinct from the dot's own sr-only label above).
+  it("shows a fresh station's own visible muted 'Online' status word, not just a colored dot", async () => {
+    monitorSnapshot = snapshotBody({
+      stations: [
+        { id: "st-4", name: "Kiosk D", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 5 },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("Kiosk D");
+    expect(screen.getByTestId("monitor-station-online-st-4")).toHaveTextContent("Online");
   });
 });
 

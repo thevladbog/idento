@@ -19,10 +19,24 @@
 // @idento/ui" rule, the same discipline the header's own LIVE pill already
 // follows (MonitorPage.tsx). The round-1 `indicator="dot"` API always
 // renders a visible label next to the dot (its own WCAG 1.4.1 invariant),
-// which doesn't fit this compact row (green/fresh shows no text at all,
-// amber/stale shows its own separate "stale Ns" span below) -- `variant=
-// "bare"` was added to the primitive itself for exactly this shape rather
-// than re-hand-rolling a dot a second time here.
+// which doesn't fit this compact row -- `variant="bare"` was added to the
+// primitive itself for exactly this shape rather than re-hand-rolling a dot
+// a second time here.
+//
+// PR #81 round-3 convergence, UI Finding 4 (CodeRabbit): the round-2 shape
+// above shipped with a fresh row rendering NO text at all next to its green
+// dot -- a bare colored dot with no icon/text violates "never color alone"
+// for a sighted colorblind user. This DELIBERATELY DEVIATES from board 7e's
+// original "green/fresh shows no text at all" spec (p4.2-board-7e-extract.md
+// itself flags amber as an overloaded color token elsewhere on this same
+// card, so the board extract is not the final word on this card's color
+// discipline) -- the codebase's codified never-color-alone rule governs. A
+// fresh row now ALSO renders its own small VISIBLE muted status word (a NEW
+// `monitorStationOnline` i18n key, kept separate from `monitorStationFresh`
+// -- the dot's own accessible sr-only label -- so the two can diverge later
+// without forcing a shared string), mirroring the stale row's pre-existing
+// visible "stale Ns" span exactly: every row now conveys its liveness by
+// TEXT, with color as a secondary reinforcing cue, never the sole channel.
 import { Card, CardContent, CardHeader, CardTitle, StatusPill } from "@idento/ui";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../shared/api/schema";
@@ -51,11 +65,15 @@ export function StationsCard({ stations, now }: StationsCardProps) {
           stations.map((station) => {
             const staleness = stationStaleness(station.last_seen_at, now);
             // The dot's own accessible label -- exposed via StatusPill's
-            // `variant="bare"` `aria-label`, since a fresh row renders no
-            // visible text at all next to the dot. A stale row reuses the
-            // EXACT same string as the separately-rendered visible
-            // "stale Ns" span below (not a second, potentially drifting
-            // copy of the same fact).
+            // `variant="bare"` as real sr-only DOM text (PR #81 round-3
+            // convergence, UI Finding 4 -- Codex facet: previously an
+            // aria-label on a generic, non-focusable span). A stale row's
+            // dot label reuses the EXACT same string as the
+            // separately-rendered visible "stale Ns" span below (not a
+            // second, potentially drifting copy of the same fact); a fresh
+            // row's dot label is `monitorStationFresh`, distinct from the
+            // NEW visible `monitorStationOnline` word below (Finding 4 --
+            // CodeRabbit facet).
             const dotLabel = staleness.stale
               ? t("monitorStaleFor", { s: staleness.seconds })
               : t("monitorStationFresh");
@@ -76,7 +94,14 @@ export function StationsCard({ stations, now }: StationsCardProps) {
                   >
                     {t("monitorStaleFor", { s: staleness.seconds })}
                   </span>
-                ) : null}
+                ) : (
+                  <span
+                    className="shrink-0 text-caption text-muted-foreground"
+                    data-testid={`monitor-station-online-${station.id}`}
+                  >
+                    {t("monitorStationOnline")}
+                  </span>
+                )}
                 <span className="shrink-0 font-medium text-foreground">
                   {numberFmt.format(station.checkin_count)}
                 </span>
