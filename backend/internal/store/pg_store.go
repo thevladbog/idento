@@ -975,6 +975,39 @@ func (s *PGStore) InsertCheckinAction(ctx context.Context, eventID, attendeeID u
 	return insertCheckinAction(ctx, s.db, eventID, attendeeID, action, stationID, staffUserID)
 }
 
+// checkinActionInsertAtSQL is InsertCheckinActionAt's statement (2026-07-19
+// event-wide actions-feed design): identical to checkinActionInsertSQL
+// except created_at is an explicit bind with a COALESCE($6, now())
+// fallback and staff_user_id is nullable. It is a SEPARATE statement, not
+// an extension of checkinActionInsertSQL — that statement's byte-for-byte
+// text is a P4.1 pgxmock contract, and its created_at DEFAULT now() is
+// load-bearing for the station path (transaction-stable equality with
+// checked_in_at = now() inside CheckInAttendee's tx).
+const checkinActionInsertAtSQL = `INSERT INTO checkin_actions (event_id, attendee_id, station_id, action, staff_user_id, created_at) VALUES ($1, $2, $3, $4, $5, COALESCE($6, now()))`
+
+// insertCheckinActionAt is the shared implementation behind
+// PGStore.InsertCheckinActionAt and ApplyBatchCheckin's in-transaction
+// 'checkin' row — mirroring how insertCheckinAction serves both the pool
+// and open-tx callers via checkinActionExecutor.
+func insertCheckinActionAt(ctx context.Context, exec checkinActionExecutor, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+	_, err := exec.Exec(ctx, checkinActionInsertAtSQL, eventID, attendeeID, stationID, action, staffUserID, at)
+	return err
+}
+
+// InsertCheckinActionAt records one checkin_actions feed row standalone,
+// against the pool, with an EXPLICIT created_at (nil → now()) — the
+// non-station write paths' variant of InsertCheckinAction (2026-07-19
+// event-wide actions-feed design). Callers pass `at` equal to the exact
+// value they persisted into attendees.checked_in_at so the monitor's
+// current-period predicate (ca.created_at >= a.checked_in_at) holds by
+// equality regardless of app/db clock skew. Contract: like
+// InsertCheckinAction, this never re-validates ids and callers treat a
+// failure as best-effort/non-fatal (log-don't-fail) — the state-changing
+// write it annotates has already committed.
+func (s *PGStore) InsertCheckinActionAt(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+	return insertCheckinActionAt(ctx, s.db, eventID, attendeeID, action, stationID, staffUserID, at)
+}
+
 // ErrCheckinConflict is returned by CheckInAttendee when a bounded retry
 // (see checkInAttendeeMaxAttempts) still can't resolve the guarded UPDATE
 // to a definitive outcome — PR #77 bot-review round 2, Finding 1. It marks
