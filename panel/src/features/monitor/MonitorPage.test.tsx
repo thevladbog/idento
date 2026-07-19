@@ -369,8 +369,17 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     renderCorrectAt("/events/evt-1/monitor");
 
     expect(await screen.findByText("Kiosk A")).toBeInTheDocument();
-    expect(screen.getByTestId("monitor-station-dot-st-1")).toHaveClass("bg-success");
-    expect(screen.getByTestId("monitor-station-dot-st-1")).not.toHaveClass("bg-warning");
+    // PR #81 round-2 convergence Finding 5: the dot is now composed from
+    // @idento/ui's StatusPill (variant="bare") -- the testid'd element is
+    // StationsCard's own wrapper span (same "wrap StatusPill in a testid'd
+    // span" idiom as the header's monitor-live-pill/monitor-reconnecting-
+    // badge below), and the color class lives on StatusPill's own inner dot
+    // node, found via querySelector -- mirrors monitor-live-pill's own
+    // `.querySelector(".animate-ping")` idiom for reaching into the
+    // primitive's internals.
+    const dot1 = screen.getByTestId("monitor-station-dot-st-1").querySelector(".rounded-full");
+    expect(dot1).toHaveClass("bg-success");
+    expect(dot1).not.toHaveClass("bg-warning");
     expect(screen.queryByTestId("monitor-station-stale-st-1")).not.toBeInTheDocument();
     expect(screen.queryByText(/stale/i)).not.toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
@@ -385,9 +394,32 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     renderCorrectAt("/events/evt-1/monitor");
 
     expect(await screen.findByText("Mobile 1")).toBeInTheDocument();
-    expect(screen.getByTestId("monitor-station-dot-st-2")).toHaveClass("bg-warning");
-    expect(screen.getByTestId("monitor-station-dot-st-2")).not.toHaveClass("bg-success");
+    const dot2 = screen.getByTestId("monitor-station-dot-st-2").querySelector(".rounded-full");
+    expect(dot2).toHaveClass("bg-warning");
+    expect(dot2).not.toHaveClass("bg-success");
     expect(screen.getByTestId("monitor-station-stale-st-2")).toHaveTextContent(/stale \d+ s/);
+  });
+
+  // PR #81 round-2 convergence Finding 5: the primitive's `label` (applied
+  // as `aria-label` by StatusPill's `variant="bare"`) still gives assistive
+  // tech a description of the dot even for a fresh station, which renders NO
+  // visible text at all next to it.
+  it("exposes an accessible label on the dot even when fresh (no visible text rendered)", async () => {
+    monitorSnapshot = snapshotBody({
+      stations: [
+        { id: "st-3", name: "Kiosk C", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 0 },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("Kiosk C");
+    // The `aria-label` lives on StatusPill's own bare-variant root node, a
+    // child of StationsCard's testid'd wrapper span -- same "reach into the
+    // primitive via querySelector" idiom as the color-class assertions
+    // above.
+    const labelled = screen.getByTestId("monitor-station-dot-st-3").querySelector("[aria-label]");
+    expect(labelled).not.toBeNull();
+    expect(labelled?.getAttribute("aria-label")).not.toBe("");
   });
 });
 
@@ -430,6 +462,11 @@ describe("MonitorPage -- Recent feed card (read-only)", () => {
     expect(icon).toHaveClass("text-verdict-allowed");
 
     expect(within(screen.getByTestId("monitor-recent-card")).queryAllByRole("button")).toHaveLength(0);
+
+    // PR #81 round-2 convergence Finding 4: the icon alone is `aria-hidden`
+    // -- a screen reader must still be able to tell this row apart from an
+    // undo/reprint row via a visually-hidden text label.
+    expect(screen.getByTestId("monitor-recent-action-act-1")).toHaveTextContent("Checked in");
   });
 
   it("renders undo/reprint rows with a neutral muted icon -- asserted as carrying NO verdict color class at all", async () => {
@@ -462,6 +499,57 @@ describe("MonitorPage -- Recent feed card (read-only)", () => {
     const reprintIcon = reprintRow.querySelector("svg");
     expect(reprintIcon).toHaveClass("text-muted-foreground");
     expect(Array.from(reprintIcon?.classList ?? []).some((c) => c.startsWith("text-verdict-"))).toBe(false);
+  });
+
+  // PR #81 round-2 convergence Finding 4: undo/reprint rows used to be
+  // distinguishable from a checkin row ONLY by an `aria-hidden` icon -- a
+  // screen reader heard just name/zone/time, indistinguishable from a
+  // check-in. Every one of the three action types now carries its own
+  // visually-hidden, localized accessible text.
+  it("gives each of the three action types its own distinguishable accessible text (screen-reader-only)", async () => {
+    monitorSnapshot = snapshotBody({
+      recent: [
+        {
+          id: "act-7",
+          action: "checkin",
+          station_id: null,
+          created_at: "2026-07-18T09:11:00.000Z",
+          attendee: { id: "att-7", first_name: "Marie", last_name: "Curie", code: "C7" },
+        },
+        {
+          id: "act-8",
+          action: "undo",
+          station_id: null,
+          created_at: "2026-07-18T09:12:00.000Z",
+          attendee: { id: "att-8", first_name: "Niels", last_name: "Bohr", code: "C8" },
+        },
+        {
+          id: "act-9",
+          action: "reprint",
+          station_id: null,
+          created_at: "2026-07-18T09:13:00.000Z",
+          attendee: { id: "att-9", first_name: "Rosalind", last_name: "Yalow", code: "C9" },
+        },
+      ],
+    });
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByTestId("monitor-recent-row-act-7");
+    const checkinText = screen.getByTestId("monitor-recent-action-act-7").textContent;
+    const undoText = screen.getByTestId("monitor-recent-action-act-8").textContent;
+    const reprintText = screen.getByTestId("monitor-recent-action-act-9").textContent;
+
+    expect(checkinText).toBeTruthy();
+    expect(undoText).toBeTruthy();
+    expect(reprintText).toBeTruthy();
+    // All three distinguishable from each other -- the actual bug (icon-only
+    // differentiation) let all three read identically to assistive tech.
+    expect(new Set([checkinText, undoText, reprintText]).size).toBe(3);
+
+    // The label lives in an `sr-only` node, not visible body copy.
+    expect(screen.getByTestId("monitor-recent-action-act-7")).toHaveClass("sr-only");
+    expect(screen.getByTestId("monitor-recent-action-act-8")).toHaveClass("sr-only");
+    expect(screen.getByTestId("monitor-recent-action-act-9")).toHaveClass("sr-only");
   });
 
   it("derives the zone name for a row via its station's zone when derivable, and omits it (no placeholder) when the chain is broken", async () => {

@@ -1,10 +1,9 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiErrorFromResponse, getApiBaseUrl } from "../../shared/api/http";
+import { ApiError } from "../../shared/api/ApiError";
 import { handleApiError } from "../../shared/api/handleApiError";
-import { getToken } from "../../shared/api/session";
+import { openSseStream } from "../../shared/api/sseStream";
 import { MONITOR_SNAPSHOT_KEY } from "./hooks";
-import { createSseParser } from "./parseSse";
 
 export type MonitorStreamStatus = "connecting" | "live" | "reconnecting" | "error";
 
@@ -32,16 +31,22 @@ function backoffDelayMs(attempt: number): number {
 }
 
 /**
- * Live monitor SSE client (plan §4.1, P4.2 Task 6). Opens a fetch-streaming
+ * Live monitor SSE client (plan §4.1, P4.2 Task 6). Opens a streaming
  * connection to `GET /api/events/{eventId}/monitor/stream` (documented in
- * openapi.yaml by Task 4) and feeds decoded chunks into Task 5's
- * `createSseParser`. This deliberately bypasses the generated `$api`/
- * `openapi-fetch` client (AGENTS.md's usual "never call fetch directly"
- * rule) -- openapi-fetch has no streaming-body mode, and the plan explicitly
- * designed this hook around raw `fetch` + `res.body.getReader()` (plan-time
- * fact 6, which exports `getApiBaseUrl` from http.ts specifically "for the
- * fetch-streaming client rather than re-deriving"). The endpoint itself is
- * still fully documented; only the transport differs.
+ * openapi.yaml by Task 4) via `shared/api/sseStream.ts`'s `openSseStream`
+ * and reacts to the decoded frames it dispatches. That helper -- not this
+ * hook -- deliberately bypasses the generated `$api`/`openapi-fetch` client
+ * (AGENTS.md's usual "never call fetch directly" rule): openapi-fetch has no
+ * streaming-body mode, and the plan explicitly designed this transport
+ * around raw `fetch` + `res.body.getReader()` (plan-time fact 6, which
+ * exports `getApiBaseUrl` from http.ts specifically "for the fetch-streaming
+ * client rather than re-deriving"). PR #81 round-2 convergence Finding 3
+ * moved that raw `fetch` call itself out of this hook and behind
+ * `openSseStream` -- this hook has zero direct `fetch` references now, only
+ * the shared transport does, and this file owns exclusively the
+ * state-machine logic below (statuses, backoff, coalescing, resync-on-hello,
+ * terminal-4xx stop). The endpoint itself is still fully documented; only
+ * the transport differs.
  *
  * Frame handling:
  *  - "hello" -- the very first frame the backend sends on every connection
@@ -120,27 +125,61 @@ export function useMonitorStream(eventId: string): { status: MonitorStreamStatus
     }
 
     async function connect() {
-      const headers: Record<string, string> = { Accept: "text/event-stream" };
-      const token = getToken();
-      if (token) headers.Authorization = `Bearer ${token}`;
-
       try {
-        const res = await fetch(`${getApiBaseUrl()}/api/events/${eventId}/monitor/stream`, {
-          headers,
+        // openSseStream (shared/api/sseStream.ts) owns the fetch, headers,
+        // and reader/decoder/parse loop; it resolves on a clean stream close
+        // and throws for everything else (a non-OK response's `ApiError`, a
+        // network error, a stream read error, or an abort). This hook reacts
+        // to the decoded frames via `onEvent` and owns every state-machine
+        // decision below.
+        await openSseStream(`/api/events/${eventId}/monitor/stream`, {
           signal: controller.signal,
+          onEvent: (evt) => {
+            if (evt.event === "hello") {
+              // C4: only a "hello" -- proof the stream is actually live, not
+              // just that the TCP/HTTP handshake succeeded -- resets the
+              // backoff ladder. Resetting on a bare 200 let an endpoint that
+              // accepts the connection and then immediately closes it get
+              // hammered at the 1s base forever.
+              attempt = 0;
+              // C5: every hello resyncs the snapshot -- not just a
+              // reconnect's. A mutation landing between the page's initial
+              // GET /monitor and THIS connection's subscribe registration
+              // has no "update" subscriber to notify it, so relying on
+              // "update" pings alone can silently lose it. Routed through
+              // the SAME trailing coalescer as "update" frames (not fired
+              // immediately) so the initial hello -- which lands
+              // milliseconds after the page's own initial fetch -- doesn't
+              // turn into an instant, redundant second GET; a genuinely
+              // racing mutation still surfaces within one coalesce window,
+              // and a burst of real "update" pings landing in that same
+              // window is absorbed into this same single refetch.
+              scheduleInvalidate();
+              setStatus("live");
+            } else if (evt.event === "update") {
+              scheduleInvalidate();
+            }
+          },
         });
 
-        if (!res.ok) {
-          // PR #81 bot round + CodeRabbit Finding C3: normalize into the
-          // SAME `ApiError` shape http.ts's `errors` middleware builds for
-          // the `api` client -- this hook deliberately bypasses `api`/
-          // openapi-fetch for its streaming transport (see this file's own
-          // top-of-file comment), but that must not also mean bypassing the
-          // app's global auth/suspension handling every other API failure
-          // gets.
-          const apiError = await apiErrorFromResponse(res);
-          handleApiError(apiError);
-          if (res.status >= 400 && res.status < 500) {
+        // The stream closed cleanly (server-side close, e.g. the request
+        // context ending) -- not an abort. Reconnect per the same policy as
+        // a network error below.
+        if (!cancelled) scheduleReconnect();
+      } catch (err) {
+        // An aborted read (unmount or an eventId change tore down
+        // `controller` mid-flight) must NOT be treated as a stream failure
+        // -- the scope is gone, there's nothing to reconnect for.
+        if (controller.signal.aborted) return;
+
+        if (err instanceof ApiError) {
+          // PR #81 bot round + CodeRabbit Finding C3: route through the app's
+          // global auth/suspension handling (tenant_suspended takeover, 401
+          // dead-session redirect) exactly like every other API failure --
+          // openSseStream's transport bypass must not also mean bypassing
+          // this.
+          handleApiError(err);
+          if (err.status >= 400 && err.status < 500) {
             // Terminal: an expired session (401), a suspended tenant (403
             // tenant_suspended -- already actioned above), or any other
             // documented 4xx (400/404/...) will never succeed on a bare
@@ -152,60 +191,9 @@ export function useMonitorStream(eventId: string): { status: MonitorStreamStatus
           }
           // 5xx: transient (an overloaded/restarting backend) -- same retry
           // policy as a network error below.
-          throw apiError;
         }
-
-        if (!res.body) {
-          throw new Error("monitor stream response has no body");
-        }
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        const feed = createSseParser((evt) => {
-          if (evt.event === "hello") {
-            // C4: only a "hello" -- proof the stream is actually live, not
-            // just that the TCP/HTTP handshake succeeded -- resets the
-            // backoff ladder. Resetting on a bare 200 let an endpoint that
-            // accepts the connection and then immediately closes it get
-            // hammered at the 1s base forever.
-            attempt = 0;
-            // C5: every hello resyncs the snapshot -- not just a
-            // reconnect's. A mutation landing between the page's initial
-            // GET /monitor and THIS connection's subscribe registration has
-            // no "update" subscriber to notify it, so relying on "update"
-            // pings alone can silently lose it. Routed through the SAME
-            // trailing coalescer as "update" frames (not fired immediately)
-            // so the initial hello -- which lands milliseconds after the
-            // page's own initial fetch -- doesn't turn into an instant,
-            // redundant second GET; a genuinely racing mutation still
-            // surfaces within one coalesce window, and a burst of real
-            // "update" pings landing in that same window is absorbed into
-            // this same single refetch.
-            scheduleInvalidate();
-            setStatus("live");
-          } else if (evt.event === "update") {
-            scheduleInvalidate();
-          }
-        });
-
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          feed(decoder.decode(value, { stream: true }));
-        }
-
-        // The stream closed cleanly (server-side close, e.g. the request
-        // context ending) -- not an abort. Reconnect per the same policy as
-        // a network error below.
-        if (!cancelled) scheduleReconnect();
-      } catch {
-        // An aborted read (unmount or an eventId change tore down
-        // `controller` mid-flight) must NOT be treated as a stream failure
-        // -- the scope is gone, there's nothing to reconnect for. Every
-        // other failure here is retryable (a network error, or the 5xx
-        // rethrown above) -- a terminal 4xx already returned before
-        // reaching this catch.
-        if (controller.signal.aborted) return;
+        // Every other failure here is retryable (a network error, a stream
+        // read error, or a 5xx ApiError above).
         if (!cancelled) scheduleReconnect();
       }
     }

@@ -62,4 +62,52 @@ describe("StatusPill", () => {
       expect(container.querySelector(".rounded-full.bg-destructive")).not.toBeNull();
     });
   });
+
+  // PR #81 round-2 convergence Finding 5: StationsCard.tsx's per-station
+  // liveness dot needs the SAME status-colored dot as indicator="dot" above,
+  // but with NO pill chrome (border/background/padding) and NO always-
+  // visible label -- the row around it already supplies its own name and a
+  // SEPARATE, conditional text label (e.g. "stale 40 s", rendered only while
+  // stale; nothing renders at all while fresh). Added as `variant="bare"`
+  // rather than the panel hand-rolling a dot a second time.
+  describe("variant=\"bare\"", () => {
+    it("renders only the status-colored dot -- no pill chrome, no visible label text, no icon", () => {
+      const { container } = render(<StatusPill status="ready" label="Fresh" variant="bare" />);
+      expect(screen.queryByText("Fresh")).not.toBeInTheDocument();
+      expect(container.querySelector("svg")).toBeNull();
+      expect(container.querySelector(".rounded-full.bg-success")).not.toBeNull();
+      // No pill chrome (border/background/padding) anywhere in the tree.
+      expect(container.querySelector(".border")).toBeNull();
+      expect(container.querySelector(".px-2\\.5")).toBeNull();
+    });
+
+    it("exposes the label via aria-label, since no visible text is rendered", () => {
+      render(<StatusPill status="in_progress" label="Stale 40 s" variant="bare" />);
+      expect(screen.getByLabelText("Stale 40 s")).toBeInTheDocument();
+    });
+
+    it("colors the dot to match the given status (e.g. in_progress -> warning)", () => {
+      const { container } = render(<StatusPill status="in_progress" label="Stale" variant="bare" />);
+      expect(container.querySelector(".rounded-full.bg-warning")).not.toBeNull();
+    });
+
+    it("omits the animated ping ring when pulse is false (the default)", () => {
+      const { container } = render(<StatusPill status="ready" label="Fresh" variant="bare" />);
+      expect(container.querySelector(".animate-ping")).toBeNull();
+    });
+
+    it("adds an animated ping ring, colored to match the status, when pulse is true", () => {
+      const { container } = render(<StatusPill status="ready" label="Fresh" variant="bare" pulse />);
+      const ring = container.querySelector(".animate-ping");
+      expect(ring).not.toBeNull();
+      expect(ring).toHaveClass("bg-success");
+    });
+
+    it("applies a caller className on the root element (e.g. sizing overrides)", () => {
+      const { container } = render(
+        <StatusPill status="ready" label="Fresh" variant="bare" className="my-marker-class" />,
+      );
+      expect(container.querySelector(".my-marker-class")).not.toBeNull();
+    });
+  });
 });

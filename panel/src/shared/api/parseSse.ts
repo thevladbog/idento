@@ -1,6 +1,14 @@
 // Pure, incremental Server-Sent Events frame parser. No fetch, no React —
-// Task 6's useMonitorStream owns the fetch/ReadableStream plumbing and just
-// feeds decoded text chunks into the function this returns.
+// this file's sibling `sseStream.ts` owns the fetch/ReadableStream plumbing
+// and just feeds decoded text chunks into the function this returns.
+//
+// Lives in shared/api/ (moved here from features/monitor/ by the PR #81
+// round-2 convergence, Finding 3) because sseStream.ts's `openSseStream` —
+// the shared transport seam every SSE consumer calls instead of `fetch`
+// directly — needs it internally, and shared/ must not depend on features/
+// (panel/AGENTS.md's feature-sliced layering). It has no monitor-specific
+// knowledge (frame/event/data are the generic SSE wire format), so this move
+// is a pure relocation, not a scope change.
 //
 // SSE frames are separated by a blank line ("\n\n"); a chunk boundary can
 // land anywhere (mid-line, mid-frame, mid-separator), so this buffers

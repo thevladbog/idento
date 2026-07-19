@@ -641,5 +641,9 @@
   "monitorStaleFor": "устарело {{s}} с",
   "monitorRecentTitle": "Последние сканирования",
   "monitorRecentEmpty": "Пока нет сканирований.",
+  "monitorStationFresh": "В сети",
+  "monitorRecentActionCheckin": "Зарегистрирован",
+  "monitorRecentActionUndo": "Отменено",
+  "monitorRecentActionReprint": "Перепечатано",
   "monitorReconnecting": "Переподключение"
 }

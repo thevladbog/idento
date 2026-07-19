@@ -38,10 +38,45 @@ export interface StatusPillProps {
    * while e.g. "connecting" and switch on the ring only once truly live.
    */
   pulse?: boolean;
+  /**
+   * PR #81 round-2 convergence Finding 5: "pill" (default) is the original
+   * API -- full badge chrome (border/background/padding) with `label`
+   * always rendered as visible text next to the icon/dot. "bare" renders
+   * ONLY a status-colored dot -- no chrome, no icon, no inline label -- for
+   * a caller embedding a compact liveness dot in its OWN row layout
+   * alongside a name and a SEPARATE, conditional text label (e.g.
+   * StationsCard.tsx's per-station dot: green/fresh renders no text at all,
+   * amber/stale renders its own "stale Ns" span elsewhere in the row).
+   * `indicator` is ignored in this variant (bare is always a dot). `label`
+   * stays required and is applied as `aria-label` on the root element, so
+   * assistive tech still gets a description even though nothing is drawn.
+   * `className` merges onto the root element, same as "pill".
+   */
+  variant?: "pill" | "bare";
 }
 
-export function StatusPill({ status, label, icon, className, indicator = "icon", pulse = false }: StatusPillProps) {
+export function StatusPill({
+  status, label, icon, className, indicator = "icon", pulse = false, variant = "pill",
+}: StatusPillProps) {
   const Icon = icon ?? config[status].icon;
+
+  if (variant === "bare") {
+    return (
+      <span aria-label={label} className={cn("relative inline-flex shrink-0", className)}>
+        {pulse ? (
+          <span
+            aria-hidden
+            className={cn(
+              "absolute inline-flex size-full animate-ping rounded-full opacity-75",
+              config[status].dotClassName,
+            )}
+          />
+        ) : null}
+        <span aria-hidden className={cn("relative inline-flex size-2.5 rounded-full", config[status].dotClassName)} />
+      </span>
+    );
+  }
+
   return (
     <span
       data-status={status}

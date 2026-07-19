@@ -12,7 +12,18 @@
 // MonitorPage's own existing 1s ticker state, passed down so every
 // stale-duration label in the card advances in lockstep with the header's
 // "Updated Ns ago" label, off a single shared clock.
-import { Card, CardContent, CardHeader, CardTitle } from "@idento/ui";
+//
+// PR #81 round-2 convergence Finding 5: the liveness dot itself is composed
+// from `@idento/ui`'s `StatusPill` (`variant="bare"`) instead of being
+// hand-rolled here -- panel/AGENTS.md's "UI primitives come only from
+// @idento/ui" rule, the same discipline the header's own LIVE pill already
+// follows (MonitorPage.tsx). The round-1 `indicator="dot"` API always
+// renders a visible label next to the dot (its own WCAG 1.4.1 invariant),
+// which doesn't fit this compact row (green/fresh shows no text at all,
+// amber/stale shows its own separate "stale Ns" span below) -- `variant=
+// "bare"` was added to the primitive itself for exactly this shape rather
+// than re-hand-rolling a dot a second time here.
+import { Card, CardContent, CardHeader, CardTitle, StatusPill } from "@idento/ui";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../shared/api/schema";
 import { stationStaleness } from "./liveness";
@@ -39,17 +50,24 @@ export function StationsCard({ stations, now }: StationsCardProps) {
         ) : (
           stations.map((station) => {
             const staleness = stationStaleness(station.last_seen_at, now);
+            // The dot's own accessible label -- exposed via StatusPill's
+            // `variant="bare"` `aria-label`, since a fresh row renders no
+            // visible text at all next to the dot. A stale row reuses the
+            // EXACT same string as the separately-rendered visible
+            // "stale Ns" span below (not a second, potentially drifting
+            // copy of the same fact).
+            const dotLabel = staleness.stale
+              ? t("monitorStaleFor", { s: staleness.seconds })
+              : t("monitorStationFresh");
             return (
               <div
                 key={station.id}
                 className="flex items-center gap-2 text-body"
                 data-testid={`monitor-station-${station.id}`}
               >
-                <span
-                  aria-hidden
-                  data-testid={`monitor-station-dot-${station.id}`}
-                  className={`size-2.5 shrink-0 rounded-full ${staleness.stale ? "bg-warning" : "bg-success"}`}
-                />
+                <span data-testid={`monitor-station-dot-${station.id}`}>
+                  <StatusPill status={staleness.stale ? "in_progress" : "ready"} label={dotLabel} variant="bare" />
+                </span>
                 <span className="flex-1 truncate text-foreground">{station.name}</span>
                 {staleness.stale ? (
                   <span

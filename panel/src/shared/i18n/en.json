@@ -639,5 +639,9 @@
   "monitorStaleFor": "stale {{s}} s",
   "monitorRecentTitle": "Last scans",
   "monitorRecentEmpty": "No scans yet.",
+  "monitorStationFresh": "Online",
+  "monitorRecentActionCheckin": "Checked in",
+  "monitorRecentActionUndo": "Undone",
+  "monitorRecentActionReprint": "Reprinted",
   "monitorReconnecting": "Reconnecting"
 }

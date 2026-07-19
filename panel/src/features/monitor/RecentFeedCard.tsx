@@ -31,6 +31,18 @@ type CheckinActionRow = components["schemas"]["CheckinActionRow"];
 type MonitorStationRow = components["schemas"]["MonitorStationRow"];
 type MonitorZone = components["schemas"]["MonitorZone"];
 
+// PR #81 round-2 convergence Finding 4: undo/reprint rows used to be
+// distinguishable from a checkin row ONLY by an `aria-hidden` icon -- a
+// screen reader heard just name/zone/time, indistinguishable from a
+// check-in. Mirrors WorkspaceRail.tsx's own "icon + color alone can't
+// convey status to assistive tech (WCAG 1.4.1)" `sr-only` idiom: every row
+// gets a real, localized, visually-hidden text label naming its action.
+const ACTION_LABEL_KEY: Record<CheckinActionRow["action"], string> = {
+  checkin: "monitorRecentActionCheckin",
+  undo: "monitorRecentActionUndo",
+  reprint: "monitorRecentActionReprint",
+};
+
 export interface RecentFeedCardProps {
   recent: CheckinActionRow[];
   stations: MonitorStationRow[];
@@ -82,6 +94,9 @@ export function RecentFeedCard({ recent, stations, zones }: RecentFeedCardProps)
                 data-testid={`monitor-recent-row-${row.id}`}
               >
                 <Icon aria-hidden className={`size-4 shrink-0 ${iconClass}`} />
+                <span className="sr-only" data-testid={`monitor-recent-action-${row.id}`}>
+                  {t(ACTION_LABEL_KEY[row.action])}
+                </span>
                 <span className="min-w-0 flex-1 truncate">
                   <span className="font-medium text-foreground">
                     {row.attendee.first_name} {row.attendee.last_name}
