@@ -9,7 +9,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { PrinterWizard, type PrinterWizardProps } from "./PrinterWizard";
 import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { startMswServer } from "../../test/msw";
@@ -18,6 +18,7 @@ import "../../shared/i18n";
 let agentPrinters: Array<{ name: string; type: string }> = [];
 let printCalls: Array<{ printer_name: string; zpl: string }> = [];
 let printStatus = 200;
+let printDelayMs = 0;
 let addPrinterCalls: Array<{ name: string; ip: string; port: number }> = [];
 let addPrinterStatus = 201;
 let setDefaultCalls: Array<{ default: string }> = [];
@@ -32,6 +33,7 @@ const server = startMswServer(
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
   http.post("http://agent.test/print", async ({ request }) => {
     printCalls.push((await request.json()) as { printer_name: string; zpl: string });
+    if (printDelayMs) await delay(printDelayMs);
     if (printStatus !== 200) return new HttpResponse("printer not found", { status: printStatus });
     return HttpResponse.json({ status: "printed" });
   }),
@@ -97,6 +99,7 @@ describe("PrinterWizard", () => {
     agentPrinters = [];
     printCalls = [];
     printStatus = 200;
+    printDelayMs = 0;
     addPrinterCalls = [];
     addPrinterStatus = 201;
     setDefaultCalls = [];
@@ -192,19 +195,78 @@ describe("PrinterWizard", () => {
       ).toBeChecked();
     });
 
-    it("shows honest may-still-print timeout copy (not a failure) when the send times out", async () => {
+    // Review fix round Minor 7: the wizard's Test step prints a physical
+    // test LABEL, not an attendee badge -- the shared badge-worded
+    // `printAgentTimeout` copy would sit visibly next to this wizard's own
+    // "check the label" success line and contradict it. Same transport-ack
+    // honesty rule (never claim "printed", never present as a plain
+    // failure), label-appropriate wording.
+    it("shows honest label-worded may-still-print timeout copy (not a failure) when the send times out", async () => {
       const user = userEvent.setup();
       const printSpy = vi.spyOn(agentClient, "print").mockRejectedValue(new AgentPrintTimeoutError(30_000));
       try {
         await reachTestStep(user);
         expect(
           await screen.findByText(
-            "The print agent didn't respond. The badge may still print — check the printer before retrying.",
+            "The print agent didn't respond. The label may still print — check the printer before retrying.",
           ),
         ).toBeInTheDocument();
+        expect(screen.queryByText(/badge/i)).not.toBeInTheDocument();
       } finally {
         printSpy.mockRestore();
       }
+    });
+  });
+
+  describe("dismissal locking", () => {
+    // Review fix round Minor 4: same P3.2 physical-output convention as
+    // TestPrintDialog.test.tsx's own dismissal-lock test -- every dismiss
+    // path (Escape, ✕) is inert while a send is in flight, and the ✕ is
+    // hidden entirely (not just inert) so it never LOOKS like a live
+    // control that silently does nothing.
+    it("hides the ✕ and ignores Escape while a test print is in flight", async () => {
+      const user = userEvent.setup();
+      printDelayMs = 120;
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+      const rendered = renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /HP_Smart_Tank_790/ }));
+      await screen.findByText("Did the test label print correctly?");
+      // The auto-fired print is still in flight (printDelayMs).
+      expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(rendered.onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Once the send settles, dismissal unlocks again.
+      await screen.findByText("Sent to HP_Smart_Tank_790 — check the label");
+      await user.keyboard("{Escape}");
+      expect(rendered.onClose).toHaveBeenCalled();
+    });
+
+    it("hides the ✕ and ignores Escape while the manual printer add is in flight", async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.post("http://agent.test/printers/add", async () => {
+          await delay(120);
+          return HttpResponse.json({ status: "added", name: "n", address: "a" }, { status: 201 });
+        }),
+      );
+      const rendered = renderWizard();
+
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      // The add POST is still in flight.
+      expect(screen.queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(rendered.onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      // Settles into the Test step -- the wizard moved on, not closed.
+      expect(await screen.findByText("Did the test label print correctly?")).toBeInTheDocument();
     });
   });
 
@@ -289,7 +351,14 @@ describe("PrinterWizard", () => {
       });
     });
 
-    it("mirror failure (agent 500) still resolves the save, shows the warning, and closes", async () => {
+    // Review fix round Important 1: setMirrorWarning(true) + onClose() in
+    // the same synchronous tick meant the warning NEVER painted (React 18
+    // batches both setState calls into one commit, and the unanimated
+    // Radix DialogContent unmounts pre-paint). House convention is
+    // BulkBar.tsx's "don't auto-close; the warning is the confirmation the
+    // operator reads before closing it themselves" -- the dialog must stay
+    // open with the warning visible and close only on an explicit dismiss.
+    it("mirror failure (agent 500): the save resolves, the dialog STAYS OPEN with the warning visible, and closes only on the explicit dismiss", async () => {
       const user = userEvent.setup();
       setDefaultStatus = 500;
       const rendered = renderWizard();
@@ -307,14 +376,119 @@ describe("PrinterWizard", () => {
           screen.getByText("Saved — but the agent didn't accept the default. It will sync on the next visit."),
         ).toBeInTheDocument(),
       );
-      await waitFor(() => expect(rendered.onClose).toHaveBeenCalled());
+
+      // NOT auto-closed: the operator gets to actually read the warning.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(rendered.onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      // The save already committed -- re-submitting must be impossible
+      // (the footer's Save/Back pair is replaced by an explicit Close).
+      expect(screen.queryByRole("button", { name: "Save printer" })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("button", { name: "Close" }));
+      expect(rendered.onClose).toHaveBeenCalledTimes(1);
+      expect(createDeviceCalls).toHaveLength(1);
+    });
+
+    // Review fix round Important 2: a network-typed printer picked off the
+    // Find list (or handed in via the unsaved-row prefill) has NO ip/port
+    // -- GET /printers reports {name, type} only -- and the registry
+    // hard-requires config.ip/config.port for kind=network, so saving
+    // as-is was a guaranteed-400 dead end. The operator knows the address
+    // (they configured the printer); the Save step must collect it.
+    it("network printer picked from Find: the Save step requires an ip/port form, and the save body carries config.ip/port", async () => {
+      const user = userEvent.setup();
+      agentPrinters = [{ name: "Warehouse_Net", type: "network" }];
+      renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /Warehouse_Net/ }));
+      await screen.findByText("Did the test label print correctly?");
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+
+      // Address form is present and required: Save stays disabled until a
+      // valid ip is entered (port defaults to 9100, same as the manual
+      // form).
+      const ipInput = await screen.findByLabelText<HTMLInputElement>("IP address");
+      expect(screen.getByLabelText<HTMLInputElement>("Port").value).toBe("9100");
+      expect(screen.getByRole("button", { name: "Save printer" })).toBeDisabled();
+
+      await user.type(ipInput, "10.0.0.9");
+      const saveButton = screen.getByRole("button", { name: "Save printer" });
+      await waitFor(() => expect(saveButton).not.toBeDisabled());
+      await user.click(saveButton);
+
+      await waitFor(() => expect(createDeviceCalls).toHaveLength(1));
+      expect(createDeviceCalls[0].body).toMatchObject({
+        class: "printer",
+        kind: "network",
+        config: { agent_name: "Warehouse_Net", ip: "10.0.0.9", port: 9100 },
+      });
+    });
+
+    it("network printer without an address: 'Save printer' clicked straight from the Test step advances to the address form instead of firing a doomed create", async () => {
+      const user = userEvent.setup();
+      agentPrinters = [{ name: "Warehouse_Net", type: "network" }];
+      renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /Warehouse_Net/ }));
+      await screen.findByText("Did the test label print correctly?");
+
+      // Straight to Save WITHOUT confirming the test -- the shared footer
+      // makes this reachable, and it must land on the address form, never
+      // POST a create the backend is guaranteed to 400.
+      await user.click(screen.getByRole("button", { name: "Save printer" }));
+
+      expect(await screen.findByLabelText("IP address")).toBeInTheDocument();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(createDeviceCalls).toHaveLength(0);
+    });
+
+    it("manual-IP printers (address already known) do NOT get the redundant Save-step address form", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      await screen.findByText("Did the test label print correctly?");
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+
+      await screen.findByLabelText("Printer name");
+      expect(screen.queryByLabelText("IP address")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Find list registry exclusion", () => {
+    // Review fix round Minor 5: the hub's own unsaved-rows section already
+    // filters by the registry (reconcile.ts's unsavedLivePrinters), but
+    // the wizard's Find list didn't -- re-picking an already-registered
+    // printer would create a duplicate registry row for the same physical
+    // device.
+    it("excludes printers already registered on this machine (by agent name)", async () => {
+      agentPrinters = [
+        { name: "HP_Smart_Tank_790", type: "system" },
+        { name: "Unregistered_Kitchen_Printer", type: "system" },
+      ];
+      renderWizard({ registeredAgentNames: ["HP_Smart_Tank_790"] });
+
+      expect(await screen.findByRole("button", { name: /Unregistered_Kitchen_Printer/ })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /HP_Smart_Tank_790/ })).not.toBeInTheDocument();
+    });
+
+    it("shows the no-printers copy when every live printer is already registered", async () => {
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+      renderWizard({ registeredAgentNames: ["HP_Smart_Tank_790"] });
+
+      expect(await screen.findByText("No printers found")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /HP_Smart_Tank_790/ })).not.toBeInTheDocument();
     });
   });
 
   describe("retest mode", () => {
     it("opens directly at the Test step for the given device (skips Find)", async () => {
       renderWizard({
-        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer" },
+        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer", kind: "system" },
       });
 
       expect(await screen.findByText("Did the test label print correctly?")).toBeInTheDocument();
@@ -323,10 +497,15 @@ describe("PrinterWizard", () => {
       expect(printCalls[0].printer_name).toBe("HP_Smart_Tank_790");
     });
 
-    it("'Yes, looks right' POSTs test-passed for the device and closes -- no create POST fired", async () => {
+    // Review fix round Minor 6: retest carries the saved device's real
+    // kind (network here) instead of a hardcoded "system" -- unobservable
+    // in retest mode today (no Save path reads it), but pinned so a future
+    // retest extension never inherits a silently wrong kind. Behaviorally
+    // this test proves a NETWORK device retests identically.
+    it("'Yes, looks right' POSTs test-passed for the (network-kind) device and closes -- no create POST fired", async () => {
       const user = userEvent.setup();
       const rendered = renderWizard({
-        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer" },
+        retest: { deviceId: "dev-1", agentName: "Godex_G500", displayName: "Godex G500", kind: "network" },
       });
 
       await screen.findByText("Did the test label print correctly?");
@@ -340,7 +519,7 @@ describe("PrinterWizard", () => {
     it("'Something's off…' shows the same troubleshooting hints", async () => {
       const user = userEvent.setup();
       renderWizard({
-        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer" },
+        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer", kind: "system" },
       });
 
       await screen.findByText("Did the test label print correctly?");

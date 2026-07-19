@@ -44,6 +44,10 @@ export interface PrinterWizardRetest {
   deviceId: string;
   agentName: string;
   displayName: string;
+  // Review fix round Minor 6: the saved device's real kind (was hardcoded
+  // "system"). Unread by retest mode's current flow (no Save path), but a
+  // future retest extension must never inherit a silently wrong kind.
+  kind: "system" | "network";
 }
 
 export interface PrinterWizardProps {
@@ -61,6 +65,13 @@ export interface PrinterWizardProps {
   // Set by a saved row's "Test print" button -- retest mode (see module
   // comment above).
   retest?: PrinterWizardRetest;
+  // Review fix round Minor 5: agent names of printers ALREADY registered
+  // on this machine -- excluded from the Find list so an operator can't
+  // re-pick one and create a duplicate registry row for the same physical
+  // printer (the hub's own unsaved-rows section already filters this way
+  // via reconcile.ts's unsavedLivePrinters; the wizard's internal list
+  // must match).
+  registeredAgentNames?: string[];
 }
 
 type Step = "find" | "test" | "save";
@@ -83,7 +94,7 @@ interface Selected {
 
 const DEFAULT_MANUAL_PORT = "9100";
 
-export function PrinterWizard({ open, onClose, machineId, prefill, retest }: PrinterWizardProps) {
+export function PrinterWizard({ open, onClose, machineId, prefill, retest, registeredAgentNames = [] }: PrinterWizardProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const agent = useAgentPrinters(open);
@@ -105,6 +116,18 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
   const [manualPort, setManualPort] = React.useState(DEFAULT_MANUAL_PORT);
   const [manualSubmitting, setManualSubmitting] = React.useState(false);
   const [manualError, setManualError] = React.useState<string | null>(null);
+
+  // Review fix round Important 2: the Save step's own ip/port form for a
+  // network-typed printer whose address the wizard doesn't know (picked
+  // off the Find list or handed in via prefill -- GET /printers reports
+  // {name, type} only, and the registry hard-requires config.ip/port for
+  // kind=network, so saving without them was a guaranteed-400 dead end).
+  // Deliberately separate state from the Find step's manual-add form: the
+  // two forms are mutually exclusive per session (a manually-added printer
+  // always carries its address in `selected`), but sharing state would let
+  // an abandoned half-typed manual form leak into the Save step.
+  const [saveIp, setSaveIp] = React.useState("");
+  const [savePort, setSavePort] = React.useState(DEFAULT_MANUAL_PORT);
 
   const [printing, setPrinting] = React.useState(false);
   const [printError, setPrintError] = React.useState<string | null>(null);
@@ -144,12 +167,14 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
     setManualIp("");
     setManualPort(DEFAULT_MANUAL_PORT);
     setManualError(null);
+    setSaveIp("");
+    setSavePort(DEFAULT_MANUAL_PORT);
     setTestPassed(false);
     setMakeDefault(true);
 
     if (retest) {
       setStep("test");
-      setSelected({ agentName: retest.agentName, type: "system" });
+      setSelected({ agentName: retest.agentName, type: retest.kind });
       setDisplayName(retest.displayName);
       return;
     }
@@ -185,9 +210,14 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
           // A timed-out send is NOT a proven failure -- the abort only
           // cancelled OUR wait; the agent may have received the job and
           // the label may still emerge (agentClient.ts's own warning).
-          // Shared honest copy, same handling as TestPrintDialog.tsx.
+          // Same transport-ack honesty as TestPrintDialog.tsx's
+          // printAgentTimeout, but with its OWN key (review fix round
+          // Minor 7): the shared copy says "the badge may still print",
+          // and this wizard prints a test LABEL, not a badge -- the badge
+          // wording would sit right next to equipmentWizardSent's "check
+          // the label" and contradict it.
           if (error instanceof AgentPrintTimeoutError) {
-            setPrintError(t("printAgentTimeout"));
+            setPrintError(t("equipmentWizardTimeout"));
             return;
           }
           setPrintError(error instanceof Error ? error.message : t("equipmentWizardTestGenericError"));
@@ -216,6 +246,11 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
 
   async function handleManualSubmit(event: React.FormEvent) {
     event.preventDefault();
+    // Review fix round Minor 3: re-checked INSIDE the handler, not just via
+    // the submit button's `disabled` prop -- TestPrintDialog.tsx's
+    // handlePrint defense-in-depth idiom (a rapid double-submit must never
+    // fire two /printers/add POSTs).
+    if (manualSubmitting) return;
     const trimmedName = manualName.trim();
     const trimmedIp = manualIp.trim();
     const port = Number(manualPort);
@@ -249,7 +284,8 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
   }
 
   async function handleRetestConfirm() {
-    if (!retest) return;
+    // Same Minor-3 defense-in-depth re-check as handleManualSubmit above.
+    if (!retest || saving) return;
     const mySession = sessionRef.current;
     setSaving(true);
     setSaveError(null);
@@ -291,8 +327,28 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
     }
   }
 
+  // Review fix round Important 2: a network-typed printer whose address the
+  // wizard doesn't know (Find-list pick / unsaved-row prefill) must collect
+  // ip/port at the Save step -- the operator configured the printer, so
+  // they know its address even though GET /printers can't report it.
+  const trimmedSaveIp = saveIp.trim();
+  const savePortNumber = Number(savePort);
+  const needsAddress = selected?.type === "network" && (selected.ip === undefined || selected.port === undefined);
+  const addressValid =
+    trimmedSaveIp.length > 0 && Number.isInteger(savePortNumber) && savePortNumber >= 1 && savePortNumber <= 65535;
+
   async function handleSaveClick() {
-    if (!selected || isRetest) return;
+    // Same Minor-3 defense-in-depth re-check as handleManualSubmit above.
+    if (!selected || isRetest || saving) return;
+    // Important-2: the shared Test/Save footer makes "Save printer"
+    // reachable straight from the Test step -- for an address-less network
+    // printer that click must LAND ON the address form, never fire a
+    // create the backend is guaranteed to 400.
+    if (needsAddress && step !== "save") {
+      setStep("save");
+      return;
+    }
+    if (needsAddress && !addressValid) return;
     const mySession = sessionRef.current;
     setSaving(true);
     setSaveError(null);
@@ -300,8 +356,8 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
     try {
       const config: Record<string, unknown> = { agent_name: selected.agentName };
       if (selected.type === "network") {
-        if (selected.ip !== undefined) config.ip = selected.ip;
-        if (selected.port !== undefined) config.port = selected.port;
+        config.ip = selected.ip ?? trimmedSaveIp;
+        config.port = selected.port ?? savePortNumber;
       }
       await createDevice.mutateAsync({
         params: { path: { machine_id: machineId } },
@@ -327,7 +383,19 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
           // caller sees the same default too. A mirror failure must
           // never fail the save itself; it re-converges on the next hub
           // load's reconcile.
+          //
+          // Review fix round Important 1: do NOT close here. Warning +
+          // onClose() in one synchronous tick meant the warning never
+          // painted (React 18 batches both setStates into one commit and
+          // the unanimated Radix DialogContent unmounts pre-paint) -- the
+          // operator never learned the mirror failed. House convention
+          // (BulkBar.tsx): the dialog stays open, the warning is the
+          // confirmation the operator reads, and THEY dismiss it (the
+          // footer swaps to an explicit Close -- see below -- which also
+          // removes the Save button so the already-committed create can't
+          // be re-fired).
           setMirrorWarning(true);
+          return;
         }
       }
       if (mySession !== sessionRef.current) return;
@@ -345,18 +413,33 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
     if (!next) onClose();
   }
 
+  // Review fix round Minor 4: covers manualSubmitting too, consistently
+  // with handleOpenChange above and hideClose below -- a ✕ that stays
+  // visible-but-inert during the /printers/add POST would look like a
+  // broken control (the exact concern BulkBar.tsx's no-cancel hint calls
+  // out).
   function preventDialogDismiss(e: Event) {
-    if (printing || saving) e.preventDefault();
+    if (printing || saving || manualSubmitting) e.preventDefault();
   }
 
   const agentStatusLabel =
     agent.state === "connected" ? null : agent.state === "checking" ? t("badgeAgentStatusChecking") : t("badgeAgentUnreachable");
 
+  // Review fix round Minor 5: the Find list must not offer printers that
+  // already have a registry row on this machine (matched by the stable
+  // agent-side name, never display_name -- reconcile.ts's rule); re-picking
+  // one would create a duplicate device for the same physical printer.
+  const registeredNames = new Set(registeredAgentNames);
+  const findPrinters = agent.printers.filter((printer) => !registeredNames.has(printer.name));
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         closeLabel={t("workspaceDialogClose")}
-        hideClose={printing || saving}
+        // mirrorWarning also hides the ✕: the footer's explicit Close (the
+        // Important-1 dismiss affordance) is the single close control in
+        // that state, rather than two same-named "Close" buttons.
+        hideClose={printing || saving || manualSubmitting || mirrorWarning}
         onEscapeKeyDown={preventDialogDismiss}
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
@@ -389,11 +472,11 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
               >
                 {agentStatusLabel}
               </p>
-            ) : agent.printers.length === 0 ? (
+            ) : findPrinters.length === 0 ? (
               <p className="text-body text-muted-foreground">{t("printNoPrinters")}</p>
             ) : (
               <ul className="flex flex-col gap-2" data-testid="equipment-wizard-find-list">
-                {agent.printers.map((printer) => (
+                {findPrinters.map((printer) => (
                   <li key={printer.name}>
                     <button
                       type="button"
@@ -513,16 +596,44 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
                     id="printer-wizard-name"
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    disabled={saving}
+                    disabled={saving || mirrorWarning}
                   />
                 </div>
+                {needsAddress ? (
+                  // Important-2: the registry hard-requires config.ip/port
+                  // for kind=network, and this printer's address isn't
+                  // knowable from GET /printers -- collect it here. Save
+                  // stays disabled until the address is valid (see the
+                  // footer's disabled expression).
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="printer-wizard-save-ip">{t("equipmentWizardManualIpAddress")}</Label>
+                      <Input
+                        id="printer-wizard-save-ip"
+                        value={saveIp}
+                        onChange={(e) => setSaveIp(e.target.value)}
+                        disabled={saving || mirrorWarning}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Label htmlFor="printer-wizard-save-port">{t("equipmentWizardManualPort")}</Label>
+                      <Input
+                        id="printer-wizard-save-port"
+                        type="number"
+                        value={savePort}
+                        onChange={(e) => setSavePort(e.target.value)}
+                        disabled={saving || mirrorWarning}
+                      />
+                    </div>
+                  </div>
+                ) : null}
                 <label className="flex items-center gap-2 text-body text-foreground">
                   <input
                     type="checkbox"
                     className="size-3.5 rounded-[4px] border-[1.5px] border-input accent-success"
                     checked={makeDefault}
                     onChange={(e) => setMakeDefault(e.target.checked)}
-                    disabled={saving}
+                    disabled={saving || mirrorWarning}
                   />
                   {t("equipmentWizardDefaultCheckbox")}
                 </label>
@@ -542,12 +653,30 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest }: Pri
 
             {!isRetest ? (
               <DialogFooter>
-                <Button type="button" variant="outline" disabled={saving} onClick={goBack}>
-                  {t("equipmentWizardBack")}
-                </Button>
-                <Button type="button" disabled={saving || !selected} onClick={() => void handleSaveClick()}>
-                  {t("equipmentWizardSavePrinter")}
-                </Button>
+                {mirrorWarning ? (
+                  // Important-1: the save already committed but the mirror
+                  // warning must stay READABLE -- the footer swaps to one
+                  // explicit Close (removing Save so the committed create
+                  // can't be re-fired), and the operator dismisses when
+                  // they've read it (BulkBar.tsx's no-auto-close
+                  // convention).
+                  <Button type="button" onClick={onClose}>
+                    {t("workspaceDialogClose")}
+                  </Button>
+                ) : (
+                  <>
+                    <Button type="button" variant="outline" disabled={saving} onClick={goBack}>
+                      {t("equipmentWizardBack")}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={saving || !selected || (step === "save" && needsAddress && !addressValid)}
+                      onClick={() => void handleSaveClick()}
+                    >
+                      {t("equipmentWizardSavePrinter")}
+                    </Button>
+                  </>
+                )}
               </DialogFooter>
             ) : null}
           </>

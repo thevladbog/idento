@@ -376,6 +376,14 @@ export function EquipmentPage() {
         machineId={machineId ?? ""}
         prefill={printerWizard?.kind === "create" ? printerWizard.prefill : undefined}
         retest={printerWizard?.kind === "retest" ? deviceToRetest(printerWizard.device) : undefined}
+        // Task 8 review fix round Minor 5: already-registered printers
+        // (matched by config.agent_name, the stable agent-side link) are
+        // excluded from the wizard's Find list -- same filter the hub's
+        // own unsaved-rows section applies via unsavedLivePrinters.
+        registeredAgentNames={devices
+          .filter((device) => device.class === "printer")
+          .map((device) => device.config?.agent_name as string | undefined)
+          .filter((agentName): agentName is string => agentName != null)}
       />
     </div>
   );
@@ -386,8 +394,15 @@ export function EquipmentPage() {
 // server-side, not typed here; same defensive read as reconcile.ts's
 // deviceLiveness). A device with no agent_name (shouldn't happen for a
 // class=printer row, but config is technically free-form) falls back to
-// display_name rather than crashing the wizard open.
+// display_name rather than crashing the wizard open. `kind` narrows the
+// registry's four-kind union to the wizard's printer pair -- a printer row
+// is only ever system|network, but the schema type can't say so.
 function deviceToRetest(device: EquipmentDevice): PrinterWizardRetest {
   const agentName = (device.config?.agent_name as string | undefined) ?? device.display_name;
-  return { deviceId: device.id, agentName, displayName: device.display_name };
+  return {
+    deviceId: device.id,
+    agentName,
+    displayName: device.display_name,
+    kind: device.kind === "network" ? "network" : "system",
+  };
 }

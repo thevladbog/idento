@@ -471,14 +471,21 @@ describe("EquipmentPage", () => {
       expect(screen.getByTestId("equipment-wizard-find-list")).toBeInTheDocument();
     });
 
-    it("printers column '+ Set up printer' opens the wizard at Find", async () => {
+    it("printers column '+ Set up printer' opens the wizard at Find, with already-registered printers excluded from its list", async () => {
       const user = userEvent.setup();
       renderPage();
 
       const printersCard = await screen.findByTestId("equipment-printers-card");
       await user.click(within(printersCard).getByRole("button", { name: "+ Set up printer" }));
 
-      expect(await screen.findByRole("dialog", { name: "Set up a printer" })).toBeInTheDocument();
+      const dialog = await screen.findByRole("dialog", { name: "Set up a printer" });
+      // Review fix round Minor 5 wiring: the saved row's agent_name
+      // (HP_Smart_Tank_790, printerLive()'s config) is filtered out of the
+      // wizard's Find list -- re-picking it would create a duplicate
+      // registry row; the genuinely unregistered live printer stays.
+      const findList = await within(dialog).findByTestId("equipment-wizard-find-list");
+      expect(within(findList).getByRole("button", { name: /Unregistered_Kitchen_Printer/ })).toBeInTheDocument();
+      expect(within(findList).queryByRole("button", { name: /HP_Smart_Tank_790/ })).not.toBeInTheDocument();
     });
 
     it("unsaved live printer's 'Save…' opens the wizard prefilled, straight at Test", async () => {

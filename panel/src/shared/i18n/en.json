@@ -699,6 +699,7 @@
   "equipmentWizardTestAgain": "Print again",
   "equipmentWizardTestOff": "Something's off…",
   "equipmentWizardTestGenericError": "Couldn't send the test print.",
+  "equipmentWizardTimeout": "The print agent didn't respond. The label may still print — check the printer before retrying.",
   "equipmentWizardTroubleshoot": "Check the printer's darkness setting, that labels are loaded correctly, and that the right driver or port is selected.",
   "equipmentWizardDefaultCheckbox": "Make this the default printer for check-in stations on this computer",
   "equipmentWizardSavePrinter": "Save printer",

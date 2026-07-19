@@ -701,6 +701,7 @@
   "equipmentWizardTestAgain": "Напечатать ещё раз",
   "equipmentWizardTestOff": "Что-то не так…",
   "equipmentWizardTestGenericError": "Не удалось отправить тестовую печать.",
+  "equipmentWizardTimeout": "Агент печати не ответил. Этикетка всё равно может напечататься — проверьте принтер, прежде чем повторять печать.",
   "equipmentWizardTroubleshoot": "Проверьте настройку плотности печати принтера, правильность загрузки этикеток и то, что выбран нужный драйвер или порт.",
   "equipmentWizardDefaultCheckbox": "Сделать этот принтер принтером по умолчанию для станций регистрации на этом компьютере",
   "equipmentWizardSavePrinter": "Сохранить принтер",
