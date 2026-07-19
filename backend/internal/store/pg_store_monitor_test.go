@@ -277,8 +277,13 @@ func TestCountRecentCheckinsNoneReturnsZero(t *testing.T) {
 
 // getMonitorStationsSQL matches GetMonitorStations' exact SELECT — a
 // per-station 'checkin'-action count via FILTER (so 'undo'/'reprint' rows
-// sharing the same station_id don't inflate it), ordered by name.
-const getMonitorStationsSQL = `SELECT cs\.id, cs\.name, cs\.zone_id, cs\.last_seen_at, COUNT\(ca\.id\) FILTER \(WHERE ca\.action = 'checkin'\)\s+FROM checkin_stations cs\s+LEFT JOIN checkin_actions ca ON ca\.station_id = cs\.id\s+WHERE cs\.event_id = \$1\s+GROUP BY cs\.id, cs\.name, cs\.zone_id, cs\.last_seen_at\s+ORDER BY cs\.name`
+// sharing the same station_id don't inflate it), ordered by name. The join
+// condition also scopes to the station's own event (PR #81 round-2
+// convergence Finding 2): without it, Postgres can't use
+// idx_checkin_actions_event_created and may scan/hash the global
+// checkin_actions table per snapshot refetch for tenants with many actions
+// in OTHER events.
+const getMonitorStationsSQL = `SELECT cs\.id, cs\.name, cs\.zone_id, cs\.last_seen_at, COUNT\(ca\.id\) FILTER \(WHERE ca\.action = 'checkin'\)\s+FROM checkin_stations cs\s+LEFT JOIN checkin_actions ca ON ca\.station_id = cs\.id AND ca\.event_id = cs\.event_id\s+WHERE cs\.event_id = \$1\s+GROUP BY cs\.id, cs\.name, cs\.zone_id, cs\.last_seen_at\s+ORDER BY cs\.name`
 
 func TestGetMonitorStationsReturnsNameOrderedWithCounts(t *testing.T) {
 	mock, err := pgxmock.NewPool()

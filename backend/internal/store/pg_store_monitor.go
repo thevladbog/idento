@@ -207,12 +207,20 @@ func (s *PGStore) GetMonitorMinuteBuckets(ctx context.Context, eventID uuid.UUID
 // 'checkin'), so 'undo'/'reprint' rows sharing the same station_id don't
 // inflate the count — ordered by name, the same deterministic-listing
 // convention as ListCheckinStations, with the running count attached for
-// the monitor's stations card.
+// the monitor's stations card. The join also carries an `ca.event_id =
+// cs.event_id` predicate (PR #81 round-2 convergence Finding 2): station_id
+// alone uniquely identifies the event already (stations don't move between
+// events), but without the event predicate in the join condition itself,
+// Postgres plans this as a join against the ENTIRE checkin_actions table
+// before filtering — for tenants with many actions in other events, that
+// can't use idx_checkin_actions_event_created and forces a scan/hash of the
+// global table on every snapshot refetch. cs.event_id needs no new query
+// param since the stations are already event-filtered by the WHERE clause.
 func (s *PGStore) GetMonitorStations(ctx context.Context, eventID uuid.UUID) ([]MonitorStation, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT cs.id, cs.name, cs.zone_id, cs.last_seen_at, COUNT(ca.id) FILTER (WHERE ca.action = 'checkin')
 		FROM checkin_stations cs
-		LEFT JOIN checkin_actions ca ON ca.station_id = cs.id
+		LEFT JOIN checkin_actions ca ON ca.station_id = cs.id AND ca.event_id = cs.event_id
 		WHERE cs.event_id = $1
 		GROUP BY cs.id, cs.name, cs.zone_id, cs.last_seen_at
 		ORDER BY cs.name`, eventID)
