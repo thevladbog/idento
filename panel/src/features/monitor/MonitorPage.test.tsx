@@ -21,7 +21,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { MonitorPage } from "./MonitorPage";
 import { startMswServer } from "../../test/msw";
@@ -98,7 +98,13 @@ function renderWithRouter(router: ReturnType<typeof buildCorrectRouter> | Return
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
-  return router;
+  // `queryClient` returned alongside `router` (PR #81 bot round Finding C6)
+  // so tests can trigger an explicit background refetch via
+  // `queryClient.invalidateQueries()` -- the same exposed-QueryClient +
+  // `server.use` MSW-override idiom BadgeEditorPage.test.tsx's own
+  // background-refetch test uses -- rather than a fresh remount, which
+  // would prove nothing about retaining ALREADY-rendered stale data.
+  return { router, queryClient };
 }
 
 function renderCorrectAt(path: string) {
@@ -508,7 +514,17 @@ describe("MonitorPage -- Recent feed card (read-only)", () => {
 // hand-driven `controlledMonitorStreamHandler()` so this block alone can
 // drive hello/close frames and observe connecting -> live -> reconnecting
 // -> live.
-describe("MonitorPage -- stream status (connecting/live/reconnecting)", () => {
+// PR #81 bot round Finding C1: the live-state ring is now StatusPill's own
+// `indicator="dot" pulse` rendering (packages/ui/src/components/status-
+// pill.tsx), not a dedicated `monitor-live-ring` testid -- queried here via
+// its stable `.animate-ping` class, scoped inside the `monitor-live-pill`
+// wrapper (the same "assert via class, not a sub-element testid" idiom
+// packages/ui's own agent-status.test.tsx uses for its dot indicator).
+function liveRing(): Element | null {
+  return screen.getByTestId("monitor-live-pill").querySelector(".animate-ping");
+}
+
+describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test" };
     localStorage.clear();
@@ -522,13 +538,13 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting)", () => {
     renderCorrectAt("/events/evt-1/monitor");
 
     await screen.findByText("1,284 / 2,410");
-    expect(screen.queryByTestId("monitor-live-ring")).not.toBeInTheDocument();
+    expect(liveRing()).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
 
     await waitFor(() => expect(streamConnections.length).toBe(1));
     streamConnections[0].push("event: hello\ndata: {}\n\n");
 
-    await waitFor(() => expect(screen.getByTestId("monitor-live-ring")).toBeInTheDocument());
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
     expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
   });
 
@@ -540,7 +556,7 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting)", () => {
       await screen.findByText("1,284 / 2,410");
       await waitFor(() => expect(streamConnections.length).toBe(1));
       streamConnections[0].push("event: hello\ndata: {}\n\n");
-      await waitFor(() => expect(screen.getByTestId("monitor-live-ring")).toBeInTheDocument());
+      await waitFor(() => expect(liveRing()).toBeInTheDocument());
 
       streamConnections[0].close();
 
@@ -559,4 +575,78 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting)", () => {
     },
     8000,
   );
+
+  // PR #81 bot round Finding C3: a terminal stream failure (this test uses a
+  // documented 404 -- no global tenant/session side effect to also assert,
+  // that's useMonitorStream.test.tsx's own concern) replaces the LIVE pill
+  // entirely with a destructive error badge instead of looping the
+  // "reconnecting" badge forever, while the already-fetched snapshot stays
+  // rendered underneath it (Finding C6 -- retain-last-known-good).
+  it("replaces the LIVE pill with a destructive stream-error badge on a terminal 4xx, keeping the already-fetched snapshot rendered", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor/stream", () => new HttpResponse(null, { status: 404 })),
+    );
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(screen.getByTestId("monitor-stream-error-badge")).toBeInTheDocument());
+    expect(screen.queryByTestId("monitor-live-pill")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
+    expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
+
+    // Terminal means terminal -- no reconnect attempt ever lands.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(streamConnections.length).toBe(0);
+    expect(screen.getByTestId("monitor-stream-error-badge")).toBeInTheDocument();
+  }, 5000);
+});
+
+// PR #81 bot round Finding C6: retain-last-known-good. A single failed
+// BACKGROUND refetch (isError=true, data still retained per react-query)
+// must not blank an already-successfully-rendered page into an error card --
+// exercised here via the exposed-`queryClient` + `server.use` MSW-override +
+// explicit `invalidateQueries()` idiom (not a fresh remount, which would
+// prove nothing about retaining ALREADY-rendered content).
+describe("MonitorPage -- retains stale data across a failed background refetch (C6)", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+    monitorSnapshot = snapshotBody();
+  });
+
+  it("keeps rendering the snapshot content after a background refetch fails", async () => {
+    const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
+
+    expect(await screen.findByText("1,284 / 2,410")).toBeInTheDocument();
+    expect(screen.getByText("Main hall")).toBeInTheDocument();
+
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor", () => new HttpResponse(null, { status: 500 })),
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{event_id}/monitor"] });
+    });
+
+    // The failed refetch must not have replaced the content with the
+    // snapshot-error card -- `getBy` (not `findBy`) proves it's the SAME
+    // still-mounted content, not a fresh success re-render.
+    expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
+    expect(screen.getByText("Main hall")).toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-snapshot-error")).not.toBeInTheDocument();
+  });
+
+  it("keeps rendering the event header after a background event refetch fails", async () => {
+    const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
+
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
+
+    server.use(http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })));
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{id}"] });
+    });
+
+    expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
+    expect(screen.getByTestId("monitor-page")).toBeInTheDocument();
+  });
 });

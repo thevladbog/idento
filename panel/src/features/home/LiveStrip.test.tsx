@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { LiveStrip } from "./LiveStrip";
@@ -26,11 +26,19 @@ const testRouter = createRouter({ routeTree: createRootRoute({ component: () => 
 
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <RouterContextProvider router={testRouter}>{ui}</RouterContextProvider>
     </QueryClientProvider>,
   );
+  // `queryClient` returned alongside the RTL render result (PR #81 bot
+  // round Finding C6) so a test can trigger an explicit background refetch
+  // via `queryClient.invalidateQueries()` -- same exposed-QueryClient +
+  // `server.use` MSW-override idiom as MonitorPage.test.tsx's own C6 tests
+  // (and BadgeEditorPage.test.tsx's background-refetch precedent) -- rather
+  // than a fresh remount, which would prove nothing about retaining
+  // ALREADY-rendered stale data.
+  return { ...result, queryClient };
 }
 
 function monitorSnapshotBody(overrides: Partial<MonitorSnapshot> = {}): MonitorSnapshot {
@@ -205,6 +213,41 @@ describe("LiveStrip", () => {
     expect(await screen.findByText("Couldn't load live stats.")).toBeInTheDocument();
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  // PR #81 bot round Finding C6: retain-last-known-good. A single failed
+  // BACKGROUND refetch (isError=true, data still retained per react-query)
+  // must not blank an already-successfully-rendered card into the error
+  // message above -- exercised via the exposed-`queryClient` +
+  // `server.use` MSW-override + explicit `invalidateQueries()` idiom (not
+  // a fresh remount, which would prove nothing about retaining ALREADY-
+  // rendered content).
+  it("keeps rendering the counters/progress/zone line after a background snapshot refetch fails", async () => {
+    const running = apiEvent({
+      id: "evt-stale-refetch",
+      name: "Still Running Event",
+      start_date: "2026-07-14T09:00:00Z",
+      end_date: "2026-07-14T18:00:00Z",
+    });
+    const { queryClient } = renderWithProviders(<LiveStrip running={running} nextUpcoming={undefined} />);
+
+    expect(await screen.findByText("120")).toBeInTheDocument();
+    expect(screen.getByTestId("home-zone-z-main")).toHaveTextContent("Main hall: 100");
+
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor", () => new HttpResponse(null, { status: 500 })),
+    );
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{event_id}/monitor"] });
+    });
+
+    // `getBy` (not `findBy`) proves this is the SAME still-mounted content,
+    // not a fresh success re-render -- the failed refetch must not have
+    // replaced it with "Couldn't load live stats."
+    expect(screen.getByText("120")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.getByTestId("home-zone-z-main")).toHaveTextContent("Main hall: 100");
+    expect(screen.queryByText("Couldn't load live stats.")).not.toBeInTheDocument();
   });
 
   it("renders the upcoming-fallback hero when nothing is running", async () => {

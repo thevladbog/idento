@@ -1,4 +1,4 @@
-import { Button, Card, Progress, Skeleton } from "@idento/ui";
+import { Button, Card, Progress, Skeleton, StatusPill } from "@idento/ui";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 import { formatDateRange } from "../events/eventDates";
@@ -55,7 +55,13 @@ function formatRunningWindow(event: ApiEvent, locale: string, allDayLabel: strin
 // kept fresh by `useMonitorStream`'s SSE-driven invalidation instead of a
 // poller -- the stream's own `status` isn't surfaced here (no reconnecting
 // badge on the home strip; that's the monitor page's own concern), it's
-// mounted purely for its invalidation side effect.
+// mounted purely for its invalidation side effect. That includes
+// `status === "error"` (PR #81 bot round Finding C3 -- a terminal stream
+// failure): this card still doesn't render a dedicated indicator for it,
+// matching its pre-existing non-treatment of stream status -- the global
+// handling that status triggers (session redirect / suspension takeover,
+// useMonitorStream.ts's own `handleApiError` call) runs regardless of who
+// mounted the hook, so there's nothing else for THIS card to do.
 function RunningCard({ event }: { event: ApiEvent }) {
   const { t, i18n } = useTranslation();
   const snapshot = useMonitorSnapshot(event.id);
@@ -70,13 +76,14 @@ function RunningCard({ event }: { event: ApiEvent }) {
     <Card className="border-success/30 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 pb-2">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-caption font-bold uppercase text-success">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-success" />
-            </span>
-            {t("homeLiveNow")}
-          </span>
+          {/* PR #81 bot round Finding C1: composed from @idento/ui's
+              StatusPill (`indicator="dot" pulse`) instead of hand-rolled
+              markup -- panel/AGENTS.md's "UI primitives come only from
+              @idento/ui". Always pulsing (unlike the monitor page's own
+              LIVE pill, whose ring is gated on the stream's `live` status):
+              this badge means "the EVENT is currently running", not "the
+              SSE connection is up". */}
+          <StatusPill status="ready" label={t("homeLiveNow")} indicator="dot" pulse className="font-bold uppercase" />
           <span className="text-card-title">{event.name}</span>
           {timing ? <span className="text-caption text-muted-foreground">{timing}</span> : null}
         </div>
@@ -96,9 +103,14 @@ function RunningCard({ event }: { event: ApiEvent }) {
         </div>
       </div>
       <div className="flex flex-col gap-2 p-4 pt-2">
+        {/* PR #81 bot round Finding C6: gated on `!snapshot.data` alone, not
+            `snapshot.isError` -- once the snapshot has loaded once, a
+            single failed background refetch (isError=true, data still
+            retained per react-query) must not blank the counters back into
+            this error message. */}
         {snapshot.isLoading ? (
           <Skeleton className="h-8 w-40" />
-        ) : snapshot.isError ? (
+        ) : !snapshot.data ? (
           <p className="text-body text-destructive">{t("homeStatsLoadError")}</p>
         ) : (
           <p>
@@ -109,7 +121,7 @@ function RunningCard({ event }: { event: ApiEvent }) {
             </span>
           </p>
         )}
-        {!snapshot.isLoading && !snapshot.isError ? (
+        {!snapshot.isLoading && snapshot.data ? (
           <>
             <Progress value={checkedIn} max={total} className="w-56" />
             {/* Compact per-zone mini-line (board 1c/1d): real zone-name +
@@ -125,7 +137,11 @@ function RunningCard({ event }: { event: ApiEvent }) {
                 ))}
                 {unattributed > 0 ? (
                   <span data-testid="home-zone-unattributed">
-                    {t("monitorUnattributed")}: {unattributed}
+                    {/* PR #81 bot round Finding C7: home-owned copy -- this
+                        card no longer borrows the monitor page's
+                        `monitorUnattributed` key (panel/AGENTS.md's
+                        cross-surface i18n convention). */}
+                    {t("homeZoneUnattributed")}: {unattributed}
                   </span>
                 ) : null}
               </div>

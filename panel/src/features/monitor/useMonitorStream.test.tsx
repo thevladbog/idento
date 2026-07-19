@@ -6,6 +6,20 @@
 // refetch on success; unmount aborts (no further fetches); eventId change
 // closes the old stream and opens the new URL.
 //
+// PR #81 bot round: extended for Findings C3/C4/C5 (see this file's sibling
+// useMonitorStream.ts for the full state-machine rationale) --
+//  - C3: a non-OK stream response (401/403 tenant_suspended/other 4xx) is
+//    terminal -- status flips to "error", no further reconnect, and the
+//    failure is routed through the app's global handling (handleApiError.ts)
+//    the exact same way every other API failure is. 5xx and network errors
+//    keep the pre-existing backoff loop.
+//  - C4: the backoff `attempt` counter now resets only once a "hello" frame
+//    actually arrives, not as soon as the connect's fetch resolves OK -- an
+//    endpoint that 200s and then immediately closes without ever sending
+//    hello must keep climbing the ladder.
+//  - C5: every "hello" -- not just a reconnect's -- resyncs the snapshot,
+//    routed through the SAME trailing coalescer as "update" frames.
+//
 // Real timers throughout (never fake) -- this feature's repeatedly-
 // documented convention, since fake timers + MSW streaming is exactly the
 // interaction the codebase avoids (see this file's sibling task briefs and
@@ -20,8 +34,35 @@ import { render, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { startMswServer } from "../../test/msw";
+import { getToken, saveSession } from "../../shared/api/session";
+import { tenantStatusStore } from "../../shared/tenant-status/tenantStatusStore";
 import { useMonitorSnapshot } from "./hooks";
 import { useMonitorStream } from "./useMonitorStream";
+
+const AUTH = {
+  token: "jwt-test",
+  user: { id: "u1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" },
+  tenants: [{ id: "t1", name: "Acme" }],
+  current_tenant: { id: "t1", name: "Acme" },
+};
+
+// Same "delete + replace the whole `location` object" idiom
+// queryClient.test.ts uses -- jsdom's Location is a special exotic object
+// whose own properties aren't configurable, so `vi.spyOn` on `.assign`
+// throws "Cannot redefine property".
+const realLocation = window.location;
+
+function mockLocationAssign(): ReturnType<typeof vi.fn> {
+  const assign = vi.fn();
+  // @ts-expect-error -- intentionally deleting a non-optional global for the mock swap
+  delete window.location;
+  window.location = { ...realLocation, assign } as Location;
+  return assign;
+}
+
+function restoreLocation(): void {
+  window.location = realLocation;
+}
 
 // ---------------------------------------------------------------------------
 // Deferred/controlled SSE stream helper. Each `monitor/stream` GET the hook
@@ -144,6 +185,28 @@ describe("useMonitorStream", () => {
     await waitFor(() => expect(snapshotGetCount).toBe(2), { timeout: 2000 });
   });
 
+  it(
+    "resyncs the snapshot on the INITIAL hello alone -- C5: not just a reconnect's, and with no update frame needed",
+    async () => {
+      const { Wrapper } = makeWrapper();
+      const { getByTestId } = render(<Harness eventId="evt-1" />, { wrapper: Wrapper });
+
+      await waitFor(() => expect(snapshotGetCount).toBe(1)); // the page's own initial GET /monitor
+      await waitFor(() => expect(connections.length).toBe(1));
+      connections[0].push("event: hello\ndata: {}\n\n");
+      await waitFor(() => expect(getByTestId("status")).toHaveTextContent("live"));
+
+      // A mutation landing between that initial GET and this connection's
+      // subscribe registration would have no "update" subscriber to notify
+      // it -- the hello itself must resync, closing that race even when NO
+      // update frame ever arrives. Routed through the same 1s trailing
+      // coalescer as "update" frames (COALESCE_MS in useMonitorStream.ts),
+      // so this lands up to ~1s after hello, not instantly.
+      await waitFor(() => expect(snapshotGetCount).toBe(2), { timeout: 2000 });
+    },
+    5000,
+  );
+
   it("coalesces a burst of update frames within the same window into exactly one extra snapshot fetch", async () => {
     const { Wrapper } = makeWrapper();
     render(<Harness eventId="evt-1" />, { wrapper: Wrapper });
@@ -151,7 +214,9 @@ describe("useMonitorStream", () => {
     await waitFor(() => expect(snapshotGetCount).toBe(1));
     await waitFor(() => expect(connections.length).toBe(1));
     connections[0].push("event: hello\ndata: {}\n\n");
-    await waitFor(() => expect(snapshotGetCount).toBe(1)); // hello alone triggers no fetch
+    // C5: hello itself now schedules a coalesced resync too (asserted in
+    // its own test above) -- the burst below lands well inside that SAME
+    // 1s window, so it's still exactly ONE extra fetch overall, not two.
 
     connections[0].push('event: update\ndata: {"at":"t1"}\n\n');
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -169,7 +234,7 @@ describe("useMonitorStream", () => {
   });
 
   it(
-    "reconnects with backoff after a clean stream close, and immediately re-invalidates the snapshot on successful reconnect",
+    "reconnects with backoff after a clean stream close, and resyncs on the RECONNECT's own hello -- not on the bare reconnect fetch resolving OK",
     async () => {
       const { Wrapper } = makeWrapper();
       const { getByTestId } = render(<Harness eventId="evt-1" />, { wrapper: Wrapper });
@@ -178,6 +243,8 @@ describe("useMonitorStream", () => {
       await waitFor(() => expect(connections.length).toBe(1));
       connections[0].push("event: hello\ndata: {}\n\n");
       await waitFor(() => expect(getByTestId("status")).toHaveTextContent("live"));
+      // The initial hello's own coalesced resync (C5) lands here.
+      await waitFor(() => expect(snapshotGetCount).toBe(2), { timeout: 2000 });
 
       connections[0].close();
 
@@ -187,12 +254,13 @@ describe("useMonitorStream", () => {
       // the retried connect() to land as a brand-new request.
       await waitFor(() => expect(connections.length).toBe(2), { timeout: 3000 });
 
-      // The resync guarantee: invalidation fires as soon as the reconnect's
-      // fetch resolves OK, BEFORE that connection's own hello frame arrives.
-      await waitFor(() => expect(snapshotGetCount).toBe(2), { timeout: 1000 });
+      // C4/C5: resync is gated on THIS connection's own hello, not on the
+      // reconnect's fetch merely resolving OK -- no new invalidation yet.
+      expect(snapshotGetCount).toBe(2);
 
       connections[1].push("event: hello\ndata: {}\n\n");
       await waitFor(() => expect(getByTestId("status")).toHaveTextContent("live"));
+      await waitFor(() => expect(snapshotGetCount).toBe(3), { timeout: 2000 });
     },
     8000,
   );
@@ -242,4 +310,151 @@ describe("useMonitorStream", () => {
     expect(result.current.status).toBe("live");
     expect(connections.length).toBe(2);
   });
+});
+
+// PR #81 bot round Finding C4: `attempt` used to reset to 0 as soon as the
+// connect's fetch resolved OK -- BEFORE the stream proved itself live via
+// an actual "hello" frame. An endpoint that accepts the connection and then
+// immediately closes it (no hello ever sent) got hammered at the 1s backoff
+// base forever instead of climbing the ladder.
+describe("useMonitorStream -- backoff attempt reset (C4)", () => {
+  beforeEach(() => {
+    connections = [];
+    snapshotGetCount = 0;
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+    window.__ENV__ = { API_URL: "http://api.test" };
+  });
+
+  it(
+    "keeps the backoff attempt counter climbing across repeated OK-but-no-hello closes, instead of resetting on every bare 200",
+    async () => {
+      const { Wrapper } = makeWrapper();
+      renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+      await waitFor(() => expect(connections.length).toBe(1));
+      const t0 = Date.now();
+      connections[0].close(); // 200 OK, closes immediately, no hello -- attempt must NOT reset.
+
+      await waitFor(() => expect(connections.length).toBe(2), { timeout: 3000 });
+      const t1 = Date.now();
+      const firstGapMs = t1 - t0;
+
+      connections[1].close(); // second OK-but-no-hello close -- attempt should now be 1, not reset back to 0.
+
+      await waitFor(() => expect(connections.length).toBe(3), { timeout: 5000 });
+      const t2 = Date.now();
+      const secondGapMs = t2 - t1;
+
+      // backoffDelayMs(0) draws from [750, 1250]ms and backoffDelayMs(1)
+      // from [1500, 2500]ms (base*2^attempt +/-25% jitter, non-overlapping
+      // ranges) -- so this lower bound is a robust, non-flaky discriminator
+      // between "reset every time" (the bug -- second gap would also fall
+      // in [750, 1250]) and "reset only on hello" (the fix). Also captures
+      // the earlier review's own missing lower-bound assertion (the burst
+      // test above only ever asserted an UPPER bound via `waitFor` timeouts).
+      expect(secondGapMs).toBeGreaterThan(1300);
+      expect(secondGapMs).toBeGreaterThan(firstGapMs);
+    },
+    10000,
+  );
+});
+
+// PR #81 bot round Findings C3 (+ CodeRabbit): a non-OK stream response used
+// to be treated identically to a network error -- infinite reconnect behind
+// a "reconnecting" badge, even for a 401 (expired session) or 403
+// tenant_suspended, which should instead trigger the app's global handling
+// (queryClient.ts's handleApiError, now shared via handleApiError.ts) the
+// same way every other API failure does. 5xx and genuine network errors
+// keep the pre-existing backoff loop -- those ARE expected to eventually
+// succeed on retry.
+describe("useMonitorStream -- terminal vs retryable stream failures (C3)", () => {
+  beforeEach(() => {
+    connections = [];
+    snapshotGetCount = 0;
+    localStorage.clear();
+    tenantStatusStore.setSuspended(false);
+    window.__ENV__ = { API_URL: "http://api.test" };
+  });
+
+  afterEach(() => {
+    restoreLocation();
+    tenantStatusStore.setSuspended(false);
+  });
+
+  it("stops retrying and surfaces status 'error' on a 401, clearing the session and redirecting to /login", async () => {
+    saveSession(AUTH);
+    const assign = mockLocationAssign();
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor/stream", () =>
+        HttpResponse.json({ error: "Session expired" }, { status: 401 }),
+      ),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    expect(getToken()).toBeNull();
+    expect(assign).toHaveBeenCalledWith("/login");
+
+    // Past one full backoff window -- a terminal 4xx must never retry.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(connections.length).toBe(0); // handled before any streaming `connections` entry would be pushed
+    expect(result.current.status).toBe("error");
+  }, 5000);
+
+  it("stops retrying and surfaces status 'error' on a 403 tenant_suspended, marking the tenant suspended", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor/stream", () =>
+        HttpResponse.json({ code: "tenant_suspended", error: "Tenant is suspended" }, { status: 403 }),
+      ),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+    expect(tenantStatusStore.isSuspended()).toBe(true);
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(result.current.status).toBe("error");
+  }, 5000);
+
+  it("stops retrying and surfaces status 'error' on a documented 404 with no matching global handler", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor/stream", () => new HttpResponse(null, { status: 404 })),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("error"));
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(result.current.status).toBe("error");
+  }, 5000);
+
+  it("keeps retrying (never surfaces 'error') on a 500", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor/stream", () => new HttpResponse(null, { status: 500 })),
+    );
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("reconnecting"), { timeout: 3000 });
+    expect(result.current.status).not.toBe("error");
+  }, 5000);
+
+  it("keeps retrying (never surfaces 'error') on a plain network error", async () => {
+    server.use(http.get("http://api.test/api/events/:eventId/monitor/stream", () => HttpResponse.error()));
+
+    const { Wrapper } = makeWrapper();
+    const { result } = renderHook(() => useMonitorStream("evt-1"), { wrapper: Wrapper });
+
+    await waitFor(() => expect(result.current.status).toBe("reconnecting"), { timeout: 3000 });
+    expect(result.current.status).not.toBe("error");
+  }, 5000);
 });

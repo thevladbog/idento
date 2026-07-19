@@ -1,33 +1,11 @@
-import { MutationCache, QueryCache, QueryClient, type Mutation } from "@tanstack/react-query";
-import { ApiError } from "../shared/api/ApiError";
-import { clearSession } from "../shared/api/session";
-import { tenantStatusStore } from "../shared/tenant-status/tenantStatusStore";
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
+import { handleApiError } from "../shared/api/handleApiError";
 
-// Login/register/QR-login legitimately reject with 401 on wrong
-// credentials — that's the screen's own inline error (see LoginScreen.tsx
-// etc.), not a dead session. Skip the global 401 handler for exactly
-// these, identified by mutationKey.
-const AUTH_MUTATION_KEYS = new Set(["login", "register", "loginWithQr"]);
-
-function isAuthMutation(mutation?: Mutation<unknown, unknown, unknown, unknown>): boolean {
-  const key = mutation?.options.mutationKey?.[0];
-  return typeof key === "string" && AUTH_MUTATION_KEYS.has(key);
-}
-
-function handleApiError(error: unknown, mutation?: Mutation<unknown, unknown, unknown, unknown>) {
-  if (!(error instanceof ApiError)) return;
-  if (error.code === "tenant_suspended") {
-    tenantStatusStore.setSuspended(true);
-    return;
-  }
-  if (error.status === 401 && !isAuthMutation(mutation)) {
-    clearSession();
-    if (!window.location.pathname.startsWith("/login")) {
-      window.location.assign("/login");
-    }
-  }
-}
-
+// handleApiError lives in shared/api/ (PR #81 bot round Finding C3) so
+// useMonitorStream.ts -- a features/ module that must not import from
+// app/ -- can route its own SSE connection failures through the exact
+// same tenant-suspension/dead-session handling this QueryClient wires up
+// below for every ordinary query/mutation failure.
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error) => handleApiError(error),

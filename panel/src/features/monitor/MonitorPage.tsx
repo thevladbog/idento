@@ -16,8 +16,21 @@
 // `stream.status === "reconnecting"`, with the already-fetched snapshot
 // content staying rendered underneath it (a dead stream degrades the
 // header, never blanks the body).
+//
+// PR #81 bot round: the header's LIVE pill/reconnecting badge/stream-error
+// badge are composed from `@idento/ui`'s `StatusPill` (Finding C1 --
+// panel/AGENTS.md's "UI primitives come only from @idento/ui"; the
+// pulsing-dot variant this needed was genuinely missing, so it was added to
+// the primitive itself rather than hand-rolled here again). `stream.status
+// === "error"` (Finding C3 -- a terminal 4xx on the SSE connection, e.g. an
+// expired session or a suspended tenant) replaces the LIVE pill entirely
+// with a destructive-colored badge -- reconnecting has already permanently
+// stopped by that point, so a "reconnecting" badge would be a lie; the body
+// below still keeps rendering the last good snapshot underneath it (Finding
+// C6 -- retain-last-known-good, gated on `!snapshot` rather than
+// `isError`, so a single failed background refetch never blanks the page).
 import * as React from "react";
-import { Button, Card, CardContent, Skeleton } from "@idento/ui";
+import { Button, Card, CardContent, Skeleton, StatusPill } from "@idento/ui";
 import { Link, getRouteApi } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -64,12 +77,19 @@ export function MonitorPage() {
     );
   }
 
-  if (eventQuery.isError || !eventQuery.data) {
+  // PR #81 bot round Finding C6: gated on `!eventQuery.data` alone, not
+  // `isError || !data` -- once the event has loaded once, a single failed
+  // background refetch (isError=true, data still retained per react-query)
+  // must not blank the whole page into this error card.
+  if (!eventQuery.data) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6" data-testid="monitor-page">
-        <p className="text-body text-destructive">{t("workspaceLoadError")}</p>
+        {/* PR #81 bot round Finding C7: monitor-owned copy -- this page no
+            longer borrows workspace's `workspaceLoadError`/`workspaceBackHome`
+            keys (panel/AGENTS.md's cross-surface i18n convention). */}
+        <p className="text-body text-destructive">{t("monitorLoadError")}</p>
         <Button asChild variant="outline">
-          <Link to="/">{t("workspaceBackHome")}</Link>
+          <Link to="/">{t("monitorBackHome")}</Link>
         </Button>
       </div>
     );
@@ -87,36 +107,42 @@ export function MonitorPage() {
           Ns ago" staleness label · (reconnecting badge, when the stream is
           down) · Exit. */}
       <div className="flex h-14 flex-none items-center gap-3 border-b border-border px-4">
-        <span
-          className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-caption font-bold uppercase text-success"
-          data-testid="monitor-live-pill"
-        >
-          <span className="relative flex size-2">
-            {live ? (
-              <span
-                data-testid="monitor-live-ring"
-                className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-75"
-              />
-            ) : null}
-            <span className="relative inline-flex size-2 rounded-full bg-success" />
+        {stream.status === "error" ? (
+          // Finding C3: a terminal stream failure (401/403 tenant_suspended/
+          // documented 4xx) has already stopped reconnecting for good --
+          // showing "LIVE" or "Reconnecting" here would misrepresent a dead
+          // connection as merely degraded. The global handling this status
+          // triggers (useMonitorStream.ts -- session redirect / suspension
+          // takeover) runs independently of this badge.
+          <span data-testid="monitor-stream-error-badge">
+            <StatusPill status="error" label={t("monitorStreamError")} className="font-bold uppercase" />
           </span>
-          {t("monitorLive")}
-        </span>
+        ) : (
+          <>
+            <span data-testid="monitor-live-pill">
+              <StatusPill
+                status="ready"
+                label={t("monitorLive")}
+                indicator="dot"
+                pulse={live}
+                className="font-bold uppercase"
+              />
+            </span>
+            {/* Global Constraints: a dead-but-retryable stream shows a
+                reconnecting badge OVER stale data -- the body below keeps
+                rendering whatever snapshot was last fetched, unconditionally
+                on stream.status. */}
+            {stream.status === "reconnecting" ? (
+              <span data-testid="monitor-reconnecting-badge">
+                <StatusPill status="in_progress" label={t("monitorReconnecting")} className="font-bold uppercase" />
+              </span>
+            ) : null}
+          </>
+        )}
         <h1 className="text-page-title">{event.name}</h1>
         {updatedSeconds !== null ? (
           <span className="text-caption text-muted-foreground" data-testid="monitor-updated-ago">
             {t("monitorUpdatedAgo", { seconds: updatedSeconds })}
-          </span>
-        ) : null}
-        {/* Global Constraints: a dead stream shows a reconnecting badge
-            OVER stale data -- the body below keeps rendering whatever
-            snapshot was last fetched, unconditionally on stream.status. */}
-        {stream.status === "reconnecting" ? (
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-warning/10 px-2.5 py-0.5 text-caption font-bold uppercase text-warning"
-            data-testid="monitor-reconnecting-badge"
-          >
-            {t("monitorReconnecting")}
           </span>
         ) : null}
         <div className="ml-auto">
@@ -144,7 +170,14 @@ export function MonitorPage() {
               <Skeleton className="h-40 flex-1 w-full" />
             </div>
           </>
-        ) : snapshotQuery.isError || !snapshot ? (
+        ) : !snapshot ? (
+          // PR #81 bot round Finding C6: gated on `!snapshot` alone, not
+          // `snapshotQuery.isError || !snapshot` -- once the snapshot has
+          // loaded once, a single failed background refetch (isError=true,
+          // data still retained per react-query) must not blank the body
+          // into this error card. The "reconnecting"/"error" header badges
+          // above already cover a degraded live connection; this card is
+          // reserved for genuinely having nothing to show yet.
           <>
             <div className="flex flex-col gap-4">
               <Card>
