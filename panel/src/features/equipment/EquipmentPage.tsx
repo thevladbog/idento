@@ -32,6 +32,7 @@ import {
 } from "./hooks";
 import { PrinterWizard, type PrinterWizardPrefill, type PrinterWizardRetest } from "./PrinterWizard";
 import { computeSeenDeviceIds, deviceLiveness, unsavedLivePrinters } from "./reconcile";
+import { ScannerWizard } from "./ScannerWizard";
 import { agentClient, type AgentPrinter, type AgentScanner } from "../../shared/agent/agentClient";
 import { useAgentInfo } from "../../shared/agent/useAgentInfo";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
@@ -74,6 +75,12 @@ type DialogState = { kind: "rename" | "delete"; device: EquipmentDevice } | null
 // "Save…" row) or a RETEST of an already-saved device (a saved row's
 // "Test print" button, task-8-brief.md's controller-resolved addition).
 type PrinterWizardState = { kind: "create"; prefill?: PrinterWizardPrefill } | { kind: "retest"; device: EquipmentDevice } | null;
+
+// P4.3 Task 9 -- same create/retest shape as PrinterWizardState, minus the
+// prefill case (the scanner column has no discovery-based "Save…" row --
+// task-7-brief.md's own note that reconcile.ts exposes no
+// unsaved-scanner helper).
+type ScannerWizardState = { kind: "create" } | { kind: "retest"; device: EquipmentDevice } | null;
 
 interface RenameDialogProps {
   device: EquipmentDevice | null;
@@ -145,6 +152,15 @@ export function EquipmentPage() {
 
   const [dialog, setDialog] = React.useState<DialogState>(null);
   const [printerWizard, setPrinterWizard] = React.useState<PrinterWizardState>(null);
+  const [scannerWizard, setScannerWizard] = React.useState<ScannerWizardState>(null);
+  // P4.3 Task 9 -- best-effort mirror-cleanup warning for a deleted kind=com
+  // device (see the delete ConfirmDialog's onConfirm below). Page-level
+  // (not inside ConfirmDialog itself, which is a generic @idento/ui
+  // primitive out of this feature's touch scope) and, per the "mirror
+  // warnings stay visible until explicit dismiss" convention this phase's
+  // wizards already follow, cleared ONLY by the operator's own dismiss
+  // click -- never auto-cleared by a later render.
+  const [comRemoveWarning, setComRemoveWarning] = React.useState<string | null>(null);
 
   // P4.3 Task 8 -- every printer-wizard entry point is guarded on a known
   // machineId: the wizard's create path POSTs to
@@ -162,6 +178,17 @@ export function EquipmentPage() {
   function openRetestWizard(device: EquipmentDevice) {
     if (!machineId) return;
     setPrinterWizard({ kind: "retest", device });
+  }
+  // Same machineId guard as the printer wizard's own open* functions above
+  // -- there is nothing honest to register/retest against an unresolved
+  // machine identity.
+  function openCreateScannerWizard() {
+    if (!machineId) return;
+    setScannerWizard({ kind: "create" });
+  }
+  function openRetestScannerWizard(device: EquipmentDevice) {
+    if (!machineId) return;
+    setScannerWizard({ kind: "retest", device });
   }
 
   // Reconcile-on-load: fires the machine upsert EXACTLY once per
@@ -247,18 +274,16 @@ export function EquipmentPage() {
         <h1 className="text-page-title">{t("equipmentTitle")}</h1>
         <span className="text-caption text-muted-foreground">{t("equipmentCaption")}</span>
         <div className="ml-auto">
-          {/* Task 8 wires the Printer option to the real wizard; Scanner
-              stays the honest disabled placeholder (`wizard-todo`) until
-              Task 9. */}
+          {/* Task 8 wired the Printer option to the real wizard; Task 9
+              wires Scanner the same way -- the last `wizard-todo`
+              placeholder on this page is gone. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button">{t("equipmentAddDevice")}</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => openCreateWizard()}>{t("equipmentAddPrinter")}</DropdownMenuItem>
-              <DropdownMenuItem disabled data-testid="wizard-todo">
-                {t("equipmentAddScanner")}
-              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => openCreateScannerWizard()}>{t("equipmentAddScanner")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -332,6 +357,8 @@ export function EquipmentPage() {
               onClearDefault={() => {}}
               onDelete={(device) => setDialog({ kind: "delete", device })}
               onRetryLive={() => void scanners.refetch()}
+              onSetUp={() => openCreateScannerWizard()}
+              onTestScan={(device) => openRetestScannerWizard(device)}
             />
           </div>
         )
@@ -366,9 +393,49 @@ export function EquipmentPage() {
         confirmDisabled={deleteDevice.isPending}
         onConfirm={() => {
           if (dialog?.kind !== "delete") return;
-          deleteDevice.mutate({ params: { path: { device_id: dialog.device.id } } }, { onSuccess: closeDialog });
+          const device = dialog.device;
+          deleteDevice.mutate(
+            { params: { path: { device_id: device.id } } },
+            {
+              onSuccess: () => {
+                closeDialog();
+                // Task 9 -- best-effort mirror cleanup for a deleted
+                // kind=com device: the registry delete above is the
+                // source of truth and has ALREADY succeeded by the time
+                // this runs, so a failure here must never resurrect the
+                // device or block the delete -- same "warn, don't fail"
+                // posture as PrinterWizard's default-mirror call. The
+                // stable link is config.port_name (reconcile.ts's own
+                // matching rule); agent/openapi.yaml's ScannerRequest
+                // confirms both /scanners/add and /scanners/remove key
+                // off exactly that field, so no live getScanners() lookup
+                // is needed to resolve a different identifier.
+                if (device.class === "scanner" && device.kind === "com") {
+                  const portName = device.config?.port_name as string | undefined;
+                  if (portName) {
+                    agentClient.removeComScanner(portName).catch(() => {
+                      setComRemoveWarning(t("equipmentComRemoveWarn", { name: device.display_name }));
+                    });
+                  }
+                }
+              },
+            },
+          );
         }}
       />
+
+      {comRemoveWarning ? (
+        <div
+          role="status"
+          data-testid="equipment-com-remove-warning"
+          className="flex items-center justify-between gap-3 rounded-lg border border-warning bg-warning/5 px-4 py-2"
+        >
+          <p className="text-body text-warning">{comRemoveWarning}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setComRemoveWarning(null)}>
+            {t("workspaceDialogClose")}
+          </Button>
+        </div>
+      ) : null}
 
       <PrinterWizard
         open={printerWizard !== null}
@@ -384,6 +451,13 @@ export function EquipmentPage() {
           .filter((device) => device.class === "printer")
           .map((device) => device.config?.agent_name as string | undefined)
           .filter((agentName): agentName is string => agentName != null)}
+      />
+
+      <ScannerWizard
+        open={scannerWizard !== null}
+        onClose={() => setScannerWizard(null)}
+        machineId={machineId ?? ""}
+        retest={scannerWizard?.kind === "retest" ? scannerWizard.device : undefined}
       />
     </div>
   );

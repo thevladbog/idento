@@ -21,6 +21,18 @@ const server = startMswServer(
   http.get("http://agent.test/scanners", () =>
     HttpResponse.json([{ name: "Scanner_COM3", port_name: "COM3" }]),
   ),
+  http.get("http://agent.test/scanners/ports", () =>
+    HttpResponse.json([
+      { port_name: "COM3", display_name: "COM3", device_type: "serial", transport: "usb" },
+      { port_name: "COM4" },
+    ]),
+  ),
+  http.post("http://agent.test/scanners/add", () =>
+    HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" }),
+  ),
+  http.post("http://agent.test/scanners/remove", () =>
+    HttpResponse.json({ status: "removed", name: "Scanner_COM3", port: "COM3" }),
+  ),
   http.post("http://agent.test/print", () => HttpResponse.json({ status: "printed" })),
   http.post("http://agent.test/printers/add", () =>
     HttpResponse.json({ status: "added", name: "Network_Office", address: "192.168.0.245:9100" }, { status: 201 }),
@@ -103,6 +115,101 @@ describe("agentClient", () => {
     it("throws on a non-2xx response", async () => {
       server.use(http.get("http://agent.test/scanners", () => new HttpResponse(null, { status: 500 })));
       await expect(agentClient.getScanners()).rejects.toThrow();
+    });
+  });
+
+  // P4.3 Task 9 -- the scanner wizard's COM port picker (agent/openapi.yaml
+  // GET /scanners/ports, tag "Scanners"). Narrows the agent's richer
+  // response (optional USB metadata per port) down to just the port_name
+  // strings this app actually uses -- same idiom as getPrinters' type
+  // narrowing.
+  describe("getScannerPorts", () => {
+    it("returns just the port_name strings, discarding the optional USB metadata", async () => {
+      await expect(agentClient.getScannerPorts()).resolves.toEqual(["COM3", "COM4"]);
+    });
+
+    it("returns an empty array when the agent finds no ports (not an error)", async () => {
+      server.use(http.get("http://agent.test/scanners/ports", () => HttpResponse.json([])));
+      await expect(agentClient.getScannerPorts()).resolves.toEqual([]);
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.get("http://agent.test/scanners/ports", () => new HttpResponse("agent misconfigured", { status: 500 })),
+      );
+      await expect(agentClient.getScannerPorts()).rejects.toThrow(/agent misconfigured/);
+    });
+  });
+
+  // P4.3 Task 9 -- the wizard's COM path: pick a port, open it agent-side
+  // (agent/openapi.yaml POST /scanners/add, tag "Scanners", body
+  // `ScannerRequest` = {port_name}).
+  describe("addComScanner", () => {
+    it("POSTs {port_name} to /scanners/add and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/scanners/add", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await expect(agentClient.addComScanner("COM3")).resolves.toBeUndefined();
+      expect(captured).toEqual({ port_name: "COM3" });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/scanners/add", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await agentClient.addComScanner("COM3");
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/add", () => new HttpResponse("port_name is required", { status: 400 })),
+      );
+      await expect(agentClient.addComScanner("")).rejects.toThrow(/port_name is required/);
+    });
+  });
+
+  // P4.3 Task 9 -- the equipment hub's best-effort mirror cleanup when a
+  // saved kind=com device is deleted (EquipmentPage.tsx). Same ScannerRequest
+  // body shape as addComScanner -- confirmed against agent/openapi.yaml,
+  // POST /scanners/remove takes {port_name} only, never a separate "name"
+  // identifier.
+  describe("removeComScanner", () => {
+    it("POSTs {port_name} to /scanners/remove and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/scanners/remove", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "removed", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await expect(agentClient.removeComScanner("COM3")).resolves.toBeUndefined();
+      expect(captured).toEqual({ port_name: "COM3" });
+    });
+
+    // The endpoint is documented as idempotent (200 even when the port was
+    // never open) -- this client just passes that 200 straight through as
+    // a normal resolve, no special-casing needed.
+    it("resolves void on 200 even when the agent reports the port was already absent", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/remove", () => HttpResponse.json({ status: "removed" })),
+      );
+      await expect(agentClient.removeComScanner("COM9")).resolves.toBeUndefined();
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/remove", () => new HttpResponse("port_name is required", { status: 400 })),
+      );
+      await expect(agentClient.removeComScanner("")).rejects.toThrow(/port_name is required/);
     });
   });
 

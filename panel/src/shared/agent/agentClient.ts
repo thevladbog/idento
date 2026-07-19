@@ -99,6 +99,74 @@ async function getScanners(): Promise<AgentScanner[]> {
   return data.map((scanner) => ({ name: scanner.name, port_name: scanner.port_name }));
 }
 
+/**
+ * P4.3 Task 9 -- the scanner wizard's COM port picker (agent/openapi.yaml's
+ * GET /scanners/ports, tag "Scanners"). The agent's raw response carries
+ * optional USB metadata (display_name, vendor_id, manufacturer, …) per
+ * port, but `port_name` (e.g. "COM3") is the only field this app ever
+ * needs -- it's both what the wizard lists and the stable identity link
+ * stored as a com scanner device's `config.port_name` (P4.3 spec §5.2),
+ * same "narrow the agent's response to what this app actually uses" idiom
+ * as getPrinters' `type` narrowing above. An agent that fails to enumerate
+ * ports returns an empty array itself (agent/openapi.yaml's own doc
+ * comment), not an error -- nothing extra to normalize here for that case.
+ */
+async function getScannerPorts(): Promise<string[]> {
+  const response = await ensureOk(await fetch(agentUrl("/scanners/ports")), "agent GET /scanners/ports failed");
+  const data = (await response.json()) as Array<{ port_name: string }>;
+  return data.map((port) => port.port_name);
+}
+
+/**
+ * P4.3 Task 9 -- opens a COM/USB scanner on `port` and adds it to the
+ * agent's own allow-list (agent/openapi.yaml's `ScannerRequest`/POST
+ * /scanners/add, tag "Scanners"). Idempotent on the agent's side (a port
+ * already open answers status=exists, still 200) -- this client discards
+ * the response body either way, same "we sent it, we already know it"
+ * rationale as addNetworkPrinter above; the wizard already knows the port
+ * it just picked.
+ */
+async function addComScanner(port: string): Promise<void> {
+  const response = await fetch(agentUrl("/scanners/add"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) --
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port_name: port }),
+  });
+  await ensureOk(response, "agent POST /scanners/add failed");
+}
+
+/**
+ * P4.3 Task 9 -- closes a COM/USB scanner and removes it from the agent's
+ * allow-list (agent/openapi.yaml's `ScannerRequest`/POST /scanners/remove).
+ * The equipment hub's DeviceCard delete flow calls this best-effort for a
+ * kind=com device (EquipmentPage.tsx) -- warn, don't fail the registry
+ * delete that already succeeded, same "mirror is a convenience, not the
+ * source of truth" posture as setDefaultPrinter's callers.
+ *
+ * `portName` (not the agent's own display `name`, e.g. "Scanner_COM3") is
+ * the correct argument here: agent/openapi.yaml's `ScannerRequest` schema
+ * -- shared by BOTH /scanners/add and /scanners/remove -- has exactly one
+ * field, `port_name`. There is no separate "remove by display name"
+ * identifier to reconcile against; the registry's own `config.port_name`
+ * (the same stable link reconcile.ts already matches devices against) is
+ * already the exact value this endpoint expects, with no extra
+ * live-list lookup needed.
+ */
+async function removeComScanner(portName: string): Promise<void> {
+  const response = await fetch(agentUrl("/scanners/remove"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) --
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port_name: portName }),
+  });
+  await ensureOk(response, "agent POST /scanners/remove failed");
+}
+
 /** Returns the agent's configured default printer name, or null if unset. */
 async function getDefaultPrinter(): Promise<string | null> {
   const response = await ensureOk(
@@ -295,6 +363,9 @@ export const agentClient = {
   checkHealth,
   getPrinters,
   getScanners,
+  getScannerPorts,
+  addComScanner,
+  removeComScanner,
   getDefaultPrinter,
   addNetworkPrinter,
   setDefaultPrinter,

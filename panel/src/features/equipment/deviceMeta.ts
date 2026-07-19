@@ -8,7 +8,11 @@ import type { EquipmentDevice } from "./hooks";
 // locales (task-7-brief.md's `deviceMetaLine(device): string` signature
 // takes no `t`). `config` is a loose object (schema.d.ts), so every read is
 // defensive, same idiom as reconcile.ts.
-const TERMINATOR_LABELS: Record<string, string> = {
+// Exported (Task 9) so ScannerWizard.tsx's detection-result row and
+// terminator <select> can show the SAME literal labels as this saved-row
+// meta line, rather than re-typing the enter/tab/none -> Enter/Tab/—
+// mapping a second time in a sibling file.
+export const TERMINATOR_LABELS: Record<string, string> = {
   enter: "Enter",
   tab: "Tab",
   none: "—",

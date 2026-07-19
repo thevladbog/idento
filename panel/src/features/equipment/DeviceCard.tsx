@@ -79,6 +79,14 @@ export interface DeviceCardProps {
   // (not a disabled placeholder -- unlike Set up/Save, this action has no
   // "coming in a later task" story, it simply doesn't apply).
   onTestPrint?: (device: EquipmentDevice) => void;
+  // P4.3 Task 9's counterpart for the scanner column -- ScannerWizard's own
+  // retest entry point (task-9-brief.md). Shown on EVERY usb_wedge row
+  // (liveness is always "none" for those -- reconcile.ts's honesty rule
+  // means there is no live/not_seen distinction to gate on, and a wedge
+  // test is purely a browser-side capture that doesn't need the agent to
+  // report the device at all) as well as any "live" com scanner row (same
+  // liveness gate onTestPrint already uses for printers).
+  onTestScan?: (device: EquipmentDevice) => void;
 }
 
 function formatNotSeenDate(iso: string, locale: string): string {
@@ -93,7 +101,7 @@ function formatNotSeenDate(iso: string, locale: string): string {
 export function DeviceCard({
   testId, icon: Icon, titleText, emptyTitle, footerText, setUpLabel, rows, unsavedPrinters = [], agentDown,
   showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onRetryLive, onSetUp, onSaveUnsaved,
-  onTestPrint,
+  onTestPrint, onTestScan,
 }: DeviceCardProps) {
   const { t, i18n } = useTranslation();
   const isEmpty = rows.length === 0 && unsavedPrinters.length === 0;
@@ -205,6 +213,11 @@ export function DeviceCard({
                       {liveness === "live" && onTestPrint ? (
                         <Button type="button" variant="outline" size="sm" onClick={() => onTestPrint(device)}>
                           {t("equipmentTestPrint")}
+                        </Button>
+                      ) : null}
+                      {onTestScan && (liveness === "live" || device.kind === "usb_wedge") ? (
+                        <Button type="button" variant="outline" size="sm" onClick={() => onTestScan(device)}>
+                          {t("equipmentTestScan")}
                         </Button>
                       ) : null}
                       <DropdownMenu>

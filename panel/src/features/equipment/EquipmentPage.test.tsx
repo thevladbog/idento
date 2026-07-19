@@ -5,7 +5,7 @@
 // QueryClientProvider shape MINUS routing (this page has no path params
 // and renders in-shell via the normal protected route, per the brief).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { EquipmentPage } from "./EquipmentPage";
@@ -106,6 +106,11 @@ let agentInfoStatus = 200;
 let agentPrinters: Array<{ name: string; type: string }> = [];
 let agentPrintersStatus = 200;
 let agentScanners: Array<{ name: string; port_name: string }> = [];
+let agentScannerPorts: string[] = [];
+let addComCalls: string[] = [];
+let removeComCalls: string[] = [];
+let removeComStatus = 200;
+let consumeScanResponses: Array<{ code: string; time: string }> = [];
 
 const server = startMswServer(
   http.get("http://api.test/api/equipment/machines/:machineId", () => {
@@ -146,6 +151,24 @@ const server = startMswServer(
   }),
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
   http.get("http://agent.test/scanners", () => HttpResponse.json(agentScanners)),
+  http.get("http://agent.test/scanners/ports", () =>
+    HttpResponse.json(agentScannerPorts.map((port_name) => ({ port_name }))),
+  ),
+  http.post("http://agent.test/scanners/add", async ({ request }) => {
+    const body = (await request.json()) as { port_name: string };
+    addComCalls.push(body.port_name);
+    return HttpResponse.json({ status: "added", name: `Scanner_${body.port_name}`, port: body.port_name });
+  }),
+  http.post("http://agent.test/scanners/remove", async ({ request }) => {
+    const body = (await request.json()) as { port_name: string };
+    removeComCalls.push(body.port_name);
+    if (removeComStatus !== 200) return new HttpResponse("could not close port", { status: removeComStatus });
+    return HttpResponse.json({ status: "removed", name: `Scanner_${body.port_name}`, port: body.port_name });
+  }),
+  http.post("http://agent.test/scan/consume", () => {
+    const next = consumeScanResponses.shift();
+    return HttpResponse.json(next ?? { code: "", time: "0001-01-01T00:00:00Z" });
+  }),
 );
 void server;
 
@@ -175,6 +198,11 @@ describe("EquipmentPage", () => {
     agentPrinters = [];
     agentPrintersStatus = 200;
     agentScanners = [];
+    agentScannerPorts = [];
+    addComCalls = [];
+    removeComCalls = [];
+    removeComStatus = 200;
+    consumeScanResponses = [];
   });
 
   describe("connected (board 5a)", () => {
@@ -407,7 +435,7 @@ describe("EquipmentPage", () => {
   });
 
   describe("empty registry (404)", () => {
-    it("renders both columns' empty state, printer setup enabled (Task 8) and scanner setup still the disabled placeholder (Task 9)", async () => {
+    it("renders both columns' empty state with printer AND scanner setup both enabled (Task 8 + Task 9 -- the last wizard-todo placeholder is gone)", async () => {
       const user = userEvent.setup();
       machineStatus = 404;
       renderPage();
@@ -418,27 +446,27 @@ describe("EquipmentPage", () => {
       expect(within(scannersCard).getByText("No scanners saved yet")).toBeInTheDocument();
 
       // Printer setup buttons (header + empty-state) are the REAL enabled
-      // affordance now -- no longer the disabled placeholder.
+      // affordance -- no longer the disabled placeholder.
       within(printersCard)
         .getAllByRole("button", { name: "+ Set up printer" })
         .forEach((button) => expect(button).not.toBeDisabled());
       expect(within(printersCard).queryByTestId("wizard-todo")).not.toBeInTheDocument();
 
-      // Scanner setup buttons (header + empty-state) stay the disabled
-      // `wizard-todo` placeholder -- Task 9 wires them.
+      // Scanner setup buttons (header + empty-state) are ALSO the real
+      // enabled affordance now (Task 9) -- the disabled `wizard-todo`
+      // placeholder is gone from this column too.
       within(scannersCard)
-        .getAllByTestId("wizard-todo")
-        .forEach((button) => expect(button).toBeDisabled());
+        .getAllByRole("button", { name: "+ Set up scanner" })
+        .forEach((button) => expect(button).not.toBeDisabled());
+      expect(within(scannersCard).queryByTestId("wizard-todo")).not.toBeInTheDocument();
 
-      // The header "+ Add device" chooser: Printer is the real enabled
-      // affordance, Scanner keeps the disabled `wizard-todo` placeholder
-      // (task-8-brief.md: "keep its wizard-todo testid on the scanner
-      // option only").
+      // The header "+ Add device" chooser: BOTH Printer and Scanner are
+      // now the real enabled affordance -- no `wizard-todo` placeholder
+      // survives anywhere on this page.
       await user.click(screen.getByRole("button", { name: "+ Add device" }));
       expect(await screen.findByRole("menuitem", { name: "Printer" })).not.toHaveAttribute("data-disabled");
-      const scannerItem = screen.getByRole("menuitem", { name: "Scanner" });
-      expect(scannerItem).toHaveAttribute("data-testid", "wizard-todo");
-      expect(scannerItem).toHaveAttribute("data-disabled");
+      expect(screen.getByRole("menuitem", { name: "Scanner" })).not.toHaveAttribute("data-disabled");
+      expect(screen.queryByTestId("wizard-todo")).not.toBeInTheDocument();
 
       // An empty registry still upserts the machine -- that's what
       // registers it.
@@ -517,6 +545,136 @@ describe("EquipmentPage", () => {
 
       const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
       expect(within(row).queryByRole("button", { name: "Test print" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("scanner wizard entry points (Task 9)", () => {
+    it("header '+ Add device' -> Scanner opens ScannerWizard's kind toggle", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(screen.getByRole("button", { name: "+ Add device" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Scanner" }));
+
+      expect(await screen.findByRole("dialog", { name: "Set up a scanner" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "USB / COM scanner" })).toBeInTheDocument();
+    });
+
+    it("scanners column '+ Set up scanner' opens ScannerWizard at the listen step", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const scannersCard = await screen.findByTestId("equipment-scanners-card");
+      // The empty scanners column renders "+ Set up scanner" twice (header
+      // + empty-state button, same as the printers column) -- the header
+      // one is first in DOM order.
+      await user.click(within(scannersCard).getAllByRole("button", { name: "+ Set up scanner" })[0]);
+
+      expect(await screen.findByRole("dialog", { name: "Set up a scanner" })).toBeInTheDocument();
+      expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+    });
+
+    it("a wedge scanner row's 'Test scan' opens the wizard in retest mode, straight at the listen step, no Save", async () => {
+      machineDevices = [scannerWedge()];
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-scanner-wedge");
+      await user.click(within(row).getByRole("button", { name: "Test scan" }));
+
+      expect(await screen.findByRole("dialog", { name: "Test scan" })).toBeInTheDocument();
+      expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save scanner" })).not.toBeInTheDocument();
+    });
+
+    it("a live com scanner row's 'Test scan' opens retest mode; a not-seen com scanner row has no 'Test scan' button", async () => {
+      machineDevices = [scannerCom(), scannerCom({ id: "dev-scanner-com-notseen", config: { port_name: "COM9" } })];
+      agentScanners = [{ name: "Symbol LS2208 (open)", port_name: "COM3" }];
+      const user = userEvent.setup();
+      renderPage();
+
+      const liveRow = await screen.findByTestId("equipment-device-row-dev-scanner-com");
+      await user.click(within(liveRow).getByRole("button", { name: "Test scan" }));
+      expect(await screen.findByRole("dialog", { name: "Test scan" })).toBeInTheDocument();
+
+      const notSeenRow = screen.getByTestId("equipment-device-row-dev-scanner-com-notseen");
+      expect(within(notSeenRow).queryByRole("button", { name: "Test scan" })).not.toBeInTheDocument();
+    });
+
+    it("saving a new wedge scanner from the hub refreshes the registry list", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const scannersCard = await screen.findByTestId("equipment-scanners-card");
+      // The empty scanners column renders "+ Set up scanner" twice (header
+      // + empty-state button, same as the printers column) -- the header
+      // one is first in DOM order.
+      await user.click(within(scannersCard).getAllByRole("button", { name: "+ Set up scanner" })[0]);
+
+      const dialog = await screen.findByRole("dialog", { name: "Set up a scanner" });
+      for (const char of "TEST-4471") fireEvent.keyDown(window, { key: char });
+      fireEvent.keyDown(window, { key: "Enter" });
+      await within(dialog).findByText("Scan received — TEST-4471");
+
+      await user.type(within(dialog).getByLabelText("Device name"), "Honeywell Voyager — desk 2");
+      machineDevices = [scannerWedge({ id: "dev-scanner-new", display_name: "Honeywell Voyager — desk 2" })];
+      await user.click(within(dialog).getByRole("button", { name: "Save scanner" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(await screen.findByText("Honeywell Voyager — desk 2")).toBeInTheDocument();
+    });
+
+    it("deleting a saved com scanner best-effort calls removeComScanner with its port_name and does not block the delete on failure", async () => {
+      machineDevices = [scannerCom()];
+      removeComStatus = 500;
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-scanner-com");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+      const dialog = screen.getByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => expect(deleteCalls).toEqual(["dev-scanner-com"]));
+      await waitFor(() => expect(removeComCalls).toEqual(["COM3"]));
+
+      // The agent-side mirror failed, but the registry delete already
+      // succeeded -- a visible, explicitly-dismissed warning, never a
+      // blocked/undone delete.
+      const warning = await screen.findByTestId("equipment-com-remove-warning");
+      expect(warning).toHaveTextContent("couldn't release");
+      await user.click(within(warning).getByRole("button", { name: "Close" }));
+      expect(screen.queryByTestId("equipment-com-remove-warning")).not.toBeInTheDocument();
+    });
+
+    it("deleting a saved com scanner calls removeComScanner and shows no warning on success", async () => {
+      machineDevices = [scannerCom()];
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-scanner-com");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => expect(removeComCalls).toEqual(["COM3"]));
+      expect(screen.queryByTestId("equipment-com-remove-warning")).not.toBeInTheDocument();
+    });
+
+    it("deleting a saved WEDGE scanner never calls removeComScanner (no agent-side port to release)", async () => {
+      machineDevices = [scannerWedge()];
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-scanner-wedge");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => expect(deleteCalls).toEqual(["dev-scanner-wedge"]));
+      expect(removeComCalls).toEqual([]);
     });
   });
 
