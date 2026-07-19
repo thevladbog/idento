@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"sync"
 	"time"
 
 	"idento/backend/internal/broker"
@@ -29,6 +30,16 @@ import (
 type Handler struct {
 	Store  store.Store
 	Broker broker.Broker
+
+	// heartbeatLastPublish tracks, per event, the last time a
+	// heartbeat-SOURCED broker publish fired (Finding B5, PR #81
+	// bot-review round) — see shouldPublishHeartbeat
+	// (checkin_stations.go) for the throttle this backs. Deliberately kept
+	// in the handler layer, not the broker package: it's purely about
+	// rate-limiting one specific publish SITE, not a broker-level concern.
+	// sync.Map's zero value is ready to use, so the ~70 existing
+	// `&Handler{Store: fs}` test literals stay valid untouched.
+	heartbeatLastPublish sync.Map
 }
 
 // New returns a new Handler with the given store.

@@ -54,7 +54,17 @@ func main() {
 	// transport) — constructed right after the store, closed the same way
 	// pgStore.Close() is (plan-time fact 4): a dedicated LISTEN connection
 	// plus a small notify pool, both against the same DatabaseURL.
-	eventBroker, err := broker.NewPGBroker(context.Background(), cfg.DatabaseURL)
+	//
+	// Bounded with a 10s timeout (PR #81 bot-review round, Finding B2c):
+	// NewPGBroker's initial connect used to run against an unbounded
+	// context.Background(), so a wedged/unreachable Postgres at boot could
+	// hang startup forever. store.NewPGStore's own Ping already refuses to
+	// boot without Postgres reachable at all — this timeout gives the
+	// broker's connect the same fail-fast-at-boot posture instead of
+	// hanging indefinitely on a reachable-but-stalled connection.
+	brokerCtx, brokerCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	eventBroker, err := broker.NewPGBroker(brokerCtx, cfg.DatabaseURL)
+	brokerCancel()
 	if err != nil {
 		log.Fatalf("Unable to start event broker: %v\n", err)
 	}

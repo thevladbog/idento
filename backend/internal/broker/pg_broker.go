@@ -164,6 +164,16 @@ func (b *PGBroker) listenLoop(ctx context.Context, conn *pgx.Conn, dbURL string)
 				// ctx was cancelled while reconnecting.
 				return
 			}
+			// Finding B1 (PR #81 bot-review round): any NOTIFY sent during
+			// the gap between the old connection dying and this fresh
+			// LISTEN taking over is permanently lost — Postgres does not
+			// replay them. Broadcasting to every current local subscriber
+			// (not just the initial connect — see NewPGBroker, which never
+			// calls this) is the only correct recovery: every attached SSE
+			// client gets nudged to re-fetch a snapshot via its normal
+			// update path, so it can never stay silently stale for an
+			// unbounded time waiting on some later, unrelated publish.
+			handleReconnectSuccess(b.mem)
 			continue
 		}
 
@@ -215,6 +225,22 @@ func closeConn(conn *pgx.Conn) {
 	if err := conn.Close(context.Background()); err != nil {
 		log.Printf("broker: error closing LISTEN connection: %v", err)
 	}
+}
+
+// handleReconnectSuccess runs the exact recovery step listenLoop performs
+// immediately after re-establishing LISTEN (Finding B1, PR #81 bot-review
+// round): it fans out one coalesced signal to every current local
+// subscriber via mem.BroadcastAll, so a subscriber that missed NOTIFYs
+// during the connection gap still gets nudged onto its normal
+// re-fetch-on-update path instead of staying silently stale until some
+// later, unrelated publish happens to land. Factored out of listenLoop for
+// the same reason handleNotification is: this one step is unit-testable
+// without a live Postgres connection, even though the reconnect() call
+// around it is not (see listenLoop's doc comment). Deliberately NOT called
+// from NewPGBroker's initial connect — there is no "gap" to recover from on
+// first boot, only on a LATER reconnect.
+func handleReconnectSuccess(mem *MemBroker) {
+	mem.BroadcastAll()
 }
 
 // handleNotification parses payload as a uuid.UUID and forwards it into

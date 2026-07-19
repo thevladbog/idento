@@ -278,6 +278,16 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
+	// Captured BEFORE any field is mutated below (Finding B3, PR #81
+	// bot-review round): this legacy check-in-status write path never
+	// published to the monitor broker before — a mobile-kiosk-only event
+	// (zero panel check-in stations, so zero heartbeats either) would leave
+	// attached monitors stale indefinitely. existingAttendee is already
+	// loaded here, so an exact before/after compare on CheckinStatus is
+	// cheap and avoids a noisy publish on a no-op PUT (e.g. a client
+	// re-sending the same status).
+	beforeCheckinStatus := existingAttendee.CheckinStatus
+
 	// Bind update request
 	var req struct {
 		CheckinStatus bool       `json:"checkin_status"`
@@ -330,6 +340,12 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 
 	if err := h.Store.UpdateAttendee(c.Request().Context(), existingAttendee); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
+	}
+
+	// Finding B3: publish only when checkin_status actually flipped — see
+	// beforeCheckinStatus's doc comment above.
+	if existingAttendee.CheckinStatus != beforeCheckinStatus {
+		h.publishCheckinEvent(c.Request().Context(), existingAttendee.EventID)
 	}
 
 	return c.JSON(http.StatusOK, existingAttendee)

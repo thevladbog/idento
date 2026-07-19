@@ -3407,6 +3407,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Fail-closed nil-Broker guard (PR #81 bot-review round, Finding B4): the server has no event broker configured (a misconfigured/degraded deployment). Checked AFTER requireEventOwnership but BEFORE any stream header is written, so this is a plain, complete JSON response — never a half-open event-stream connection the client would have to notice and abandon. A nil Broker used to still serve hello/ping frames forever with no "update" ever possible, silently masking the misconfiguration; failing closed here surfaces it immediately instead. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getEventReadiness: {

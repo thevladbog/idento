@@ -22,9 +22,11 @@ var monitorStreamPingInterval = 25 * time.Second
 // endpoint. It is a deliberately "thin-ping" stream: frames carry no
 // monitor state themselves, only a signal telling the client to re-fetch
 // Task 3's GET .../monitor snapshot. Order matters: requireEventOwnership
-// runs BEFORE any stream header is written, so a foreign/missing event
-// still gets a plain 404 JSON body (never a half-open event-stream
-// response the client would have to notice and abandon).
+// AND the nil-Broker check both run BEFORE any stream header is written,
+// so a foreign/missing event still gets a plain 404 JSON body, and a
+// misconfigured deployment (no Broker wired) gets a plain 503 — never a
+// half-open event-stream response the client would have to notice and
+// abandon.
 //
 // The handler blocks for the lifetime of the connection — that's the
 // correct shape for a streaming handler, not a goroutine leak: it returns
@@ -39,6 +41,17 @@ func (h *Handler) GetEventMonitorStream(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
+	// Fail closed (Finding B4, CodeRabbit, PR #81 bot-review round): a nil
+	// Broker used to still serve hello+ping frames forever with no "update"
+	// ever possible — a broken deployment would look healthy while every
+	// attached monitor silently staled. Checked BEFORE any stream header is
+	// written, same ordering discipline as requireEventOwnership above, so
+	// the caller gets a normal, complete 503 JSON response instead of a
+	// half-open stream.
+	if h.Broker == nil {
+		return writeErr(c, newHTTPError(http.StatusServiceUnavailable, "Live monitor stream unavailable: no event broker configured"))
+	}
+
 	res := c.Response()
 	res.Header().Set(echo.HeaderContentType, "text/event-stream")
 	res.Header().Set("Cache-Control", "no-cache")
@@ -51,15 +64,8 @@ func (h *Handler) GetEventMonitorStream(c echo.Context) error {
 	// be missed — see broker.Broker.Subscribe's coalescing contract
 	// (1-buffered, drop-if-full) for why a signal delivered before the
 	// select loop below starts running is still safely picked up once it
-	// does. Nil-safe (Handler.Broker doc comment, handler.go): a Handler
-	// built without a Broker still serves a valid stream — ch stays a
-	// permanently-nil channel, so its select case simply never fires; the
-	// client still gets hello + keep-alive pings, just no "update" frames.
-	var ch <-chan struct{}
-	unsubscribe := func() {}
-	if h.Broker != nil {
-		ch, unsubscribe = h.Broker.Subscribe(eventID)
-	}
+	// does. h.Broker is guaranteed non-nil past the check above.
+	ch, unsubscribe := h.Broker.Subscribe(eventID)
 	defer unsubscribe()
 
 	if !writeSSEFrame(res, "event: hello\ndata: {}\n\n") {

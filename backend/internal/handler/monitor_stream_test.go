@@ -207,39 +207,44 @@ func TestGetEventMonitorStream_PingKeepAlive(t *testing.T) {
 	}
 }
 
-// TestGetEventMonitorStream_NilBrokerServesHelloAndPing proves the
-// nil-safe design: a Handler built without a Broker (an older
-// &Handler{Store: fs} test literal, or a genuine misconfiguration) still
-// serves a valid stream — hello and pings keep flowing, there is just
-// never an "update" frame (nothing to prove a negative on within a bounded
-// test, so this only asserts the two frames that DO still arrive).
-func TestGetEventMonitorStream_NilBrokerServesHelloAndPing(t *testing.T) {
-	orig := monitorStreamPingInterval
-	monitorStreamPingInterval = 20 * time.Millisecond
-	t.Cleanup(func() { monitorStreamPingInterval = orig })
-
+// TestGetEventMonitorStream_NilBrokerReturns503BeforeAnyStreamHeader proves
+// the fail-closed design (Finding B4, CodeRabbit, PR #81 bot-review round):
+// a Handler built without a Broker (an older &Handler{Store: fs} test
+// literal, or a genuine misconfiguration) used to still serve hello+ping
+// frames with no updates ever — a broken deployment would look healthy
+// while monitors silently staled. It must now fail closed: a plain 503
+// JSON body, in the house {"error": msg} shape, written BEFORE any
+// text/event-stream header — never a half-open stream the client would
+// have to notice and abandon (mirrors the 404 foreign-event precedent
+// below in this same file).
+func TestGetEventMonitorStream_NilBrokerReturns503BeforeAnyStreamHeader(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")
 	h := New(&fakeStore{getEventByID: func(uuid.UUID) (*models.Event, error) { return event, nil }})
 	// h.Broker intentionally left nil.
 
-	srv, _ := newMonitorStreamTestServer(t, h, event.ID, tenantID)
+	e := echo.New()
+	path := monitorStreamPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodGet, path, "", tenantID.String(), "staff")
+	setMonitorStreamPathParams(c, event.ID)
 
-	resp, err := http.Get(srv.URL)
-	if err != nil {
-		t.Fatalf("GET stream: %v", err)
+	if err := h.GetEventMonitorStream(c); err != nil {
+		t.Fatalf("GetEventMonitorStream: %v", err)
 	}
-	defer resp.Body.Close()
-
-	r := bufio.NewReader(resp.Body)
-	hello := readSSEFrame(t, r, 2*time.Second)
-	if hello != "event: hello\ndata: {}\n\n" {
-		t.Fatalf("hello frame = %q", hello)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d, body=%s", rec.Code, rec.Body.String())
 	}
-	ping := readSSEFrame(t, r, 2*time.Second)
-	if ping != ": ping\n\n" {
-		t.Fatalf("ping frame = %q", ping)
+	if ct := rec.Header().Get(echo.HeaderContentType); strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("Content-Type = %q — stream headers must never be set when Broker is nil", ct)
 	}
+	var body map[string]string
+	if err := jsonUnmarshalBody(rec, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["error"] == "" {
+		t.Fatalf("body = %v, want the house {\"error\": msg} shape", body)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
 }
 
 // TestGetEventMonitorStream_ClientDisconnectUnsubscribesCleanly proves the

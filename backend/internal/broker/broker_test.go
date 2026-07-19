@@ -230,6 +230,127 @@ func TestMemBroker_ConcurrentSubscribePublishUnsubscribe(t *testing.T) {
 	wg.Wait()
 }
 
+// --- MemBroker: BroadcastAll (Finding B1 — reconnect-gap resync) ---------
+
+// TestMemBroker_BroadcastAllReachesSubscribersAcrossDifferentEvents proves
+// BroadcastAll fans a signal out to EVERY current subscriber regardless of
+// which event they're subscribed to — unlike Publish, which is scoped to
+// one eventID. This backs PGBroker's post-reconnect resync (Finding B1): a
+// LISTEN connection drop can lose NOTIFYs for ANY event, so recovery must
+// nudge ALL local subscribers to re-fetch, not just one.
+func TestMemBroker_BroadcastAllReachesSubscribersAcrossDifferentEvents(t *testing.T) {
+	b := NewMemBroker()
+	eventA := uuid.New()
+	eventB := uuid.New()
+
+	chA, unsubA := b.Subscribe(eventA)
+	defer unsubA()
+	chB, unsubB := b.Subscribe(eventB)
+	defer unsubB()
+
+	b.BroadcastAll()
+
+	select {
+	case <-chA:
+	default:
+		t.Fatal("expected eventA subscriber to receive a broadcast signal")
+	}
+	select {
+	case <-chB:
+	default:
+		t.Fatal("expected eventB subscriber to receive a broadcast signal")
+	}
+}
+
+// TestMemBroker_BroadcastAllSignalsAllSubscribersOfSameEvent proves multiple
+// subscribers of the SAME event all get a signal too (not just one per
+// event).
+func TestMemBroker_BroadcastAllSignalsAllSubscribersOfSameEvent(t *testing.T) {
+	b := NewMemBroker()
+	eventID := uuid.New()
+
+	ch1, unsub1 := b.Subscribe(eventID)
+	defer unsub1()
+	ch2, unsub2 := b.Subscribe(eventID)
+	defer unsub2()
+
+	b.BroadcastAll()
+
+	for i, ch := range []<-chan struct{}{ch1, ch2} {
+		select {
+		case <-ch:
+		default:
+			t.Fatalf("subscriber %d did not receive a broadcast signal", i)
+		}
+	}
+}
+
+// TestMemBroker_BroadcastAllWithNoSubscribersIsNoop proves calling
+// BroadcastAll on an empty broker (nothing subscribed yet, e.g. right after
+// process boot) neither panics nor blocks.
+func TestMemBroker_BroadcastAllWithNoSubscribersIsNoop(t *testing.T) {
+	b := NewMemBroker()
+	b.BroadcastAll()
+}
+
+// TestMemBroker_BroadcastAllCoalescesWithPendingSignal proves the same
+// drop-if-full, never-blocks contract Publish has: a subscriber that
+// already has an unread pending signal (from an earlier Publish) just
+// coalesces on BroadcastAll rather than blocking or double-buffering.
+func TestMemBroker_BroadcastAllCoalescesWithPendingSignal(t *testing.T) {
+	b := NewMemBroker()
+	eventID := uuid.New()
+
+	ch, unsubscribe := b.Subscribe(eventID)
+	defer unsubscribe()
+
+	if err := b.Publish(context.Background(), eventID); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		b.BroadcastAll()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("BroadcastAll blocked on an unread, full subscriber channel")
+	}
+
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected exactly one pending signal after Publish+BroadcastAll while unread")
+	}
+	select {
+	case <-ch:
+		t.Fatal("expected the channel to be empty after draining the single coalesced signal")
+	default:
+	}
+}
+
+// TestMemBroker_BroadcastAllDoesNotDeliverToUnsubscribed proves an
+// unsubscribed channel is not touched by BroadcastAll (same bookkeeping
+// Publish already respects).
+func TestMemBroker_BroadcastAllDoesNotDeliverToUnsubscribed(t *testing.T) {
+	b := NewMemBroker()
+	eventID := uuid.New()
+
+	ch, unsubscribe := b.Subscribe(eventID)
+	unsubscribe()
+
+	b.BroadcastAll()
+
+	select {
+	case <-ch:
+		t.Fatal("unsubscribed channel should not receive a broadcast signal")
+	default:
+	}
+}
+
 // --- Broker interface compliance -----------------------------------------
 
 func TestMemBroker_SatisfiesBrokerInterface(t *testing.T) {
@@ -285,5 +406,39 @@ func TestHandleNotification_EmptyPayloadIsLoggedAndSkipped(t *testing.T) {
 	case <-ch:
 		t.Fatal("empty payload must not forward any signal")
 	default:
+	}
+}
+
+// --- pgBroker reconnect→broadcast wiring (Finding B1, unit-testable part) -
+//
+// listenLoop's reconnect() call itself requires a live Postgres connection
+// (pgx.Connect) and is documented-uncoverable (see listenLoop's doc
+// comment). What IS unit-testable without a live DB is the wiring right
+// after a successful reconnect: handleReconnectSuccess is the exact call
+// listenLoop makes there, factored out for the same reason handleNotification
+// is — so this one line of "what happens on reconnect success" has a direct
+// unit test independent of the un-testable network code around it.
+
+func TestHandleReconnectSuccess_BroadcastsToAllCurrentSubscribers(t *testing.T) {
+	mem := NewMemBroker()
+	eventA := uuid.New()
+	eventB := uuid.New()
+
+	chA, unsubA := mem.Subscribe(eventA)
+	defer unsubA()
+	chB, unsubB := mem.Subscribe(eventB)
+	defer unsubB()
+
+	handleReconnectSuccess(mem)
+
+	select {
+	case <-chA:
+	default:
+		t.Fatal("expected eventA subscriber to receive a signal after a successful reconnect")
+	}
+	select {
+	case <-chB:
+	default:
+		t.Fatal("expected eventB subscriber to receive a signal after a successful reconnect")
 	}
 }

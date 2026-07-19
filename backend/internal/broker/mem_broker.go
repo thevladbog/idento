@@ -48,6 +48,31 @@ func (b *MemBroker) Publish(_ context.Context, eventID uuid.UUID) error {
 	return nil
 }
 
+// BroadcastAll signals EVERY current subscriber across ALL events — unlike
+// Publish, which is scoped to one eventID. It exists for PGBroker's
+// post-reconnect resync (Finding B1, PR #81 bot-review round): NOTIFYs sent
+// while the LISTEN connection was down are permanently lost (Postgres does
+// not replay them), so once a fresh LISTEN is established there is no way
+// to know which specific event(s) changed during the gap — the only correct
+// recovery is to nudge every current subscriber to re-fetch via its normal
+// update path, regardless of event. Same drop-if-full, never-blocks
+// semantics as Publish (see its doc comment), just applied across the whole
+// fanout map in one pass instead of one event's subscriber set.
+func (b *MemBroker) BroadcastAll() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, subs := range b.subs {
+		for ch := range subs {
+			select {
+			case ch <- struct{}{}:
+			default:
+				// Already has a pending, unread signal — coalesce.
+			}
+		}
+	}
+}
+
 // Subscribe registers a new 1-buffered channel for eventID. See
 // Broker.Subscribe for the coalescing and idempotent-unsubscribe contract.
 func (b *MemBroker) Subscribe(eventID uuid.UUID) (<-chan struct{}, func()) {

@@ -166,16 +166,15 @@ func (h *Handler) MarkAttendeePrinted(c echo.Context) error {
 			log.Printf("mark attendee printed: skip reprint log, invalid staff user id: %v", err)
 		} else if err := h.Store.InsertCheckinAction(c.Request().Context(), *eventID, attendeeID, "reprint", stationID, staffUserID); err != nil {
 			log.Printf("mark attendee printed: failed to log reprint checkin_actions row: %v", err)
-		} else if h.Broker != nil {
+		} else {
 			// Publish ONLY reached when the reprint feed row was actually
 			// logged (P4.2 Task 4) — a skipped log (no claims, bad staff
 			// id, or a store failure above) means the monitor's recent-feed
 			// wouldn't show anything new anyway, so signaling it to
-			// re-fetch would be a pointless round trip. Nil-safe,
-			// best-effort, after the row already committed.
-			if pubErr := h.Broker.Publish(c.Request().Context(), *eventID); pubErr != nil {
-				log.Printf("mark attendee printed: broker publish failed: %v", pubErr)
-			}
+			// re-fetch would be a pointless round trip. publishCheckinEvent
+			// (Finding B2) is nil-safe, best-effort, detached,
+			// timeout-bounded — after the row already committed.
+			h.publishCheckinEvent(c.Request().Context(), *eventID)
 		}
 	}
 

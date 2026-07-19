@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -175,13 +174,13 @@ func (h *Handler) StationCheckin(c echo.Context) error {
 	// self-review notes): "already_checked_in" and "blocked" both leave the
 	// monitor-visible state completely unchanged, so signaling the monitor
 	// to re-fetch a snapshot that will come back identical would just be
-	// wasted work on every subscriber. Nil-safe, best-effort, AFTER the
-	// store call already committed — a publish failure never turns a
-	// successful check-in into an error response.
-	if outcome == "checked_in" && h.Broker != nil {
-		if pubErr := h.Broker.Publish(c.Request().Context(), eventID); pubErr != nil {
-			log.Printf("station checkin: broker publish failed: %v", pubErr)
-		}
+	// wasted work on every subscriber. publishCheckinEvent (Finding B2) is
+	// nil-safe, best-effort, detached from this request's own
+	// cancellation, and timeout-bounded — AFTER the store call already
+	// committed, so nothing here can turn a successful check-in into an
+	// error response.
+	if outcome == "checked_in" {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
 	}
 
 	var checkin *CheckinInfo
@@ -249,12 +248,9 @@ func (h *Handler) UndoCheckin(c echo.Context) error {
 	// already-clear case: a redundant signal just costs subscribers one
 	// harmless snapshot re-fetch that comes back unchanged, which is
 	// strictly cheaper than trying to detect "did this undo actually
-	// change anything" here. Nil-safe, best-effort, AFTER the store call.
-	if h.Broker != nil {
-		if pubErr := h.Broker.Publish(c.Request().Context(), eventID); pubErr != nil {
-			log.Printf("undo checkin: broker publish failed: %v", pubErr)
-		}
-	}
+	// change anything" here. publishCheckinEvent (Finding B2) is nil-safe,
+	// best-effort, detached, timeout-bounded — AFTER the store call.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
 
 	return c.JSON(http.StatusOK, UndoCheckinResponse{Attendee: updated})
 }
