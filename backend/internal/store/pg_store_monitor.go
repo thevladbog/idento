@@ -31,8 +31,9 @@ import (
 //     round, Finding E). Including 'undo' here (not just 'checkin') is PR
 //     #81 Finding A2's fix: an attendee who checked in at station A, was
 //     undone, then got re-checked-in through a path that writes NO action
-//     row (e.g. the legacy PUT /api/attendees/{id}, or a mobile batch
-//     write) is currently checked in but their latest ACTION is the
+//     row (e.g. rows predating the 2026-07-19 event-wide actions-feed
+//     change, or a legacy path whose log-don't-fail feed insert failed)
+//     is currently checked in but their latest ACTION is the
 //     'undo' — they must fall to unattributed, not be attributed to
 //     station A's zone from the now-superseded 'checkin' row. ca.created_at
 //     is also carried through here (not just action/station_id) to support
@@ -47,9 +48,9 @@ import (
 //     (unattributed) even though a 'checkin' row still physically exists in
 //     their history. The current-period guard closes a narrower gap A2
 //     alone doesn't: attendee checked in at station A (writes a 'checkin'
-//     action), cleared via a LEGACY path that writes NO 'undo' row (e.g.
-//     attendee PUT, or a raw sync write), then re-checked-in via a path
-//     that ALSO writes no action row — the latest state-changing action is
+//     action), cleared then re-checked-in via writes that produced NO
+//     action rows (pre-2026-07-19 legacy traffic, or feed inserts lost to
+//     log-don't-fail) — the latest state-changing action is
 //     still that OLD 'checkin' row, so without the guard it would be
 //     wrongly attributed to station A's zone for a check-in it never
 //     actually observed. It works because CheckInAttendee's guarded UPDATE
@@ -130,8 +131,9 @@ const monitorOverviewSQL = `
 // bot-review round Finding E) — AND only when that action falls within the
 // attendee's CURRENT check-in period, i.e. ca.created_at >=
 // attendees.checked_in_at (PR #81 round-3 convergence, Backend Finding 2:
-// a legacy clear + legacy re-checkin, neither of which writes an action
-// row, must not inherit attribution from a now-stale 'checkin' action that
+// a clear + re-checkin that left no action rows — pre-2026-07-19 legacy
+// traffic or lost log-don't-fail inserts — must not inherit attribution
+// from a now-stale 'checkin' action that
 // predates the CURRENT check-in) — joined through checkin_stations.zone_id
 // to event_zones; a checked-in attendee with no 'checkin' action row, whose
 // latest state-changing action is 'undo', whose only 'checkin' action
