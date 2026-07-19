@@ -5,9 +5,9 @@
 // QueryClientProvider shape MINUS routing (this page has no path params
 // and renders in-shell via the normal protected route, per the brief).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { EquipmentPage } from "./EquipmentPage";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
@@ -104,6 +104,7 @@ let defaultPrinterCalls: Array<{ machineId: string; body: unknown }> = [];
 let agentHealthOk = true;
 let agentInfoStatus = 200;
 let agentPrinters: Array<{ name: string; type: string }> = [];
+let agentPrintersStatus = 200;
 let agentScanners: Array<{ name: string; port_name: string }> = [];
 
 const server = startMswServer(
@@ -139,7 +140,10 @@ const server = startMswServer(
     if (agentInfoStatus === 404) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json(AGENT_INFO);
   }),
-  http.get("http://agent.test/printers", () => HttpResponse.json(agentPrinters)),
+  http.get("http://agent.test/printers", () => {
+    if (agentPrintersStatus !== 200) return new HttpResponse(null, { status: agentPrintersStatus });
+    return HttpResponse.json(agentPrinters);
+  }),
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
   http.get("http://agent.test/scanners", () => HttpResponse.json(agentScanners)),
 );
@@ -169,6 +173,7 @@ describe("EquipmentPage", () => {
     agentHealthOk = true;
     agentInfoStatus = 200;
     agentPrinters = [];
+    agentPrintersStatus = 200;
     agentScanners = [];
   });
 
@@ -247,6 +252,60 @@ describe("EquipmentPage", () => {
       expect(upsertCalls).toHaveLength(1);
     });
 
+    // Task 7 review finding 1: an errored live-list fetch surfaces as an
+    // EMPTY list -- reconciling then would under-report seen_device_ids
+    // (genuinely-live devices get no last_seen_at advance and later show a
+    // false "not seen since"). The upsert must be gated on both live lists
+    // SUCCEEDING, and a skipped attempt must NOT consume the
+    // once-per-machine_id ref budget -- a later successful refetch still
+    // reconciles exactly once.
+    it("does NOT fire the reconcile upsert while the live printers fetch has errored, then fires exactly once after a successful refetch", async () => {
+      agentPrintersStatus = 500;
+      const { queryClient } = renderPage();
+
+      // Registry + agent info + scanners all settle; saved devices render.
+      await screen.findByText("Zebra ZD421");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(0);
+
+      // Printers recover; a refetch (same path as window-refocus/Retry)
+      // succeeds -- NOW the reconcile fires, once.
+      agentPrintersStatus = 200;
+      await act(async () => {
+        await queryClient.invalidateQueries({ queryKey: ["agent", "printers"] });
+      });
+
+      await waitFor(() => expect(upsertCalls).toHaveLength(1));
+      expect(upsertCalls[0].body).toMatchObject({
+        seen_device_ids: ["dev-printer-live", "dev-scanner-com"],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(1);
+    });
+
+    // Task 7 review finding 3 (TanStack v5): `isLoading` is
+    // `isPending && isFetching`, so the pre-fetch window used to fall
+    // through to DeviceCard's REAL empty-state markup instead of the
+    // loading skeleton.
+    it("shows the loading skeleton (never the empty-state copy) while the machine query is still pending", async () => {
+      // Cached identity makes machineId resolve on the very first render,
+      // so the machine query is enabled-and-fetching immediately.
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      server.use(
+        http.get("http://api.test/api/equipment/machines/:machineId", async () => {
+          await delay(80);
+          return HttpResponse.json({ machine: machine(), devices: machineDevices });
+        }),
+      );
+      renderPage();
+
+      expect(await screen.findByTestId("equipment-registry-skeleton")).toBeInTheDocument();
+      expect(screen.queryByText("No printers saved yet")).not.toBeInTheDocument();
+      expect(screen.queryByText("No scanners saved yet")).not.toBeInTheDocument();
+
+      expect(await screen.findByText("Zebra ZD421")).toBeInTheDocument();
+    });
+
     it("renders the translated printer/scanner column titles and footers with no raw i18n keys leaking", async () => {
       renderPage();
       await screen.findByText("Zebra ZD421");
@@ -273,6 +332,29 @@ describe("EquipmentPage", () => {
       expect(await screen.findByText("Update the agent to save devices to your organization")).toBeInTheDocument();
       // Live-only: the unregistered live printer shows as an unsaved row.
       expect(await screen.findByTestId("equipment-device-unsaved-Live_Only_Printer")).toBeInTheDocument();
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(0);
+    });
+
+    // Task 7 review finding 5: a legacy agent (GET /info 404) on a machine
+    // where a PRIOR modern connection already cached an identity. Pinned
+    // intended behavior: the cached machine_id keeps the registry readable
+    // (board 5d already requires saved devices visible with the agent fully
+    // DOWN -- a reachable-but-legacy agent must never show LESS than a dead
+    // one), the legacy update hint still renders, and the reconcile PUT
+    // still never fires (only a live `info` may vouch for seen devices).
+    it("with a cached identity: saved devices stay visible alongside the update hint, and still NO reconcile PUT", async () => {
+      agentInfoStatus = 404;
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      machineDevices = [printerLive()];
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+
+      renderPage();
+
+      expect(await screen.findByText("Update the agent to save devices to your organization")).toBeInTheDocument();
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      expect(within(row).getByText("Zebra ZD421")).toBeInTheDocument();
 
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(upsertCalls).toHaveLength(0);
@@ -342,6 +424,51 @@ describe("EquipmentPage", () => {
       // An empty registry still upserts the machine -- that's what
       // registers it.
       await waitFor(() => expect(upsertCalls).toHaveLength(1));
+
+      // A true 404 is NOT an error state -- the two must stay distinct
+      // (review finding 2's counterpart assertion).
+      expect(screen.queryByTestId("equipment-registry-error")).not.toBeInTheDocument();
+    });
+  });
+
+  // Task 7 review finding 2: a genuine (non-404) registry failure used to
+  // render the exact same "No printers/scanners saved yet" screen as a
+  // legitimately-never-registered machine -- the precise "silent empty
+  // list" this phase's design exists to kill. It must render a distinct
+  // error state with a retry affordance instead.
+  describe("registry error (non-404)", () => {
+    it("renders a distinct error state with Retry -- never the empty-state copy -- and fires no reconcile PUT", async () => {
+      machineStatus = 500;
+      renderPage();
+
+      const errorBox = await screen.findByTestId("equipment-registry-error");
+      expect(errorBox).toHaveTextContent("Couldn't load saved devices.");
+      expect(within(errorBox).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+
+      expect(screen.queryByText("No printers saved yet")).not.toBeInTheDocument();
+      expect(screen.queryByText("No scanners saved yet")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-printers-card")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-scanners-card")).not.toBeInTheDocument();
+
+      // The reconcile gate treats a genuine error as not-settled: no upsert.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(0);
+    });
+
+    it("Retry refetches the registry and renders the device columns once it recovers", async () => {
+      machineStatus = 500;
+      machineDevices = [printerLive()];
+      const user = userEvent.setup();
+      renderPage();
+
+      const errorBox = await screen.findByTestId("equipment-registry-error");
+
+      machineStatus = 200;
+      await user.click(within(errorBox).getByRole("button", { name: "Retry" }));
+
+      expect(await screen.findByTestId("equipment-printers-card")).toBeInTheDocument();
+      expect(screen.getByText("Zebra ZD421")).toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-registry-error")).not.toBeInTheDocument();
     });
   });
 
@@ -384,6 +511,24 @@ describe("EquipmentPage", () => {
       expect(defaultPrinterCalls[0]).toMatchObject({
         machineId: "mach-1",
         body: { device_id: "dev-printer-live" },
+      });
+    });
+
+    // Task 7 review finding 4: the clear path (is_default row -> PUT
+    // device_id: null) was implemented but unproven.
+    it("clear default: PUTs the default-printer endpoint with device_id null from the default row's menu", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      // printerLive() is the default row, so its menu offers Clear default.
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Clear default" }));
+
+      await waitFor(() => expect(defaultPrinterCalls).toHaveLength(1));
+      expect(defaultPrinterCalls[0]).toMatchObject({
+        machineId: "mach-1",
+        body: { device_id: null },
       });
     });
 

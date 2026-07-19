@@ -679,5 +679,6 @@
   "equipmentEmptyScanners": "Сканеры ещё не сохранены",
   "equipmentAgentLegacyHint": "Обновите агент, чтобы устройства сохранялись в организации",
   "equipmentDownloadAgent": "Скачать агент",
-  "equipmentRowMenuLabel": "Другие действия для «{{name}}»"
+  "equipmentRowMenuLabel": "Другие действия для «{{name}}»",
+  "equipmentRegistryLoadError": "Не удалось загрузить сохранённые устройства."
 }

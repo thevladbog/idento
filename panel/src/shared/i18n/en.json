@@ -677,5 +677,6 @@
   "equipmentEmptyScanners": "No scanners saved yet",
   "equipmentAgentLegacyHint": "Update the agent to save devices to your organization",
   "equipmentDownloadAgent": "Download the agent",
-  "equipmentRowMenuLabel": "More actions for {{name}}"
+  "equipmentRowMenuLabel": "More actions for {{name}}",
+  "equipmentRegistryLoadError": "Couldn't load saved devices."
 }

@@ -137,14 +137,25 @@ export function EquipmentPage() {
 
   // Reconcile-on-load: fires the machine upsert EXACTLY once per
   // machine_id per page visit, once info + the registry + both live lists
-  // have all settled. An empty registry (isEmptyRegistry) still counts as
-  // "settled" -- upserting IS what registers a never-seen machine.
+  // have all loaded. An empty registry (isEmptyRegistry) still counts as
+  // loaded -- upserting IS what registers a never-seen machine.
   const upsertedMachineRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!machineId || agentInfo.state !== "connected" || !agentInfo.info) return;
     const registrySettled = machineQuery.isSuccess || isEmptyRegistry(machineQuery.error);
     if (!registrySettled) return;
-    if (printers.state === "checking" || scanners.state === "checking") return;
+    // Task 7 review finding 1: both live lists must have SUCCEEDED, not
+    // merely settled -- an errored /printers or /scanners fetch surfaces as
+    // state "disconnected" with an EMPTY list, and reconciling off that
+    // would under-report seen_device_ids (a genuinely-live device gets no
+    // last_seen_at advance and later reads as a false "not seen since").
+    // The backend PUT is additive-only (never marks devices unseen), so
+    // skipping is strictly safe; and because this early-return happens
+    // BEFORE the ref below is written, a skipped attempt never consumes the
+    // once-per-machine_id budget -- a later successful refetch (window
+    // refocus, a not-seen row's Retry, the 8s auto-retry) still reconciles
+    // exactly once.
+    if (printers.state !== "connected" || scanners.state !== "connected") return;
     if (upsertedMachineRef.current === machineId) return;
     upsertedMachineRef.current = machineId;
     const seenDeviceIds = computeSeenDeviceIds(machineQuery.data?.devices ?? [], printers.printers, scanners.scanners);
@@ -179,6 +190,24 @@ export function EquipmentPage() {
   // render.
   const showDeviceGrid = machineId !== null || !agentDown;
 
+  // Task 7 review finding 3 (TanStack v5): `isLoading` is
+  // `isPending && isFetching`, so it is FALSE for a disabled query -- the
+  // same v5 semantics useAgentInfo.ts already documents for stale data.
+  // Two genuinely-pending windows must show the skeleton instead of
+  // DeviceCard's real empty-state markup: the machine query actively
+  // fetching (enabled, `isPending` until first success/error), and the
+  // pre-identity window (agent probe still "checking" with no cached
+  // machine_id -- the query is disabled, so no query flag covers it).
+  // A legacy agent with no cache (machineId stays null, state
+  // "connected_legacy") deliberately falls through to the live-only view.
+  const registryPending =
+    (machineId !== null && machineQuery.isPending) || (machineId === null && agentInfo.state === "checking");
+  // Task 7 review finding 2: a genuine (non-404) registry failure must
+  // never render as "No printers/scanners saved yet" -- that's the exact
+  // "silent empty list" board 5d's caption calls out. The true 404
+  // (never-registered machine) stays the empty state it really is.
+  const registryError = machineQuery.isError && !isEmptyRegistry(machineQuery.error);
+
   function closeDialog() {
     setDialog(null);
   }
@@ -200,10 +229,23 @@ export function EquipmentPage() {
       <AgentCard agent={agentInfo} />
 
       {showDeviceGrid ? (
-        machineQuery.isLoading ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        registryPending ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2" data-testid="equipment-registry-skeleton">
             <Skeleton className="h-64 w-full" />
             <Skeleton className="h-64 w-full" />
+          </div>
+        ) : registryError ? (
+          // Same "error text + Retry" shape as ZonesPage.tsx's list-error
+          // state -- an explicit failure card, never a fabricated empty
+          // list (review finding 2).
+          <div
+            className="flex flex-col items-start gap-2 rounded-lg border border-border p-6"
+            data-testid="equipment-registry-error"
+          >
+            <p className="text-body text-destructive">{t("equipmentRegistryLoadError")}</p>
+            <Button type="button" variant="outline" onClick={() => void machineQuery.refetch()}>
+              {t("retry")}
+            </Button>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
