@@ -155,10 +155,47 @@ func (h *Handler) SyncPush(c echo.Context) error {
 			continue // Skip if event doesn't belong to tenant
 		}
 
-		// Captured BEFORE UpdateAttendee overwrites the row: the feed-row
-		// gate below needs an exact before/after CheckinStatus compare,
-		// same pattern as UpdateAttendeeHandler's beforeCheckinStatus.
-		beforeCheckinStatus := existingAttendee.CheckinStatus
+		// Atomic transition claim (PR #82 bot round, superseding the
+		// original Go-level before/after compare): the guarded UPDATE is
+		// the sole arbiter of whether THIS push flipped checkin_status —
+		// two concurrent pushes (or a push racing a station scan) could
+		// both pass a Go compare against the pre-loaded row and both
+		// insert a duplicate feed row. A push that doesn't change the
+		// status claims 0 rows and writes nothing. UpdateAttendee still
+		// runs afterwards for the full-row Last-Write-Wins overwrite this
+		// MVP path has always performed.
+		flipped, err := h.Store.TransitionAttendeeCheckinStatus(c.Request().Context(), existingAttendee.ID, attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy)
+		if err != nil {
+			c.Logger().Errorf("sync: checkin transition failed (event %s, attendee %s): %v — skipping", existingAttendee.EventID, existingAttendee.ID, err)
+			continue
+		}
+
+		// Event-wide actions feed (2026-07-19 design): this raw sync write
+		// is a legacy check-in path — without a feed row its check-ins are
+		// invisible to the monitor's rate/peak/recent. Written immediately
+		// after the claim that performed the transition (feed and state
+		// stay consistent even if the follow-up UpdateAttendee fails),
+		// station-less, and log-don't-fail: sync deliberately never fails
+		// the whole push for one attendee. The flip also marks the event
+		// affected HERE — the transition is already committed monitor-
+		// visible state even if the full-row write below fails.
+		if flipped {
+			if attendee.CheckinStatus {
+				// created_at = the CLIENT-supplied CheckedInAt exactly as
+				// the claim persisted it into checked_in_at (nil → now();
+				// a nil checked_in_at with status=true already reads as
+				// unattributed via the overview's defensive
+				// checked_in_at IS NOT NULL guard).
+				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "checkin", nil, staffUserID, attendee.CheckedInAt); err != nil {
+					c.Logger().Errorf("sync: checkin feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+				}
+			} else {
+				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "undo", nil, staffUserID, nil); err != nil {
+					c.Logger().Errorf("sync: undo feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+				}
+			}
+			affectedEvents[existingAttendee.EventID] = struct{}{}
+		}
 
 		// Conflict resolution: Last Write Wins
 		// If server's updated_at > client's, server wins (skip update)
@@ -169,29 +206,6 @@ func (h *Handler) SyncPush(c echo.Context) error {
 		if err := h.Store.UpdateAttendee(c.Request().Context(), &attendee); err != nil {
 			// Log error but continue with other updates
 			continue
-		}
-
-		// Event-wide actions feed (2026-07-19 design): this raw sync write
-		// is a legacy check-in path — without a feed row its check-ins are
-		// invisible to the monitor's rate/peak/recent. Transition-gated
-		// (no-op pushes write nothing), station-less, and log-don't-fail:
-		// the attendee UPDATE above already succeeded, and sync
-		// deliberately never fails the whole push for one attendee.
-		if attendee.CheckinStatus != beforeCheckinStatus {
-			if attendee.CheckinStatus {
-				// created_at = the CLIENT-supplied CheckedInAt exactly as
-				// UpdateAttendee just persisted it into checked_in_at (nil
-				// → now(); a nil checked_in_at with status=true already
-				// reads as unattributed via the overview's defensive
-				// checked_in_at IS NOT NULL guard).
-				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "checkin", nil, staffUserID, attendee.CheckedInAt); err != nil {
-					c.Logger().Errorf("sync: checkin feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
-				}
-			} else {
-				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "undo", nil, staffUserID, nil); err != nil {
-					c.Logger().Errorf("sync: undo feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
-				}
-			}
 		}
 
 		// existingAttendee.EventID (not the client-supplied attendee.EventID)

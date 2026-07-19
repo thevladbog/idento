@@ -75,6 +75,7 @@ type fakeStore struct {
 	getCheckinActions             func(eventID uuid.UUID, limit int) ([]store.CheckinActionRow, error)
 	insertCheckinAction           func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID uuid.UUID) error
 	insertCheckinActionAt         func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error
+	transitionAttendeeCheckin     func(attendeeID uuid.UUID, target bool, checkedInAt *time.Time, checkedInBy *uuid.UUID) (bool, error)
 	getMonitorOverview            func(eventID uuid.UUID) (int, int, []store.MonitorZoneCount, int, error)
 	getMonitorMinuteBuckets       func(eventID uuid.UUID, since time.Time) ([]store.MinuteBucket, error)
 	countRecentCheckins           func(eventID uuid.UUID, since time.Time) (int, error)
@@ -320,6 +321,9 @@ func (f *fakeStore) InsertCheckinAction(_ context.Context, eventID, attendeeID u
 }
 func (f *fakeStore) InsertCheckinActionAt(_ context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 	return f.insertCheckinActionAt(eventID, attendeeID, action, stationID, staffUserID, at)
+}
+func (f *fakeStore) TransitionAttendeeCheckinStatus(_ context.Context, attendeeID uuid.UUID, target bool, checkedInAt *time.Time, checkedInBy *uuid.UUID) (bool, error) {
+	return f.transitionAttendeeCheckin(attendeeID, target, checkedInAt, checkedInBy)
 }
 func (f *fakeStore) GetMonitorOverview(_ context.Context, eventID uuid.UUID) (int, int, []store.MonitorZoneCount, int, error) {
 	return f.getMonitorOverview(eventID)

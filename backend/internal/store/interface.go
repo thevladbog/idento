@@ -252,6 +252,19 @@ type Store interface {
 	// re-validation, callers treat failure as best-effort/non-fatal.
 	InsertCheckinActionAt(ctx context.Context, eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error
 
+	// TransitionAttendeeCheckinStatus atomically claims a check-in status
+	// transition for the legacy write paths (attendee PUT, sync push): one
+	// guarded UPDATE flips checkin_status to target ONLY when it currently
+	// differs, writing checked_in_at/checked_in_by alongside (cleared when
+	// target is false), and reports whether THIS call performed the flip.
+	// The database is the arbiter — callers gate their feed-row inserts
+	// and monitor publishes on the returned flag, never on a Go-level
+	// before/after compare, which two concurrent requests can both pass
+	// (each would then insert a duplicate checkin_actions row). Callers
+	// still run UpdateAttendee afterwards for the remaining columns and
+	// the legacy paths' established overwrite semantics.
+	TransitionAttendeeCheckinStatus(ctx context.Context, attendeeID uuid.UUID, target bool, checkedInAt *time.Time, checkedInBy *uuid.UUID) (bool, error)
+
 	// GetMonitorOverview returns the monitor snapshot's total attendee
 	// count, currently-checked-in count, every zone's currently-checked-in
 	// count, and the count of checked-in attendees that can't be

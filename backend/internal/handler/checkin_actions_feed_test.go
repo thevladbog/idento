@@ -58,6 +58,7 @@ func TestUpdateAttendeeHandler_RecordsCheckinActionOnFlip(t *testing.T) {
 			persistedCheckedInAt = a.CheckedInAt
 			return nil
 		},
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
@@ -118,6 +119,7 @@ func TestUpdateAttendeeHandler_RecordsUndoActionOnUncheck(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
@@ -173,6 +175,9 @@ func TestUpdateAttendeeHandler_NoActionRowWhenStatusUnchanged(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// Already checked in + target true: the guarded claim affects 0
+		// rows — the DB, not a Go compare, says nothing flipped.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return false, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
@@ -212,6 +217,7 @@ func TestUpdateAttendeeHandler_ActionInsertFailureIsNonFatal(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error {
 			return errors.New("boom")
 		},
@@ -267,9 +273,10 @@ func TestSyncPush_RecordsCheckinActionOnFlip(t *testing.T) {
 
 	var got []recordedAction
 	h := New(&fakeStore{
-		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
-		updateAttendee:  func(*models.Attendee) error { return nil },
+		getEventByID:              func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:           func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:            func(*models.Attendee) error { return nil },
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
@@ -324,9 +331,10 @@ func TestSyncPush_RecordsUndoActionOnUncheck(t *testing.T) {
 
 	var got []recordedAction
 	h := New(&fakeStore{
-		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
-		updateAttendee:  func(*models.Attendee) error { return nil },
+		getEventByID:              func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:           func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:            func(*models.Attendee) error { return nil },
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
@@ -354,6 +362,99 @@ func TestSyncPush_RecordsUndoActionOnUncheck(t *testing.T) {
 	}
 }
 
+// TestUpdateAttendeeHandler_LostRaceWritesNoActionRow is the direct
+// regression test for the PR #82 bot-round race: the pre-loaded attendee
+// reads checkin_status=false (so the OLD Go-level before/after compare
+// would see a flip), but the guarded transition claim affects 0 rows — a
+// concurrent request's check-in already landed by the time this request's
+// UPDATE was evaluated. This request must write NO feed row and NO
+// publish: the concurrent winner already did both.
+func TestUpdateAttendeeHandler_LostRaceWritesNoActionRow(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	attendee := contractAttendee(event.ID)
+	attendee.CheckinStatus = false // the stale pre-read: still unchecked
+	staffUser := contractUser("staff@org.io")
+
+	var got []recordedAction
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
+		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The concurrent winner's check-in committed between this
+		// request's pre-read and its guarded UPDATE: 0 rows affected.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return false, nil },
+		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
+			return nil
+		},
+	})
+	mem := broker.NewMemBroker()
+	h.Broker = mem
+	ch, unsubscribe := mem.Subscribe(event.ID)
+	defer unsubscribe()
+
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodPut, "/api/attendees/"+attendee.ID.String(), `{"checkin_status":true}`, tenantID.String(), "staff")
+	c.SetPath("/api/attendees/:id")
+	c.SetParamNames("id")
+	c.SetParamValues(attendee.ID.String())
+
+	if err := h.UpdateAttendeeHandler(c); err != nil {
+		t.Fatalf("UpdateAttendeeHandler: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("insertCheckinActionAt calls = %d, want 0 — the lost race must not duplicate the winner's feed row", len(got))
+	}
+	if pendingSignal(ch) {
+		t.Fatal("publish signal = true, want false — this request performed no monitor-visible transition")
+	}
+}
+
+// TestSyncPush_LostRaceWritesNoActionRow is the sync-path twin of the
+// race regression above: the client pushes checkin_status=true against a
+// pre-read of false, but the guarded claim reports no flip (a station
+// scan or another push already checked the attendee in) — no feed row.
+func TestSyncPush_LostRaceWritesNoActionRow(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	existing := contractAttendee(event.ID)
+	existing.CheckinStatus = false // the stale pre-read
+
+	incoming := *existing
+	incoming.CheckinStatus = true
+
+	var got []recordedAction
+	h := New(&fakeStore{
+		getEventByID:              func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:           func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:            func(*models.Attendee) error { return nil },
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return false, nil },
+		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
+			return nil
+		},
+	})
+	h.Broker = broker.NewMemBroker()
+
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/sync", syncPushBody(t, incoming), tenantID.String(), "staff")
+
+	if err := h.SyncPush(c); err != nil {
+		t.Fatalf("SyncPush: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("insertCheckinActionAt calls = %d, want 0 — the lost race must not duplicate the winner's feed row", len(got))
+	}
+}
+
 // TestSyncPush_NoActionRowWhenStatusUnchanged proves a sync update that
 // leaves checkin_status as-is (e.g. a name edit) writes no feed row.
 func TestSyncPush_NoActionRowWhenStatusUnchanged(t *testing.T) {
@@ -372,6 +473,8 @@ func TestSyncPush_NoActionRowWhenStatusUnchanged(t *testing.T) {
 		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// Same status pushed: the guarded claim affects 0 rows.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return false, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
 			return nil
