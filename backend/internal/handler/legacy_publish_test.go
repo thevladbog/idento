@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"idento/backend/internal/broker"
 	"idento/backend/internal/models"
@@ -42,6 +43,10 @@ func TestUpdateAttendeeHandler_PublishesWhenCheckinStatusChanges(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The flip also writes an event-wide actions-feed row (2026-07-19
+		// design) — a no-op hook here; the feed behavior itself is pinned
+		// by checkin_actions_feed_test.go.
+		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	mem := broker.NewMemBroker()
 	h.Broker = mem
@@ -160,6 +165,10 @@ func TestUpdateAttendeeHandler_NilBrokerDoesNotPanic(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The flip also writes an event-wide actions-feed row (2026-07-19
+		// design) — a no-op hook here; the feed behavior itself is pinned
+		// by checkin_actions_feed_test.go.
+		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	// h.Broker intentionally left nil.
 

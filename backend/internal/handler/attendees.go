@@ -353,8 +353,32 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 	}
 
 	// Finding B3: publish only when checkin_status actually flipped — see
-	// beforeCheckinStatus's doc comment above.
+	// beforeCheckinStatus's doc comment above. The same gate now also
+	// writes the event-wide actions-feed row (2026-07-19 design): this
+	// legacy PUT is the mobile app's ONLINE check-in path, and without a
+	// feed row a mobile-only event's monitor showed checked_in rising
+	// while scans/min stayed 0. The insert runs BEFORE the publish so a
+	// publish-triggered snapshot refetch already sees the row, and is
+	// log-don't-fail — the attendee UPDATE above already committed, so
+	// failing the request here would report a write that DID happen as
+	// failed.
 	if existingAttendee.CheckinStatus != beforeCheckinStatus {
+		if existingAttendee.CheckinStatus {
+			// false -> true: station-less 'checkin' row stamped with the
+			// EXACT CheckedInAt persisted above, so the monitor's
+			// current-period predicate (ca.created_at >= a.checked_in_at)
+			// holds by equality regardless of app/db clock skew.
+			if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "checkin", nil, &userID, existingAttendee.CheckedInAt); err != nil {
+				c.Logger().Errorf("attendee PUT: checkin feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+			}
+		} else {
+			// true -> false: symmetric 'undo' row (nil at -> now()); makes
+			// legacy clears visible to the feed and to the monitor's
+			// latest-state attribution directly.
+			if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "undo", nil, &userID, nil); err != nil {
+				c.Logger().Errorf("attendee PUT: undo feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+			}
+		}
 		h.publishCheckinEvent(c.Request().Context(), existingAttendee.EventID)
 	}
 
