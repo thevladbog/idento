@@ -403,6 +403,10 @@ func TestContractUpdateAttendeeHandler(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The flip also writes an event-wide actions-feed row (2026-07-19
+		// design) — a no-op hook; feed behavior is pinned by
+		// checkin_actions_feed_test.go.
+		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	e := echo.New()
 	path := "/api/attendees/" + attendee.ID.String()

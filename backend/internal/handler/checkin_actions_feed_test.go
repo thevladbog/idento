@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -234,5 +235,160 @@ func TestUpdateAttendeeHandler_ActionInsertFailureIsNonFatal(t *testing.T) {
 	}
 	if !pendingSignal(ch) {
 		t.Fatal("publish signal = false, want true — a failed feed insert must not suppress the monitor publish")
+	}
+}
+
+// syncPushBody marshals a one-attendee Updated push, the shape the legacy
+// WatermelonDB-era mobile sync client sends.
+func syncPushBody(t *testing.T, a models.Attendee) string {
+	t.Helper()
+	b, err := json.Marshal(SyncPushRequest{Changes: SyncPushChanges{Attendees: SyncPushEntityChanges{Updated: []models.Attendee{a}}}})
+	if err != nil {
+		t.Fatalf("marshal sync push body: %v", err)
+	}
+	return string(b)
+}
+
+// TestSyncPush_RecordsCheckinActionOnFlip proves a sync push that flips an
+// attendee false -> true writes one station-less 'checkin' row stamped with
+// the CLIENT-supplied CheckedInAt (the value UpdateAttendee persists
+// verbatim), against the TRUSTED existing attendee's event id.
+func TestSyncPush_RecordsCheckinActionOnFlip(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	existing := contractAttendee(event.ID)
+	existing.CheckinStatus = false
+	userID := uuid.New()
+	clientAt := time.Date(2026, 7, 19, 9, 30, 0, 0, time.UTC)
+
+	incoming := *existing
+	incoming.CheckinStatus = true
+	incoming.CheckedInAt = &clientAt
+
+	var got []recordedAction
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:  func(*models.Attendee) error { return nil },
+		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
+			return nil
+		},
+	})
+	h.Broker = broker.NewMemBroker()
+
+	e := echo.New()
+	c, rec := newAuthedContextWithUserID(e, http.MethodPost, "/api/sync", syncPushBody(t, incoming), tenantID.String(), userID, "staff")
+
+	if err := h.SyncPush(c); err != nil {
+		t.Fatalf("SyncPush: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("insertCheckinActionAt calls = %d, want exactly 1", len(got))
+	}
+	g := got[0]
+	if g.action != "checkin" {
+		t.Errorf("action = %q, want %q", g.action, "checkin")
+	}
+	if g.eventID != event.ID || g.attendeeID != existing.ID {
+		t.Errorf("ids = (%s, %s), want trusted (%s, %s)", g.eventID, g.attendeeID, event.ID, existing.ID)
+	}
+	if g.stationID != nil {
+		t.Errorf("stationID = %v, want nil", g.stationID)
+	}
+	if g.staffUserID == nil || *g.staffUserID != userID {
+		t.Errorf("staffUserID = %v, want JWT user %s", g.staffUserID, userID)
+	}
+	if g.at == nil || !g.at.Equal(clientAt) {
+		t.Errorf("at = %v, want client CheckedInAt %v", g.at, clientAt)
+	}
+}
+
+// TestSyncPush_RecordsUndoActionOnUncheck proves the symmetric true ->
+// false sync write produces one 'undo' row with nil at.
+func TestSyncPush_RecordsUndoActionOnUncheck(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	existing := contractAttendee(event.ID)
+	existing.CheckinStatus = true
+	was := existing.UpdatedAt
+	existing.CheckedInAt = &was
+	userID := uuid.New()
+
+	incoming := *existing
+	incoming.CheckinStatus = false
+	incoming.CheckedInAt = nil
+
+	var got []recordedAction
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:  func(*models.Attendee) error { return nil },
+		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
+			return nil
+		},
+	})
+	h.Broker = broker.NewMemBroker()
+
+	e := echo.New()
+	c, rec := newAuthedContextWithUserID(e, http.MethodPost, "/api/sync", syncPushBody(t, incoming), tenantID.String(), userID, "staff")
+
+	if err := h.SyncPush(c); err != nil {
+		t.Fatalf("SyncPush: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("insertCheckinActionAt calls = %d, want exactly 1", len(got))
+	}
+	if got[0].action != "undo" {
+		t.Errorf("action = %q, want %q", got[0].action, "undo")
+	}
+	if got[0].at != nil {
+		t.Errorf("at = %v, want nil (undo rows use DEFAULT now())", got[0].at)
+	}
+}
+
+// TestSyncPush_NoActionRowWhenStatusUnchanged proves a sync update that
+// leaves checkin_status as-is (e.g. a name edit) writes no feed row.
+func TestSyncPush_NoActionRowWhenStatusUnchanged(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	existing := contractAttendee(event.ID)
+	existing.CheckinStatus = true
+	was := existing.UpdatedAt
+	existing.CheckedInAt = &was
+
+	incoming := *existing
+	incoming.FirstName = "Renamed"
+
+	var got []recordedAction
+	h := New(&fakeStore{
+		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return existing, nil },
+		updateAttendee:  func(*models.Attendee) error { return nil },
+		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
+			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
+			return nil
+		},
+	})
+	h.Broker = broker.NewMemBroker()
+
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/sync", syncPushBody(t, incoming), tenantID.String(), "staff")
+
+	if err := h.SyncPush(c); err != nil {
+		t.Fatalf("SyncPush: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if len(got) != 0 {
+		t.Fatalf("insertCheckinActionAt calls = %d, want 0 when checkin_status did not change", len(got))
 	}
 }

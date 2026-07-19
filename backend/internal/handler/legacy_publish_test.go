@@ -452,6 +452,10 @@ func TestSyncPush_PublishesOncePerAffectedEvent(t *testing.T) {
 			return &models.Event{ID: id, TenantID: tenant}, nil
 		},
 		updateAttendee: func(*models.Attendee) error { return nil },
+		// The flips also write event-wide actions-feed rows (2026-07-19
+		// design) — a no-op hook here; the feed behavior itself is pinned
+		// by checkin_actions_feed_test.go.
+		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	}
 	h := &Handler{Store: fs}
 	mem := broker.NewMemBroker()
@@ -576,6 +580,8 @@ func TestSyncPush_NilBrokerDoesNotPanic(t *testing.T) {
 			return &models.Event{ID: id, TenantID: tenant}, nil
 		},
 		updateAttendee: func(*models.Attendee) error { return nil },
+		// See TestSyncPush_PublishesOncePerAffectedEvent's hook comment.
+		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	}
 	h := &Handler{Store: fs}
 	// h.Broker intentionally left nil.
