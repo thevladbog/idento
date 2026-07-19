@@ -56,12 +56,25 @@ func TestApplyBatchCheckin_CheckinPersistsDeviceAndPointName(t *testing.T) {
 			0, nil, false, nil, now, now,
 		))
 
+	// The kind=checkin branch now runs inside ONE short transaction
+	// (2026-07-19 event-wide actions-feed design): the guarded UPDATE and —
+	// when it wins — the 'checkin' feed row commit atomically, mirroring
+	// CheckInAttendee. The batch_checkin_log insert stays OUTSIDE the tx.
+	mock.ExpectBegin()
 	// The single atomic guarded UPDATE: it must carry the device number +
 	// point name alongside checked_in_at/checked_in_by, and affects exactly
 	// one row because checkin_status is still false for this attendee.
 	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
 		WithArgs(at, &staffUserID, &deviceNumber, &pointName, attendeeID).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	// The event-wide actions-feed row: station-less (NULL station), stamped
+	// with created_at = item.At — the exact value the UPDATE above wrote
+	// into checked_in_at, so the monitor's current-period predicate holds
+	// by equality.
+	mock.ExpectExec(`INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id, created_at\)`).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "checkin", &staffUserID, &at).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
 
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
 		WithArgs(clientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), deviceNumber, at).
@@ -253,9 +266,14 @@ func TestApplyBatchCheckin_AlreadyCheckedInByAnotherDeviceDoesNotRewrite(t *test
 	// the whole point of making Postgres the arbiter), but affects zero rows
 	// because checkin_status is already true — WHERE checkin_status = false
 	// no longer matches this row.
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
 		WithArgs(newAt, &staffUserID, &newDevice, &newPoint, attendeeID).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	// No checkin_actions insert is scripted: a 0-row guarded UPDATE means
+	// no state change happened here — an implementation that inserted a
+	// feed row anyway would fail on the unexpected exec before Commit.
+	mock.ExpectCommit()
 
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
 		WithArgs(newClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), newDevice, newAt).
@@ -409,9 +427,14 @@ func TestApplyBatchCheckin_ConcurrentCheckinsRaceSecondCallGetsAlreadyCheckedIn(
 			false, nil, nil, nil, nil,
 			0, nil, false, nil, now, now,
 		))
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
 		WithArgs(firstAt, &staffUserID, &firstDevice, &firstPoint, attendeeID).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	mock.ExpectExec(`INSERT INTO checkin_actions \(event_id, attendee_id, station_id, action, staff_user_id, created_at\)`).
+		WithArgs(eventID, attendeeID, (*uuid.UUID)(nil), "checkin", &staffUserID, &firstAt).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
 		WithArgs(firstClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), firstDevice, firstAt).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
@@ -451,9 +474,11 @@ func TestApplyBatchCheckin_ConcurrentCheckinsRaceSecondCallGetsAlreadyCheckedIn(
 			false, nil, nil, nil, nil,
 			0, nil, false, nil, now, now,
 		))
+	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE attendees\s+SET checkin_status = true`).
 		WithArgs(secondAt, &staffUserID, &secondDevice, &secondPoint, attendeeID).
 		WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+	mock.ExpectCommit()
 	mock.ExpectExec(`INSERT INTO batch_checkin_log`).
 		WithArgs(secondClientUUID, eventID, attendeeID, "checkin", (*uuid.UUID)(nil), secondDevice, secondAt).
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
