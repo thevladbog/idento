@@ -173,7 +173,7 @@ func TestContractPatchEvent(t *testing.T) {
 func TestContractGetEventReadiness(t *testing.T) {
 	tenantID := uuid.New()
 
-	fullStore := func(event *models.Event, attendees int, zones, staff int) *fakeStore {
+	fullStore := func(event *models.Event, attendees int, zones, staff int, equipmentTested bool) *fakeStore {
 		zoneList := make([]*models.EventZone, zones)
 		for i := range zoneList {
 			zoneList[i] = &models.EventZone{ID: uuid.New(), EventID: event.ID}
@@ -187,6 +187,9 @@ func TestContractGetEventReadiness(t *testing.T) {
 			countAttendeesByEventID: func(uuid.UUID) (int, error) { return attendees, nil },
 			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return zoneList, nil },
 			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return staffList, nil },
+			tenantHasTestedDefaultPrinter: func(uuid.UUID) (bool, error) {
+				return equipmentTested, nil
+			},
 		}
 	}
 	e := echo.New()
@@ -202,10 +205,12 @@ func TestContractGetEventReadiness(t *testing.T) {
 		return rec, path
 	}
 
-	// Fully ready: attendees+badge+staff done, zones done too.
+	// Fully ready: attendees+badge+staff done, zones done too. Equipment
+	// has no tested default printer yet — must be not_done but must not
+	// affect ready (equipment never blocks launch, spec §4.3).
 	ready := p1Event(tenantID, "Ready Event")
 	ready.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
-	rec, path := run(New(fullStore(ready, 340, 2, 3)), ready)
+	rec, path := run(New(fullStore(ready, 340, 2, 3, false)), ready)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
 	}
@@ -233,7 +238,7 @@ func TestContractGetEventReadiness(t *testing.T) {
 		}
 	}
 	if resp.Steps[4].Status != "not_done" {
-		t.Fatalf("equipment must be not_done in P1, got %s", resp.Steps[4].Status)
+		t.Fatalf("equipment must be not_done when no tested default printer exists, got %s", resp.Steps[4].Status)
 	}
 	if resp.Steps[0].Count == nil || *resp.Steps[0].Count != 340 {
 		t.Fatalf("attendees count wrong: %+v", resp.Steps[0])
@@ -242,7 +247,7 @@ func TestContractGetEventReadiness(t *testing.T) {
 
 	// Draft: nothing done — zones skipped (not blocking), ready=false.
 	draft := p1Event(tenantID, "Draft Event")
-	rec, path = run(New(fullStore(draft, 0, 0, 0)), draft)
+	rec, path = run(New(fullStore(draft, 0, 0, 0, false)), draft)
 	if err := jsonUnmarshalBody(rec, &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -257,7 +262,7 @@ func TestContractGetEventReadiness(t *testing.T) {
 	// Zones present but staff missing: zones done, ready still false.
 	partial := p1Event(tenantID, "Partial Event")
 	partial.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
-	rec, path = run(New(fullStore(partial, 12, 1, 0)), partial)
+	rec, path = run(New(fullStore(partial, 12, 1, 0, false)), partial)
 	if err := jsonUnmarshalBody(rec, &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -275,6 +280,56 @@ func TestContractGetEventReadiness(t *testing.T) {
 		countAttendeesByEventID: func(uuid.UUID) (int, error) { return 0, errors.New("db down") },
 	})
 	rec, path = run(broken, ready)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", rec.Code)
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// Equipment done: a tested default printer exists tenant-wide. Other
+	// steps are also done, so ready stays true either way — this proves
+	// equipment is read from the new store method, not just defaulted.
+	equipmentReady := p1Event(tenantID, "Equipment Ready Event")
+	equipmentReady.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
+	rec, path = run(New(fullStore(equipmentReady, 5, 0, 1, true)), equipmentReady)
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Steps[4].Status != "done" {
+		t.Fatalf("equipment must be done when the tenant has a tested default printer, got %s", resp.Steps[4].Status)
+	}
+	if !resp.Ready {
+		t.Fatal("want ready=true (attendees+badge+staff done)")
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// Equipment not done: no tested default printer. ready must still be
+	// true — equipment never blocks launch (spec §4.3).
+	equipmentNotReady := p1Event(tenantID, "Equipment Not Ready Event")
+	equipmentNotReady.CustomFields = map[string]interface{}{"badgeTemplate": "{...}"}
+	rec, path = run(New(fullStore(equipmentNotReady, 5, 0, 1, false)), equipmentNotReady)
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Steps[4].Status != "not_done" {
+		t.Fatalf("equipment must be not_done when no tested default printer exists, got %s", resp.Steps[4].Status)
+	}
+	if !resp.Ready {
+		t.Fatal("want ready=true — equipment not_done must not block ready (attendees+badge+staff done)")
+	}
+	validateResponse(t, http.MethodGet, path, rec)
+
+	// 500: TenantHasTestedDefaultPrinter store failure gets the house 500
+	// shape, same as every other readiness sub-query.
+	equipmentBroken := New(&fakeStore{
+		getEventByID:            func(uuid.UUID) (*models.Event, error) { return ready, nil },
+		countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
+		getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
+		getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+		tenantHasTestedDefaultPrinter: func(uuid.UUID) (bool, error) {
+			return false, errors.New("db down")
+		},
+	})
+	rec, path = run(equipmentBroken, ready)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", rec.Code)
 	}
@@ -303,6 +358,9 @@ func TestContractGetEventReadinessBadgeTemplateShapes(t *testing.T) {
 			countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
 			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
 			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+			tenantHasTestedDefaultPrinter: func(uuid.UUID) (bool, error) {
+				return false, nil
+			},
 		}
 	}
 	e := echo.New()

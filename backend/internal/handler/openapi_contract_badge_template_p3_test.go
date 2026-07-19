@@ -545,6 +545,9 @@ func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
 			countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
 			getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
 			getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+			tenantHasTestedDefaultPrinter: func(uuid.UUID) (bool, error) {
+				return false, nil
+			},
 		}
 	}
 	e := echo.New()
@@ -619,6 +622,9 @@ func TestContractBadgeTemplatePutThenReadinessRegression(t *testing.T) {
 		countAttendeesByEventID: func(uuid.UUID) (int, error) { return 1, nil },
 		getEventZones:           func(uuid.UUID) ([]*models.EventZone, error) { return nil, nil },
 		getEventStaff:           func(uuid.UUID) ([]*models.User, error) { return []*models.User{{ID: uuid.New()}}, nil },
+		tenantHasTestedDefaultPrinter: func(uuid.UUID) (bool, error) {
+			return false, nil
+		},
 		getEventBadgeTemplate: func(uuid.UUID) (json.RawMessage, int, error) {
 			return event.BadgeTemplate, event.BadgeTemplateVersion, nil
 		},

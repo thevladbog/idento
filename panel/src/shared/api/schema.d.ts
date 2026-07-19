@@ -1261,7 +1261,7 @@ export interface components {
             status: "done" | "not_done" | "skipped";
             count?: number;
         };
-        /** @description Per-event readiness aggregate (parent-spec backend #6). Steps are always returned in pipeline order: attendees, badge, zones, staff, equipment. ready = attendees.done && badge.done && staff.done — zones never blocks (skipped when the event has no zones), and equipment is always not_done until its P3/P4 wiring exists and never blocks in P1. */
+        /** @description Per-event readiness aggregate (parent-spec backend #6). Steps are always returned in pipeline order: attendees, badge, zones, staff, equipment. ready = attendees.done && badge.done && staff.done — zones never blocks (skipped when the event has no zones). equipment is done when the event's tenant has at least one equipment machine whose default printer has a passed test print (tenant-wide, not per-event); like zones, equipment never blocks ready. */
         EventReadinessResponse: {
             ready: boolean;
             steps: components["schemas"]["ReadinessStep"][];
