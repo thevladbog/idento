@@ -461,35 +461,57 @@ func TestOpenAPIContract_CreateEquipmentDevice_DefaultConflict409(t *testing.T) 
 
 // --- PATCH /api/equipment/devices/{device_id} ---
 
+// newPatchEquipmentFakeStore builds a STATEFUL fake for the PATCH handler:
+// getEquipmentDeviceForTenant serves copies of `stored` (the handler calls
+// it twice — the ownership/existence pre-check AND the post-update re-read
+// the response body is built from), and updateEquipmentDevice mutates
+// `stored` the way the real store's UPDATE does, including Finding 1's
+// row-level invariant: a config that differs from the stored one clears
+// test_passed_at (the fake compares raw bytes where the real SQL compares
+// jsonb-semantically — equivalent here since these tests resend config
+// bytes either verbatim or genuinely changed, never merely reserialized).
+func newPatchEquipmentFakeStore(t *testing.T, tenantID, deviceID uuid.UUID, stored *models.EquipmentDevice) *fakeStore {
+	t.Helper()
+	return &fakeStore{
+		getEquipmentDeviceForTenant: func(tid, did uuid.UUID) (*models.EquipmentDevice, error) {
+			if tid != tenantID || did != deviceID {
+				t.Fatalf("scoping mismatch: %s/%s", tid, did)
+			}
+			cp := *stored
+			return &cp, nil
+		},
+		updateEquipmentDevice: func(tid, did uuid.UUID, displayName string, config json.RawMessage) error {
+			if tid != tenantID || did != deviceID {
+				t.Fatalf("update scoping mismatch: %s/%s", tid, did)
+			}
+			if string(config) != string(stored.Config) {
+				stored.TestPassedAt = nil
+			}
+			stored.DisplayName = displayName
+			stored.Config = config
+			stored.UpdatedAt = time.Now().UTC()
+			return nil
+		},
+	}
+}
+
 func TestOpenAPIContract_PatchEquipmentDevice_200Rename(t *testing.T) {
 	tenantID := uuid.New()
 	deviceID := uuid.New()
 	machineID := uuid.New()
 	now := time.Now().UTC()
+	testPassedAt := now.Add(-time.Hour)
 
-	existing := &models.EquipmentDevice{
+	stored := &models.EquipmentDevice{
 		ID: deviceID, TenantID: tenantID, MachineID: machineID,
 		Class: "printer", Kind: "network", DisplayName: "Old Name",
-		Config:    json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.44","port":9100}`),
-		CreatedAt: now, UpdatedAt: now,
+		Config:       json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.44","port":9100}`),
+		TestPassedAt: &testPassedAt,
+		CreatedAt:    now, UpdatedAt: now,
 	}
+	originalConfig := string(stored.Config)
 
-	var updatedName string
-	var updatedConfig json.RawMessage
-	h := New(&fakeStore{
-		getEquipmentDeviceForTenant: func(tid, did uuid.UUID) (*models.EquipmentDevice, error) {
-			if tid != tenantID || did != deviceID {
-				t.Fatalf("scoping mismatch: %s/%s", tid, did)
-			}
-			cp := *existing
-			return &cp, nil
-		},
-		updateEquipmentDevice: func(tid, did uuid.UUID, displayName string, config json.RawMessage) error {
-			updatedName = displayName
-			updatedConfig = config
-			return nil
-		},
-	})
+	h := New(newPatchEquipmentFakeStore(t, tenantID, deviceID, stored))
 
 	e := echo.New()
 	path := equipmentDevicePath(deviceID)
@@ -503,11 +525,11 @@ func TestOpenAPIContract_PatchEquipmentDevice_200Rename(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
 	}
-	if updatedName != "New Name" {
-		t.Fatalf("stored display_name = %q, want New Name", updatedName)
+	if stored.DisplayName != "New Name" {
+		t.Fatalf("stored display_name = %q, want New Name", stored.DisplayName)
 	}
-	if string(updatedConfig) != string(existing.Config) {
-		t.Fatalf("config changed unexpectedly: %s", updatedConfig)
+	if string(stored.Config) != originalConfig {
+		t.Fatalf("config changed unexpectedly: %s", stored.Config)
 	}
 
 	var got models.EquipmentDevice
@@ -517,7 +539,117 @@ func TestOpenAPIContract_PatchEquipmentDevice_200Rename(t *testing.T) {
 	if got.DisplayName != "New Name" {
 		t.Fatalf("response display_name = %q", got.DisplayName)
 	}
+	// A rename-only PATCH leaves config unchanged, so the stamp survives —
+	// and the response (built from the post-update re-read) must show it.
+	if got.TestPassedAt == nil {
+		t.Fatalf("response test_passed_at = nil, want preserved (config unchanged)")
+	}
 
+	validateResponse(t, http.MethodPatch, path, rec)
+}
+
+// TestOpenAPIContract_PatchEquipmentDevice_ConfigChangeResponseShowsClearedStamp
+// guards the response-accuracy addendum to Finding 1 (bot review PR #83
+// round 2): the store's UPDATE clears test_passed_at when config actually
+// changes, and the HTTP response must reflect THAT row — re-read after the
+// update — not the pre-PATCH in-memory copy, which would echo a stale
+// non-null stamp for hardware that never passed a test.
+func TestOpenAPIContract_PatchEquipmentDevice_ConfigChangeResponseShowsClearedStamp(t *testing.T) {
+	tenantID := uuid.New()
+	deviceID := uuid.New()
+	machineID := uuid.New()
+	now := time.Now().UTC()
+	testPassedAt := now.Add(-time.Hour)
+
+	stored := &models.EquipmentDevice{
+		ID: deviceID, TenantID: tenantID, MachineID: machineID,
+		Class: "printer", Kind: "network", DisplayName: "Front Desk Printer",
+		Config:       json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.44","port":9100}`),
+		TestPassedAt: &testPassedAt,
+		CreatedAt:    now, UpdatedAt: now,
+	}
+
+	h := New(newPatchEquipmentFakeStore(t, tenantID, deviceID, stored))
+
+	e := echo.New()
+	path := equipmentDevicePath(deviceID)
+	body := `{"config":{"agent_name":"Zebra ZD421","ip":"192.168.1.99","port":9100}}`
+	c, rec := newAuthedContext(e, http.MethodPatch, path, body, tenantID.String(), "staff")
+	setEquipmentDevicePathParams(c, deviceID)
+
+	if err := h.PatchEquipmentDevice(c); err != nil {
+		t.Fatalf("PatchEquipmentDevice: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if stored.TestPassedAt != nil {
+		t.Fatalf("stored test_passed_at = %v, want nil (config changed)", stored.TestPassedAt)
+	}
+
+	var got models.EquipmentDevice
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.TestPassedAt != nil {
+		t.Fatalf("response test_passed_at = %v, want null — the response must echo the re-read row, not the stale pre-PATCH copy", got.TestPassedAt)
+	}
+	if got.DisplayName != "Front Desk Printer" {
+		t.Fatalf("response display_name = %q, want unchanged Front Desk Printer", got.DisplayName)
+	}
+
+	validateResponse(t, http.MethodPatch, path, rec)
+}
+
+// TestOpenAPIContract_PatchEquipmentDevice_RereadVanished404 covers the
+// concurrent-delete race in the post-update re-read: the pre-check found
+// the device and the UPDATE reported success, but the device is gone by
+// the time the response re-read runs. Same soft-delete-race mapping as
+// PutCheckinSettings' ErrEventNotFound handling (PR #77 Finding C): the
+// house 404 shape, never a fabricated 200 echoing state that no longer
+// exists.
+func TestOpenAPIContract_PatchEquipmentDevice_RereadVanished404(t *testing.T) {
+	tenantID := uuid.New()
+	deviceID := uuid.New()
+	machineID := uuid.New()
+	now := time.Now().UTC()
+
+	getCalls := 0
+	h := New(&fakeStore{
+		getEquipmentDeviceForTenant: func(tid, did uuid.UUID) (*models.EquipmentDevice, error) {
+			getCalls++
+			if getCalls == 1 {
+				return &models.EquipmentDevice{
+					ID: deviceID, TenantID: tenantID, MachineID: machineID,
+					Class: "printer", Kind: "network", DisplayName: "Doomed Printer",
+					Config:    json.RawMessage(`{"agent_name":"Zebra ZD421","ip":"192.168.1.44","port":9100}`),
+					CreatedAt: now, UpdatedAt: now,
+				}, nil
+			}
+			// The concurrent delete landed between the UPDATE and this
+			// re-read.
+			return nil, nil
+		},
+		updateEquipmentDevice: func(uuid.UUID, uuid.UUID, string, json.RawMessage) error {
+			return nil
+		},
+	})
+
+	e := echo.New()
+	path := equipmentDevicePath(deviceID)
+	body := `{"display_name":"New Name"}`
+	c, rec := newAuthedContext(e, http.MethodPatch, path, body, tenantID.String(), "staff")
+	setEquipmentDevicePathParams(c, deviceID)
+
+	if err := h.PatchEquipmentDevice(c); err != nil {
+		t.Fatalf("PatchEquipmentDevice: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if getCalls != 2 {
+		t.Fatalf("getEquipmentDeviceForTenant calls = %d, want 2 (pre-check + post-update re-read)", getCalls)
+	}
 	validateResponse(t, http.MethodPatch, path, rec)
 }
 

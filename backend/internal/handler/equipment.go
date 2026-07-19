@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
@@ -433,10 +432,27 @@ func (h *Handler) PatchEquipmentDevice(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update device"})
 	}
 
-	existing.DisplayName = displayName
-	existing.Config = config
-	existing.UpdatedAt = time.Now().UTC()
-	return c.JSON(http.StatusOK, existing)
+	// Echo the row the UPDATE actually wrote — re-read, never the
+	// pre-fetched `existing` copy patched up in memory. The store's UPDATE
+	// carries row-level invariants this handler cannot reproduce locally
+	// (Finding 1, bot review PR #83 round 2: a config-changing PATCH clears
+	// test_passed_at inside the UPDATE's own SET list), so an in-memory echo
+	// would report a stale non-null stamp for hardware that never passed a
+	// test. One extra SELECT on a rare admin operation — cheaper than
+	// switching the UPDATE to RETURNING and re-pinning its SQL.
+	updated, err := h.Store.GetEquipmentDeviceForTenant(c.Request().Context(), tenantID, deviceID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal error"})
+	}
+	if updated == nil {
+		// Reachable only via a concurrent-delete race landing between the
+		// successful UPDATE above and this re-read — same soft-delete-race
+		// mapping as PutCheckinSettings' ErrEventNotFound handling (PR #77
+		// Finding C): the house 404 masking, never a fabricated 200 echoing
+		// state that no longer exists.
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Device not found"})
+	}
+	return c.JSON(http.StatusOK, updated)
 }
 
 // DeleteEquipmentDevice removes a device outright. No special-case
