@@ -116,6 +116,19 @@ func (h *Handler) SyncPush(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 	}
 
+	// affectedEvents collects the distinct events touched by a successful
+	// attendee update below (Finding B3, PR #81 bot-review round): unlike
+	// checkins_batch.go, sync pushes are per-attendee and can span MULTIPLE
+	// events in one request, so a single publish keyed on some fixed
+	// event_id would be wrong — every distinct event that had at least one
+	// successfully-updated attendee gets exactly one publish, issued once
+	// the whole push finishes (not once per attendee). This legacy write
+	// path mutates attendees.checkin_status via UpdateAttendee but never
+	// published to the monitor broker before — a mobile-kiosk-only event
+	// (zero panel check-in stations, so zero heartbeats either) would leave
+	// attached monitors stale indefinitely.
+	affectedEvents := make(map[uuid.UUID]struct{})
+
 	// Process attendee updates (most common use case: checking in)
 	for _, attendee := range req.Changes.Attendees.Updated {
 		// Verify attendee belongs to tenant's events
@@ -140,6 +153,10 @@ func (h *Handler) SyncPush(c echo.Context) error {
 			// Log error but continue with other updates
 			continue
 		}
+
+		// existingAttendee.EventID (not the client-supplied attendee.EventID)
+		// is the trusted, already-tenant-verified event this write belongs to.
+		affectedEvents[existingAttendee.EventID] = struct{}{}
 	}
 
 	// Process created attendees (if mobile app allows creating new attendees)
@@ -190,10 +207,21 @@ func (h *Handler) SyncPush(c echo.Context) error {
 			c.Logger().Errorf("sync: create attendee failed (tenant %s, event %s, attendee %s): %v", tenantID, p.eventID, p.attendee.ID, err)
 			continue
 		}
+		// Track successfully-created attendees' events for monitor publish,
+		// same as Updated attendees above: created attendees also change
+		// monitor-visible state (total count, and possibly checked_in if an
+		// offline kiosk created-and-checked-in in one push).
+		affectedEvents[p.eventID] = struct{}{}
 	}
 
 	// Process deletions (soft delete)
 	// Not implemented in MVP
+
+	// Finding B3: one publish per distinct affected event, after the whole
+	// push finishes — see affectedEvents' doc comment above.
+	for eventID := range affectedEvents {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":    "ok",

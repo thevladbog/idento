@@ -74,6 +74,13 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create attendee"})
 	}
 
+	// PR #81 round-3 convergence, Backend Finding 3: a new attendee changes
+	// the monitor's `total` even though checkin_status never touches
+	// checked_in — the monitor snapshot must still refetch, or an
+	// in-flight event with no station heartbeat would show a stale total
+	// indefinitely.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
+
 	// Log usage (best-effort, do not fail request)
 	if err := h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
 		TenantID:     tenantID,
@@ -263,6 +270,9 @@ func (h *Handler) UpdateAttendeeInfo(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
 	}
 
+	// PR #81 round-5: publish the update so the monitor's last-scans feed stays current
+	h.publishCheckinEvent(c.Request().Context(), attendee.EventID)
+
 	return c.JSON(http.StatusOK, attendee)
 }
 
@@ -277,6 +287,16 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 	if err != nil {
 		return writeErr(c, err)
 	}
+
+	// Captured BEFORE any field is mutated below (Finding B3, PR #81
+	// bot-review round): this legacy check-in-status write path never
+	// published to the monitor broker before — a mobile-kiosk-only event
+	// (zero panel check-in stations, so zero heartbeats either) would leave
+	// attached monitors stale indefinitely. existingAttendee is already
+	// loaded here, so an exact before/after compare on CheckinStatus is
+	// cheap and avoids a noisy publish on a no-op PUT (e.g. a client
+	// re-sending the same status).
+	beforeCheckinStatus := existingAttendee.CheckinStatus
 
 	// Bind update request
 	var req struct {
@@ -330,6 +350,12 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 
 	if err := h.Store.UpdateAttendee(c.Request().Context(), existingAttendee); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
+	}
+
+	// Finding B3: publish only when checkin_status actually flipped — see
+	// beforeCheckinStatus's doc comment above.
+	if existingAttendee.CheckinStatus != beforeCheckinStatus {
+		h.publishCheckinEvent(c.Request().Context(), existingAttendee.EventID)
 	}
 
 	return c.JSON(http.StatusOK, existingAttendee)
@@ -409,6 +435,15 @@ func (h *Handler) DeleteAttendee(c echo.Context) error {
 	if err := h.Store.UpdateAttendee(c.Request().Context(), attendee); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete attendee"})
 	}
+
+	// PR #81 round-3 convergence, Backend Finding 3: a deleted attendee
+	// changes the monitor's `total` (and `checked_in` too, if they were
+	// currently checked in) — see CreateAttendee's matching publish for the
+	// same rationale. The panel's "bulk delete" is this SAME single-item
+	// endpoint called once per selected attendee (BulkBar.tsx's sequential
+	// loop, not a dedicated batch endpoint), so this one publish site also
+	// covers that case — one publish per request, N requests for N deletes.
+	h.publishCheckinEvent(c.Request().Context(), attendee.EventID)
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Attendee deleted successfully"})
 }

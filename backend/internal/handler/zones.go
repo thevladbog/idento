@@ -36,6 +36,15 @@ func (h *Handler) CreateEventZone(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create zone"})
 	}
 
+	// Publish on every successful zone creation (PR #81 round-4 convergence,
+	// Finding 4): a new zone changes the monitor's Totals/Zones card — the
+	// new zone must appear there (with CheckedIn=0 until something attributes
+	// to it) rather than staying invisible until some unrelated check-in
+	// event happens to nudge the monitor. Same class as check-in/undo/
+	// reprint/station-registration: a discrete user-initiated action, so
+	// this site is deliberately UNthrottled.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
+
 	return c.JSON(http.StatusCreated, zone)
 }
 
@@ -90,7 +99,8 @@ func (h *Handler) UpdateEventZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
-	if _, _, err := h.requireZoneOwnership(c, id); err != nil {
+	existingZone, _, err := h.requireZoneOwnership(c, id)
+	if err != nil {
 		return writeErr(c, err)
 	}
 
@@ -105,6 +115,16 @@ func (h *Handler) UpdateEventZone(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update zone"})
 	}
 
+	// Publish on every successful zone update (PR #81 round-4 convergence,
+	// Finding 4): keyed off existingZone.EventID (resolved via
+	// requireZoneOwnership BEFORE the request body overwrote `zone`) since
+	// the request body only ever carries the zone's own fields, never
+	// event_id — an update can rename the zone, change its time window, or
+	// flip is_active, all of which the monitor's Totals/Zones card renders.
+	// Same class as check-in/undo/reprint/station-registration/zone-create:
+	// a discrete user-initiated action, so this site is UNthrottled.
+	h.publishCheckinEvent(c.Request().Context(), existingZone.EventID)
+
 	return c.JSON(http.StatusOK, zone)
 }
 
@@ -115,13 +135,24 @@ func (h *Handler) DeleteEventZone(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid zone ID"})
 	}
 
-	if _, _, err := h.requireZoneOwnership(c, id); err != nil {
+	existingZone, _, err := h.requireZoneOwnership(c, id)
+	if err != nil {
 		return writeErr(c, err)
 	}
 
 	if err := h.Store.DeleteEventZone(c.Request().Context(), id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete zone"})
 	}
+
+	// Publish on every successful zone deletion (PR #81 round-4 convergence,
+	// Finding 4): the monitor's Totals/Zones card must drop the zone, and —
+	// since checkin_stations.zone_id is ON DELETE SET NULL (migration
+	// 000019) — every station that was bound to this zone moves its future
+	// check-ins' attribution to unattributed, which the monitor must also
+	// reflect. Same class as check-in/undo/reprint/station-registration/
+	// zone-create/zone-update: a discrete user-initiated action, so this
+	// site is UNthrottled.
+	h.publishCheckinEvent(c.Request().Context(), existingZone.EventID)
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Zone deleted successfully"})
 }

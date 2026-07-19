@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"idento/backend/internal/bootstrap"
+	"idento/backend/internal/broker"
 	"idento/backend/internal/config"
 	"idento/backend/internal/handler"
 	"idento/backend/internal/retention"
@@ -49,6 +50,26 @@ func main() {
 	}
 	defer pgStore.Close()
 
+	// Initialize the P4.2 live-monitor event broker (LISTEN/NOTIFY
+	// transport) — constructed right after the store, closed the same way
+	// pgStore.Close() is (plan-time fact 4): a dedicated LISTEN connection
+	// plus a small notify pool, both against the same DatabaseURL.
+	//
+	// Bounded with a 10s timeout (PR #81 bot-review round, Finding B2c):
+	// NewPGBroker's initial connect used to run against an unbounded
+	// context.Background(), so a wedged/unreachable Postgres at boot could
+	// hang startup forever. store.NewPGStore's own Ping already refuses to
+	// boot without Postgres reachable at all — this timeout gives the
+	// broker's connect the same fail-fast-at-boot posture instead of
+	// hanging indefinitely on a reachable-but-stalled connection.
+	brokerCtx, brokerCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	eventBroker, err := broker.NewPGBroker(brokerCtx, cfg.DatabaseURL)
+	brokerCancel()
+	if err != nil {
+		log.Fatalf("Unable to start event broker: %v\n", err)
+	}
+	defer eventBroker.Close()
+
 	// Run migrations on startup (already-applied migrations are skipped and logged)
 	if err := pgStore.RunMigrations(); err != nil {
 		log.Fatalf("Migrations failed: %v", err)
@@ -66,6 +87,7 @@ func main() {
 
 	// Initialize Handler
 	h := handler.New(pgStore)
+	h.Broker = eventBroker
 
 	// Tenant retention purge (P1.4 soft-delete): first pass a minute after
 	// boot, then daily. Logs and no-ops when retention is 0.

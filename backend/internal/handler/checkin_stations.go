@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
@@ -89,6 +90,21 @@ func (h *Handler) RegisterCheckinStation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to register check-in station"})
 	}
 
+	// Publish on every successful registration (PR #81 round-4 convergence,
+	// Finding 3): this is an upsert — a fresh name creates a new station, a
+	// repeat name re-registers it (most notably, rebinding its zone_id,
+	// which changes that station's FUTURE check-ins' attribution). Either
+	// way the monitor's stations[] list changed, and a re-registration that
+	// only rebinds a zone would otherwise stay silently stale until some
+	// unrelated event nudged the monitor — heartbeats alone don't cover it:
+	// they throttle to once per heartbeatPublishThrottle window AND only
+	// fire once the station's own page starts polling again, so a station
+	// re-registered while dormant (e.g. from the settings/admin side, not
+	// the station page) could sit stale indefinitely. Unlike heartbeat,
+	// registration is a discrete user-initiated action — same class as
+	// check-in/undo/reprint — so this site is deliberately UNthrottled.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
+
 	return c.JSON(http.StatusOK, CheckinStationResponse{Station: station})
 }
 
@@ -116,7 +132,66 @@ func (h *Handler) HeartbeatCheckinStation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update check-in station"})
 	}
 
+	// Publish on every successful heartbeat (P4.2 Task 4, self-review
+	// notes): unlike check-in/undo/reprint, a heartbeat's ONLY effect is
+	// bumping last_seen_at — but the monitor's stations card renders that
+	// exact field (liveness dot + staleness), so it IS monitor-visible
+	// state and every 204 here is worth a signal. publishCheckinEvent
+	// (Finding B2) is nil-safe, best-effort, detached, timeout-bounded —
+	// after the store call already committed. shouldPublishHeartbeat
+	// (Finding B5) additionally throttles heartbeat-SOURCED publishes per
+	// event — unlike check-in/undo/reprint, which stay unthrottled.
+	if h.shouldPublishHeartbeat(eventID) {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
+
 	return c.NoContent(http.StatusNoContent)
+}
+
+// heartbeatPublishThrottle bounds how often a heartbeat-SOURCED publish can
+// fire per event (Finding B5, CodeRabbit, PR #81 bot-review round): every
+// station's heartbeat cadence is 20s (P4.1 Task 12 precedent), so N
+// stations on a larger event would otherwise produce a near-continuous
+// stream of update-pings — up to roughly 1/s on a busy event, each one
+// costing every attached monitor a full snapshot re-fetch. 15s keeps
+// heartbeat-driven staleness comfortably under the monitor's own 45s
+// liveness threshold (P4.2 spec §3.2) while cutting the worst-case publish
+// rate by roughly an order of magnitude. Check-in/undo/reprint publishes
+// are user-visible state changes and stay completely unthrottled — this
+// throttle gates ONLY HeartbeatCheckinStation's own publish, never touches
+// broker.Broker itself (kept in the handler layer on purpose, per the
+// finding). A package var, not a const, so
+// checkin_stations_publish_test.go can shrink it to exercise the throttle
+// window without a real 15-second wait — same idiom as monitor_stream.go's
+// monitorStreamPingInterval.
+var heartbeatPublishThrottle = 15 * time.Second
+
+// shouldPublishHeartbeat reports whether a heartbeat-sourced publish for
+// eventID is allowed right now, and if allowed atomically records this
+// moment as eventID's new "last published" time in h.heartbeatLastPublish.
+// The check-and-set is a single LoadOrStore/CompareAndSwap loop so two
+// concurrent heartbeats for the same event (e.g. two different stations at
+// the same event, both landing in the same instant) can't both slip through
+// right at the window boundary — at most one of them ever wins the race and
+// returns true.
+func (h *Handler) shouldPublishHeartbeat(eventID uuid.UUID) bool {
+	now := time.Now()
+	for {
+		v, loaded := h.heartbeatLastPublish.LoadOrStore(eventID, now)
+		if !loaded {
+			return true // first heartbeat ever observed for this event
+		}
+		last := v.(time.Time)
+		if now.Sub(last) < heartbeatPublishThrottle {
+			return false
+		}
+		if h.heartbeatLastPublish.CompareAndSwap(eventID, last, now) {
+			return true
+		}
+		// Lost the race to another concurrent heartbeat that updated
+		// eventID's timestamp in between our Load and this CompareAndSwap;
+		// retry against the now-current value.
+	}
 }
 
 // ListCheckinStations returns every check-in station registered for an

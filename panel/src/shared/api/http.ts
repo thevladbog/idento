@@ -9,8 +9,19 @@ declare global {
   }
 }
 
+// PR #81 bot round Finding C2: mirrors getAgentBaseUrl's trailing-slash
+// strip below -- a configured API_URL with a trailing slash (an operator
+// typo, or a value copy-pasted straight from a browser address bar) is
+// otherwise safe for every consumer THROUGH this file (openapi-fetch's own
+// `baseUrl` handling already tolerates it, and `dynamicBaseUrl` below only
+// ever copies protocol/hostname/port off this value, never the pathname),
+// but useMonitorStream.ts's SSE client bypasses `api`/openapi-fetch
+// entirely (raw `fetch` + string concatenation, the exact bug class Fix 5
+// fixed for AGENT_URL) and would otherwise build "http://api.test//api/...".
+// Normalizing once, here, covers that caller without it needing to know.
 export function getApiBaseUrl(): string {
-  return window.__ENV__?.API_URL || import.meta.env.VITE_API_URL || "http://localhost:8008";
+  const configured = window.__ENV__?.API_URL || import.meta.env.VITE_API_URL || "http://localhost:8008";
+  return configured.replace(/\/+$/, "");
 }
 
 // The local print agent is a separate origin from the backend API — it's not
@@ -91,14 +102,25 @@ const auth: Middleware = {
   },
 };
 
+// Extracted (PR #81 bot round Finding C3) so useMonitorStream.ts's raw
+// `fetch`-based SSE client -- which deliberately bypasses this `api` client
+// for its streaming transport (see that file's own top-of-file comment) --
+// can turn ITS non-OK responses into the exact same `ApiError` shape and
+// route them through the app's global handling (handleApiError.ts),
+// instead of silently reinventing (and inevitably drifting from) this
+// parsing.
+export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
+  const body = (await response
+    .clone()
+    .json()
+    .catch(() => ({}))) as { code?: string; error?: string; message?: string };
+  return new ApiError(response.status, body.code, body.error || body.message || response.statusText);
+}
+
 const errors: Middleware = {
   async onResponse({ response }) {
     if (!response.ok) {
-      const body = (await response
-        .clone()
-        .json()
-        .catch(() => ({}))) as { code?: string; error?: string; message?: string };
-      throw new ApiError(response.status, body.code, body.error || body.message || response.statusText);
+      throw await apiErrorFromResponse(response);
     }
     return response;
   },

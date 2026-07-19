@@ -4,8 +4,10 @@
 package handler
 
 import (
+	"sync"
 	"time"
 
+	"idento/backend/internal/broker"
 	"idento/backend/internal/config"
 	"idento/backend/internal/middleware"
 	"idento/backend/internal/store"
@@ -16,8 +18,28 @@ import (
 )
 
 // Handler holds dependencies (e.g. Store) and implements HTTP handlers for the API.
+//
+// Broker is nil-safe by design (P4.2 Task 4, plan-time fact 3): it is set
+// AFTER construction (main.go wires a *broker.PGBroker onto it once the
+// store exists), never via New's signature — so the ~70 existing
+// `&Handler{Store: fs}` test literals across this package stay valid with a
+// nil Broker. Every publish call site must guard with `if h.Broker != nil`
+// and log-don't-fail on a Publish error; only the monitor SSE stream itself
+// requires a non-nil Broker to be useful (a nil Broker still serves a valid
+// stream — see monitor_stream.go — it just never emits "update" frames).
 type Handler struct {
-	Store store.Store
+	Store  store.Store
+	Broker broker.Broker
+
+	// heartbeatLastPublish tracks, per event, the last time a
+	// heartbeat-SOURCED broker publish fired (Finding B5, PR #81
+	// bot-review round) — see shouldPublishHeartbeat
+	// (checkin_stations.go) for the throttle this backs. Deliberately kept
+	// in the handler layer, not the broker package: it's purely about
+	// rate-limiting one specific publish SITE, not a broker-level concern.
+	// sync.Map's zero value is ready to use, so the ~70 existing
+	// `&Handler{Store: fs}` test literals stay valid untouched.
+	heartbeatLastPublish sync.Map
 }
 
 // New returns a new Handler with the given store.
@@ -86,6 +108,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.POST("/events/:event_id/checkin", h.StationCheckin)
 	api.POST("/events/:event_id/checkin/undo", h.UndoCheckin)
 	api.GET("/events/:event_id/checkin-actions", h.GetCheckinActions)
+	api.GET("/events/:event_id/monitor", h.GetEventMonitor)
+	api.GET("/events/:event_id/monitor/stream", h.GetEventMonitorStream)
 	api.GET("/events/:id/readiness", h.GetEventReadiness)
 	api.GET("/events/:event_id/stats", h.GetEventStats)
 	api.GET("/events/:event_id/staff", h.GetEventStaff)

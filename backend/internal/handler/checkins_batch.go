@@ -37,6 +37,21 @@ func (h *Handler) BatchCheckin(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
 	}
 
+	// anyCreated tracks whether ANY item in this batch actually created a
+	// monitor-visible check-in (Finding B3, PR #81 bot-review round; refined
+	// by PR #81 round-2 convergence Finding 1): this endpoint is scoped to a
+	// single event_id from the path, so every item belongs to the same event
+	// — one publish for the whole batch once, not one per item, and only
+	// when the batch produced a real monitor-visible change. ApplyBatchCheckin
+	// deliberately reports BatchCheckinCreated for kind=zone_entry items too
+	// (even pre-existing ones — see pg_store_batch.go's doc comment), but
+	// zone entries write zone_checkins, a table the monitor snapshot never
+	// reads. So this must additionally gate on item.Kind == "checkin" — the
+	// registration check-in kind — or a zone-entry-only access-control sync
+	// would spuriously publish and force every attached monitor to refetch
+	// unchanged data.
+	anyCreated := false
+
 	results := make([]models.BatchCheckinResult, 0, len(items))
 	for i := range items {
 		item := items[i]
@@ -69,6 +84,9 @@ func (h *Handler) BatchCheckin(c echo.Context) error {
 		}
 		switch outcome {
 		case store.BatchCheckinCreated:
+			if item.Kind == "checkin" {
+				anyCreated = true
+			}
 			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "created"})
 		case store.BatchCheckinAlreadyCheckedIn, store.BatchCheckinDuplicateClientUUID:
 			// Both mean "no new check-in was created by this specific
@@ -82,5 +100,13 @@ func (h *Handler) BatchCheckin(c echo.Context) error {
 			results = append(results, models.BatchCheckinResult{ClientUUID: item.ClientUUID, Status: "error", Error: "unknown outcome"})
 		}
 	}
+
+	// Finding B3: publish once for the batch's event, after the whole loop
+	// — never per item — and only when something in the batch actually
+	// changed monitor-visible state.
+	if anyCreated {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
+
 	return c.JSON(http.StatusOK, results)
 }

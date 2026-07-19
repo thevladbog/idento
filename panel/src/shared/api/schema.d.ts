@@ -382,6 +382,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/{event_id}/monitor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live monitor snapshot (P4.2 Task 3, spec §3.1) — totals with progress, scans/min + peak + estimated-done, per-zone breakdown, per-station liveness, and the last 20 check-in/undo/reprint feed rows. Backs the tablet monitor screen (board 7e) and the Home LiveStrip. */
+        get: operations["getEventMonitor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/events/{event_id}/monitor/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live monitor SSE stream (P4.2 Task 4, spec §3.3) — the codebase's first Server-Sent Events endpoint. This is a deliberately "thin-ping" stream: it never carries monitor state itself, only signals telling the client when to re-fetch GET /api/events/{event_id}/monitor (this operation's sibling above). requireEventOwnership is checked BEFORE any stream header is written, so a foreign/missing event still gets a plain 404 JSON body rather than a half-open event-stream response. */
+        get: operations["getEventMonitorStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/events/{id}/readiness": {
         parameters: {
             query?: never;
@@ -1271,6 +1305,47 @@ export interface components {
         /** @description GET /api/events/{event_id}/checkin-actions' response envelope. */
         CheckinActionsResponse: {
             actions: components["schemas"]["CheckinActionRow"][];
+        };
+        /** @description The highest one-minute check-in bucket "today" (UTC) — totals.peak (P4.2 Task 3, spec §3.1) — paired with that bucket's start time. totals.peak is null instead when there have been no 'checkin' actions today. */
+        MonitorPeak: {
+            rate: number;
+            /** Format: date-time */
+            at: string;
+        };
+        /** @description Monitor snapshot's totals block (P4.2 Task 3, spec §3.1). rate_per_min is the sum of 'checkin' actions in the last 5 minutes divided by 5, rounded to one decimal. peak is null when there have been no check-ins today. est_done_at is null when rate_per_min is effectively zero (< 0.1) or checked_in >= total (event already fully checked in). */
+        MonitorTotals: {
+            checked_in: number;
+            total: number;
+            rate_per_min: number;
+            peak: components["schemas"]["MonitorPeak"] | null;
+            /** Format: date-time */
+            est_done_at: string | null;
+        };
+        /** @description One zone's currently-checked-in count for the monitor snapshot's zones[] (P4.2 Task 3) — mirrors store.MonitorZoneCount. Zero-count zones are included, in event_zones.order_index order. */
+        MonitorZone: {
+            /** Format: uuid */
+            zone_id: string;
+            name: string;
+            checked_in: number;
+        };
+        /** @description One check-in station's liveness + running count for the monitor snapshot's stations[] (P4.2 Task 3) — mirrors store.MonitorStation, ordered by name. */
+        MonitorStationRow: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            zone_id: string | null;
+            /** Format: date-time */
+            last_seen_at: string;
+            checkin_count: number;
+        };
+        /** @description GET /api/events/{event_id}/monitor's response (P4.2 Task 3, spec §3.1) — everything the live monitor screen (board 7e) renders in one request. Invariant: sum(zones[].checked_in) + unattributed == totals.checked_in (see store.GetMonitorZones). recent reuses the same CheckinActionRow shape as GET /api/events/{event_id}/checkin-actions (last 20, newest first). */
+        MonitorSnapshot: {
+            totals: components["schemas"]["MonitorTotals"];
+            zones: components["schemas"]["MonitorZone"][];
+            unattributed: number;
+            stations: components["schemas"]["MonitorStationRow"][];
+            recent: components["schemas"]["CheckinActionRow"][];
         };
         /** @description POST /api/attendees/{attendee_id}/printed's OPTIONAL request body (P4.1 Task 4). Both fields are optional, but NOT independent of each other — the handler (attendee_printed.go) enforces two dependency/consistency constraints the schema below cannot express structurally (OpenAPI 3.0 has no clean native "field A requires field B" construct), documented in prose on each field and on the endpoint's 400 response instead: (1) station_id requires event_id to also be present — a station_id with no event_id is rejected with 400, not silently discarded (PR #77 bot-review round 1, Finding D); (2) event_id, when present, must match the attendee's actual event — a mismatched event_id is rejected with 400, never silently substituted (checked since this endpoint's reprint-logging was first built, Task 4). event_id is what actually gates the reprint-logging behavior — station_id is only meaningful (recorded on the feed row) when a validated event_id is also present. Absent entirely (or an absent/empty body) is the pre-existing back-compat path: counter-only, no checkin_actions row (the badge-editor's bulk print sends no body at all). */
         MarkAttendeePrintedRequest: {
@@ -3209,6 +3284,131 @@ export interface operations {
             };
             /** @description Store failure resolving event ownership or fetching the feed. */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The event's current monitor snapshot. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorSnapshot"];
+                };
+            };
+            /** @description event_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing"). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership or any aggregation. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEventMonitorStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description An open text/event-stream connection that stays open until the client disconnects or the request context is cancelled. Three frame types, each terminated by a blank line (`\n\n`) and flushed individually the moment it's written: (1) `event: hello\ndata: {}\n\n` — sent once, immediately, so the client can confirm the connection is live; (2) `event: update\ndata: {"at":"<RFC3339>"}\n\n` — sent whenever the broker publishes a change for this event (check-in, undo, reprint, or station heartbeat); the timestamp is informational only; the client always responds by re-fetching the snapshot endpoint above, never by trying to derive state from this payload; (3) `: ping\n\n` — a comment line (no `event:` field, so it is invisible to an EventSource's message handlers) sent every 25 seconds as a keep-alive, purely to stop an intermediary proxy/load balancer from reaping an idle-looking connection. This operation's contract test cannot run the streamed body through openapi3filter.ValidateResponse, which validates one complete response, not an indefinite byte sequence — see the documented direct-coverage-map exception in monitor_stream_test.go; the real frame-by-frame assertions live in that same file's httptest.Server-backed tests. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description event_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Event does not exist, or belongs to a different tenant (requireEventOwnership masks "foreign" as "missing") — checked before any stream header is written. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure resolving event ownership. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Fail-closed nil-Broker guard (PR #81 bot-review round, Finding B4): the server has no event broker configured (a misconfigured/degraded deployment). Checked AFTER requireEventOwnership but BEFORE any stream header is written, so this is a plain, complete JSON response — never a half-open event-stream connection the client would have to notice and abandon. A nil Broker used to still serve hello/ping frames forever with no "update" ever possible, silently masking the misconfiguration; failing closed here surfaces it immediately instead. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

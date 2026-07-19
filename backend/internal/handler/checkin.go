@@ -170,6 +170,19 @@ func (h *Handler) StationCheckin(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to check in attendee"})
 	}
 
+	// Publish only on outcome "checked_in" (P4.2 Task 4, plan-time fact 3 +
+	// self-review notes): "already_checked_in" and "blocked" both leave the
+	// monitor-visible state completely unchanged, so signaling the monitor
+	// to re-fetch a snapshot that will come back identical would just be
+	// wasted work on every subscriber. publishCheckinEvent (Finding B2) is
+	// nil-safe, best-effort, detached from this request's own
+	// cancellation, and timeout-bounded — AFTER the store call already
+	// committed, so nothing here can turn a successful check-in into an
+	// error response.
+	if outcome == "checked_in" {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
+
 	var checkin *CheckinInfo
 	if updated.CheckedInAt != nil {
 		byEmail := ""
@@ -230,6 +243,14 @@ func (h *Handler) UndoCheckin(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to undo check-in"})
 	}
+
+	// Publish on every 200 (P4.2 Task 4) — including the idempotent
+	// already-clear case: a redundant signal just costs subscribers one
+	// harmless snapshot re-fetch that comes back unchanged, which is
+	// strictly cheaper than trying to detect "did this undo actually
+	// change anything" here. publishCheckinEvent (Finding B2) is nil-safe,
+	// best-effort, detached, timeout-bounded — AFTER the store call.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
 
 	return c.JSON(http.StatusOK, UndoCheckinResponse{Attendee: updated})
 }
