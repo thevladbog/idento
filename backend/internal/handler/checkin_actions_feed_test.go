@@ -115,10 +115,10 @@ func TestUpdateAttendeeHandler_RecordsUndoActionOnUncheck(t *testing.T) {
 
 	var got []recordedAction
 	h := New(&fakeStore{
-		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
-		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
-		updateAttendee:  func(*models.Attendee) error { return nil },
+		getEventByID:              func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:           func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getUserByID:               func(uuid.UUID) (*models.User, error) { return staffUser, nil },
+		updateAttendee:            func(*models.Attendee) error { return nil },
 		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(eventID, attendeeID uuid.UUID, action string, stationID *uuid.UUID, staffUserID *uuid.UUID, at *time.Time) error {
 			got = append(got, recordedAction{eventID, attendeeID, action, stationID, staffUserID, at})
@@ -213,10 +213,10 @@ func TestUpdateAttendeeHandler_ActionInsertFailureIsNonFatal(t *testing.T) {
 	staffUser := contractUser("staff@org.io")
 
 	h := New(&fakeStore{
-		getEventByID:    func(uuid.UUID) (*models.Event, error) { return event, nil },
-		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
-		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
-		updateAttendee:  func(*models.Attendee) error { return nil },
+		getEventByID:              func(uuid.UUID) (*models.Event, error) { return event, nil },
+		getAttendeeByID:           func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
+		getUserByID:               func(uuid.UUID) (*models.User, error) { return staffUser, nil },
+		updateAttendee:            func(*models.Attendee) error { return nil },
 		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
 		insertCheckinActionAt: func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error {
 			return errors.New("boom")
