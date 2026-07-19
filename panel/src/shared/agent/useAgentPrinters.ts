@@ -120,7 +120,23 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
   // GET /info and the machines endpoint (test/msw.ts) -- the legacy-agent /
   // empty-registry baseline under which this whole block is inert.
   const { info } = useAgentInfo(enabled);
-  const machine = useEquipmentMachine(enabled ? (info?.machine_id ?? null) : null);
+  const machineId = enabled ? (info?.machine_id ?? null) : null;
+  const machine = useEquipmentMachine(machineId);
+
+  // PR #83 bot-review round 1, Finding 8: for a MODERN agent (machineId
+  // known), the registry query is genuinely enabled and racing the printers
+  // probe -- while it's still PENDING (`isPending`: not yet success OR
+  // error; a query stuck disabled, i.e. `machineId === null`, is EXCLUDED
+  // by the `machineId != null` half of this check, since that's the
+  // legacy/no-identity path, which must keep resolving the agent default
+  // immediately, same as before this task), falling through to the agent's
+  // OWN configured default below would be a GUESS: the registry read
+  // moments later might override it with a different (or no) server
+  // default, and a print fired during that window could go to the wrong
+  // printer. `registryPending` forces `configuredDefault` to null during
+  // that window -- the safe direction (a caller then asks, per this hook's
+  // own field-semantics contract, rather than silently printing).
+  const registryPending = machineId != null && machine.isPending;
 
   const registryDefaultAgentName = (() => {
     const devices = machine.data?.devices ?? [];
@@ -140,7 +156,10 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
   // (TestPrintDialog, drawer reprint, bulk print, station): still null iff
   // neither the registry nor the agent has a default, never silently
   // inheriting `defaultPrinter`'s own "first in list" convenience fallback.
-  const configuredDefault = registryDefaultAgentName ?? agentConfiguredDefault;
+  // Finding 8: `registryPending` short-circuits straight to null, ahead of
+  // both the registry AND the agent-config fallback -- see that comment
+  // above.
+  const configuredDefault = registryPending ? null : (registryDefaultAgentName ?? agentConfiguredDefault);
 
   // Web parity rule (web/src/pages/EquipmentSettings.tsx's fetchPrinters):
   // the (now server-first) configured default printer only wins if it's

@@ -668,6 +668,7 @@
   "equipmentNotSeenSince": "Сохранено · не было видно с {{date}} — проверьте питание и сеть",
   "equipmentNotSeenYet": "Сохранено · ещё не было видно",
   "equipmentUnreachable": "сохранено · недоступно",
+  "equipmentUptime": "работает {{hours}} ч {{minutes}} мин",
   "equipmentSaveDevice": "Сохранить…",
   "equipmentRename": "Переименовать",
   "equipmentRenameLabel": "Название устройства",

@@ -23,7 +23,12 @@ export function useEquipmentMachine(machineId: string | null) {
     "get",
     "/api/equipment/machines/{machine_id}",
     { params: { path: { machine_id: machineId ?? "" } } },
-    { enabled: machineId != null },
+    // PR #83 bot-review round 1, Finding 9: same house convention as
+    // useAgentInfo.ts/useAgentPrinters.ts's own `retry: false` -- a 404
+    // here is the documented-normal "never registered" case (isEmptyRegistry
+    // above), not a transient fault, so TanStack's default 3 retries would
+    // only delay the first reconcile on a fresh machine for no benefit.
+    { enabled: machineId != null, retry: false },
   );
 }
 

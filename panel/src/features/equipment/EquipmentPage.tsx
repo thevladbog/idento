@@ -279,7 +279,14 @@ export function EquipmentPage() {
               placeholder on this page is gone. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button">{t("equipmentAddDevice")}</Button>
+              {/* PR #83 bot-review round 1, Finding 3: disabled whenever
+                  machineId is null -- both menu items' handlers
+                  (openCreateWizard/openCreateScannerWizard) already no-op
+                  in that state; the trigger itself must be honest about it
+                  too. */}
+              <Button type="button" disabled={machineId === null}>
+                {t("equipmentAddDevice")}
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onSelect={() => openCreateWizard()}>{t("equipmentAddPrinter")}</DropdownMenuItem>
@@ -323,6 +330,10 @@ export function EquipmentPage() {
               unsavedPrinters={unsavedPrinters}
               agentDown={agentDown}
               showDefaultControls
+              // PR #83 bot-review round 1, Finding 3: see DeviceCardProps'
+              // own comment -- Set up/Save… render disabled whenever
+              // machineId is null (legacy agent, no cached identity).
+              disableActions={machineId === null}
               onRename={(device) => setDialog({ kind: "rename", device })}
               onSetDefault={(device) =>
                 setDefaultPrinter.mutate({
@@ -352,6 +363,7 @@ export function EquipmentPage() {
               rows={scannerRows}
               agentDown={agentDown}
               showDefaultControls={false}
+              disableActions={machineId === null}
               onRename={(device) => setDialog({ kind: "rename", device })}
               onSetDefault={() => {}}
               onClearDefault={() => {}}

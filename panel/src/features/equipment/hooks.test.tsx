@@ -6,6 +6,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { startMswServer } from "../../test/msw";
+import { useEventReadiness } from "../events/hooks";
 import {
   EQUIPMENT_MACHINE_KEY,
   isEmptyRegistry,
@@ -21,6 +22,12 @@ import {
 let machineGetCount = 0;
 let machineGetStatus = 200;
 let capturedMachineId: string | undefined;
+// PR #83 bot-review round 1, Finding 4 -- a genuinely subscribed
+// GET /api/events/:id/readiness observer, same ReadinessObserver discipline
+// as AddAttendeeDialog.test.tsx/events/hooks.test.tsx: proves an
+// invalidateQueries call produces an OBSERVABLE refetch, not just that the
+// call was made.
+let readinessGetCount = 0;
 
 function machineResponse() {
   return {
@@ -70,6 +77,10 @@ const server = startMswServer(
     return HttpResponse.json(body);
   }),
   http.post("http://api.test/api/equipment/devices/:deviceId/test-passed", () => new HttpResponse(null, { status: 204 })),
+  http.get("http://api.test/api/events/:id/readiness", () => {
+    readinessGetCount += 1;
+    return HttpResponse.json({ ready: false, steps: [] });
+  }),
 );
 void server;
 
@@ -88,6 +99,7 @@ describe("equipment hooks", () => {
     machineGetCount = 0;
     machineGetStatus = 200;
     capturedMachineId = undefined;
+    readinessGetCount = 0;
     localStorage.clear();
     localStorage.setItem("token", "jwt-test");
     window.__ENV__ = { API_URL: "http://api.test" };
@@ -122,6 +134,34 @@ describe("equipment hooks", () => {
 
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(isEmptyRegistry(result.current.error)).toBe(true);
+    });
+
+    // PR #83 bot-review round 1, Finding 9: the query had no `retry`
+    // override of its own, so a fresh (never-registered) machine's
+    // documented-normal 404 got TanStack's default 3 retries -- delaying
+    // the first reconcile. useAgentInfo/useAgentPrinters both already set
+    // `retry: false` for exactly this reason (agentClient's own health/info
+    // 404s are documented normal states, not transient faults) -- this pins
+    // the same convention here. Deliberately builds its OWN QueryClient
+    // (not makeWrapper's, which sets `retry: false` at the CLIENT level for
+    // every test in this file) so the assertion actually exercises the
+    // HOOK's own retry setting rather than being masked by the harness
+    // default; `retryDelay: 0` only removes the exponential backoff wait,
+    // it does not change the retry COUNT that's under test.
+    it("does not retry the machine 404 -- exactly one request, matching the useAgentInfo/useAgentPrinters retry:false convention", async () => {
+      machineGetStatus = 404;
+      const qc = new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } });
+      const Wrapper = ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      );
+      const { result } = renderHook(() => useEquipmentMachine("mach-1"), { wrapper: Wrapper });
+
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      // A beat for any retry TanStack's default would otherwise still be
+      // mid-flight on (retryDelay: 0 makes those fire almost immediately,
+      // not instantly).
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(machineGetCount).toBe(1);
     });
   });
 
@@ -278,6 +318,101 @@ describe("equipment hooks", () => {
       await waitFor(() => expect(testResult.current.isSuccess).toBe(true));
 
       await waitFor(() => expect(machineGetCount).toBe(2));
+    });
+  });
+
+  // PR #83 bot-review round 1, Finding 4: equipment is an ORG-level
+  // resource (no eventId anywhere in this file), but four of its mutations
+  // change content the workspace rail's EQUIPMENT readiness step gates on
+  // (device presence / a tested default printer) for EVERY event under
+  // this tenant -- panel/AGENTS.md's "readiness invalidation" rule.
+  // READINESS_KEY(eventId) itself needs a concrete eventId this file
+  // doesn't have, so the fix uses the [method, path-template] PREFIX
+  // idiom ATTENDEES_LIST_KEY documents (attendees/hooks.ts): a queryKey of
+  // just [method, path], no third `init` element, partial-matches every
+  // registered readiness query regardless of which event populated it.
+  // Proven here against TWO different events' readiness observers sharing
+  // one QueryClient -- a genuine prefix match refetches BOTH, which a
+  // (nonexistent, since there's no eventId) scoped call could never do.
+  // patchDevice (rename) and upsertMachine are deliberately NOT covered
+  // here -- neither changes anything the readiness step reads.
+  describe("readiness invalidation (org-level prefix -- create/delete/set-default/mark-test-passed)", () => {
+    it("useCreateDevice invalidates every event's readiness query", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      const { result: evt2 } = renderHook(() => useEventReadiness("evt-2"), { wrapper: Wrapper });
+      await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
+      await waitFor(() => expect(evt2.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(2);
+
+      const { result: createResult } = renderHook(() => useCreateDevice("mach-1"), { wrapper: Wrapper });
+      createResult.current.mutate({
+        params: { path: { machine_id: "mach-1" } },
+        body: { class: "printer", kind: "system", display_name: "Front Desk Printer", config: {} },
+      });
+      await waitFor(() => expect(createResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(readinessGetCount).toBe(4));
+    });
+
+    it("useDeleteDevice invalidates every event's readiness query", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      const { result: evt2 } = renderHook(() => useEventReadiness("evt-2"), { wrapper: Wrapper });
+      await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
+      await waitFor(() => expect(evt2.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(2);
+
+      const { result: deleteResult } = renderHook(() => useDeleteDevice("mach-1"), { wrapper: Wrapper });
+      deleteResult.current.mutate({ params: { path: { device_id: "dev-1" } } });
+      await waitFor(() => expect(deleteResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(readinessGetCount).toBe(4));
+    });
+
+    it("useSetDefaultPrinter invalidates every event's readiness query", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      const { result: evt2 } = renderHook(() => useEventReadiness("evt-2"), { wrapper: Wrapper });
+      await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
+      await waitFor(() => expect(evt2.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(2);
+
+      const { result: defaultResult } = renderHook(() => useSetDefaultPrinter("mach-1"), { wrapper: Wrapper });
+      defaultResult.current.mutate({ params: { path: { machine_id: "mach-1" } }, body: { device_id: "dev-1" } });
+      await waitFor(() => expect(defaultResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(readinessGetCount).toBe(4));
+    });
+
+    it("useMarkTestPassed invalidates every event's readiness query", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      const { result: evt2 } = renderHook(() => useEventReadiness("evt-2"), { wrapper: Wrapper });
+      await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
+      await waitFor(() => expect(evt2.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(2);
+
+      const { result: testResult } = renderHook(() => useMarkTestPassed("mach-1"), { wrapper: Wrapper });
+      testResult.current.mutate({ params: { path: { device_id: "dev-1" } } });
+      await waitFor(() => expect(testResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(readinessGetCount).toBe(4));
+    });
+
+    it("usePatchDevice (rename) does NOT invalidate readiness -- renaming a device doesn't change the readiness step", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(1);
+
+      const { result: patchResult } = renderHook(() => usePatchDevice("mach-1"), { wrapper: Wrapper });
+      patchResult.current.mutate({ params: { path: { device_id: "dev-1" } }, body: { display_name: "Renamed" } });
+      await waitFor(() => expect(patchResult.current.isSuccess).toBe(true));
+
+      // A beat to (not) see a refetch it has no business causing.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(readinessGetCount).toBe(1);
     });
   });
 });

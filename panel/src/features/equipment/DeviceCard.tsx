@@ -87,6 +87,19 @@ export interface DeviceCardProps {
   // report the device at all) as well as any "live" com scanner row (same
   // liveness gate onTestPrint already uses for printers).
   onTestScan?: (device: EquipmentDevice) => void;
+  // PR #83 bot-review round 1, Finding 3: a legacy agent (connected_legacy)
+  // with NO cached machine identity has machineId === null in
+  // EquipmentPage.tsx -- onSetUp/onSaveUnsaved are still PROVIDED (this
+  // column has a real wizard wired), but their handlers are guarded to
+  // silently no-op with no machineId to register against. Rendering those
+  // buttons fully enabled made them look actionable while doing nothing.
+  // When true, the Set up (header + empty-state) and Save… buttons render
+  // disabled instead -- the WHY is already visible via AgentCard's
+  // `equipmentAgentLegacyHint` above this card, so no extra copy is needed
+  // here. Left `false`/undefined for every OTHER state (including "no
+  // wizard wired yet", which already renders the separate `wizard-todo`
+  // placeholder untouched by this prop).
+  disableActions?: boolean;
 }
 
 function formatNotSeenDate(iso: string, locale: string): string {
@@ -101,7 +114,7 @@ function formatNotSeenDate(iso: string, locale: string): string {
 export function DeviceCard({
   testId, icon: Icon, titleText, emptyTitle, footerText, setUpLabel, rows, unsavedPrinters = [], agentDown,
   showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onRetryLive, onSetUp, onSaveUnsaved,
-  onTestPrint, onTestScan,
+  onTestPrint, onTestScan, disableActions = false,
 }: DeviceCardProps) {
   const { t, i18n } = useTranslation();
   const isEmpty = rows.length === 0 && unsavedPrinters.length === 0;
@@ -119,7 +132,14 @@ export function DeviceCard({
           ) : null}
         </div>
         {onSetUp ? (
-          <Button type="button" variant="ghost" size="sm" className="text-success" onClick={onSetUp}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-success"
+            disabled={disableActions}
+            onClick={onSetUp}
+          >
             {setUpLabel}
           </Button>
         ) : (
@@ -136,7 +156,7 @@ export function DeviceCard({
               title={emptyTitle}
               actions={
                 onSetUp ? (
-                  <Button type="button" variant="outline" onClick={onSetUp}>
+                  <Button type="button" variant="outline" disabled={disableActions} onClick={onSetUp}>
                     {setUpLabel}
                   </Button>
                 ) : (
@@ -222,13 +242,21 @@ export function DeviceCard({
                       ) : null}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
+                          {/* PR #83 bot-review round 1, Finding 10: was a
+                              hand-rolled styled <button> -- panel/AGENTS.md
+                              mandates @idento/ui primitives. Same
+                              ghost/icon trigger composition as
+                              ThemeSwitcher.tsx/LanguageSwitcher.tsx's own
+                              DropdownMenuTrigger asChild + Button. */}
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             aria-label={t("equipmentRowMenuLabel", { name: device.display_name })}
-                            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+                            className="size-auto shrink-0 p-1.5 text-muted-foreground"
                           >
                             ⋯
-                          </button>
+                          </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onSelect={() => onRename(device)}>{t("equipmentRename")}</DropdownMenuItem>
@@ -261,7 +289,13 @@ export function DeviceCard({
                   <span className="font-mono text-caption text-muted-foreground">{printer.type}</span>
                 </div>
                 {onSaveUnsaved ? (
-                  <Button type="button" variant="outline" size="sm" onClick={() => onSaveUnsaved(printer)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={disableActions}
+                    onClick={() => onSaveUnsaved(printer)}
+                  >
                     {t("equipmentSaveDevice")}
                   </Button>
                 ) : (

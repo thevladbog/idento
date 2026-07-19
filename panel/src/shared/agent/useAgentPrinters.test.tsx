@@ -350,5 +350,112 @@ describe("useAgentPrinters", () => {
       await waitFor(() => expect(result.current.configuredDefault).toBe("Server_Registry_Printer"));
       expect(result.current.configuredDefault).not.toBeNull();
     });
+
+    // PR #83 bot-review round 1, Finding 8: for a MODERN agent (machine_id
+    // known), the hook used to fall back to the agent's own configured
+    // default the instant the printers probe settled, even while the
+    // registry query itself was still pending -- a slow registry response
+    // could route a print to the OLD agent default for however long that
+    // window lasted, moments before the server-wins registry read would
+    // have overridden it. The safe direction is to resolve null during
+    // that window (a caller then asks instead of silently printing to a
+    // possibly-wrong printer) rather than guess.
+    describe("pending-window safety (registry query not yet settled)", () => {
+      it("resolves configuredDefault to null while the machine query is pending, even though the printers probe (and the agent's own default) already settled", async () => {
+        agentInfoStatus = 200;
+        machineStatus = 200;
+        printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+        defaultResponse = { default: "Agent_Own_Default" };
+        let releaseMachine: (() => void) | undefined;
+        const machineGate = new Promise<void>((resolve) => {
+          releaseMachine = resolve;
+        });
+        server.use(
+          http.get("http://api.test/api/equipment/machines/:machineId", async () => {
+            requestCounts.machine += 1;
+            await machineGate;
+            return HttpResponse.json({
+              machine: {
+                machine_id: "mach-1",
+                hostname: "REG-DESK-01",
+                agent_version: "1.9.0",
+                last_seen_at: "2026-07-19T00:00:00Z",
+                created_at: "2026-07-01T00:00:00Z",
+              },
+              devices: machineDevices,
+            });
+          }),
+        );
+
+        const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+        // The printers probe (and therefore the agent's own configured
+        // default) has fully settled, but the registry hasn't.
+        await waitFor(() => expect(result.current.state).toBe("connected"));
+        expect(result.current.configuredDefault).toBeNull();
+        // The `defaultPrinter` convenience fallback is untouched by this --
+        // it still has SOME preselection (the only printer in the list).
+        expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
+
+        releaseMachine?.();
+        // Settles to the (empty-registry, since machineDevices defaults to
+        // []) legacy path once the registry query resolves.
+        await waitFor(() => expect(result.current.configuredDefault).toBe("Agent_Own_Default"));
+      });
+
+      it("settles to the server-wins registry default once the pending registry query resolves, never having exposed the stale agent default in between", async () => {
+        agentInfoStatus = 200;
+        machineStatus = 200;
+        machineDevices = [registryPrinterDevice()];
+        printersResponse = [
+          { name: "Server_Registry_Printer", type: "system" },
+          { name: "Agent_Own_Default", type: "system" },
+        ];
+        defaultResponse = { default: "Agent_Own_Default" };
+        let releaseMachine: (() => void) | undefined;
+        const machineGate = new Promise<void>((resolve) => {
+          releaseMachine = resolve;
+        });
+        server.use(
+          http.get("http://api.test/api/equipment/machines/:machineId", async () => {
+            requestCounts.machine += 1;
+            await machineGate;
+            return HttpResponse.json({
+              machine: {
+                machine_id: "mach-1",
+                hostname: "REG-DESK-01",
+                agent_version: "1.9.0",
+                last_seen_at: "2026-07-19T00:00:00Z",
+                created_at: "2026-07-01T00:00:00Z",
+              },
+              devices: machineDevices,
+            });
+          }),
+        );
+        const configuredDefaultValuesSeen: Array<string | null> = [];
+
+        const { result, rerender } = renderHook(() => useAgentPrinters(true), { wrapper });
+        await waitFor(() => expect(result.current.state).toBe("connected"));
+        configuredDefaultValuesSeen.push(result.current.configuredDefault);
+        expect(result.current.configuredDefault).toBeNull();
+
+        releaseMachine?.();
+        await waitFor(() => expect(result.current.configuredDefault).toBe("Server_Registry_Printer"));
+        rerender();
+        configuredDefaultValuesSeen.push(result.current.configuredDefault);
+        // Never observed the stale agent default at any point -- only null
+        // (pending, safe) then the true server-wins value.
+        expect(configuredDefaultValuesSeen).toEqual([null, "Server_Registry_Printer"]);
+      });
+
+      it("legacy path (null machine_id) is unaffected -- resolves the agent's own default immediately, no pending-window null", async () => {
+        agentInfoStatus = 404; // legacy agent: machine_id never known, so useEquipmentMachine's query stays disabled (not "pending-and-fetching").
+        printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+        defaultResponse = { default: "Agent_Own_Default" };
+
+        const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+        await waitFor(() => expect(result.current.state).toBe("connected"));
+        expect(result.current.configuredDefault).toBe("Agent_Own_Default");
+      });
+    });
   });
 });

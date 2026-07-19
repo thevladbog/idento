@@ -12,6 +12,25 @@ import type { components } from "../../shared/api/schema";
 import { EQUIPMENT_MACHINE_KEY, isEmptyRegistry, useEquipmentMachine } from "../../shared/agent/useEquipmentMachine";
 export { EQUIPMENT_MACHINE_KEY, isEmptyRegistry, useEquipmentMachine };
 
+// PR #83 bot-review round 1, Finding 4 -- panel/AGENTS.md's "Readiness
+// invalidation" rule: any mutation that changes content a workspace
+// readiness step gates on must also invalidate READINESS_KEY(eventId)
+// (events/hooks.ts) alongside its own resource key. Equipment is an
+// ORG-level resource (no eventId anywhere in this file), but the backend's
+// EQUIPMENT readiness step (device presence / a tested default printer)
+// reads off this SAME registry for every event under the tenant -- so a
+// device create/delete/default-repoint/test-pass must invalidate every
+// event's readiness query, not one this file can't even name.
+// READINESS_KEY(eventId) itself needs a concrete eventId; instead this uses
+// the [method, path-template] PREFIX idiom ATTENDEES_LIST_KEY documents
+// (attendees/hooks.ts): a queryKey of just [method, path] -- no third
+// `init` element -- partial-matches every registered readiness query
+// regardless of which event populated it (TanStack's partialMatchKey only
+// walks keys PRESENT in the filter key). Verified against READINESS_KEY's
+// own real shape (events/hooks.ts:33-35). Covered by the "readiness
+// invalidation" describe block in hooks.test.tsx.
+const ALL_EVENTS_READINESS_KEY = ["get", "/api/events/{id}/readiness"] as const;
+
 // Re-exported schema types for Task 7+ consumers (mirrors checkin/hooks.ts's
 // CheckinStation/staff/hooks.ts's StaffUser precedent) — keeps the generated
 // schema index paths out of every downstream file that just needs the shape.
@@ -72,6 +91,9 @@ export function useCreateDevice(machineId: string) {
   return $api.useMutation("post", "/api/equipment/machines/{machine_id}/devices", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: EQUIPMENT_MACHINE_KEY(machineId) });
+      // Finding 4 -- a new device can flip the EQUIPMENT readiness step for
+      // every event under this tenant.
+      void queryClient.invalidateQueries({ queryKey: ALL_EVENTS_READINESS_KEY });
     },
   });
 }
@@ -94,6 +116,10 @@ export function useDeleteDevice(machineId: string) {
   return $api.useMutation("delete", "/api/equipment/devices/{device_id}", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: EQUIPMENT_MACHINE_KEY(machineId) });
+      // Finding 4 -- removing a device (e.g. the tested default printer)
+      // can flip the EQUIPMENT readiness step for every event under this
+      // tenant.
+      void queryClient.invalidateQueries({ queryKey: ALL_EVENTS_READINESS_KEY });
     },
   });
 }
@@ -105,6 +131,9 @@ export function useSetDefaultPrinter(machineId: string) {
   return $api.useMutation("put", "/api/equipment/machines/{machine_id}/default-printer", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: EQUIPMENT_MACHINE_KEY(machineId) });
+      // Finding 4 -- repointing (or clearing) the default printer can flip
+      // the EQUIPMENT readiness step for every event under this tenant.
+      void queryClient.invalidateQueries({ queryKey: ALL_EVENTS_READINESS_KEY });
     },
   });
 }
@@ -117,6 +146,10 @@ export function useMarkTestPassed(machineId: string) {
   return $api.useMutation("post", "/api/equipment/devices/{device_id}/test-passed", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: EQUIPMENT_MACHINE_KEY(machineId) });
+      // Finding 4 -- a passed test on the default printer is exactly what
+      // TenantHasTestedDefaultPrinter (the backend's readiness check) reads
+      // for every event under this tenant.
+      void queryClient.invalidateQueries({ queryKey: ALL_EVENTS_READINESS_KEY });
     },
   });
 }

@@ -117,6 +117,19 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
   const [manualSubmitting, setManualSubmitting] = React.useState(false);
   const [manualError, setManualError] = React.useState<string | null>(null);
 
+  // PR #83 bot-review round 1 (CodeRabbit+Codex dupe), Finding 2: this
+  // form's own port guard used to be `Number.isFinite(port)`, which lets an
+  // emptied field ("" -> 0 via Number("")) and an out-of-range port
+  // (65536+) straight through to POST /printers/add -- the agent then
+  // fails confusingly trying to open a listener on port 0 or 70000 instead
+  // of the wizard catching it up front. Aligned with the Save step's own
+  // `addressValid` rule further below (Number.isInteger && 1..65535) so
+  // the two address forms in this file enforce the identical port range.
+  const trimmedManualName = manualName.trim();
+  const trimmedManualIp = manualIp.trim();
+  const manualPortNumber = Number(manualPort);
+  const manualPortValid = Number.isInteger(manualPortNumber) && manualPortNumber >= 1 && manualPortNumber <= 65535;
+
   // Review fix round Important 2: the Save step's own ip/port form for a
   // network-typed printer whose address the wizard doesn't know (picked
   // off the Find list or handed in via prefill -- GET /printers reports
@@ -251,21 +264,18 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
     // handlePrint defense-in-depth idiom (a rapid double-submit must never
     // fire two /printers/add POSTs).
     if (manualSubmitting) return;
-    const trimmedName = manualName.trim();
-    const trimmedIp = manualIp.trim();
-    const port = Number(manualPort);
-    if (!trimmedName || !trimmedIp || !Number.isFinite(port)) return;
+    if (!trimmedManualName || !trimmedManualIp || !manualPortValid) return;
     setManualSubmitting(true);
     setManualError(null);
     try {
-      await agentClient.addNetworkPrinter({ name: trimmedName, ip: trimmedIp, port });
+      await agentClient.addNetworkPrinter({ name: trimmedManualName, ip: trimmedManualIp, port: manualPortNumber });
       // Any OTHER mounted useAgentPrinters consumer (the hub's own
       // unsaved-row list, TestPrintDialog, BulkBar, ...) shares this same
       // query key/cache -- refresh it so the newly-added printer shows up
       // there too, not just in this wizard's own local `selected`.
       void queryClient.invalidateQueries({ queryKey: AGENT_PRINTERS_KEY });
-      setSelected({ agentName: trimmedName, type: "network", ip: trimmedIp, port });
-      setDisplayName(trimmedName);
+      setSelected({ agentName: trimmedManualName, type: "network", ip: trimmedManualIp, port: manualPortNumber });
+      setDisplayName(trimmedManualName);
       setStep("test");
     } catch (error) {
       setManualError(error instanceof Error ? error.message : t("equipmentWizardManualError"));
@@ -538,7 +548,10 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                   <Button type="button" variant="outline" disabled={manualSubmitting} onClick={() => setManualOpen(false)}>
                     {t("createEventCancel")}
                   </Button>
-                  <Button type="submit" disabled={manualSubmitting || !manualName.trim() || !manualIp.trim()}>
+                  <Button
+                    type="submit"
+                    disabled={manualSubmitting || !trimmedManualName || !trimmedManualIp || !manualPortValid}
+                  >
                     {t("settingsSave")}
                   </Button>
                 </div>
@@ -670,7 +683,16 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                     </Button>
                     <Button
                       type="button"
-                      disabled={saving || !selected || (step === "save" && needsAddress && !addressValid)}
+                      // PR #83 bot-review round 1, Finding 6: `printing`
+                      // must gate this too, not just `saving` -- otherwise
+                      // a slow test-print send (auto-fired on Test, still
+                      // in flight) leaves the physical send unresolved
+                      // while Save has already created the registry row
+                      // and closed the dialog, with no way for a LATE
+                      // print failure to ever surface.
+                      disabled={
+                        saving || printing || !selected || (step === "save" && needsAddress && !addressValid)
+                      }
                       onClick={() => void handleSaveClick()}
                     >
                       {t("equipmentWizardSavePrinter")}

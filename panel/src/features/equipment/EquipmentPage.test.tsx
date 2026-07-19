@@ -387,6 +387,65 @@ describe("EquipmentPage", () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
       expect(upsertCalls).toHaveLength(0);
     });
+
+    // PR #83 bot-review round 1, Finding 3: a legacy agent with NO cached
+    // identity has machineId === null, so every Add/Set up/Save control's
+    // handler (openCreateWizard/openCreateScannerWizard/onSaveUnsaved,
+    // guarded in EquipmentPage.tsx) silently no-ops -- but the buttons
+    // themselves used to render fully enabled, looking clickable while
+    // doing nothing. The AgentCard's existing "Update the agent..." hint
+    // already explains WHY (visible above); these controls must also be
+    // disabled so the affordance itself is honest.
+    it("with no cached identity: Add/Set up/Save controls are disabled (nothing honest to register into)", async () => {
+      agentInfoStatus = 404;
+      agentPrinters = [{ name: "Live_Only_Printer", type: "system" }];
+
+      renderPage();
+
+      expect(await screen.findByText("Update the agent to save devices to your organization")).toBeInTheDocument();
+      const unsavedRow = await screen.findByTestId("equipment-device-unsaved-Live_Only_Printer");
+      expect(within(unsavedRow).getByRole("button", { name: "Save…" })).toBeDisabled();
+
+      const printersCard = screen.getByTestId("equipment-printers-card");
+      expect(within(printersCard).getByRole("button", { name: "+ Set up printer" })).toBeDisabled();
+
+      const scannersCard = screen.getByTestId("equipment-scanners-card");
+      within(scannersCard)
+        .getAllByRole("button", { name: "+ Set up scanner" })
+        .forEach((button) => expect(button).toBeDisabled());
+
+      expect(screen.getByRole("button", { name: "+ Add device" })).toBeDisabled();
+    });
+
+    // Counterpart: a cached identity from an EARLIER connection makes
+    // machineId non-null even though the agent is currently legacy -- the
+    // registry IS reachable, so these controls stay the real, enabled
+    // affordance.
+    it("with a cached identity: Add/Set up/Save controls stay enabled (machineId known from the cache)", async () => {
+      agentInfoStatus = 404;
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      machineDevices = [printerLive()];
+      agentPrinters = [
+        { name: "HP_Smart_Tank_790", type: "system" }, // already registered -- printerLive()'s config.agent_name.
+        { name: "Unregistered_Kitchen_Printer", type: "system" },
+      ];
+
+      renderPage();
+
+      expect(await screen.findByText("Update the agent to save devices to your organization")).toBeInTheDocument();
+      const unsavedRow = await screen.findByTestId("equipment-device-unsaved-Unregistered_Kitchen_Printer");
+      expect(within(unsavedRow).getByRole("button", { name: "Save…" })).not.toBeDisabled();
+
+      const printersCard = screen.getByTestId("equipment-printers-card");
+      expect(within(printersCard).getByRole("button", { name: "+ Set up printer" })).not.toBeDisabled();
+
+      const scannersCard = screen.getByTestId("equipment-scanners-card");
+      within(scannersCard)
+        .getAllByRole("button", { name: "+ Set up scanner" })
+        .forEach((button) => expect(button).not.toBeDisabled());
+
+      expect(screen.getByRole("button", { name: "+ Add device" })).not.toBeDisabled();
+    });
   });
 
   describe("disconnected with cache (board 5d)", () => {

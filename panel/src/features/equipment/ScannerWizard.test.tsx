@@ -25,7 +25,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { ScannerWizard, type ScannerWizardProps } from "./ScannerWizard";
 import type { EquipmentDevice } from "./hooks";
 import { startMswServer } from "../../test/msw";
@@ -350,6 +350,36 @@ describe("ScannerWizard", () => {
       expect(screen.getByTestId("scanner-wizard-ports-list")).toBeInTheDocument();
     });
 
+    // PR #83 bot-review round 1, Finding 7: the explicit Cancel button used
+    // to check only `saving`, not `comAdding` -- so clicking it while a
+    // slow POST /scanners/add was still in flight closed the dialog with
+    // no registry row AND no warning that the agent-side port may already
+    // be open. handleOpenChange/preventDialogDismiss (the ✕/Escape/
+    // outside-click paths) already gated on comAdding; only this button
+    // didn't.
+    it("gates the explicit Cancel button on comAdding too -- clicking it while POST /scanners/add is in flight does not close the dialog", async () => {
+      const user = userEvent.setup();
+      scannerPorts = ["COM3"];
+      server.use(
+        http.post("http://agent.test/scanners/add", async () => {
+          await delay(120);
+          return HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      const rendered = renderWizard();
+
+      await user.click(screen.getByRole("button", { name: "COM port" }));
+      await user.click(await screen.findByText("COM3"));
+
+      // The /scanners/add POST is still in flight.
+      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(rendered.onClose).not.toHaveBeenCalled();
+
+      // Once it settles, the wizard moves on into listening -- never closed.
+      expect(await screen.findByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+    });
+
     describe("listen phase (fake timers)", () => {
       beforeEach(() => {
         vi.useFakeTimers();
@@ -470,6 +500,58 @@ describe("ScannerWizard", () => {
       // to read the result -- Close is the only way out.
       expect(screen.queryByRole("button", { name: "Save scanner" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    });
+
+    // PR #83 bot-review round 1, Finding 5: retest's auto-fired POST
+    // /test-passed used to be outside every busy/dismissal gate -- Close
+    // stayed clickable mid-flight. Closing bumps sessionRef (the
+    // open-keyed reset effect), so a LATE failure's onError saw a stale
+    // session and silently dropped the warning -- markTestPassed's own
+    // pending state must gate Close the same way saving/comAdding already
+    // gate the Find/Test footer's Cancel.
+    it("gates the retest Close button on markTestPassed's pending state -- clicking it while the auto-fired POST /test-passed is in flight does not close the dialog", async () => {
+      server.use(
+        http.post("http://api.test/api/equipment/devices/:deviceId/test-passed", async ({ params }) => {
+          testPassedCalls.push(params.deviceId as string);
+          await delay(120);
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      const rendered = renderWizard({ retest: retestDevice({ id: "dev-scanner-1" }) });
+
+      typeWedgeBurst("TEST-4471");
+      fireEvent.keyDown(window, { key: "Enter" });
+      await screen.findByText("Scan received — TEST-4471");
+
+      // The POST /test-passed is still in flight.
+      expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(rendered.onClose).not.toHaveBeenCalled();
+
+      await waitFor(() => expect(testPassedCalls).toEqual(["dev-scanner-1"]));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Close" })).not.toBeDisabled());
+    });
+
+    it("surfaces a markTestPassed failure in-dialog even after the operator tried to close mid-flight (the attempt is blocked, so the session survives to see it)", async () => {
+      server.use(
+        http.post("http://api.test/api/equipment/devices/:deviceId/test-passed", async () => {
+          await delay(80);
+          return new HttpResponse(null, { status: 500 });
+        }),
+      );
+      const rendered = renderWizard({ retest: retestDevice({ id: "dev-scanner-1" }) });
+
+      typeWedgeBurst("TEST-4471");
+      fireEvent.keyDown(window, { key: "Enter" });
+      await screen.findByText("Scan received — TEST-4471");
+
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      expect(rendered.onClose).not.toHaveBeenCalled();
+
+      expect(
+        await screen.findByText("Scan confirmed — but the server didn't record the test. It will sync on the next visit."),
+      ).toBeInTheDocument();
+      expect(rendered.onClose).not.toHaveBeenCalled();
     });
 
     // Task 9 review round 2, Important -- the editable-target guard applies

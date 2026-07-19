@@ -311,13 +311,20 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
     }
   }
 
+  // PR #83 bot-review round 1, Finding 5: `markTestPassed.isPending` must
+  // gate every dismiss path too, not just saving/comAdding -- retest's
+  // auto-fired POST /test-passed used to sit outside every busy check, so
+  // Close stayed clickable mid-flight. Closing bumps sessionRef (the
+  // open-keyed reset effect above), so a LATE failure's onError saw a
+  // stale session and silently dropped the testPassedWarning -- the
+  // operator never learned the stamp didn't take.
   function handleOpenChange(next: boolean) {
-    if (!next && (saving || comAdding)) return;
+    if (!next && (saving || comAdding || markTestPassed.isPending)) return;
     if (!next) onClose();
   }
 
   function preventDialogDismiss(e: Event) {
-    if (saving || comAdding) e.preventDefault();
+    if (saving || comAdding || markTestPassed.isPending) e.preventDefault();
   }
 
   return (
@@ -534,12 +541,21 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
 
         <DialogFooter>
           {isRetest ? (
-            <Button type="button" onClick={onClose}>
+            // Finding 5: disabled while markTestPassed is in flight -- see
+            // the handleOpenChange/preventDialogDismiss comment above.
+            <Button type="button" disabled={markTestPassed.isPending} onClick={onClose}>
               {t("workspaceDialogClose")}
             </Button>
           ) : (
             <>
-              <Button type="button" variant="outline" disabled={saving} onClick={onClose}>
+              {/* PR #83 bot-review round 1, Finding 7: gated on comAdding
+                  too, not just saving -- handleOpenChange/
+                  preventDialogDismiss (✕/Escape/outside-click) already do,
+                  but this explicit button didn't, so a click mid
+                  /scanners/add closed the dialog with no registry row and
+                  no warning about the agent-side port possibly already
+                  being open. */}
+              <Button type="button" variant="outline" disabled={saving || comAdding} onClick={onClose}>
                 {t("createEventCancel")}
               </Button>
               <Button type="button" disabled={saving || !canSave} onClick={() => void handleSave()}>

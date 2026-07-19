@@ -149,6 +149,62 @@ describe("PrinterWizard", () => {
       await waitFor(() => expect(printCalls).toHaveLength(1));
       expect(printCalls[0].printer_name).toBe("Network_Office");
     });
+
+    // PR #83 bot-review round 1 (CodeRabbit+Codex dupe), Finding 2: the
+    // manual-add form's own port guard used `Number.isFinite`, which lets
+    // an emptied field ("" -> 0 via Number("")) and an out-of-range port
+    // (65536+) straight through to POST /printers/add -- the agent then
+    // fails confusingly trying to open a listener on port 0 or 70000
+    // instead of the wizard catching it up front. Aligned with the
+    // Save-step address form's own rule just below in this file:
+    // Number.isInteger && 1..65535.
+    it("rejects an out-of-range manual port (70000): Save stays disabled and no POST fires", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      const portInput = screen.getByLabelText("Port");
+      await user.clear(portInput);
+      await user.type(portInput, "70000");
+
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(addPrinterCalls).toHaveLength(0);
+    });
+
+    it("rejects an emptied manual port (''->0 via Number('')): Save stays disabled and no POST fires", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      const portInput = screen.getByLabelText("Port");
+      await user.clear(portInput);
+
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(addPrinterCalls).toHaveLength(0);
+    });
+
+    it("accepts a valid manual port (9100) -- Save enabled, POST fires with the numeric port", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      const portInput = screen.getByLabelText("Port");
+      await user.clear(portInput);
+      await user.type(portInput, "9100");
+
+      expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(addPrinterCalls).toHaveLength(1));
+      expect(addPrinterCalls[0]).toEqual({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
+    });
   });
 
   describe("Test step", () => {
@@ -271,6 +327,30 @@ describe("PrinterWizard", () => {
   });
 
   describe("Save step", () => {
+    // PR #83 bot-review round 1, Finding 6: the footer's Save button used
+    // to check only `saving`, not `printing` -- so a slow test-print send
+    // (printDelayMs) could still be in flight when the operator raced
+    // through "Yes, looks right" -> "Save printer", creating the registry
+    // row and closing the dialog while the physical send was unresolved
+    // (no chance for a late failure to ever surface).
+    it("keeps 'Save printer' disabled while a test print is still in flight, then re-enables once it settles", async () => {
+      const user = userEvent.setup();
+      printDelayMs = 120;
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+      renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /HP_Smart_Tank_790/ }));
+      await screen.findByText("Did the test label print correctly?");
+      // The auto-fired print is still in flight (printDelayMs) at this point.
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+      await screen.findByLabelText("Printer name");
+
+      expect(screen.getByRole("button", { name: "Save printer" })).toBeDisabled();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Save printer" })).not.toBeDisabled());
+      expect(createDeviceCalls).toHaveLength(0);
+    });
+
     async function reachSaveStep(user: ReturnType<typeof userEvent.setup>) {
       agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
       const rendered = renderWizard();

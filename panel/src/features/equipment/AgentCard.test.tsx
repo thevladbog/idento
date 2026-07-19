@@ -7,7 +7,7 @@ import { render, screen } from "@testing-library/react";
 import { AgentCard } from "./AgentCard";
 import type { AgentInfo } from "../../shared/agent/agentClient";
 import type { UseAgentInfoResult } from "../../shared/agent/useAgentInfo";
-import "../../shared/i18n";
+import i18n from "../../shared/i18n";
 
 const INFO: AgentInfo = {
   machine_id: "mach-1",
@@ -29,6 +29,10 @@ function result(overrides: Partial<UseAgentInfoResult>): UseAgentInfoResult {
 describe("AgentCard", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
   });
 
   it("connected: shows the agent title, a Connected pill, and a meta line with version + hostname + an uptime fragment", () => {
@@ -55,6 +59,21 @@ describe("AgentCard", () => {
 
     expect(screen.getByText("agent.test · v1.9.0 · uptime 3 h 12 m")).toBeInTheDocument();
     expect(screen.queryByText(/·\s*·/)).not.toBeInTheDocument();
+  });
+
+  // PR #83 bot-review round 1 (CodeRabbit+Codex dupe), Finding 1:
+  // formatUptime used to build "uptime {h} h {m} m" as a raw hardcoded
+  // English string, never going through react-i18next -- so a RU-locale
+  // operator saw English mid-meta-line. Routing it through t() with
+  // {{hours}}/{{minutes}} interpolation is the fix; this test proves the
+  // ru.json copy actually renders (not just that the key exists --
+  // keyParity.test.ts already covers that).
+  it("connected: renders the uptime fragment through i18n -- Russian copy when the locale is ru, not a hardcoded English string", async () => {
+    await i18n.changeLanguage("ru");
+    render(<AgentCard agent={result({ state: "connected", info: INFO })} />);
+
+    expect(screen.getByText(/работает 3 ч 12 мин/)).toBeInTheDocument();
+    expect(screen.queryByText(/uptime/)).not.toBeInTheDocument();
   });
 
   it("checking: maps to AgentStatus's stale state with the checking pill text", () => {

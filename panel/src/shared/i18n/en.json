@@ -666,6 +666,7 @@
   "equipmentNotSeenSince": "Saved · not seen since {{date}} — check power & network",
   "equipmentNotSeenYet": "Saved · not seen yet",
   "equipmentUnreachable": "saved · unreachable",
+  "equipmentUptime": "uptime {{hours}} h {{minutes}} m",
   "equipmentSaveDevice": "Save…",
   "equipmentRename": "Rename",
   "equipmentRenameLabel": "Device name",

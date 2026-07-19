@@ -23,6 +23,7 @@
 //   `refetchInterval`, this component only renders the caption describing
 //   it (task-7-brief.md: "your AgentCard only renders the caption").
 import { AgentStatus, Button, Card, CardContent, CardHeader, CardTitle } from "@idento/ui";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { UseAgentInfoResult } from "../../shared/agent/useAgentInfo";
 import { getAgentBaseUrl } from "../../shared/api/http";
@@ -33,12 +34,17 @@ export interface AgentCardProps {
 
 // Board 5a: "uptime 3 h 12 m" -- whole hours + whole minutes, no seconds
 // (uptime is a slow-changing fact, not a ticking clock like MonitorPage's
-// "Updated Ns ago").
-function formatUptime(uptimeSeconds: number): string {
+// "Updated Ns ago"). PR #83 bot-review round 1 (CodeRabbit+Codex dupe,
+// Finding 1): this used to build the raw English string itself instead of
+// going through react-i18next, so a RU-locale operator saw "uptime Xh Ym"
+// mid-meta-line in an otherwise-translated card. `t` is threaded in from
+// the caller (a component-scoped useTranslation()) rather than called here
+// -- this stays a pure formatting helper, same shape as displayBaseUrl.
+function formatUptime(t: TFunction, uptimeSeconds: number): string {
   const totalMinutes = Math.floor(uptimeSeconds / 60);
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  return `uptime ${hours} h ${minutes} m`;
+  return t("equipmentUptime", { hours, minutes });
 }
 
 // Board shows "localhost:3000" -- no protocol -- for the agent's own
@@ -108,7 +114,7 @@ export function AgentCard({ agent }: AgentCardProps) {
   if (state === "connected" && info) {
     // Join only non-empty segments -- a blank hostname (or any other blank
     // field) must not leave a dangling "· ·" in the meta line.
-    detail = [displayBaseUrl(), `v${info.version}`, info.hostname, formatUptime(info.uptime_seconds)]
+    detail = [displayBaseUrl(), `v${info.version}`, info.hostname, formatUptime(t, info.uptime_seconds)]
       .filter(Boolean)
       .join(" · ");
   } else if (state === "connected_legacy") {
