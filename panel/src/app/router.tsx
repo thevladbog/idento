@@ -17,6 +17,7 @@ import { StationPage } from "../features/checkin/StationPage";
 import { checkinStationBeforeLoad, validateCheckinStationSearch } from "../features/checkin/searchParams";
 import { LaunchCeremony } from "../features/checkin/LaunchCeremony";
 import { MonitorPage } from "../features/monitor/MonitorPage";
+import { EquipmentPage } from "../features/equipment/EquipmentPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
@@ -84,10 +85,13 @@ const teamRoute = createRoute({
   component: () => <PlaceholderPage titleKey="navTeam" />,
 });
 
+// P4.3 Task 7 -- the Equipment hub (board 5a/5d), replacing the
+// PlaceholderPage stub. PlaceholderPage itself stays (other routes may
+// still use it) -- only this one route's `component` changes.
 const equipmentRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/equipment",
-  component: () => <PlaceholderPage titleKey="navEquipment" />,
+  component: EquipmentPage,
 });
 
 const organizationRoute = createRoute({

@@ -16,6 +16,24 @@ const progressReadiness: EventReadinessResponse = {
   ],
 };
 
+// P4.3 Task 7 regression: the equipment readiness step was a backend stub
+// (always "not_done") through P4.2 -- Task 4 wired the real
+// TenantHasTestedDefaultPrinter-backed computation, so "done" is now a
+// reachable status for this key. STEP_LABEL_KEYS/the tooltip's generic
+// per-step renderer already handled "equipment" as a key (P1.2) -- this
+// pins that the EXISTING generic renderer, unmodified, correctly renders
+// the newly-reachable "done" status for it, exactly like every other step.
+const equipmentDoneReadiness: EventReadinessResponse = {
+  ready: false,
+  steps: [
+    { key: "attendees", status: "done", count: 10 },
+    { key: "badge", status: "not_done" },
+    { key: "zones", status: "skipped" },
+    { key: "staff", status: "done" },
+    { key: "equipment", status: "done" },
+  ],
+};
+
 const draftReadiness: EventReadinessResponse = {
   ready: false,
   steps: [
@@ -50,6 +68,24 @@ describe("ReadinessCell", () => {
       '[data-readiness-segment="not_done"], [data-readiness-segment="skipped"]',
     );
     restSegments.forEach((el) => expect(el).toHaveClass("bg-muted"));
+  });
+
+  // P4.3 Task 7 regression (spec §5.5): a readiness payload where the
+  // "equipment" step is "done" renders that segment as done (bg-success),
+  // and its tooltip row shows "(Done)" -- the SAME generic step renderer
+  // that already handled "not_done"/"skipped" for this key, unmodified.
+  it("renders the equipment step as done (segment + tooltip) when its status is 'done', not_done rendering as before for the other steps", () => {
+    render(<ReadinessCell readiness={equipmentDoneReadiness} />);
+
+    // 3 done ("attendees", "staff", "equipment") out of 4 non-skipped steps.
+    expect(screen.getByText("3 of 4 ready")).toBeInTheDocument();
+
+    const segments = document.querySelectorAll("[data-readiness-segment]");
+    const statuses = [...segments].map((el) => el.getAttribute("data-readiness-segment"));
+    expect(statuses).toEqual(["done", "not_done", "skipped", "done", "done"]);
+    expect(segments[4]).toHaveClass("bg-success");
+    // "badge" is still "not_done" -- unaffected by the equipment change.
+    expect(segments[1]).toHaveClass("bg-muted");
   });
 
   it("renders a neutral Draft status pill instead of the bar when no step is done yet", () => {

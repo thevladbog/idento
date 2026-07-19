@@ -1,0 +1,405 @@
+// P4.3 Task 7 -- EquipmentPage (board 5a connected / 5d agent down): the
+// hub itself, wiring AgentCard + two DeviceCard columns to
+// useAgentInfo/useAgentPrinters/agentClient.getScanners + Task 6's
+// equipment hooks/reconcile. Harness mirrors MonitorPage.test.tsx's MSW +
+// QueryClientProvider shape MINUS routing (this page has no path params
+// and renders in-shell via the normal protected route, per the brief).
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
+import { EquipmentPage } from "./EquipmentPage";
+import { startMswServer } from "../../test/msw";
+import "../../shared/i18n";
+
+const AGENT_INFO = {
+  machine_id: "mach-1",
+  hostname: "REG-DESK-01",
+  version: "1.9.0",
+  uptime_seconds: 3 * 3600 + 12 * 60,
+};
+
+function machine(overrides: Record<string, unknown> = {}) {
+  return {
+    machine_id: "mach-1",
+    hostname: "REG-DESK-01",
+    agent_version: "1.9.0",
+    last_seen_at: "2026-07-19T00:00:00Z",
+    created_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function printerLive(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dev-printer-live",
+    class: "printer",
+    kind: "system",
+    display_name: "Zebra ZD421",
+    config: { agent_name: "HP_Smart_Tank_790" },
+    is_default: true,
+    test_passed_at: null,
+    last_seen_at: "2026-07-19T00:00:00Z",
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function printerNotSeen(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dev-printer-notseen",
+    class: "printer",
+    kind: "network",
+    display_name: "Godex G500",
+    config: { agent_name: "Godex_G500", ip: "10.0.0.5", port: 9100 },
+    is_default: false,
+    test_passed_at: null,
+    last_seen_at: "2026-07-08T00:00:00Z",
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function scannerWedge(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dev-scanner-wedge",
+    class: "scanner",
+    kind: "usb_wedge",
+    display_name: "Honeywell Voyager 1200g",
+    config: { terminator: "enter" },
+    is_default: false,
+    test_passed_at: null,
+    last_seen_at: null,
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function scannerCom(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "dev-scanner-com",
+    class: "scanner",
+    kind: "com",
+    display_name: "Symbol LS2208",
+    config: { port_name: "COM3" },
+    is_default: false,
+    test_passed_at: null,
+    last_seen_at: "2026-07-19T00:00:00Z",
+    created_at: "2026-07-01T00:00:00Z",
+    updated_at: "2026-07-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+let machineDevices: unknown[] = [];
+let machineStatus = 200;
+let upsertCalls: Array<{ machineId: string; body: unknown }> = [];
+let patchCalls: Array<{ deviceId: string; body: unknown }> = [];
+let deleteCalls: string[] = [];
+let defaultPrinterCalls: Array<{ machineId: string; body: unknown }> = [];
+
+let agentHealthOk = true;
+let agentInfoStatus = 200;
+let agentPrinters: Array<{ name: string; type: string }> = [];
+let agentScanners: Array<{ name: string; port_name: string }> = [];
+
+const server = startMswServer(
+  http.get("http://api.test/api/equipment/machines/:machineId", () => {
+    if (machineStatus !== 200) return new HttpResponse(null, { status: machineStatus });
+    return HttpResponse.json({ machine: machine(), devices: machineDevices });
+  }),
+  http.put("http://api.test/api/equipment/machines/:machineId", async ({ params, request }) => {
+    const body = await request.json();
+    upsertCalls.push({ machineId: params.machineId as string, body });
+    return HttpResponse.json({ machine: machine(), devices: machineDevices });
+  }),
+  http.patch("http://api.test/api/equipment/devices/:deviceId", async ({ params, request }) => {
+    const body = await request.json();
+    patchCalls.push({ deviceId: params.deviceId as string, body });
+    return HttpResponse.json(printerLive());
+  }),
+  http.delete("http://api.test/api/equipment/devices/:deviceId", ({ params }) => {
+    deleteCalls.push(params.deviceId as string);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.put("http://api.test/api/equipment/machines/:machineId/default-printer", async ({ params, request }) => {
+    const body = await request.json();
+    defaultPrinterCalls.push({ machineId: params.machineId as string, body });
+    return HttpResponse.json(body);
+  }),
+  http.post("http://api.test/api/equipment/machines/:machineId/devices", () =>
+    HttpResponse.json(printerLive(), { status: 201 }),
+  ),
+  http.post("http://api.test/api/equipment/devices/:deviceId/test-passed", () => new HttpResponse(null, { status: 204 })),
+  http.get("http://agent.test/health", () => (agentHealthOk ? new HttpResponse(null, { status: 200 }) : HttpResponse.error())),
+  http.get("http://agent.test/info", () => {
+    if (agentInfoStatus === 404) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json(AGENT_INFO);
+  }),
+  http.get("http://agent.test/printers", () => HttpResponse.json(agentPrinters)),
+  http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
+  http.get("http://agent.test/scanners", () => HttpResponse.json(agentScanners)),
+);
+void server;
+
+function renderPage() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <EquipmentPage />
+    </QueryClientProvider>,
+  );
+  return { queryClient };
+}
+
+describe("EquipmentPage", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
+    localStorage.clear();
+    localStorage.setItem("token", "jwt-test");
+    machineDevices = [];
+    machineStatus = 200;
+    upsertCalls = [];
+    patchCalls = [];
+    deleteCalls = [];
+    defaultPrinterCalls = [];
+    agentHealthOk = true;
+    agentInfoStatus = 200;
+    agentPrinters = [];
+    agentScanners = [];
+  });
+
+  describe("connected (board 5a)", () => {
+    beforeEach(() => {
+      machineDevices = [printerLive(), printerNotSeen(), scannerWedge(), scannerCom()];
+      agentPrinters = [
+        { name: "HP_Smart_Tank_790", type: "system" },
+        { name: "Unregistered_Kitchen_Printer", type: "system" },
+      ];
+      agentScanners = [{ name: "Symbol LS2208 (open)", port_name: "COM3" }];
+    });
+
+    it("shows the agent meta line (version + hostname + uptime), the live printer's green row + mono meta, the amber not-seen row with a date, the wedge row's meta with no dot, an unsaved-printer Save affordance, and the DEFAULT chip only on the default row", async () => {
+      renderPage();
+
+      await screen.findByText("Zebra ZD421");
+      expect(screen.getByText(/v1\.9\.0/)).toBeInTheDocument();
+      expect(screen.getByText(/REG-DESK-01/)).toBeInTheDocument();
+      expect(screen.getByText(/uptime 3 h 12 m/)).toBeInTheDocument();
+
+      // Live printer row: green dot + mono meta line from deviceMeta.ts.
+      const liveRow = screen.getByTestId("equipment-device-row-dev-printer-live");
+      expect(within(liveRow).getByTestId("equipment-device-dot-dev-printer-live")).toBeInTheDocument();
+      expect(within(liveRow).getByTestId("equipment-device-meta-dev-printer-live")).toHaveTextContent(
+        "system · HP_Smart_Tank_790",
+      );
+      // DEFAULT chip only on the default row.
+      expect(within(liveRow).getByText("DEFAULT")).toBeInTheDocument();
+
+      // Not-seen printer row: amber dot + visible "Saved · not seen since
+      // <date>" text, no DEFAULT chip.
+      const notSeenRow = screen.getByTestId("equipment-device-row-dev-printer-notseen");
+      expect(within(notSeenRow).getByTestId("equipment-device-dot-dev-printer-notseen")).toBeInTheDocument();
+      expect(within(notSeenRow).getByTestId("equipment-device-notseen-dev-printer-notseen")).toHaveTextContent(
+        /Saved · not seen since/,
+      );
+      expect(within(notSeenRow).queryByText("DEFAULT")).not.toBeInTheDocument();
+
+      // Wedge scanner row: no dot at all (honesty rule), but its terminator
+      // meta line still renders.
+      const wedgeRow = screen.getByTestId("equipment-device-row-dev-scanner-wedge");
+      expect(within(wedgeRow).queryByTestId("equipment-device-dot-dev-scanner-wedge")).not.toBeInTheDocument();
+      expect(within(wedgeRow).getByTestId("equipment-device-meta-dev-scanner-wedge")).toHaveTextContent(
+        "USB-HID · keyboard wedge · Enter",
+      );
+
+      // Unsaved live printer (reported by the agent, not in the registry):
+      // a Save… affordance row.
+      expect(screen.getByTestId("equipment-device-unsaved-Unregistered_Kitchen_Printer")).toHaveTextContent("Save…");
+    });
+
+    it("shows 'not seen yet' (no date) when a registry device has never been seen", async () => {
+      machineDevices = [printerNotSeen({ id: "dev-never-seen", last_seen_at: null })];
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-never-seen");
+      expect(within(row).getByTestId("equipment-device-notseen-dev-never-seen")).toHaveTextContent(
+        "Saved · not seen yet",
+      );
+    });
+
+    it("fires the machine upsert reconcile PUT exactly once, with seen_device_ids from computeSeenDeviceIds", async () => {
+      renderPage();
+
+      await waitFor(() => expect(upsertCalls).toHaveLength(1));
+      expect(upsertCalls[0].machineId).toBe("mach-1");
+      expect(upsertCalls[0].body).toMatchObject({
+        hostname: "REG-DESK-01",
+        agent_version: "1.9.0",
+        seen_device_ids: ["dev-printer-live", "dev-scanner-com"],
+      });
+
+      // Stays at exactly one PUT even after settling further (no poll).
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(1);
+    });
+
+    it("renders the translated printer/scanner column titles and footers with no raw i18n keys leaking", async () => {
+      renderPage();
+      await screen.findByText("Zebra ZD421");
+
+      expect(screen.getByText("Printers")).toBeInTheDocument();
+      expect(screen.getByText("Scanners")).toBeInTheDocument();
+      expect(
+        screen.getByText("Default = what check-in stations on this computer use. One rule, stored on the server."),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("Saved devices persist on the server — a reload never empties this list."),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/equipment[A-Z]/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("legacy agent (connected_legacy)", () => {
+    it("shows a live-only view (no registry) and does NOT fire a reconcile PUT", async () => {
+      agentInfoStatus = 404; // pre-P4.3 agent: GET /info 404s.
+      agentPrinters = [{ name: "Live_Only_Printer", type: "system" }];
+
+      renderPage();
+
+      expect(await screen.findByText("Update the agent to save devices to your organization")).toBeInTheDocument();
+      // Live-only: the unregistered live printer shows as an unsaved row.
+      expect(await screen.findByTestId("equipment-device-unsaved-Live_Only_Printer")).toBeInTheDocument();
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(0);
+    });
+  });
+
+  describe("disconnected with cache (board 5d)", () => {
+    beforeEach(() => {
+      // Seed a prior successful connection's cached identity for this
+      // agent base URL (agentInfoCache.ts's own storage key shape).
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      agentHealthOk = false;
+      machineDevices = [printerLive(), printerNotSeen()];
+    });
+
+    it("shows the red card, Start-the-agent steps, Retry button, auto-retry caption, and still lists saved devices (grayed, actions hidden, saved · unreachable)", async () => {
+      renderPage();
+
+      expect(await screen.findByText("Agent not reachable")).toBeInTheDocument();
+      expect(screen.getByText("auto-retry in 8 s")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Retry connection" })).toBeInTheDocument();
+
+      // Devices are still listed (fetched via the cached machine_id).
+      const printersCard = await screen.findByTestId("equipment-printers-card");
+      expect(within(printersCard).getByText("Zebra ZD421")).toBeInTheDocument();
+      expect(printersCard).toHaveClass("opacity-55");
+      expect(within(printersCard).getByTestId("equipment-printers-card-unreachable")).toHaveTextContent(
+        "saved · unreachable",
+      );
+
+      // No action buttons on a grayed row (overflow menu / retry-live).
+      const liveRow = within(printersCard).getByTestId("equipment-device-row-dev-printer-live");
+      expect(within(liveRow).queryByRole("button")).not.toBeInTheDocument();
+
+      // No reconcile PUT while the agent itself is unreachable.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(upsertCalls).toHaveLength(0);
+    });
+  });
+
+  describe("disconnected without cache (cold start)", () => {
+    it("renders no device cards at all", async () => {
+      agentHealthOk = false;
+      renderPage();
+
+      expect(await screen.findByText("Agent not reachable")).toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-printers-card")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-scanners-card")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("empty registry (404)", () => {
+    it("renders both columns' empty state with the disabled setup buttons", async () => {
+      machineStatus = 404;
+      renderPage();
+
+      const printersCard = await screen.findByTestId("equipment-printers-card");
+      expect(within(printersCard).getByText("No printers saved yet")).toBeInTheDocument();
+      const scannersCard = screen.getByTestId("equipment-scanners-card");
+      expect(within(scannersCard).getByText("No scanners saved yet")).toBeInTheDocument();
+
+      // Setup buttons present (disabled, no wizard yet -- Tasks 8/9).
+      const setupButtons = screen.getAllByTestId("wizard-todo");
+      expect(setupButtons.length).toBeGreaterThan(0);
+      setupButtons.forEach((button) => expect(button).toBeDisabled());
+
+      // An empty registry still upserts the machine -- that's what
+      // registers it.
+      await waitFor(() => expect(upsertCalls).toHaveLength(1));
+    });
+  });
+
+  describe("overflow menu", () => {
+    beforeEach(() => {
+      machineDevices = [printerLive()];
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+    });
+
+    it("rename: opens an inline dialog and PATCHes the new display name", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Rename" }));
+
+      const input = await screen.findByLabelText("Device name");
+      await user.clear(input);
+      await user.type(input, "Front Desk Zebra");
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      expect(patchCalls[0]).toMatchObject({
+        deviceId: "dev-printer-live",
+        body: { display_name: "Front Desk Zebra" },
+      });
+    });
+
+    it("set default: PUTs the default-printer endpoint with this device's id", async () => {
+      machineDevices = [printerLive({ is_default: false }), printerNotSeen({ is_default: true })];
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Make default" }));
+
+      await waitFor(() => expect(defaultPrinterCalls).toHaveLength(1));
+      expect(defaultPrinterCalls[0]).toMatchObject({
+        machineId: "mach-1",
+        body: { device_id: "dev-printer-live" },
+      });
+    });
+
+    it("delete: opens a confirm dialog and DELETEs on confirm", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+      expect(await screen.findByText(/Delete Zebra ZD421\?/)).toBeInTheDocument();
+      const dialog = screen.getByRole("dialog");
+      await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => expect(deleteCalls).toEqual(["dev-printer-live"]));
+    });
+  });
+});
