@@ -207,6 +207,11 @@ func (h *Handler) SyncPush(c echo.Context) error {
 			c.Logger().Errorf("sync: create attendee failed (tenant %s, event %s, attendee %s): %v", tenantID, p.eventID, p.attendee.ID, err)
 			continue
 		}
+		// Track successfully-created attendees' events for monitor publish,
+		// same as Updated attendees above: created attendees also change
+		// monitor-visible state (total count, and possibly checked_in if an
+		// offline kiosk created-and-checked-in in one push).
+		affectedEvents[p.eventID] = struct{}{}
 	}
 
 	// Process deletions (soft delete)

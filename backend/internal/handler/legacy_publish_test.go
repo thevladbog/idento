@@ -405,6 +405,48 @@ func TestSyncPush_SkipsPublishForUnknownOrForeignAttendee(t *testing.T) {
 	}
 }
 
+// TestSyncPush_PublishesOnCreatedAttendees proves created attendees (not just
+// updated ones) trigger publishes. A sync push with ONLY attendee creations
+// should still publish once per distinct affected event, since created
+// attendees also change monitor-visible state (total count, possibly
+// checked_in if an offline kiosk created-and-checked-in in one push).
+func TestSyncPush_PublishesOnCreatedAttendees(t *testing.T) {
+	tenant := uuid.New()
+	eventID := uuid.New()
+	createdAttendeeID := uuid.New()
+
+	fs := &fakeStore{
+		getEventByID: func(id uuid.UUID) (*models.Event, error) {
+			return &models.Event{ID: id, TenantID: tenant}, nil
+		},
+		checkAttendeeLimit: func(tenantID, eventID uuid.UUID, adding int) (bool, int, int, error) {
+			return true, 0, 50, nil // under limit
+		},
+		createAttendee: func(attendee *models.Attendee) error { return nil },
+	}
+	h := &Handler{Store: fs}
+	mem := broker.NewMemBroker()
+	h.Broker = mem
+	ch, unsub := mem.Subscribe(eventID)
+	defer unsub()
+
+	e := echo.New()
+	body := `{"changes":{"attendees":{"created":[` +
+		`{"id":"` + createdAttendeeID.String() + `","event_id":"` + eventID.String() + `","first_name":"a","last_name":"b","email":"a@x.com"}` +
+		`]}},"lastPulledAt":0}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/sync", body, tenant.String(), "staff")
+
+	if err := h.SyncPush(c); err != nil {
+		t.Fatalf("SyncPush: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !pendingSignal(ch) {
+		t.Fatal("publish signal = false, want true when attendee is created")
+	}
+}
+
 // TestSyncPush_NilBrokerDoesNotPanic proves the nil-safe guard for the sync
 // publish site.
 func TestSyncPush_NilBrokerDoesNotPanic(t *testing.T) {
