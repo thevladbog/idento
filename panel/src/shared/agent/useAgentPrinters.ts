@@ -109,18 +109,18 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
   // rather than a restructuring of this hook's own probe (whose
   // isError/isSuccess semantics below are load-bearing and are left alone).
   //
-  // Gated on `printers.length > 0` in addition to `enabled`: with zero live
-  // printers, `registryDefaultAgentName` below is PROVABLY null regardless
-  // of what the registry says (its own live-list presence check,
-  // `printers.some(...)`, can never match an empty list) -- so there is
-  // nothing for this probe to resolve yet, and running it anyway would only
-  // buy an agent identity/machine-registry fetch this render has no use
-  // for. This is a pure optimization (never changes `registryDefaultAgentName`,
-  // `configuredDefault`, or `defaultPrinter` -- every branch below is
-  // unaffected), not a new precedence rule.
-  const hasLivePrinters = printers.length > 0;
-  const { info } = useAgentInfo(enabled && hasLivePrinters);
-  const machine = useEquipmentMachine(enabled && hasLivePrinters ? (info?.machine_id ?? null) : null);
+  // Gated on `enabled` alone -- deliberately NOT also on the printers list
+  // having resolved (task 10 review): the identity -> registry chain starts
+  // concurrently with this hook's own probe at mount, so the registry
+  // default lands as early as possible instead of serializing behind
+  // printers and widening the window where `configuredDefault` still
+  // reflects only the agent's own default (AttendeeDrawer/BulkBar read it
+  // live, every render, for their ask-vs-don't-ask decision). Tests that
+  // render any consumer of this hook get harness-level 404 defaults for
+  // GET /info and the machines endpoint (test/msw.ts) -- the legacy-agent /
+  // empty-registry baseline under which this whole block is inert.
+  const { info } = useAgentInfo(enabled);
+  const machine = useEquipmentMachine(enabled ? (info?.machine_id ?? null) : null);
 
   const registryDefaultAgentName = (() => {
     const devices = machine.data?.devices ?? [];

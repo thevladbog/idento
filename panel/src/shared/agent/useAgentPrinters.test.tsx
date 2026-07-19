@@ -293,6 +293,47 @@ describe("useAgentPrinters", () => {
       expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
     });
 
+    // Task 10 review round: the identity/registry chain must start
+    // CONCURRENTLY with the printers probe at mount, never serialized
+    // behind it -- a printers-gated start would lengthen the window where
+    // `configuredDefault` still reflects only the agent's own default after
+    // printers/state have already settled (AttendeeDrawer/BulkBar read
+    // `configuredDefault` live, every render, to decide ask-vs-don't-ask).
+    // Holds the /printers response open (same deferred-promise idiom as
+    // StationPage.test.tsx's waiting-for-printer test) and asserts the
+    // machines endpoint is reached WHILE printers is still pending.
+    it("starts the identity/registry lookups concurrently with the printers probe, not serially after it resolves", async () => {
+      agentInfoStatus = 200;
+      machineStatus = 200;
+      machineDevices = [registryPrinterDevice()];
+      defaultResponse = { default: "Agent_Own_Default" };
+      let releasePrinters: (() => void) | undefined;
+      const printersGate = new Promise<void>((resolve) => {
+        releasePrinters = resolve;
+      });
+      server.use(
+        http.get("http://agent.test/printers", async () => {
+          await printersGate;
+          return HttpResponse.json([
+            { name: "Server_Registry_Printer", type: "system" },
+            { name: "Agent_Own_Default", type: "system" },
+          ]);
+        }),
+      );
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      // Both registry-chain endpoints are reached while the printers query
+      // is still pending -- proof the chain is printers-independent.
+      await waitFor(() => expect(requestCounts.info).toBeGreaterThan(0));
+      await waitFor(() => expect(requestCounts.machine).toBeGreaterThan(0));
+      expect(result.current.state).toBe("checking");
+
+      releasePrinters?.();
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      // With both settled, the registry default wins immediately.
+      await waitFor(() => expect(result.current.configuredDefault).toBe("Server_Registry_Printer"));
+    });
+
     // Drawer-reprint contract (P3.2 Task 8's comment on `configuredDefault`
     // above): a non-null `configuredDefault` means AttendeeDrawer's Reprint
     // confirm does NOT ask the operator to choose. A registry default must
