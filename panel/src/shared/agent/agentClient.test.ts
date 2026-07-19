@@ -22,6 +22,14 @@ const server = startMswServer(
   http.post("http://agent.test/scan/consume", () =>
     HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" }),
   ),
+  http.get("http://agent.test/info", () =>
+    HttpResponse.json({
+      machine_id: "mach-abc123",
+      hostname: "kiosk-07",
+      version: "1.4.0",
+      uptime_seconds: 3600,
+    }),
+  ),
 );
 
 describe("agentClient", () => {
@@ -171,6 +179,37 @@ describe("agentClient", () => {
   // "Scan") -- not a panel-side invention. Replaces the earlier
   // GET /scan/last + POST /scan/clear pair, which had a real race (see
   // docs/superpowers/plans/2026-07-18-agent-atomic-scan-consume.md).
+  // Task 5 (P4.3) -- GET /info is the agent's own identity/version endpoint
+  // (Task 1, agent/openapi.yaml), unauthenticated. A pre-P4.3 agent binary
+  // has no /info route at all and answers 404 -- that 404 is the ONLY case
+  // that resolves to null; every other non-2xx is a genuine failure and
+  // must throw same as every other agentClient method.
+  describe("getInfo", () => {
+    it("returns the parsed AgentInfo on 200", async () => {
+      await expect(agentClient.getInfo()).resolves.toEqual({
+        machine_id: "mach-abc123",
+        hostname: "kiosk-07",
+        version: "1.4.0",
+        uptime_seconds: 3600,
+      });
+    });
+
+    it("resolves null (not an error) on 404 -- a pre-P4.3 agent with no /info route", async () => {
+      server.use(http.get("http://agent.test/info", () => new HttpResponse(null, { status: 404 })));
+      await expect(agentClient.getInfo()).resolves.toBeNull();
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(http.get("http://agent.test/info", () => new HttpResponse("agent misconfigured", { status: 500 })));
+      await expect(agentClient.getInfo()).rejects.toThrow(/agent misconfigured/);
+    });
+
+    it("throws on a genuine network failure", async () => {
+      server.use(http.get("http://agent.test/info", () => HttpResponse.error()));
+      await expect(agentClient.getInfo()).rejects.toThrow();
+    });
+  });
+
   describe("consumeLastScan", () => {
     it("returns the empty sentinel when nothing has been scanned since the last consume", async () => {
       await expect(agentClient.consumeLastScan()).resolves.toEqual({

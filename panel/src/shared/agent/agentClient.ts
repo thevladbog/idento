@@ -142,6 +142,36 @@ async function print(request: PrintRequest, timeoutMs = PRINT_TIMEOUT_MS): Promi
 }
 
 /**
+ * The agent's own identity/version info, per agent/openapi.yaml's `Info`
+ * schema (Task 1 of P4.3 -- confirmed present in the agent's own contract,
+ * GET /info, unauthenticated). `machine_id` is the stable per-machine
+ * identifier the equipment hub (board 5a/5d) keys saved printers/scanners
+ * against, so it survives across agent restarts/reinstalls.
+ */
+export interface AgentInfo {
+  machine_id: string;
+  hostname: string;
+  version: string;
+  uptime_seconds: number;
+}
+
+/**
+ * Returns the agent's identity/version info, or null when the agent is a
+ * pre-P4.3 build that has no /info route at all (a plain 404, checked
+ * BEFORE ensureOk so that specific case never becomes a thrown error) --
+ * this null is useAgentInfo's `connected_legacy` trigger (board 5d: an
+ * old agent binary is healthy/reachable but can't report its identity).
+ * Every OTHER non-2xx status is a genuine failure and throws, same as
+ * every other agentClient method.
+ */
+async function getInfo(): Promise<AgentInfo | null> {
+  const response = await fetch(agentUrl("/info"));
+  if (response.status === 404) return null;
+  const ok = await ensureOk(response, "agent GET /info failed");
+  return (await ok.json()) as AgentInfo;
+}
+
+/**
  * The agent's last-scanned-code buffer, per agent/openapi.yaml's `ScanData`
  * schema -- confirmed present in the agent's own contract (path
  * `/scan/consume`, tag "Scan"), not a panel-side invention. When nothing has
@@ -190,6 +220,7 @@ export const agentClient = {
   checkHealth,
   getPrinters,
   getDefaultPrinter,
+  getInfo,
   print,
   consumeLastScan,
 };
