@@ -16,7 +16,10 @@
 // a live connection wins, but a cached identity from an EARLIER connection
 // on this same machine keeps the registry (and board 5d's still-listed
 // devices) readable while the agent is down.
-import { Button, ConfirmDialog, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, Skeleton } from "@idento/ui";
+import {
+  Button, ConfirmDialog, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DropdownMenu,
+  DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Label, Skeleton,
+} from "@idento/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Printer, ScanLine } from "lucide-react";
 import * as React from "react";
@@ -27,8 +30,9 @@ import {
   isEmptyRegistry, useDeleteDevice, useEquipmentMachine, usePatchDevice, useSetDefaultPrinter, useUpsertMachine,
   type EquipmentDevice,
 } from "./hooks";
+import { PrinterWizard, type PrinterWizardPrefill, type PrinterWizardRetest } from "./PrinterWizard";
 import { computeSeenDeviceIds, deviceLiveness, unsavedLivePrinters } from "./reconcile";
-import { agentClient, type AgentScanner } from "../../shared/agent/agentClient";
+import { agentClient, type AgentPrinter, type AgentScanner } from "../../shared/agent/agentClient";
 import { useAgentInfo } from "../../shared/agent/useAgentInfo";
 import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 
@@ -64,6 +68,12 @@ function useAgentScanners(enabled: boolean) {
 }
 
 type DialogState = { kind: "rename" | "delete"; device: EquipmentDevice } | null;
+
+// P4.3 Task 8 -- which target (if any) the printer wizard is currently open
+// for: a fresh create (optionally prefilled from an unsaved live printer's
+// "Save…" row) or a RETEST of an already-saved device (a saved row's
+// "Test print" button, task-8-brief.md's controller-resolved addition).
+type PrinterWizardState = { kind: "create"; prefill?: PrinterWizardPrefill } | { kind: "retest"; device: EquipmentDevice } | null;
 
 interface RenameDialogProps {
   device: EquipmentDevice | null;
@@ -134,6 +144,25 @@ export function EquipmentPage() {
   const setDefaultPrinter = useSetDefaultPrinter(machineId ?? "");
 
   const [dialog, setDialog] = React.useState<DialogState>(null);
+  const [printerWizard, setPrinterWizard] = React.useState<PrinterWizardState>(null);
+
+  // P4.3 Task 8 -- every printer-wizard entry point is guarded on a known
+  // machineId: the wizard's create path POSTs to
+  // /api/equipment/machines/{machine_id}/devices, and there is nothing
+  // honest to save against an unresolved machine identity (the rare
+  // "connected_legacy, no cached identity" state still renders the live
+  // device grid -- see `showDeviceGrid` below -- but has no registry to
+  // register into). A no-op here (rather than a crash) matches the same
+  // "honest disabled affordance" spirit as the `wizard-todo` placeholder
+  // this replaces.
+  function openCreateWizard(prefill?: PrinterWizardPrefill) {
+    if (!machineId) return;
+    setPrinterWizard({ kind: "create", prefill });
+  }
+  function openRetestWizard(device: EquipmentDevice) {
+    if (!machineId) return;
+    setPrinterWizard({ kind: "retest", device });
+  }
 
   // Reconcile-on-load: fires the machine upsert EXACTLY once per
   // machine_id per page visit, once info + the registry + both live lists
@@ -218,11 +247,20 @@ export function EquipmentPage() {
         <h1 className="text-page-title">{t("equipmentTitle")}</h1>
         <span className="text-caption text-muted-foreground">{t("equipmentCaption")}</span>
         <div className="ml-auto">
-          {/* Tasks 8/9 mount the real class-chooser + wizards here; until
-              then this is an honest disabled affordance, not a fake one. */}
-          <Button type="button" disabled data-testid="wizard-todo">
-            {t("equipmentAddDevice")}
-          </Button>
+          {/* Task 8 wires the Printer option to the real wizard; Scanner
+              stays the honest disabled placeholder (`wizard-todo`) until
+              Task 9. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button">{t("equipmentAddDevice")}</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => openCreateWizard()}>{t("equipmentAddPrinter")}</DropdownMenuItem>
+              <DropdownMenuItem disabled data-testid="wizard-todo">
+                {t("equipmentAddScanner")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -275,6 +313,9 @@ export function EquipmentPage() {
               }
               onDelete={(device) => setDialog({ kind: "delete", device })}
               onRetryLive={() => void printers.refetch()}
+              onSetUp={() => openCreateWizard()}
+              onSaveUnsaved={(printer: AgentPrinter) => openCreateWizard({ agentName: printer.name, type: printer.type })}
+              onTestPrint={(device) => openRetestWizard(device)}
             />
             <DeviceCard
               testId="equipment-scanners-card"
@@ -328,6 +369,25 @@ export function EquipmentPage() {
           deleteDevice.mutate({ params: { path: { device_id: dialog.device.id } } }, { onSuccess: closeDialog });
         }}
       />
+
+      <PrinterWizard
+        open={printerWizard !== null}
+        onClose={() => setPrinterWizard(null)}
+        machineId={machineId ?? ""}
+        prefill={printerWizard?.kind === "create" ? printerWizard.prefill : undefined}
+        retest={printerWizard?.kind === "retest" ? deviceToRetest(printerWizard.device) : undefined}
+      />
     </div>
   );
+}
+
+// Board 5a's saved printer row carries the agent-side link in
+// `config.agent_name` (config is a loose object, schema.d.ts -- validated
+// server-side, not typed here; same defensive read as reconcile.ts's
+// deviceLiveness). A device with no agent_name (shouldn't happen for a
+// class=printer row, but config is technically free-form) falls back to
+// display_name rather than crashing the wizard open.
+function deviceToRetest(device: EquipmentDevice): PrinterWizardRetest {
+  const agentName = (device.config?.agent_name as string | undefined) ?? device.display_name;
+  return { deviceId: device.id, agentName, displayName: device.display_name };
 }

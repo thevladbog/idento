@@ -407,7 +407,8 @@ describe("EquipmentPage", () => {
   });
 
   describe("empty registry (404)", () => {
-    it("renders both columns' empty state with the disabled setup buttons", async () => {
+    it("renders both columns' empty state, printer setup enabled (Task 8) and scanner setup still the disabled placeholder (Task 9)", async () => {
+      const user = userEvent.setup();
       machineStatus = 404;
       renderPage();
 
@@ -416,10 +417,28 @@ describe("EquipmentPage", () => {
       const scannersCard = screen.getByTestId("equipment-scanners-card");
       expect(within(scannersCard).getByText("No scanners saved yet")).toBeInTheDocument();
 
-      // Setup buttons present (disabled, no wizard yet -- Tasks 8/9).
-      const setupButtons = screen.getAllByTestId("wizard-todo");
-      expect(setupButtons.length).toBeGreaterThan(0);
-      setupButtons.forEach((button) => expect(button).toBeDisabled());
+      // Printer setup buttons (header + empty-state) are the REAL enabled
+      // affordance now -- no longer the disabled placeholder.
+      within(printersCard)
+        .getAllByRole("button", { name: "+ Set up printer" })
+        .forEach((button) => expect(button).not.toBeDisabled());
+      expect(within(printersCard).queryByTestId("wizard-todo")).not.toBeInTheDocument();
+
+      // Scanner setup buttons (header + empty-state) stay the disabled
+      // `wizard-todo` placeholder -- Task 9 wires them.
+      within(scannersCard)
+        .getAllByTestId("wizard-todo")
+        .forEach((button) => expect(button).toBeDisabled());
+
+      // The header "+ Add device" chooser: Printer is the real enabled
+      // affordance, Scanner keeps the disabled `wizard-todo` placeholder
+      // (task-8-brief.md: "keep its wizard-todo testid on the scanner
+      // option only").
+      await user.click(screen.getByRole("button", { name: "+ Add device" }));
+      expect(await screen.findByRole("menuitem", { name: "Printer" })).not.toHaveAttribute("data-disabled");
+      const scannerItem = screen.getByRole("menuitem", { name: "Scanner" });
+      expect(scannerItem).toHaveAttribute("data-testid", "wizard-todo");
+      expect(scannerItem).toHaveAttribute("data-disabled");
 
       // An empty registry still upserts the machine -- that's what
       // registers it.
@@ -428,6 +447,69 @@ describe("EquipmentPage", () => {
       // A true 404 is NOT an error state -- the two must stay distinct
       // (review finding 2's counterpart assertion).
       expect(screen.queryByTestId("equipment-registry-error")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("printer wizard entry points (Task 8)", () => {
+    beforeEach(() => {
+      machineDevices = [printerLive()];
+      agentPrinters = [
+        { name: "HP_Smart_Tank_790", type: "system" },
+        { name: "Unregistered_Kitchen_Printer", type: "system" },
+      ];
+    });
+
+    it("header '+ Add device' -> Printer opens the wizard at Find", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByText("Zebra ZD421");
+      await user.click(screen.getByRole("button", { name: "+ Add device" }));
+      await user.click(await screen.findByRole("menuitem", { name: "Printer" }));
+
+      expect(await screen.findByRole("dialog", { name: "Set up a printer" })).toBeInTheDocument();
+      expect(screen.getByTestId("equipment-wizard-find-list")).toBeInTheDocument();
+    });
+
+    it("printers column '+ Set up printer' opens the wizard at Find", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const printersCard = await screen.findByTestId("equipment-printers-card");
+      await user.click(within(printersCard).getByRole("button", { name: "+ Set up printer" }));
+
+      expect(await screen.findByRole("dialog", { name: "Set up a printer" })).toBeInTheDocument();
+    });
+
+    it("unsaved live printer's 'Save…' opens the wizard prefilled, straight at Test", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const unsavedRow = await screen.findByTestId("equipment-device-unsaved-Unregistered_Kitchen_Printer");
+      await user.click(within(unsavedRow).getByRole("button", { name: "Save…" }));
+
+      expect(await screen.findByText("Did the test label print correctly?")).toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-wizard-find-list")).not.toBeInTheDocument();
+    });
+
+    it("a live saved printer row's 'Test print' opens the wizard in retest mode, straight at Test, with no Find step", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: "Test print" }));
+
+      expect(await screen.findByRole("dialog", { name: "Test print" })).toBeInTheDocument();
+      expect(screen.getByText("Did the test label print correctly?")).toBeInTheDocument();
+      expect(screen.queryByTestId("equipment-wizard-find-list")).not.toBeInTheDocument();
+    });
+
+    it("a not-seen (non-live) saved printer row has no 'Test print' button", async () => {
+      machineDevices = [printerNotSeen()];
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      expect(within(row).queryByRole("button", { name: "Test print" })).not.toBeInTheDocument();
     });
   });
 

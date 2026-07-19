@@ -109,6 +109,53 @@ async function getDefaultPrinter(): Promise<string | null> {
   return data.default ?? null;
 }
 
+export interface AddNetworkPrinterRequest {
+  name: string;
+  ip: string;
+  port: number;
+}
+
+/**
+ * P4.3 Task 8 -- registers a network printer with the agent by IP (agent/
+ * openapi.yaml's `NetworkPrinterRequest`/POST /printers/add), the printer
+ * wizard's "Enter IP manually" escape hatch (board 5b). The 201 response
+ * echoes back `{status, name, address}`, but it's discarded on purpose:
+ * the wizard already knows the name it just sent (`request.name`) and
+ * selects the printer by THAT, same "we sent it, we already know it"
+ * rationale as `print`'s discarded transport-ack body.
+ */
+async function addNetworkPrinter(request: AddNetworkPrinterRequest): Promise<void> {
+  const response = await fetch(agentUrl("/printers/add"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) --
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  await ensureOk(response, "agent POST /printers/add failed");
+}
+
+/**
+ * P4.3 Task 8 -- sets the agent's own configured default printer (agent/
+ * openapi.yaml's POST /printers/default). This is a MIRROR of the
+ * equipment registry's `make_default` rule (spec §5.3 "server-wins" --
+ * the registry write already succeeded and is the source of truth before
+ * this is ever called); a failure here must never be treated as the save
+ * itself failing by callers -- see PrinterWizard.tsx's Save handler.
+ */
+async function setDefaultPrinter(name: string): Promise<void> {
+  const response = await fetch(agentUrl("/printers/default"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) --
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ default: name }),
+  });
+  await ensureOk(response, "agent POST /printers/default failed");
+}
+
 /**
  * Thrown when POST /print produced no response within the timeout (follow-up
  * batch item 2: a wedged agent SendRaw — connection accepted, response never
@@ -249,6 +296,8 @@ export const agentClient = {
   getPrinters,
   getScanners,
   getDefaultPrinter,
+  addNetworkPrinter,
+  setDefaultPrinter,
   getInfo,
   print,
   consumeLastScan,

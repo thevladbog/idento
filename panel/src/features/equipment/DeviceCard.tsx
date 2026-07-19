@@ -61,6 +61,24 @@ export interface DeviceCardProps {
   onClearDefault: (device: EquipmentDevice) => void;
   onDelete: (device: EquipmentDevice) => void;
   onRetryLive: () => void;
+  // P4.3 Task 8 -- when provided, the header + empty-state "+ Set up …"
+  // buttons become the REAL enabled affordance (opens the class's wizard)
+  // instead of the honest-disabled `wizard-todo` placeholder. Left
+  // undefined for a class with no wizard wired yet (scanners, until
+  // Task 9) so that column keeps the disabled placeholder untouched.
+  onSetUp?: () => void;
+  // P4.3 Task 8 -- an unsaved live printer's own "Save…" affordance
+  // becomes real once provided (printer column only -- `unsavedPrinters`
+  // is never populated for scanners, so this is naturally never rendered
+  // there either way).
+  onSaveUnsaved?: (printer: AgentPrinter) => void;
+  // P4.3 Task 8's controller-resolved plan addition -- board 5a's
+  // board-drawn "Test print" button on a saved, LIVE printer row, wired
+  // to the wizard's retest entry point (opens straight at Test, no
+  // Find/Save). Printer column only; undefined elsewhere renders nothing
+  // (not a disabled placeholder -- unlike Set up/Save, this action has no
+  // "coming in a later task" story, it simply doesn't apply).
+  onTestPrint?: (device: EquipmentDevice) => void;
 }
 
 function formatNotSeenDate(iso: string, locale: string): string {
@@ -74,7 +92,8 @@ function formatNotSeenDate(iso: string, locale: string): string {
 
 export function DeviceCard({
   testId, icon: Icon, titleText, emptyTitle, footerText, setUpLabel, rows, unsavedPrinters = [], agentDown,
-  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onRetryLive,
+  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onRetryLive, onSetUp, onSaveUnsaved,
+  onTestPrint,
 }: DeviceCardProps) {
   const { t, i18n } = useTranslation();
   const isEmpty = rows.length === 0 && unsavedPrinters.length === 0;
@@ -91,9 +110,15 @@ export function DeviceCard({
             </span>
           ) : null}
         </div>
-        <Button type="button" variant="ghost" size="sm" disabled data-testid="wizard-todo" className="text-success">
-          {setUpLabel}
-        </Button>
+        {onSetUp ? (
+          <Button type="button" variant="ghost" size="sm" className="text-success" onClick={onSetUp}>
+            {setUpLabel}
+          </Button>
+        ) : (
+          <Button type="button" variant="ghost" size="sm" disabled data-testid="wizard-todo" className="text-success">
+            {setUpLabel}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="flex flex-col gap-0 p-0">
         {isEmpty ? (
@@ -102,9 +127,15 @@ export function DeviceCard({
               icon={Icon}
               title={emptyTitle}
               actions={
-                <Button type="button" variant="outline" disabled data-testid="wizard-todo">
-                  {setUpLabel}
-                </Button>
+                onSetUp ? (
+                  <Button type="button" variant="outline" onClick={onSetUp}>
+                    {setUpLabel}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="outline" disabled data-testid="wizard-todo">
+                    {setUpLabel}
+                  </Button>
+                )
               }
             />
           </div>
@@ -171,6 +202,11 @@ export function DeviceCard({
                           {t("retry")}
                         </Button>
                       ) : null}
+                      {liveness === "live" && onTestPrint ? (
+                        <Button type="button" variant="outline" size="sm" onClick={() => onTestPrint(device)}>
+                          {t("equipmentTestPrint")}
+                        </Button>
+                      ) : null}
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
@@ -211,9 +247,15 @@ export function DeviceCard({
                   <span className="truncate text-body font-bold text-foreground">{printer.name}</span>
                   <span className="font-mono text-caption text-muted-foreground">{printer.type}</span>
                 </div>
-                <Button type="button" variant="outline" size="sm" disabled data-testid="wizard-todo">
-                  {t("equipmentSaveDevice")}
-                </Button>
+                {onSaveUnsaved ? (
+                  <Button type="button" variant="outline" size="sm" onClick={() => onSaveUnsaved(printer)}>
+                    {t("equipmentSaveDevice")}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="outline" size="sm" disabled data-testid="wizard-todo">
+                    {t("equipmentSaveDevice")}
+                  </Button>
+                )}
               </div>
             ))}
           </>

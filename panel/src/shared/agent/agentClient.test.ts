@@ -22,6 +22,10 @@ const server = startMswServer(
     HttpResponse.json([{ name: "Scanner_COM3", port_name: "COM3" }]),
   ),
   http.post("http://agent.test/print", () => HttpResponse.json({ status: "printed" })),
+  http.post("http://agent.test/printers/add", () =>
+    HttpResponse.json({ status: "added", name: "Network_Office", address: "192.168.0.245:9100" }, { status: 201 }),
+  ),
+  http.post("http://agent.test/printers/default", () => HttpResponse.json({ default: "Network_Office" })),
   http.post("http://agent.test/scan/consume", () =>
     HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" }),
   ),
@@ -193,6 +197,86 @@ describe("agentClient", () => {
       }
       expect(caught).toBeInstanceOf(Error);
       expect(caught).not.toBeInstanceOf(AgentPrintTimeoutError);
+    });
+  });
+
+  // P4.3 Task 8 -- the printer wizard's "Enter IP manually" escape hatch
+  // (agent/openapi.yaml POST /printers/add, tag "Printers"). Registers a
+  // network printer with the agent by IP; the wizard then selects it by
+  // the SAME `name` it sent (agentClient.ts's own doc comment on this
+  // method -- the 201 response's echoed name/address aren't read).
+  describe("addNetworkPrinter", () => {
+    it("POSTs {name, ip, port} to /printers/add and resolves void on 201", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/printers/add", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "added", name: "Network_Office", address: "192.168.0.245:9100" }, { status: 201 });
+        }),
+      );
+      await expect(
+        agentClient.addNetworkPrinter({ name: "Network_Office", ip: "192.168.0.245", port: 9100 }),
+      ).resolves.toBeUndefined();
+      expect(captured).toEqual({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/printers/add", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ status: "added", name: "n", address: "a" }, { status: 201 });
+        }),
+      );
+      await agentClient.addNetworkPrinter({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/printers/add", () => new HttpResponse("name and ip are required", { status: 400 })),
+      );
+      await expect(
+        agentClient.addNetworkPrinter({ name: "", ip: "", port: 9100 }),
+      ).rejects.toThrow(/name and ip are required/);
+    });
+  });
+
+  // P4.3 Task 8 -- the wizard's Save step default-mirror call (spec §5.3
+  // "server-wins": the registry's make_default write is the source of
+  // truth; this just keeps the agent's OWN /printers/default config in
+  // sync for any agent-local caller). Mirrors setDefaultPrinter, tag
+  // "Printers".
+  describe("setDefaultPrinter", () => {
+    it("POSTs {default: name} to /printers/default and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/printers/default", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ default: "Network_Office" });
+        }),
+      );
+      await expect(agentClient.setDefaultPrinter("Network_Office")).resolves.toBeUndefined();
+      expect(captured).toEqual({ default: "Network_Office" });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/printers/default", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ default: "Network_Office" });
+        }),
+      );
+      await agentClient.setDefaultPrinter("Network_Office");
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/printers/default", () => new HttpResponse("printer not in list", { status: 400 })),
+      );
+      await expect(agentClient.setDefaultPrinter("Missing")).rejects.toThrow(/printer not in list/);
     });
   });
 
