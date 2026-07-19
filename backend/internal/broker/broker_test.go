@@ -421,6 +421,67 @@ func TestHandleNotification_EmptyPayloadIsLoggedAndSkipped(t *testing.T) {
 // is — so this one line of "what happens on reconnect success" has a direct
 // unit test independent of the un-testable network code around it.
 
+// --- preparePoolConfig (PR #81 round-4 convergence, Finding 1): pool
+// minima must be clamped alongside the MaxConns=2 forcing --------------------
+//
+// Regression coverage for a real deployment-breaking bug: NewPGBroker used
+// to force MaxConns=2 on a *pgxpool.Config parsed straight from dbURL
+// without touching MinConns/MinIdleConns — a DATABASE_URL carrying
+// pool_min_conns=N (real, pgxpool-documented syntax; plausible if a
+// deployment reuses its main app pool's tuned URL here) would leave those
+// minima parsed straight through. pgxpool's own health check then
+// perpetually tries to open new connections to satisfy a minimum higher
+// than the 2-connection ceiling it can never exceed, churning forever. This
+// is unit-testable without a live DB for the same reason
+// prepareListenConnConfig is: pgxpool.ParseConfig is pure string parsing.
+
+// TestPreparePoolConfig_ClampsMinimaAndForcesMaxConns proves a dbURL
+// carrying pool_min_conns=10 still ends with MaxConns=2 and MinConns=0 (and
+// MinIdleConns=0, defensively — see preparePoolConfig's doc comment) rather
+// than the pool perpetually chasing a minimum it can never satisfy under a
+// 2-connection ceiling.
+func TestPreparePoolConfig_ClampsMinimaAndForcesMaxConns(t *testing.T) {
+	dbURL := "postgres://user:pass@localhost:5432/db?pool_min_conns=10&sslmode=disable"
+
+	poolCfg, err := preparePoolConfig(dbURL)
+	if err != nil {
+		t.Fatalf("preparePoolConfig: %v", err)
+	}
+
+	if poolCfg.MaxConns != 2 {
+		t.Errorf("MaxConns = %d, want 2", poolCfg.MaxConns)
+	}
+	if poolCfg.MinConns != 0 {
+		t.Errorf("MinConns = %d, want 0 (clamped) — a pool_min_conns=10 URL must not survive into the 2-conn notify pool's config", poolCfg.MinConns)
+	}
+	if poolCfg.MinIdleConns != 0 {
+		t.Errorf("MinIdleConns = %d, want 0 (clamped)", poolCfg.MinIdleConns)
+	}
+}
+
+// TestPreparePoolConfig_ClampsMinimaWithNoPoolOptionsInURL proves the
+// clamp is unconditional — a dbURL with NO pool_min_conns still ends with
+// MinConns=0/MinIdleConns=0 (both already pgxpool's own defaults, but this
+// pins the invariant regardless of pgxpool's own defaults ever changing).
+func TestPreparePoolConfig_ClampsMinimaWithNoPoolOptionsInURL(t *testing.T) {
+	dbURL := "postgres://user:pass@localhost:5432/db?sslmode=disable"
+
+	poolCfg, err := preparePoolConfig(dbURL)
+	if err != nil {
+		t.Fatalf("preparePoolConfig: %v", err)
+	}
+
+	if poolCfg.MaxConns != 2 {
+		t.Errorf("MaxConns = %d, want 2", poolCfg.MaxConns)
+	}
+	if poolCfg.MinConns != 0 {
+		t.Errorf("MinConns = %d, want 0", poolCfg.MinConns)
+	}
+	if poolCfg.MinIdleConns != 0 {
+		t.Errorf("MinIdleConns = %d, want 0", poolCfg.MinIdleConns)
+	}
+}
+
 // --- prepareListenConnConfig (PR #81 round-3 convergence, Backend Finding
 // 1): pool-only URL options must not reach the raw LISTEN connection -------
 //

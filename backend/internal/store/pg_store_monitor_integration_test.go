@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -323,5 +324,75 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 	}
 	if got := byID[stationless].CheckinCount; got != 1 {
 		t.Errorf("stationless.CheckinCount = %d, want 1", got)
+	}
+}
+
+// TestCheckinActionsAttendeeIndex_RealPostgres_ExistsAndServesQueries covers
+// PR #81 round-4 convergence, Finding 2: the latest_state CTE inside
+// monitorOverviewSQL above does DISTINCT ON (ca.attendee_id) ... ORDER BY
+// ca.attendee_id, ca.created_at DESC, ca.id DESC over checkin_actions — a
+// per-attendee ordering the pre-existing idx_checkin_actions_event_created
+// index (event_id, created_at DESC, id DESC — migration 000019) cannot
+// serve, forcing a full sort of every checkin/undo row on the event on
+// every monitor snapshot re-fetch. Migration 000022 adds
+// idx_checkin_actions_event_attendee on (event_id, attendee_id, created_at
+// DESC, id DESC) to match.
+//
+// This asserts the index's EXISTENCE and column order/direction via
+// pg_indexes/pg_index rather than an EXPLAIN-based "the planner picked this
+// index" assertion: EXPLAIN against this suite's own fixtures (a handful of
+// rows, freshly inserted and cleaned up per test run) reliably comes back
+// as Seq Scan+Sort regardless of the index's presence — Postgres's
+// cost-based planner correctly judges an index scan not worth it below
+// roughly a few hundred rows, so a plan-shape assertion here would encode
+// "this test's fixture size" rather than "this index exists and matches
+// the query's sort", flipping to Index Scan only on a busy/seeded database
+// the test suite deliberately doesn't create. The invariant test above
+// (TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction, whose
+// s.RunMigrations() call already applies migration 000022 before every
+// query in this file runs) is what proves the query still produces correct
+// results on the indexed schema; this test is the narrower regression
+// guard that the index migration itself landed with the right shape.
+func TestCheckinActionsAttendeeIndex_RealPostgres_ExistsAndServesQueries(t *testing.T) {
+	dbURL := os.Getenv("TEST_DATABASE_URL")
+	if dbURL == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping real-Postgres index-shape test (see doc comment for how to run it)")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("pgxpool.New: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := pool.Ping(ctx); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+
+	s := &PGStore{db: pool}
+	if err := s.RunMigrations(); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+
+	// pg_indexes.indexdef renders the full CREATE INDEX statement including
+	// column list and DESC directions — a single string containment check
+	// on the exact column order/direction the migration declared is enough
+	// to catch both "index missing" and "index present but columns
+	// reordered/direction dropped" without parsing pg_index's raw int2vector
+	// columns.
+	var indexdef string
+	err = pool.QueryRow(ctx,
+		`SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'checkin_actions' AND indexname = $1`,
+		"idx_checkin_actions_event_attendee",
+	).Scan(&indexdef)
+	if err != nil {
+		t.Fatalf("idx_checkin_actions_event_attendee not found on checkin_actions after RunMigrations: %v", err)
+	}
+
+	const wantColumns = "(event_id, attendee_id, created_at DESC, id DESC)"
+	if !strings.Contains(indexdef, wantColumns) {
+		t.Errorf("indexdef = %q, want it to contain %q (column order/direction must match the latest_state CTE's ORDER BY ca.attendee_id, ca.created_at DESC, ca.id DESC, with event_id leading as the query's equality predicate)", indexdef, wantColumns)
 	}
 }

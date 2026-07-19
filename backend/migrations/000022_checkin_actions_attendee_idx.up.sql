@@ -1,0 +1,24 @@
+-- backend/migrations/000022_checkin_actions_attendee_idx.up.sql
+-- PR #81 round-4 convergence, Finding 2: GetMonitorOverview's latest_state
+-- CTE (pg_store_monitor.go) does
+--   SELECT DISTINCT ON (ca.attendee_id) ...
+--   FROM checkin_actions ca
+--   WHERE ca.event_id = $1 AND ca.action IN ('checkin', 'undo')
+--   ORDER BY ca.attendee_id, ca.created_at DESC, ca.id DESC
+-- for EVERY monitor snapshot re-fetch (every SSE invalidation re-issues
+-- GetMonitorOverview). The only existing index on checkin_actions —
+-- idx_checkin_actions_event_created (migration 000019), on (event_id,
+-- created_at DESC, id DESC) — supports GetCheckinActions' own event-wide
+-- feed ordering but cannot serve this DISTINCT ON's per-attendee ordering:
+-- Postgres would still need a full sort of every one of the event's
+-- checkin/undo rows to satisfy "ORDER BY attendee_id, created_at DESC, id
+-- DESC" per group. On a busy event this is a repeated full sort on every
+-- snapshot re-fetch.
+--
+-- This index's column order intentionally matches the CTE's WHERE +
+-- ORDER BY exactly: event_id leads (the query's only equality predicate,
+-- and a btree index should always put equality columns before range/sort
+-- columns), followed by attendee_id, created_at DESC, id DESC — the same
+-- three columns and directions the DISTINCT ON/ORDER BY needs, letting the
+-- planner walk the index directly instead of sorting.
+CREATE INDEX idx_checkin_actions_event_attendee ON checkin_actions(event_id, attendee_id, created_at DESC, id DESC);

@@ -66,11 +66,10 @@ type PGBroker struct {
 // process startup); listenLoop's own reconnect-with-backoff only takes
 // over once the loop is already running.
 func NewPGBroker(ctx context.Context, dbURL string) (*PGBroker, error) {
-	poolCfg, err := pgxpool.ParseConfig(dbURL)
+	poolCfg, err := preparePoolConfig(dbURL)
 	if err != nil {
 		return nil, err
 	}
-	poolCfg.MaxConns = 2
 
 	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
@@ -128,6 +127,38 @@ func NewPGBroker(ctx context.Context, dbURL string) (*PGBroker, error) {
 	go b.listenLoop(loopCtx, conn)
 
 	return b, nil
+}
+
+// preparePoolConfig parses dbURL via pgxpool.ParseConfig and applies the
+// small notify-only pool's sizing: MaxConns forced to 2 (this pool only
+// ever runs Publish's single SELECT pg_notify(...) statement — see
+// PGBroker's doc comment), and MinConns/MinIdleConns clamped to 0 (Finding
+// 1, PR #81 round-4 convergence). Without the clamp, a DATABASE_URL tuned
+// with pool_min_conns (a real, pgxpool-documented URL option some
+// deployments set for their MAIN app pool and then reuse verbatim here)
+// would survive ParseConfig and leave the pool trying to maintain more
+// idle/minimum connections than MaxConns=2 allows — pgxpool's health check
+// perpetually opens a connection to chase MinConns, immediately finds the
+// pool already at its 2-connection ceiling, and the churn repeats forever.
+// MinIdleConns is clamped defensively too even though pgxpool.ParseConfig
+// has no URL option for it today (only pool_min_conns is recognized,
+// per pgxpool.ParseConfig's doc comment) — BeforeConnect/a future pgx
+// version could still leave it non-zero, and forcing it to 0 alongside
+// MinConns costs nothing.
+//
+// Factored out of NewPGBroker so the whole dbURL -> *pgxpool.Config
+// derivation is unit-testable without a live Postgres connection —
+// pgxpool.ParseConfig is a pure string-parsing operation, no network I/O,
+// same seam-testing rationale as prepareListenConnConfig below.
+func preparePoolConfig(dbURL string) (*pgxpool.Config, error) {
+	poolCfg, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		return nil, err
+	}
+	poolCfg.MaxConns = 2
+	poolCfg.MinConns = 0
+	poolCfg.MinIdleConns = 0
+	return poolCfg, nil
 }
 
 // prepareListenConnConfig derives the *pgx.ConnConfig the dedicated LISTEN

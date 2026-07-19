@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -12,6 +13,163 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
+
+// --- PR #81 round-4 convergence, Finding 3: RegisterCheckinStation broker
+// publish site --------------------------------------------------------------
+//
+// RegisterCheckinStation is an upsert: a fresh name creates a new station, a
+// repeat name re-registers it (e.g. changing its zone binding). Either way
+// it changes the monitor's stations[] list — a station showing up for the
+// first time, or an existing station's zone binding (and therefore its
+// future check-ins' attribution) changing. Unlike HeartbeatCheckinStation's
+// periodic, throttled publish (Finding B5), registration is a discrete
+// user-initiated action — same class as check-in/undo/reprint — so this
+// site is UNthrottled: every successful registration publishes.
+
+// TestRegisterCheckinStation_PublishesOnSuccess proves a successful
+// registration (200) signals the monitor.
+func TestRegisterCheckinStation_PublishesOnSuccess(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	stationID := uuid.New()
+	now := time.Now()
+
+	h := newCheckinStationHandler(event, nil,
+		func(eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error) {
+			return &models.CheckinStation{ID: stationID, EventID: eventID, Name: name, LastSeenAt: now, CreatedAt: now}, nil
+		},
+		nil, nil,
+	)
+	mem := broker.NewMemBroker()
+	h.Broker = mem
+	ch, unsubscribe := mem.Subscribe(event.ID)
+	defer unsubscribe()
+
+	e := echo.New()
+	path := checkinStationsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{"name":"Main Entrance"}`, tenantID.String(), "admin")
+	setCheckinStationsPathParams(c, event.ID)
+
+	if err := h.RegisterCheckinStation(c); err != nil {
+		t.Fatalf("RegisterCheckinStation: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !pendingSignal(ch) {
+		t.Fatal("publish signal = false, want true on a successful registration")
+	}
+}
+
+// TestRegisterCheckinStation_FailedUpsertDoesNotPublish proves a store
+// failure (500) never signals the monitor.
+func TestRegisterCheckinStation_FailedUpsertDoesNotPublish(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+
+	h := newCheckinStationHandler(event, nil,
+		func(uuid.UUID, string, *uuid.UUID) (*models.CheckinStation, error) {
+			return nil, errors.New("insert failed")
+		},
+		nil, nil,
+	)
+	mem := broker.NewMemBroker()
+	h.Broker = mem
+	ch, unsubscribe := mem.Subscribe(event.ID)
+	defer unsubscribe()
+
+	e := echo.New()
+	path := checkinStationsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{"name":"Main Entrance"}`, tenantID.String(), "admin")
+	setCheckinStationsPathParams(c, event.ID)
+
+	if err := h.RegisterCheckinStation(c); err != nil {
+		t.Fatalf("RegisterCheckinStation: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if pendingSignal(ch) {
+		t.Fatal("publish signal = true, want false on a failed registration")
+	}
+}
+
+// TestRegisterCheckinStation_ReregisterPublishesAgain proves re-registering
+// the SAME station name (e.g. rebinding its zone) publishes again — unlike
+// heartbeat, registration is never throttled.
+func TestRegisterCheckinStation_ReregisterPublishesAgain(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	stationID := uuid.New()
+	now := time.Now()
+
+	h := newCheckinStationHandler(event, nil,
+		func(eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error) {
+			return &models.CheckinStation{ID: stationID, EventID: eventID, Name: name, LastSeenAt: now, CreatedAt: now}, nil
+		},
+		nil, nil,
+	)
+	mem := broker.NewMemBroker()
+	h.Broker = mem
+	ch, unsubscribe := mem.Subscribe(event.ID)
+	defer unsubscribe()
+
+	e := echo.New()
+	path := checkinStationsPath(event.ID)
+
+	c1, rec1 := newAuthedContext(e, http.MethodPost, path, `{"name":"Main Entrance"}`, tenantID.String(), "admin")
+	setCheckinStationsPathParams(c1, event.ID)
+	if err := h.RegisterCheckinStation(c1); err != nil {
+		t.Fatalf("RegisterCheckinStation (1st): %v", err)
+	}
+	if rec1.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec1.Code, rec1.Body.String())
+	}
+	if !pendingSignal(ch) {
+		t.Fatal("publish signal = false, want true on the first registration")
+	}
+
+	c2, rec2 := newAuthedContext(e, http.MethodPost, path, `{"name":"Main Entrance"}`, tenantID.String(), "admin")
+	setCheckinStationsPathParams(c2, event.ID)
+	if err := h.RegisterCheckinStation(c2); err != nil {
+		t.Fatalf("RegisterCheckinStation (2nd, re-register): %v", err)
+	}
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec2.Code, rec2.Body.String())
+	}
+	if !pendingSignal(ch) {
+		t.Fatal("publish signal = false, want true on re-registration — unlike heartbeat, registration is never throttled")
+	}
+}
+
+// TestRegisterCheckinStation_NilBrokerDoesNotPanic proves the nil-safe
+// guard for the registration publish site.
+func TestRegisterCheckinStation_NilBrokerDoesNotPanic(t *testing.T) {
+	tenantID := uuid.New()
+	event := contractEvent(tenantID, "Tech Summit")
+	stationID := uuid.New()
+	now := time.Now()
+
+	h := newCheckinStationHandler(event, nil,
+		func(eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error) {
+			return &models.CheckinStation{ID: stationID, EventID: eventID, Name: name, LastSeenAt: now, CreatedAt: now}, nil
+		},
+		nil, nil,
+	)
+	// h.Broker intentionally left nil.
+
+	e := echo.New()
+	path := checkinStationsPath(event.ID)
+	c, rec := newAuthedContext(e, http.MethodPost, path, `{"name":"Main Entrance"}`, tenantID.String(), "admin")
+	setCheckinStationsPathParams(c, event.ID)
+
+	if err := h.RegisterCheckinStation(c); err != nil {
+		t.Fatalf("RegisterCheckinStation: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+}
 
 // --- P4.2 Task 4: HeartbeatCheckinStation broker publish site ---
 

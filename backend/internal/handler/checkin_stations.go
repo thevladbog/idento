@@ -90,6 +90,21 @@ func (h *Handler) RegisterCheckinStation(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to register check-in station"})
 	}
 
+	// Publish on every successful registration (PR #81 round-4 convergence,
+	// Finding 3): this is an upsert — a fresh name creates a new station, a
+	// repeat name re-registers it (most notably, rebinding its zone_id,
+	// which changes that station's FUTURE check-ins' attribution). Either
+	// way the monitor's stations[] list changed, and a re-registration that
+	// only rebinds a zone would otherwise stay silently stale until some
+	// unrelated event nudged the monitor — heartbeats alone don't cover it:
+	// they throttle to once per heartbeatPublishThrottle window AND only
+	// fire once the station's own page starts polling again, so a station
+	// re-registered while dormant (e.g. from the settings/admin side, not
+	// the station page) could sit stale indefinitely. Unlike heartbeat,
+	// registration is a discrete user-initiated action — same class as
+	// check-in/undo/reprint — so this site is deliberately UNthrottled.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
+
 	return c.JSON(http.StatusOK, CheckinStationResponse{Station: station})
 }
 
