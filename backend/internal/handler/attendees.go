@@ -270,6 +270,9 @@ func (h *Handler) UpdateAttendeeInfo(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
 	}
 
+	// PR #81 round-5: publish the update so the monitor's last-scans feed stays current
+	h.publishCheckinEvent(c.Request().Context(), attendee.EventID)
+
 	return c.JSON(http.StatusOK, attendee)
 }
 

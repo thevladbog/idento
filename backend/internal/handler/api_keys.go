@@ -259,6 +259,12 @@ func (h *Handler) ExternalImport(c echo.Context) error {
 		log.Printf("Warning: Failed to update event field schema: %v", err)
 	}
 
+	// PR #81 round-5: publish once if any attendees were created so the monitor's
+	// `total` stays current for API-imported events (one publish per request, not per attendee)
+	if created > 0 {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
+
 	response := map[string]interface{}{
 		"message": "Import completed",
 		"results": map[string]interface{}{
