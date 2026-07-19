@@ -1,24 +1,25 @@
 // P4.3 Task 9 -- the scanner setup wizard (board 5c): a segmented USB-wedge |
 // COM toggle, each leading to its own "listen" step with a physical
-// verification (a real scan must land before Save is reachable at all),
-// plus a RETEST entry point (Task 8's controller-resolved pattern, reused
-// here per this task's own controller correction) for a saved scanner row's
-// "Test scan" button.
+// verification, plus a RETEST entry point (Task 8's controller-resolved
+// pattern, reused here per this task's own controller correction) for a
+// saved scanner row's "Test scan" button.
 //
 // Board 5c drops the "Camera" tab entirely (p4.3-board-5a-5d-extract.md's
 // "Deviations decided at brainstorm") -- this file must never render
 // anything camera-related; ScannerWizard.test.tsx asserts the string
 // "Camera" never appears as a regression guard.
 //
-// Unlike PrinterWizard.tsx's Find -> Test -> Save (three steps, Save
-// reachable even without a confirmed test), this wizard has no analogous
-// "skip the confirmation" path: board 5c only ever draws ONE screen state,
-// and the device-name/terminator fields don't even exist until a scan has
-// actually been detected. So Save/the fields are gated on a confirmed
-// detection by construction here, and every save this wizard ever performs
-// carries `test_passed: true` -- a detection IS the physical verification,
-// there is no separate "did it look right?" judgment call the way a
-// printed label needs one.
+// Save gating (task-9 review fix round, Important-1 -- the reviewer's
+// adjudication of the original report's concern 1): PrinterWizard's
+// brief-mandated "save without a confirmed test sends test_passed: false"
+// precedent governs here too. The name/terminator fields are editable from
+// the start (register-now-verify-later: hardware ordered ahead of an
+// event, a flaky trigger, ...), Save requires only a non-empty name (plus
+// a chosen port for the COM path -- config.port_name is a hard server-side
+// requirement for kind=com), and `test_passed` on the create is simply
+// whether a detection actually landed this session: a confirmed scan
+// upgrades the save's claim to true, its absence is honestly reported as
+// false, never blocked.
 //
 // CONTROLLER CORRECTION (task-9-brief.md): retest mode calls
 // useMarkTestPassed on a confirmed detection, same as PrinterWizard's own
@@ -95,23 +96,76 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
   const wedge = useWedgeListen(open && effectiveKind === "usb_wedge");
 
   // COM listen phase: poll the agent's atomic scan buffer (same
-  // POST /scan/consume checkin/useScanInput.ts's "scanner" mode polls)
-  // until a non-empty code lands. `enabled` false both stops the poll AND
-  // (react-query's own contract) cancels any in-flight request on
-  // unmount/disable -- no separate cleanup needed for the "stop on
-  // unmount/cancel" requirement.
+  // POST /scan/consume checkin/useScanInput.ts's "scanner" mode polls) until
+  // a non-empty code lands. Implemented as an imperative effect (mirroring
+  // useScanInput's own interval+in-flight-guard poll idiom) rather than a
+  // useQuery refetchInterval, because this poll needs two guarantees a
+  // query can't cleanly give:
+  //
+  // 1. DISCARD-FIRST (task-9 review fix round, CRITICAL): the agent's scan
+  //    buffer is one process-wide buffer (agent/scan_buffer.go) -- shared
+  //    by every /scan/consume caller and NOT scoped per port, per device,
+  //    or per session. A COM port stays open from the moment it's added
+  //    (and auto-reopens at agent startup, per agent/openapi.yaml's
+  //    /scanners/add description), so a scan from BEFORE this wizard
+  //    opened -- or from a DIFFERENT com scanner entirely -- can be
+  //    sitting in the buffer when listening starts. Trusting the first
+  //    non-empty consume would let that stale data pass as this session's
+  //    physical verification (and, in retest mode, silently stamp
+  //    test_passed_at with zero operator action). So the first consume of
+  //    every listen session is a pure discard: its result is dropped
+  //    unread. Because /scan/consume atomically reads-and-clears under one
+  //    server-side lock, everything a LATER poll returns is guaranteed to
+  //    have arrived after the discard -- i.e. after listening genuinely
+  //    began.
+  // 2. ABORT-ON-CANCEL (review Important-2): consuming DRAINS the shared
+  //    buffer as a side effect, so an in-flight request left running after
+  //    the operator cancels/closes could still eat a real scan the
+  //    check-in station's own poll needed. The cleanup below aborts the
+  //    in-flight fetch via AbortController, not just the future ticks.
   const comListening = open && effectiveKind === "com" && comCode === null && (isRetest || comPhase === "listening");
-  const consumeQuery = useQuery({
-    queryKey: ["equipment", "scanner-wizard", "consume-scan"],
-    queryFn: () => agentClient.consumeLastScan(),
-    enabled: comListening,
-    refetchInterval: COM_POLL_INTERVAL_MS,
-    retry: false,
-  });
   React.useEffect(() => {
-    const code = consumeQuery.data?.code;
-    if (code) setComCode(code);
-  }, [consumeQuery.data]);
+    if (!comListening) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    let pollInFlight = false;
+    let discarded = false;
+
+    async function tick() {
+      // In-flight guard, same shape as useScanInput.ts's own poll: a tick
+      // landing while the previous round trip is still outstanding no-ops
+      // instead of stacking requests against a slow/stalled agent.
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        const scan = await agentClient.consumeLastScan(controller.signal);
+        if (cancelled) return;
+        if (!discarded) {
+          // The discard consume -- result intentionally dropped (see
+          // point 1 above). Only a SUCCESSFUL consume counts as the
+          // discard; an errored attempt leaves `discarded` false so the
+          // next tick retries the discard before anything is trusted.
+          discarded = true;
+          return;
+        }
+        if (scan.code) setComCode(scan.code);
+      } catch {
+        // Agent unreachable (or our own abort) -- keep the interval
+        // running; the next tick retries. `cancelled` above prevents any
+        // state write after cleanup.
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), COM_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [comListening]);
 
   // Create-mode COM port list -- never fetched in retest mode (the port is
   // already known/open from when the device was first saved).
@@ -214,7 +268,12 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
 
   const detectedCode = effectiveKind === "usb_wedge" ? wedge.detection?.code : comCode;
   const trimmedName = displayName.trim();
-  const canSave = !isRetest && Boolean(detectedCode) && trimmedName.length > 0;
+  // Review fix round Important-1: a detection is NOT required to save --
+  // only a name (and, for COM, a chosen port: config.port_name is a hard
+  // server-side requirement for kind=com, so there is nothing valid to
+  // save before the port pick). See the module comment's gating paragraph.
+  const canSave =
+    !isRetest && trimmedName.length > 0 && (effectiveKind === "usb_wedge" || selectedPort !== null);
 
   async function handleSave() {
     if (isRetest || saving || !canSave) return;
@@ -231,10 +290,11 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
           kind: effectiveKind,
           display_name: trimmedName,
           config,
-          // A confirmed detection is a hard prerequisite for `canSave`
-          // (see module comment) -- every save this wizard performs has
-          // therefore already been physically verified.
-          test_passed: true,
+          // Honest per-session claim (review Important-1, PrinterWizard's
+          // test_passed parity): true only when a detection actually
+          // landed during THIS session; an unverified register-now save
+          // reports false rather than being blocked.
+          test_passed: Boolean(detectedCode),
         },
       });
       if (mySession !== sessionRef.current) return;
@@ -338,7 +398,12 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
               </div>
             )}
 
-            {wedge.detection ? (
+            {!isRetest ? (
+              // Review fix round Important-1: the fields are editable from
+              // the start -- a detection syncs the terminator select but is
+              // not a prerequisite (register-now-verify-later,
+              // PrinterWizard's precedent). Retest mode has no fields at
+              // all: it neither renames nor re-saves anything.
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="scanner-wizard-name">{t("equipmentWizardDeviceName")}</Label>
@@ -349,27 +414,25 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
                     disabled={saving}
                   />
                 </div>
-                {!isRetest ? (
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="scanner-wizard-terminator">{t("equipmentWizardTerminator")}</Label>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        id="scanner-wizard-terminator"
-                        className="w-auto"
-                        value={terminator}
-                        onChange={(e) => setTerminator(e.target.value as WedgeDetection["terminator"])}
-                        disabled={saving}
-                      >
-                        <option value="enter">{TERMINATOR_LABELS.enter}</option>
-                        <option value="tab">{TERMINATOR_LABELS.tab}</option>
-                        <option value="none">{TERMINATOR_LABELS.none}</option>
-                      </Select>
-                      {terminator === wedge.detection.terminator ? (
-                        <span className="text-caption text-muted-foreground">{t("equipmentWizardDetected")}</span>
-                      ) : null}
-                    </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="scanner-wizard-terminator">{t("equipmentWizardTerminator")}</Label>
+                  <div className="flex items-center gap-2">
+                    <Select
+                      id="scanner-wizard-terminator"
+                      className="w-auto"
+                      value={terminator}
+                      onChange={(e) => setTerminator(e.target.value as WedgeDetection["terminator"])}
+                      disabled={saving}
+                    >
+                      <option value="enter">{TERMINATOR_LABELS.enter}</option>
+                      <option value="tab">{TERMINATOR_LABELS.tab}</option>
+                      <option value="none">{TERMINATOR_LABELS.none}</option>
+                    </Select>
+                    {wedge.detection && terminator === wedge.detection.terminator ? (
+                      <span className="text-caption text-muted-foreground">{t("equipmentWizardDetected")}</span>
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
               </div>
             ) : null}
           </div>
@@ -401,7 +464,11 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
                   </div>
                 )}
 
-                {comCode !== null && !isRetest ? (
+                {!isRetest ? (
+                  // Review fix round Important-1: editable through the
+                  // whole listening phase, not gated on a detection --
+                  // once the port is chosen the device is saveable
+                  // (test_passed honestly false until a scan lands).
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="scanner-wizard-com-name">{t("equipmentWizardDeviceName")}</Label>
                     <Input

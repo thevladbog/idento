@@ -5,14 +5,25 @@
 // POST /test-passed) and the agent origin (http://agent.test, for
 // /scanners/ports, /scanners/add, /scan/consume).
 //
-// Wedge bursts are simulated with REAL timers (no vi.useFakeTimers here) --
+// Wedge bursts are simulated with REAL timers (no vi.useFakeTimers) --
 // synchronous back-to-back fireEvent.keyDown calls land well under
 // useWedgeListen's WEDGE_MAX_INTER_KEY_MS threshold on their own, so no
 // explicit inter-key delay is needed to produce a fast "burst". The
 // threshold/gap edge cases themselves are useWedgeListen.test.tsx's job,
 // not this file's.
+//
+// The COM listen-phase tests use FAKE timers (task-9 review fix round,
+// Minor finding): the poll runs at a real 700ms interval, and burning
+// multiple real intervals per test added seconds of wall-clock to the
+// suite. Same fake-timer + advanceTimersByTimeAsync discipline as
+// useConnectionState.test.tsx's poll test (react-query's notifyManager
+// batches on a macrotask, so a 0ms async advance flushes it); those tests
+// drive clicks with fireEvent + explicit flushes instead of userEvent
+// (which needs its own advanceTimers plumbing under fake timers) and
+// assert with synchronous getBy/queryBy (waitFor's fake-timer detection
+// doesn't fire under vitest globals).
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { ScannerWizard, type ScannerWizardProps } from "./ScannerWizard";
@@ -24,6 +35,7 @@ let scannerPorts: string[] = [];
 let addComCalls: string[] = [];
 let addComStatus = 200;
 let consumeResponses: Array<{ code: string; time: string }> = [];
+let consumeHits = 0;
 let createDeviceCalls: Array<{ machineId: string; body: unknown }> = [];
 let createDeviceStatus = 201;
 let testPassedCalls: string[] = [];
@@ -37,6 +49,7 @@ const server = startMswServer(
     return HttpResponse.json({ status: "added", name: `Scanner_${body.port_name}`, port: body.port_name });
   }),
   http.post("http://agent.test/scan/consume", () => {
+    consumeHits += 1;
     const next = consumeResponses.shift();
     return HttpResponse.json(next ?? { code: "", time: "0001-01-01T00:00:00Z" });
   }),
@@ -104,6 +117,34 @@ function typeWedgeBurst(code: string) {
   for (const char of code) fireEvent.keyDown(window, { key: char });
 }
 
+// Fake-timer flush helper for the COM tests: advances by `ms`, letting
+// pending MSW-intercepted fetches AND react-query's macrotask-batched
+// notifications settle between simulated ticks (advanceTimersByTimeAsync,
+// never the sync variant -- useConnectionState.test.tsx's precedent).
+async function flush(ms = 0) {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+// The COM poll's interval (mirrors ScannerWizard.tsx's own unexported
+// COM_POLL_INTERVAL_MS -- kept as a literal here, same "no shared
+// test-only export for a magic number" precedent as
+// useConnectionState.test.tsx's DEBOUNCE_MS_FOR_TEST).
+const COM_POLL_MS = 700;
+
+// Drives a fake-timer COM session up to the listening phase: toggle to
+// COM, let the ports query resolve, pick the (single) port, let the
+// /scanners/add POST resolve + the effect's discard consume fire.
+async function enterComListening() {
+  fireEvent.click(screen.getByRole("button", { name: "COM port" }));
+  await flush();
+  await flush();
+  fireEvent.click(within(screen.getByTestId("scanner-wizard-ports-list")).getByText("COM3"));
+  await flush();
+  await flush();
+}
+
 describe("ScannerWizard", () => {
   beforeEach(() => {
     window.__ENV__ = { API_URL: "http://api.test", AGENT_URL: "http://agent.test" };
@@ -111,6 +152,7 @@ describe("ScannerWizard", () => {
     addComCalls = [];
     addComStatus = 200;
     consumeResponses = [];
+    consumeHits = 0;
     createDeviceCalls = [];
     createDeviceStatus = 201;
     testPassedCalls = [];
@@ -125,23 +167,28 @@ describe("ScannerWizard", () => {
   });
 
   describe("USB wedge path", () => {
-    it("listen panel shows, a simulated scan reveals the Scan received row (code + terminator + ms), and fields are prefilled (name empty, terminator from detection)", async () => {
+    it("shows the listen panel WITH the name/terminator fields already editable (review Important-1: printer parity), then a simulated scan reveals the Scan received row (code + terminator + ms) and syncs the terminator select", async () => {
       renderWizard();
 
       expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
-      expect(screen.queryByLabelText("Device name")).not.toBeInTheDocument();
-
-      typeWedgeBurst("TEST-4471");
-      fireEvent.keyDown(window, { key: "Enter" });
-
-      expect(await screen.findByText("Scan received — TEST-4471")).toBeInTheDocument();
-      expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/Enter/);
-      expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/ms/);
-
+      // Review fix round Important-1: the fields exist BEFORE any detection
+      // (register-now-verify-later, PrinterWizard's precedent) -- name
+      // empty, terminator at its default.
       const nameInput = screen.getByLabelText("Device name") as HTMLInputElement;
       expect(nameInput.value).toBe("");
       const terminatorSelect = screen.getByLabelText("Terminator") as HTMLSelectElement;
       expect(terminatorSelect.value).toBe("enter");
+      expect(screen.queryByText("· detected")).not.toBeInTheDocument();
+
+      typeWedgeBurst("TEST-4471");
+      fireEvent.keyDown(window, { key: "Tab" });
+
+      expect(await screen.findByText("Scan received — TEST-4471")).toBeInTheDocument();
+      expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/Tab/);
+      expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/ms/);
+      // Terminator synced to the detection, flagged as detected.
+      expect(terminatorSelect.value).toBe("tab");
+      expect(screen.getByText("· detected")).toBeInTheDocument();
     });
 
     it("'Scan again' resets so a fresh scan can be captured", async () => {
@@ -161,7 +208,7 @@ describe("ScannerWizard", () => {
       expect(await screen.findByText("Scan received — NEW-0099")).toBeInTheDocument();
     });
 
-    it("Save posts {class: scanner, kind: usb_wedge, display_name, config: {terminator}, test_passed: true}", async () => {
+    it("Save after a confirmed detection posts {class: scanner, kind: usb_wedge, display_name, config: {terminator}, test_passed: true}", async () => {
       const user = userEvent.setup();
       renderWizard();
 
@@ -185,15 +232,34 @@ describe("ScannerWizard", () => {
       });
     });
 
-    it("Save is disabled until BOTH a detection has landed and a device name is entered", async () => {
+    // Review fix round Important-1 (reviewer's adjudication of report
+    // concern 1 -- PrinterWizard's brief-mandated "save without a confirmed
+    // test" precedent governs): a scanner can be registered without any
+    // detection (hardware ordered ahead, flaky trigger, ...), with a
+    // manually-picked terminator, and the save then honestly claims NO
+    // passed test.
+    it("Save without any detection posts test_passed: false with the manually-picked terminator", async () => {
       const user = userEvent.setup();
       renderWizard();
 
-      expect(screen.getByRole("button", { name: "Save scanner" })).toBeDisabled();
+      await user.type(screen.getByLabelText("Device name"), "Future desk scanner");
+      await user.selectOptions(screen.getByLabelText("Terminator"), "tab");
+      await user.click(screen.getByRole("button", { name: "Save scanner" }));
 
-      typeWedgeBurst("TEST-4471");
-      fireEvent.keyDown(window, { key: "Enter" });
-      await screen.findByText("Scan received — TEST-4471");
+      await waitFor(() => expect(createDeviceCalls).toHaveLength(1));
+      expect(createDeviceCalls[0].body).toMatchObject({
+        class: "scanner",
+        kind: "usb_wedge",
+        display_name: "Future desk scanner",
+        config: { terminator: "tab" },
+        test_passed: false,
+      });
+    });
+
+    it("Save is disabled only while the device name is empty -- a detection is NOT required (Important-1)", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+
       expect(screen.getByRole("button", { name: "Save scanner" })).toBeDisabled();
 
       await user.type(screen.getByLabelText("Device name"), "Desk scanner");
@@ -202,7 +268,7 @@ describe("ScannerWizard", () => {
   });
 
   describe("COM path", () => {
-    it("lists ports from GET /scanners/ports, picking one POSTs /scanners/add and enters the listen phase", async () => {
+    it("lists ports from GET /scanners/ports, picking one POSTs /scanners/add and enters the listen phase with the name field already editable", async () => {
       const user = userEvent.setup();
       scannerPorts = ["COM3", "COM4"];
       renderWizard();
@@ -216,40 +282,33 @@ describe("ScannerWizard", () => {
 
       await waitFor(() => expect(addComCalls).toEqual(["COM3"]));
       expect(await screen.findByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+      // Review fix round Important-1: name field editable before (or
+      // without) any detection.
+      expect(screen.getByLabelText("Device name")).toBeInTheDocument();
     });
 
-    it("listen phase polls /scan/consume until a non-empty code lands, then Save posts {kind: com, config: {port_name}}", async () => {
+    // Review fix round Important-1's COM counterpart: port chosen ⇒ save
+    // allowed without a detection, claiming test_passed: false.
+    it("Save after picking a port but with no detection posts {kind: com, config: {port_name}, test_passed: false}", async () => {
       const user = userEvent.setup();
       scannerPorts = ["COM3"];
-      consumeResponses = [
-        { code: "", time: "0001-01-01T00:00:00Z" },
-        { code: "PD-0107", time: "2026-07-19T00:00:00Z" },
-      ];
       renderWizard();
 
       await user.click(screen.getByRole("button", { name: "COM port" }));
       await user.click(await screen.findByText("COM3"));
       await waitFor(() => expect(addComCalls).toEqual(["COM3"]));
 
-      expect(await screen.findByText("Scan received — PD-0107", {}, { timeout: 3000 })).toBeInTheDocument();
-
       await user.type(screen.getByLabelText("Device name"), "Symbol LS2208");
       await user.click(screen.getByRole("button", { name: "Save scanner" }));
 
       await waitFor(() => expect(createDeviceCalls).toHaveLength(1));
-      expect(createDeviceCalls[0]).toMatchObject({
-        machineId: "mach-1",
-        body: {
-          class: "scanner",
-          kind: "com",
-          display_name: "Symbol LS2208",
-          config: { port_name: "COM3" },
-          test_passed: true,
-        },
+      expect(createDeviceCalls[0].body).toMatchObject({
+        class: "scanner",
+        kind: "com",
+        display_name: "Symbol LS2208",
+        config: { port_name: "COM3" },
+        test_passed: false,
       });
-      // No terminator concept for a COM scanner -- config carries only
-      // port_name (the backend rejects unknown config keys for kind=com).
-      expect((createDeviceCalls[0].body as { config: Record<string, unknown> }).config).not.toHaveProperty("terminator");
     });
 
     it("surfaces an inline error and stays on the port list when POST /scanners/add fails", async () => {
@@ -263,6 +322,102 @@ describe("ScannerWizard", () => {
 
       expect(await screen.findByText(/could not open port/)).toBeInTheDocument();
       expect(screen.getByTestId("scanner-wizard-ports-list")).toBeInTheDocument();
+    });
+
+    describe("listen phase (fake timers)", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      // Review fix round CRITICAL: the agent's scan buffer is process-wide
+      // (shared by every /scan/consume caller, NOT scoped per port or per
+      // session -- agent/scan_buffer.go), so a scan from BEFORE this
+      // wizard opened could be sitting in it when listening starts. The
+      // listen phase must fire one discard consume first and only trust
+      // what arrives after it.
+      it("discards a scan already buffered before listening began -- it is never reported as a detection; a scan arriving after the discard IS", async () => {
+        scannerPorts = ["COM3"];
+        // Tick 1 (the discard) eats the STALE code; tick 2 is a quiet
+        // poll; tick 3 delivers the genuine in-session scan.
+        consumeResponses = [
+          { code: "STALE-99", time: "2026-07-16T00:00:00Z" },
+          { code: "", time: "0001-01-01T00:00:00Z" },
+          { code: "PD-0107", time: "2026-07-19T00:00:00Z" },
+        ];
+        renderWizard();
+        await enterComListening();
+
+        // The stale code must never surface, at any point.
+        expect(screen.queryByText(/STALE-99/)).not.toBeInTheDocument();
+        expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+
+        await flush(COM_POLL_MS);
+        expect(screen.queryByText(/STALE-99/)).not.toBeInTheDocument();
+        expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+
+        await flush(COM_POLL_MS);
+        expect(screen.getByText("Scan received — PD-0107")).toBeInTheDocument();
+        expect(screen.queryByText(/STALE-99/)).not.toBeInTheDocument();
+      });
+
+      it("polls /scan/consume until a non-empty post-discard code lands, then Save posts {kind: com, config: {port_name}, test_passed: true}", async () => {
+        scannerPorts = ["COM3"];
+        consumeResponses = [
+          { code: "", time: "0001-01-01T00:00:00Z" },
+          { code: "PD-0107", time: "2026-07-19T00:00:00Z" },
+        ];
+        renderWizard();
+        await enterComListening();
+
+        expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+        await flush(COM_POLL_MS);
+        expect(screen.getByText("Scan received — PD-0107")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText("Device name"), { target: { value: "Symbol LS2208" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save scanner" }));
+        await flush();
+        await flush();
+
+        expect(createDeviceCalls).toHaveLength(1);
+        expect(createDeviceCalls[0]).toMatchObject({
+          machineId: "mach-1",
+          body: {
+            class: "scanner",
+            kind: "com",
+            display_name: "Symbol LS2208",
+            config: { port_name: "COM3" },
+            test_passed: true,
+          },
+        });
+        // No terminator concept for a COM scanner -- config carries only
+        // port_name (the backend rejects unknown config keys for kind=com).
+        expect((createDeviceCalls[0].body as { config: Record<string, unknown> }).config).not.toHaveProperty("terminator");
+      });
+
+      // Review fix round Important-2: once the dialog closes mid-listen,
+      // no further /scan/consume request may fire -- a post-close consume
+      // would silently eat a real scan the check-in station needs.
+      it("closing the dialog mid-listen stops the poll -- no further consume requests fire", async () => {
+        scannerPorts = ["COM3"];
+        const { rerender, qc, props } = renderWizard();
+        await enterComListening();
+
+        const hitsWhileOpen = consumeHits;
+        expect(hitsWhileOpen).toBeGreaterThan(0);
+
+        rerender(
+          <QueryClientProvider client={qc}>
+            <ScannerWizard {...props} open={false} />
+          </QueryClientProvider>,
+        );
+
+        await flush(COM_POLL_MS * 5);
+        expect(consumeHits).toBe(hitsWhileOpen);
+      });
     });
   });
 
@@ -291,15 +446,41 @@ describe("ScannerWizard", () => {
       expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
     });
 
-    it("a confirmed COM detection during retest polls /scan/consume directly (no port picker) and calls test-passed", async () => {
-      consumeResponses = [{ code: "COM-SCAN-1", time: "2026-07-19T00:00:00Z" }];
-      renderWizard({ retest: retestDevice({ id: "dev-scanner-com", kind: "com", config: { port_name: "COM3" } }) });
+    // Review fix round CRITICAL, retest half: retest is the worst case for
+    // a stale buffer (the port has been open continuously since the
+    // device was registered, and retest fires markTestPassed with no
+    // operator confirmation click), so a false detection here silently
+    // stamps test_passed_at -- the discard must gate markTestPassed too.
+    it("COM retest never fires markTestPassed off a pre-session buffered scan; only a post-discard scan does (fake timers)", async () => {
+      vi.useFakeTimers();
+      try {
+        consumeResponses = [{ code: "STALE-99", time: "2026-07-16T00:00:00Z" }];
+        renderWizard({ retest: retestDevice({ id: "dev-scanner-com", kind: "com", config: { port_name: "COM3" } }) });
 
-      expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
-      expect(addComCalls).toEqual([]);
+        // Retest skips the port picker straight into listening (no
+        // /scanners/add -- the port is already open agent-side).
+        await flush();
+        await flush();
+        expect(addComCalls).toEqual([]);
+        expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
 
-      expect(await screen.findByText("Scan received — COM-SCAN-1", {}, { timeout: 3000 })).toBeInTheDocument();
-      await waitFor(() => expect(testPassedCalls).toEqual(["dev-scanner-com"]));
+        // The stale scan was eaten by the discard: several more polls see
+        // an empty buffer, and NO test-passed claim is ever made.
+        await flush(COM_POLL_MS);
+        await flush(COM_POLL_MS);
+        expect(screen.queryByText(/STALE-99/)).not.toBeInTheDocument();
+        expect(testPassedCalls).toEqual([]);
+
+        // A genuine scan lands during the session -- the next poll
+        // reports it and fires exactly one markTestPassed.
+        consumeResponses.push({ code: "COM-REAL-1", time: "2026-07-19T00:00:00Z" });
+        await flush(COM_POLL_MS);
+        await flush();
+        expect(screen.getByText("Scan received — COM-REAL-1")).toBeInTheDocument();
+        expect(testPassedCalls).toEqual(["dev-scanner-com"]);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

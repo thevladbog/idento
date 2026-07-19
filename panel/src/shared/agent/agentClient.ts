@@ -343,8 +343,16 @@ export interface ScanData {
  * buffer (that's the normal steady state between scans); only a genuine
  * transport/HTTP failure (agent unreachable, non-2xx) rejects, same "throw
  * on failure" contract as getPrinters/getDefaultPrinter above.
+ *
+ * `signal` (Task 9 review fix round, Important-2) lets a caller abort an
+ * in-flight consume when its listening session ends -- because /scan/consume
+ * DRAINS the agent's shared buffer as a side effect, a request left running
+ * after its caller stopped caring can silently eat a real scan some OTHER
+ * consumer (the check-in station's own 200ms poll) needed. Optional so the
+ * station's steady-state poll (useScanInput.ts), which never stops caring
+ * mid-request, is unchanged.
  */
-async function consumeLastScan(): Promise<ScanData> {
+async function consumeLastScan(signal?: AbortSignal): Promise<ScanData> {
   const response = await ensureOk(
     await fetch(agentUrl("/scan/consume"), {
       method: "POST",
@@ -352,6 +360,7 @@ async function consumeLastScan(): Promise<ScanData> {
       // mutating requests (see agent/openapi.yaml's Авторизация section) --
       // without it a same-origin-allowlisted-but-tokenless request gets 415.
       headers: { "Content-Type": "application/json" },
+      signal,
     }),
     "agent POST /scan/consume failed",
   );

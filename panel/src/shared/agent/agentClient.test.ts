@@ -465,5 +465,25 @@ describe("agentClient", () => {
       server.use(http.post("http://agent.test/scan/consume", () => HttpResponse.error()));
       await expect(agentClient.consumeLastScan()).rejects.toThrow();
     });
+
+    // Task 9 review fix round, Important-2: the scanner wizard's COM
+    // listen poll must be able to abort an in-flight consume when its
+    // listen phase is cancelled -- otherwise a request already on the
+    // wire when the dialog closes still drains the agent's shared buffer
+    // and can silently eat a real scan the check-in station needs.
+    it("rejects promptly (without waiting for the response) when the caller's AbortSignal fires mid-request", async () => {
+      server.use(
+        http.post("http://agent.test/scan/consume", async () => {
+          await delay(300);
+          return HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" });
+        }),
+      );
+      const controller = new AbortController();
+      const start = Date.now();
+      const pending = agentClient.consumeLastScan(controller.signal);
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(Date.now() - start).toBeLessThan(200);
+    });
   });
 });
