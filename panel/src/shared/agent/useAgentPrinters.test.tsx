@@ -9,7 +9,22 @@ import { startMswServer } from "../../test/msw";
 let printersResponse: Array<{ name: string; type: string }> = [];
 let defaultResponse: { default: string | null } = { default: null };
 let healthOk = true;
-let requestCounts = { health: 0, printers: 0, default: 0 };
+let requestCounts = { health: 0, printers: 0, default: 0, info: 0, machine: 0 };
+
+// P4.3 Task 10: agent GET /info + the equipment registry GET, so
+// useAgentPrinters' internal useAgentInfo()/useEquipmentMachine() calls
+// have something to hit. Defaults to a "legacy agent" baseline (GET /info
+// 404s, per agentClient.getInfo's contract) so every test ABOVE the new
+// "registry default precedence" describe block below -- none of which sets
+// these -- exercises the exact pre-Task-10 path: useAgentInfo resolves
+// info=null, useEquipmentMachine's own `enabled` gate never fires (its
+// machineId stays null), and registryDefaultAgentName is therefore always
+// null -- configuredDefault collapses straight to the agent's own
+// GET /printers/default value, byte-identical to before this task.
+let agentInfoStatus: 200 | 404 = 404;
+let agentInfoResponse = { machine_id: "mach-1", hostname: "REG-DESK-01", version: "1.9.0", uptime_seconds: 100 };
+let machineStatus: 200 | 404 | 500 = 404;
+let machineDevices: Array<Record<string, unknown>> = [];
 
 const server = startMswServer(
   http.get("http://agent.test/health", () => {
@@ -23,6 +38,25 @@ const server = startMswServer(
   http.get("http://agent.test/printers/default", () => {
     requestCounts.default += 1;
     return HttpResponse.json(defaultResponse);
+  }),
+  http.get("http://agent.test/info", () => {
+    requestCounts.info += 1;
+    if (agentInfoStatus === 404) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json(agentInfoResponse);
+  }),
+  http.get("http://api.test/api/equipment/machines/:machineId", () => {
+    requestCounts.machine += 1;
+    if (machineStatus !== 200) return new HttpResponse(null, { status: machineStatus });
+    return HttpResponse.json({
+      machine: {
+        machine_id: "mach-1",
+        hostname: "REG-DESK-01",
+        agent_version: "1.9.0",
+        last_seen_at: "2026-07-19T00:00:00Z",
+        created_at: "2026-07-01T00:00:00Z",
+      },
+      devices: machineDevices,
+    });
   }),
 );
 // startMswServer's return value matters for its listen/reset/close
@@ -43,7 +77,11 @@ describe("useAgentPrinters", () => {
     printersResponse = [];
     defaultResponse = { default: null };
     healthOk = true;
-    requestCounts = { health: 0, printers: 0, default: 0 };
+    requestCounts = { health: 0, printers: 0, default: 0, info: 0, machine: 0 };
+    agentInfoStatus = 404;
+    agentInfoResponse = { machine_id: "mach-1", hostname: "REG-DESK-01", version: "1.9.0", uptime_seconds: 100 };
+    machineStatus = 404;
+    machineDevices = [];
   });
 
   it("is disconnected and fetches nothing while disabled", () => {
@@ -155,5 +193,121 @@ describe("useAgentPrinters", () => {
     // operator isn't left with no preselection just because the agent
     // couldn't report ITS OWN configured default.
     expect(result.current.defaultPrinter).toBe("HP_Smart_Tank_790_series");
+  });
+
+  // P4.3 Task 10 (spec decision 2): the equipment registry's own default
+  // printer (set via the hub) now outranks the agent's own configured
+  // default. `registryPrinterDevice` mirrors EquipmentPage.test.tsx's
+  // `printerLive()` shape (models.EquipmentDevice) -- only `is_default`,
+  // `class`, and `config.agent_name` are actually read by the hook, but the
+  // full shape keeps this realistic.
+  describe("registry default precedence (server registry > agent config > null)", () => {
+    function registryPrinterDevice(overrides: Record<string, unknown> = {}) {
+      return {
+        id: "dev-printer-1",
+        class: "printer",
+        kind: "system",
+        display_name: "Registry Printer",
+        config: { agent_name: "Server_Registry_Printer" },
+        is_default: true,
+        test_passed_at: null,
+        last_seen_at: "2026-07-19T00:00:00Z",
+        created_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+        ...overrides,
+      };
+    }
+
+    it("server default wins over the agent's own configured default when its agent_name is in the live printer list", async () => {
+      agentInfoStatus = 200;
+      machineStatus = 200;
+      machineDevices = [registryPrinterDevice()];
+      printersResponse = [
+        { name: "Server_Registry_Printer", type: "system" },
+        { name: "Agent_Own_Default", type: "system" },
+      ];
+      defaultResponse = { default: "Agent_Own_Default" };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      // Waits for the registry fetch to settle and win -- the pre-settle
+      // value (null, then "Agent_Own_Default" once only the printers query
+      // has resolved) is never "Server_Registry_Printer" on its own, so
+      // this can't pass before the server-wins logic actually runs.
+      await waitFor(() => expect(result.current.configuredDefault).toBe("Server_Registry_Printer"));
+      expect(result.current.defaultPrinter).toBe("Server_Registry_Printer");
+    });
+
+    it("falls back to the agent's configured default when the server default's agent_name is not in the live printer list", async () => {
+      agentInfoStatus = 200;
+      machineStatus = 200;
+      machineDevices = [registryPrinterDevice({ config: { agent_name: "Unplugged_Registry_Printer" } })];
+      printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+      defaultResponse = { default: "Agent_Own_Default" };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      await waitFor(() => expect(requestCounts.machine).toBeGreaterThan(0));
+      expect(result.current.configuredDefault).toBe("Agent_Own_Default");
+      expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
+    });
+
+    it("falls back to the agent's configured default (byte-identical legacy behavior) when the machine has no registry entry (404)", async () => {
+      agentInfoStatus = 200; // agent reports identity fine...
+      machineStatus = 404; // ...but this (tenant, machine_id) was never registered in the hub.
+      printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+      defaultResponse = { default: "Agent_Own_Default" };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      await waitFor(() => expect(requestCounts.machine).toBeGreaterThan(0));
+      expect(result.current.configuredDefault).toBe("Agent_Own_Default");
+      expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
+    });
+
+    it("falls back to the agent's configured default (byte-identical legacy behavior) when the agent is pre-P4.3 (GET /info 404s)", async () => {
+      agentInfoStatus = 404; // legacy agent: no identity, so machine_id is never known.
+      printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+      defaultResponse = { default: "Agent_Own_Default" };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      await waitFor(() => expect(requestCounts.info).toBeGreaterThan(0));
+      expect(result.current.configuredDefault).toBe("Agent_Own_Default");
+      expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
+      // useEquipmentMachine's own `enabled` gate never fires without a
+      // known machine_id -- the registry is never even queried.
+      expect(requestCounts.machine).toBe(0);
+    });
+
+    it("falls back to the agent's configured default (byte-identical legacy behavior) when the machine registry query itself errors", async () => {
+      agentInfoStatus = 200;
+      machineStatus = 500; // a genuine registry failure, distinct from the empty-registry 404 case above.
+      printersResponse = [{ name: "Agent_Own_Default", type: "system" }];
+      defaultResponse = { default: "Agent_Own_Default" };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      await waitFor(() => expect(requestCounts.machine).toBeGreaterThan(0));
+      expect(result.current.configuredDefault).toBe("Agent_Own_Default");
+      expect(result.current.defaultPrinter).toBe("Agent_Own_Default");
+    });
+
+    // Drawer-reprint contract (P3.2 Task 8's comment on `configuredDefault`
+    // above): a non-null `configuredDefault` means AttendeeDrawer's Reprint
+    // confirm does NOT ask the operator to choose. A registry default must
+    // hold that contract even when the agent itself has no opinion.
+    it("keeps configuredDefault non-null (drawer-reprint contract) when the server has a default but the agent's own default is unset", async () => {
+      agentInfoStatus = 200;
+      machineStatus = 200;
+      machineDevices = [registryPrinterDevice()];
+      printersResponse = [{ name: "Server_Registry_Printer", type: "system" }];
+      defaultResponse = { default: null };
+
+      const { result } = renderHook(() => useAgentPrinters(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      await waitFor(() => expect(result.current.configuredDefault).toBe("Server_Registry_Printer"));
+      expect(result.current.configuredDefault).not.toBeNull();
+    });
   });
 });

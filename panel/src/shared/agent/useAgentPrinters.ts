@@ -1,5 +1,7 @@
 import { useQuery, type QueryObserverResult } from "@tanstack/react-query";
 import { agentClient, type AgentPrinter } from "./agentClient";
+import { useAgentInfo } from "./useAgentInfo";
+import { useEquipmentMachine } from "./useEquipmentMachine";
 
 // One connectivity state shared by every print surface (test-print dialog,
 // drawer reprint, bulk print — see docs/superpowers/plans/
@@ -90,13 +92,62 @@ export function useAgentPrinters(enabled: boolean): UseAgentPrintersResult {
   });
 
   const printers = query.data?.printers ?? [];
-  const configuredDefault = query.data?.configuredDefault ?? null;
+  // Renamed from `configuredDefault` (P4.3 Task 10): this is now only the
+  // AGENT's own opinion (verbatim GET /printers/default), one input to the
+  // precedence chain below rather than the whole story.
+  const agentConfiguredDefault = query.data?.configuredDefault ?? null;
+
+  // P4.3 Task 10 (spec decision 2): the equipment registry's own default
+  // printer (set explicitly via the hub, spec §4.1) outranks the agent's
+  // own configured default -- an operator who picked a default in the hub
+  // shouldn't be silently overridden by whatever the OS/driver-level agent
+  // reports as ITS default. `useAgentInfo` runs its own health-gated probe
+  // (same as `fetchAgentPrinters` above) purely to resolve this machine's
+  // identity -- yes, that's a SECOND GET /health per cycle, but it's cheap,
+  // same-origin, and any other useAgentInfo consumer mounted on this page
+  // shares its query key via TanStack's cache, so this stays additive
+  // rather than a restructuring of this hook's own probe (whose
+  // isError/isSuccess semantics below are load-bearing and are left alone).
+  //
+  // Gated on `printers.length > 0` in addition to `enabled`: with zero live
+  // printers, `registryDefaultAgentName` below is PROVABLY null regardless
+  // of what the registry says (its own live-list presence check,
+  // `printers.some(...)`, can never match an empty list) -- so there is
+  // nothing for this probe to resolve yet, and running it anyway would only
+  // buy an agent identity/machine-registry fetch this render has no use
+  // for. This is a pure optimization (never changes `registryDefaultAgentName`,
+  // `configuredDefault`, or `defaultPrinter` -- every branch below is
+  // unaffected), not a new precedence rule.
+  const hasLivePrinters = printers.length > 0;
+  const { info } = useAgentInfo(enabled && hasLivePrinters);
+  const machine = useEquipmentMachine(enabled && hasLivePrinters ? (info?.machine_id ?? null) : null);
+
+  const registryDefaultAgentName = (() => {
+    const devices = machine.data?.devices ?? [];
+    const def = devices.find((d) => d.is_default && d.class === "printer");
+    const agentName = (def?.config as { agent_name?: string } | undefined)?.agent_name;
+    // Same live-list presence rule the agent's own configured default
+    // already obeys just below (the web-parity comment) -- a registry
+    // default is only honored while the agent can currently SEE a printer
+    // by that name; a registry default pointing at a since-unplugged
+    // printer falls through to the agent default exactly as if no registry
+    // default were set (never onto a name absent from `printers`).
+    return agentName && printers.some((printer) => printer.name === agentName) ? agentName : null;
+  })();
+
+  // server (registry) > agent config > null -- P4.3 spec decision 2. Field
+  // name/semantics returned below are UNCHANGED for every P3.2 consumer
+  // (TestPrintDialog, drawer reprint, bulk print, station): still null iff
+  // neither the registry nor the agent has a default, never silently
+  // inheriting `defaultPrinter`'s own "first in list" convenience fallback.
+  const configuredDefault = registryDefaultAgentName ?? agentConfiguredDefault;
 
   // Web parity rule (web/src/pages/EquipmentSettings.tsx's fetchPrinters):
-  // the agent's configured default printer only wins if it's still present
-  // in the CURRENT printer list — it may have been unplugged/removed since
-  // it was configured. Otherwise fall back to the first printer so the
-  // selector always has a valid preselection whenever any printer exists.
+  // the (now server-first) configured default printer only wins if it's
+  // still present in the CURRENT printer list — it may have been
+  // unplugged/removed since it was configured. Otherwise fall back to the
+  // first printer so the selector always has a valid preselection whenever
+  // any printer exists.
   const defaultPrinter =
     printers.length === 0
       ? null
