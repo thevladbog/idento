@@ -191,6 +191,17 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.DELETE("/events/:event_id/fonts/:font_id", h.DeleteEventFont)
 	api.GET("/fonts/:id/file", h.GetFontFile) // Public font file endpoint
 
+	// Equipment registry (P4.3): a per-tenant, per-machine device registry
+	// keyed by the agent's persisted machine_id — ORG-level resources, not
+	// tied to any one event (no requireEventOwnership on any of these).
+	api.PUT("/equipment/machines/:machine_id", h.UpsertEquipmentMachine)
+	api.GET("/equipment/machines/:machine_id", h.GetEquipmentMachine)
+	api.POST("/equipment/machines/:machine_id/devices", h.CreateEquipmentDevice)
+	api.PATCH("/equipment/devices/:device_id", h.PatchEquipmentDevice)
+	api.DELETE("/equipment/devices/:device_id", h.DeleteEquipmentDevice)
+	api.PUT("/equipment/machines/:machine_id/default-printer", h.PutDefaultEquipmentPrinter)
+	api.POST("/equipment/devices/:device_id/test-passed", h.MarkEquipmentDeviceTestPassed)
+
 	// Public API endpoints (with API key authentication)
 	public := e.Group("/api/public")
 	public.POST("/import", h.ExternalImport, middleware.APIKeyAuth(h.Store))
