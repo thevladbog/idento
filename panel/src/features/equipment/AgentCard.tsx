@@ -106,7 +106,11 @@ export function AgentCard({ agent }: AgentCardProps) {
 
   let detail: string;
   if (state === "connected" && info) {
-    detail = `${displayBaseUrl()} · v${info.version} · ${info.hostname} · ${formatUptime(info.uptime_seconds)}`;
+    // Join only non-empty segments -- a blank hostname (or any other blank
+    // field) must not leave a dangling "· ·" in the meta line.
+    detail = [displayBaseUrl(), `v${info.version}`, info.hostname, formatUptime(info.uptime_seconds)]
+      .filter(Boolean)
+      .join(" · ");
   } else if (state === "connected_legacy") {
     detail = t("equipmentAgentLegacyHint");
   } else {

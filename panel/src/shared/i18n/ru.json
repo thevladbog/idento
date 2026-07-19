@@ -663,9 +663,9 @@
   "equipmentSetUpPrinter": "+ Настроить принтер",
   "equipmentSetUpScanner": "+ Настроить сканер",
   "equipmentDefaultChip": "ПО УМОЛЧАНИЮ",
-  "equipmentDefaultFooter": "По умолчанию = то, что используют станции регистрации на этом компьютере. Одно правило, хранится на сервере.",
+  "equipmentDefaultFooter": "По умолчанию = то, что используют станции регистрации на этом компьютере. Единое правило хранится на сервере.",
   "equipmentPersistFooter": "Сохранённые устройства хранятся на сервере — перезагрузка страницы никогда не очищает этот список.",
-  "equipmentNotSeenSince": "Сохранено · не видно с {{date}} — проверьте питание и сеть",
+  "equipmentNotSeenSince": "Сохранено · не было видно с {{date}} — проверьте питание и сеть",
   "equipmentNotSeenYet": "Сохранено · ещё не было видно",
   "equipmentUnreachable": "сохранено · недоступно",
   "equipmentSaveDevice": "Сохранить…",
@@ -717,7 +717,7 @@
   "equipmentWizardCom": "COM-порт",
   "equipmentWizardListening": "Слушаем… отсканируйте любой штрихкод",
   "equipmentWizardListenHint": "Наведите сканер на тестовый код ниже или на любой бейдж. Мы сами определим режим ввода и терминатор.",
-  "equipmentWizardScanReceived": "Скан получен — {{code}}",
+  "equipmentWizardScanReceived": "Штрихкод считан — {{code}}",
   "equipmentWizardScanAgain": "Сканировать снова",
   "equipmentWizardDeviceName": "Название устройства",
   "equipmentWizardTerminator": "Терминатор",
@@ -728,5 +728,5 @@
   "equipmentWizardAgentChecking": "Проверка локального агента…",
   "equipmentWizardAgentUnreachable": "Не удаётся подключиться к локальному агенту — подключите его и попробуйте снова.",
   "equipmentWizardComAddError": "Не удалось добавить сканер.",
-  "equipmentWizardScanTestWarn": "Скан подтверждён — но сервер не зафиксировал тест. Синхронизируется при следующем визите."
+  "equipmentWizardScanTestWarn": "Сканирование подтверждено — но сервер не зафиксировал тест. Синхронизируется при следующем визите."
 }

@@ -50,6 +50,13 @@ describe("AgentCard", () => {
     expect(screen.queryByText(/uptime/)).not.toBeInTheDocument();
   });
 
+  it("connected: joins only non-empty meta segments -- a blank hostname must not leave a dangling '· ·' gap", () => {
+    render(<AgentCard agent={result({ state: "connected", info: { ...INFO, hostname: "" } })} />);
+
+    expect(screen.getByText("agent.test · v1.9.0 · uptime 3 h 12 m")).toBeInTheDocument();
+    expect(screen.queryByText(/·\s*·/)).not.toBeInTheDocument();
+  });
+
   it("checking: maps to AgentStatus's stale state with the checking pill text", () => {
     render(<AgentCard agent={result({ state: "checking" })} />);
 
