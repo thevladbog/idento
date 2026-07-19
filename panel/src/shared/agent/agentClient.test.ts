@@ -18,6 +18,9 @@ const server = startMswServer(
   http.get("http://agent.test/printers/default", () =>
     HttpResponse.json({ default: "HP_Smart_Tank_790_series" }),
   ),
+  http.get("http://agent.test/scanners", () =>
+    HttpResponse.json([{ name: "Scanner_COM3", port_name: "COM3" }]),
+  ),
   http.post("http://agent.test/print", () => HttpResponse.json({ status: "printed" })),
   http.post("http://agent.test/scan/consume", () =>
     HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" }),
@@ -76,6 +79,26 @@ describe("agentClient", () => {
     it("throws on a non-2xx response", async () => {
       server.use(http.get("http://agent.test/printers", () => new HttpResponse(null, { status: 500 })));
       await expect(agentClient.getPrinters()).rejects.toThrow();
+    });
+  });
+
+  // P4.3 Task 6 -- the equipment hub's com-scanner liveness signal
+  // (agent/openapi.yaml GET /scanners, tag "Scanners"). Mirrors getPrinters'
+  // shape/error tests; no type-narrowing here since GET /scanners only ever
+  // reports com scanners the agent has opened.
+  describe("getScanners", () => {
+    it("returns the open com scanner list", async () => {
+      await expect(agentClient.getScanners()).resolves.toEqual([{ name: "Scanner_COM3", port_name: "COM3" }]);
+    });
+
+    it("returns an empty array when the agent has no com scanner open", async () => {
+      server.use(http.get("http://agent.test/scanners", () => HttpResponse.json([])));
+      await expect(agentClient.getScanners()).resolves.toEqual([]);
+    });
+
+    it("throws on a non-2xx response", async () => {
+      server.use(http.get("http://agent.test/scanners", () => new HttpResponse(null, { status: 500 })));
+      await expect(agentClient.getScanners()).rejects.toThrow();
     });
   });
 

@@ -11,6 +11,22 @@ export interface AgentPrinter {
   type: "system" | "network";
 }
 
+/**
+ * One com scanner the agent currently has open (agent/openapi.yaml's
+ * GET /scanners, tag "Scanners") -- `port_name` (e.g. "COM3") is the stable
+ * agent-side identity link P4.3's equipment registry matches against
+ * (config.port_name on a kind=com EquipmentDevice, spec §5.2) -- `name` is
+ * just the agent's own display label for the open scanner, not a link key.
+ * Unlike AgentPrinter there is no system/network `type` to narrow here --
+ * GET /scanners only ever reports com scanners the agent has explicitly
+ * opened (via /scanners/add); usb_wedge scanners are a browser-side input
+ * method the agent has no visibility into at all (see equipment/reconcile.ts).
+ */
+export interface AgentScanner {
+  name: string;
+  port_name: string;
+}
+
 export interface PrintRequest {
   printer_name: string;
   zpl: string;
@@ -69,6 +85,18 @@ async function getPrinters(): Promise<AgentPrinter[]> {
     name: printer.name,
     type: printer.type === "network" ? ("network" as const) : ("system" as const),
   }));
+}
+
+/**
+ * Returns every com scanner the agent currently has open (agent/openapi.yaml's
+ * GET /scanners) -- usb_wedge scanners never appear here (see AgentScanner's
+ * doc comment); an agent with no com scanner opened returns an empty array,
+ * not an error.
+ */
+async function getScanners(): Promise<AgentScanner[]> {
+  const response = await ensureOk(await fetch(agentUrl("/scanners")), "agent GET /scanners failed");
+  const data = (await response.json()) as Array<{ name: string; port_name: string }>;
+  return data.map((scanner) => ({ name: scanner.name, port_name: scanner.port_name }));
 }
 
 /** Returns the agent's configured default printer name, or null if unset. */
@@ -219,6 +247,7 @@ async function consumeLastScan(): Promise<ScanData> {
 export const agentClient = {
   checkHealth,
   getPrinters,
+  getScanners,
   getDefaultPrinter,
   getInfo,
   print,
