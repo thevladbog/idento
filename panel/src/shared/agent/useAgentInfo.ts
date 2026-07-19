@@ -83,15 +83,18 @@ export function useAgentInfo(enabled: boolean): UseAgentInfoResult {
 
   return {
     state,
-    // Gated on `isSuccess`, NOT a bare `query.data ?? null`: TanStack Query
-    // keeps the last successful fetch's `data` around across a later FAILED
-    // refetch (it only clears `data` on an explicit query-key change), so a
-    // machine that goes from connected -> disconnected would otherwise keep
-    // reporting stale live `info` even though `state` correctly flips to
-    // "disconnected". `cachedInfo` above is the deliberate, explicit
-    // mechanism for surfacing a last-known value across a disconnect --
-    // `info` must reflect only the CURRENT probe.
-    info: query.isSuccess ? (query.data ?? null) : null,
+    // Gated on BOTH `enabled` and `isSuccess`, NOT a bare `query.data ??
+    // null`: TanStack Query keeps the last successful fetch's `data` (and
+    // its `isSuccess` status) around across a later FAILED refetch AND
+    // across the caller flipping `enabled` to false (neither clears query
+    // state -- only an explicit query-key change does). Either way, a
+    // consumer would otherwise keep reading stale live `info` even though
+    // `state` correctly reads "disconnected". `cachedInfo` above is the
+    // deliberate, explicit mechanism for surfacing a last-known value
+    // across a disconnect -- `info` must reflect only the CURRENT,
+    // still-enabled probe (mirroring how `state` forces "disconnected"
+    // for `!enabled` above).
+    info: enabled && query.isSuccess ? (query.data ?? null) : null,
     // Plain read per render rather than mirrored into query/component state:
     // agentInfoCache is a synchronous localStorage read, so there's no
     // async gap to paper over, and a hub remount after a reconnect (or a

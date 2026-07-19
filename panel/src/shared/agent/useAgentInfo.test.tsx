@@ -30,10 +30,9 @@ const server = startMswServer(
   }),
 );
 // startMswServer's return value matters for its listen/reset/close lifecycle
-// side effects (registered via beforeAll/afterEach/afterAll) even though no
-// test below calls server.use() directly -- same idiom as
-// useAgentPrinters.test.tsx.
-void server;
+// side effects (registered via beforeAll/afterEach/afterAll) and for the
+// machine_id-overwrite test below, which needs a per-test server.use()
+// override -- same idiom as useAgentPrinters.test.tsx.
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -94,6 +93,64 @@ describe("useAgentInfo", () => {
     // cachedInfo is a plain read of localStorage, unaffected by the query's
     // own error state.
     expect(result.current.cachedInfo).toEqual(INFO);
+  });
+
+  // Task 5 fix round: `info` is documented "live only" -- that must also
+  // hold when the CALLER disables the hook, not just when a probe fails.
+  // Disabling a react-query query does NOT clear its status/data (the last
+  // successful fetch's `data`/`isSuccess` survive), so `info` must be gated
+  // on `enabled` the same way `state` already is.
+  it("nulls info (matching the forced disconnected state) when the caller flips enabled to false after a successful probe", async () => {
+    const { result, rerender } = renderHook(({ enabled }) => useAgentInfo(enabled), {
+      wrapper,
+      initialProps: { enabled: true },
+    });
+    await waitFor(() => expect(result.current.state).toBe("connected"));
+    expect(result.current.info).toEqual(INFO);
+
+    rerender({ enabled: false });
+    expect(result.current.state).toBe("disconnected");
+    expect(result.current.info).toBeNull();
+    // cachedInfo is the deliberate survives-anything surface -- unaffected.
+    expect(result.current.cachedInfo).toEqual(INFO);
+  });
+
+  // Task 5 fix round: the cache write lives inside the queryFn, so a
+  // throwing localStorage.setItem (Safari private mode, quota exceeded)
+  // must never reject the probe -- identity caching is a convenience and
+  // must never take connectivity down with it.
+  it("still reports connected with live info when the cache write throws (private mode / quota)", async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("QuotaExceededError");
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { result } = renderHook(() => useAgentInfo(true), { wrapper });
+      await waitFor(() => expect(result.current.state).toBe("connected"));
+      expect(result.current.info).toEqual(INFO);
+    } finally {
+      setItemSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
+  // Task 5 fix round: pins that the cache tracks the LATEST identity -- a
+  // reconnect that reports a different machine_id (agent reinstalled, or
+  // AGENT_URL now served by different hardware) overwrites the old entry
+  // rather than keeping first-write-wins.
+  it("overwrites the cached identity when a reconnect reports a different machine_id", async () => {
+    const { result } = renderHook(() => useAgentInfo(true), { wrapper });
+    await waitFor(() => expect(result.current.state).toBe("connected"));
+    expect(readCachedAgentInfo()).toEqual(INFO);
+
+    const REINSTALLED = { ...INFO, machine_id: "mach-def456", uptime_seconds: 5 };
+    server.use(http.get("http://agent.test/info", () => HttpResponse.json(REINSTALLED)));
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expect(result.current.info).toEqual(REINSTALLED));
+    expect(readCachedAgentInfo()).toEqual(REINSTALLED);
   });
 
   // Board 5d's mono caption "auto-retry in 8 s" -- while disconnected the

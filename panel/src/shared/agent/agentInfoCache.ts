@@ -37,7 +37,22 @@ export function readCachedAgentInfo(): AgentInfo | null {
   }
 }
 
-/** Persists `info` as the last-known identity for the current agent base URL. */
+/**
+ * Persists `info` as the last-known identity for the current agent base URL.
+ *
+ * Warn-don't-fail on a throwing `setItem` (Safari private mode, quota
+ * exceeded): this runs inside useAgentInfo's queryFn AFTER a successful
+ * health + /info probe, so letting the exception propagate would reject the
+ * whole query and falsely report a perfectly healthy agent as
+ * "disconnected". Identity caching is a convenience (board 5d's
+ * show-identity-while-down fallback) and must never take connectivity down
+ * with it -- the only cost of a swallowed failure is a stale/absent
+ * cachedInfo during a LATER disconnect.
+ */
 export function writeCachedAgentInfo(info: AgentInfo): void {
-  localStorage.setItem(cacheKey(), JSON.stringify(info));
+  try {
+    localStorage.setItem(cacheKey(), JSON.stringify(info));
+  } catch (error) {
+    console.warn("failed to cache agent identity (private mode / quota?)", error);
+  }
 }
