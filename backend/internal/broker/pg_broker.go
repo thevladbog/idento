@@ -49,6 +49,14 @@ type PGBroker struct {
 	pool   *pgxpool.Pool
 	cancel context.CancelFunc
 	done   chan struct{}
+
+	// connConfig is the sanitized *pgx.ConnConfig the dedicated LISTEN
+	// connection is (re)established from — see prepareListenConnConfig's
+	// doc comment (PR #81 round-3 convergence, Backend Finding 1). Stored
+	// on the broker so listenLoop's reconnect path reuses the exact same
+	// sanitized config the initial connect used, rather than re-deriving
+	// it (or, as before this fix, falling back to a raw dbURL re-parse).
+	connConfig *pgx.ConnConfig
 }
 
 // NewPGBroker connects a dedicated LISTEN connection and a small (MaxConns
@@ -73,7 +81,28 @@ func NewPGBroker(ctx context.Context, dbURL string) (*PGBroker, error) {
 		return nil, err
 	}
 
-	conn, err := pgx.Connect(ctx, dbURL)
+	// Finding 1 (PR #81 round-3 convergence): the dedicated LISTEN
+	// connection must be established from the SAME sanitized ConnConfig
+	// pgxpool already parsed for the notify pool above — not a second, raw
+	// pgx.Connect(ctx, dbURL) call. pgx.Connect re-parses dbURL via
+	// pgx.ParseConfig, a DIFFERENT parser that has no knowledge of
+	// pgxpool-only URL options (pool_max_conns, pool_min_conns, ...) and
+	// leaves them sitting in ConnConfig.RuntimeParams, which pgx then sends
+	// to Postgres as startup parameters — every real server rejects an
+	// unrecognized one outright. A dbURL tuned with those options would
+	// make the pool connect fine (ParseConfig above consumes and strips
+	// them) while this raw connection was refused, breaking process
+	// startup. prepareListenConnConfig reuses poolCfg's own
+	// already-sanitized ConnConfig instead of re-deriving a second one.
+	connConfig := prepareListenConnConfig(poolCfg)
+
+	// pgx.ConnectConfig documents that ConnConfig must come from ParseConfig
+	// and may be mutated by the connect call itself — Copy() before every
+	// use (initial connect here, and every reconnect in reconnect() below)
+	// is the same defensive pattern pgxpool.Pool's own connResource
+	// constructor uses when it hands the SAME shared ConnConfig to
+	// pgx.ConnectConfig for each new pooled connection.
+	conn, err := pgx.ConnectConfig(ctx, connConfig.Copy())
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -89,15 +118,33 @@ func NewPGBroker(ctx context.Context, dbURL string) (*PGBroker, error) {
 	// long before the broker should stop).
 	loopCtx, cancel := context.WithCancel(context.Background())
 	b := &PGBroker{
-		mem:    NewMemBroker(),
-		pool:   pool,
-		cancel: cancel,
-		done:   make(chan struct{}),
+		mem:        NewMemBroker(),
+		pool:       pool,
+		connConfig: connConfig,
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 
-	go b.listenLoop(loopCtx, conn, dbURL)
+	go b.listenLoop(loopCtx, conn)
 
 	return b, nil
+}
+
+// prepareListenConnConfig derives the *pgx.ConnConfig the dedicated LISTEN
+// connection connects with, from an already-parsed *pgxpool.Config (Finding
+// 1, PR #81 round-3 convergence). It is factored out of NewPGBroker
+// specifically so the sanitization property is unit-testable at this exact
+// seam without a live Postgres connection: pgxpool.ParseConfig recognizes
+// and strips pool-only URL options (pool_max_conns, pool_min_conns, ...)
+// out of poolCfg.ConnConfig.RuntimeParams before they'd otherwise be
+// forwarded as unrecognized PostgreSQL startup parameters — see this
+// file's pg_broker_test.go-adjacent coverage for the exact before/after
+// proof. Trivial today (poolCfg.ConnConfig already IS the sanitized
+// config), but named and tested as its own function so the sanitization
+// guarantee has a permanent regression test independent of NewPGBroker's
+// live-DB-only Ping/Connect calls.
+func prepareListenConnConfig(poolCfg *pgxpool.Config) *pgx.ConnConfig {
+	return poolCfg.ConnConfig
 }
 
 // Publish executes `SELECT pg_notify('checkin_events', $1::text)` through
@@ -143,7 +190,7 @@ func (b *PGBroker) Close() {
 // pg_store_checkin_composite_fk_integration_test.go's TEST_DATABASE_URL-
 // gated (skip-not-fail) test. handleNotification carries everything here
 // that IS unit-tested.
-func (b *PGBroker) listenLoop(ctx context.Context, conn *pgx.Conn, dbURL string) {
+func (b *PGBroker) listenLoop(ctx context.Context, conn *pgx.Conn) {
 	defer close(b.done)
 	defer func() { closeConn(conn) }()
 
@@ -159,7 +206,7 @@ func (b *PGBroker) listenLoop(ctx context.Context, conn *pgx.Conn, dbURL string)
 			closeConn(conn)
 
 			var ok bool
-			conn, ok = b.reconnect(ctx, dbURL)
+			conn, ok = b.reconnect(ctx)
 			if !ok {
 				// ctx was cancelled while reconnecting.
 				return
@@ -181,10 +228,12 @@ func (b *PGBroker) listenLoop(ctx context.Context, conn *pgx.Conn, dbURL string)
 	}
 }
 
-// reconnect retries pgx.Connect + LISTEN against dbURL with exponential
-// backoff (1s doubling to a 30s cap) until it succeeds or ctx is
-// cancelled. The bool return is false only when ctx was cancelled first.
-func (b *PGBroker) reconnect(ctx context.Context, dbURL string) (*pgx.Conn, bool) {
+// reconnect retries pgx.ConnectConfig + LISTEN against b.connConfig (the
+// same sanitized config the initial connect used — Finding 1, PR #81
+// round-3 convergence) with exponential backoff (1s doubling to a 30s cap)
+// until it succeeds or ctx is cancelled. The bool return is false only when
+// ctx was cancelled first.
+func (b *PGBroker) reconnect(ctx context.Context) (*pgx.Conn, bool) {
 	backoff := reconnectBackoffInitial
 	for {
 		select {
@@ -193,7 +242,7 @@ func (b *PGBroker) reconnect(ctx context.Context, dbURL string) (*pgx.Conn, bool
 		case <-time.After(backoff):
 		}
 
-		conn, err := pgx.Connect(ctx, dbURL)
+		conn, err := pgx.ConnectConfig(ctx, b.connConfig.Copy())
 		if err != nil {
 			log.Printf("broker: reconnect failed: %v", err)
 			backoff = nextBackoff(backoff)

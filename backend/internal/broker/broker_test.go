@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // --- MemBroker: routing ------------------------------------------------
@@ -418,6 +420,69 @@ func TestHandleNotification_EmptyPayloadIsLoggedAndSkipped(t *testing.T) {
 // listenLoop makes there, factored out for the same reason handleNotification
 // is — so this one line of "what happens on reconnect success" has a direct
 // unit test independent of the un-testable network code around it.
+
+// --- prepareListenConnConfig (PR #81 round-3 convergence, Backend Finding
+// 1): pool-only URL options must not reach the raw LISTEN connection -------
+//
+// Regression coverage for a real deployment-breaking bug: NewPGBroker's
+// LISTEN connection used to be established via pgx.Connect(ctx, dbURL) — a
+// SECOND, raw parse of dbURL through pgx.ParseConfig, which (unlike
+// pgxpool.ParseConfig) has no notion of pgxpool-only options such as
+// pool_max_conns/pool_min_conns and leaves them sitting in
+// ConnConfig.RuntimeParams. pgx then sends RuntimeParams to Postgres as
+// connection startup parameters, and every real Postgres server rejects an
+// unrecognized one outright — so a DATABASE_URL tuned with a pool size
+// (entirely valid, pgxpool-documented syntax) let the notify POOL connect
+// fine while the LISTEN connection was refused, failing process startup.
+// This is unit-testable without a live DB because pgxpool.ParseConfig is a
+// pure string-parsing operation — no network I/O.
+func TestPrepareListenConnConfig_StripsPoolOnlyURLParams(t *testing.T) {
+	dbURL := "postgres://user:pass@localhost:5432/db?pool_max_conns=5&pool_min_conns=1&sslmode=disable"
+
+	poolCfg, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		t.Fatalf("pgxpool.ParseConfig: %v", err)
+	}
+
+	connConfig := prepareListenConnConfig(poolCfg)
+
+	if _, ok := connConfig.RuntimeParams["pool_max_conns"]; ok {
+		t.Error("connConfig.RuntimeParams carries pool_max_conns — Postgres would reject this as an unrecognized startup parameter")
+	}
+	if _, ok := connConfig.RuntimeParams["pool_min_conns"]; ok {
+		t.Error("connConfig.RuntimeParams carries pool_min_conns — Postgres would reject this as an unrecognized startup parameter")
+	}
+
+	// sslmode is a genuine libpq/wire-protocol-recognized option (not a
+	// pgxpool-only one) — prepareListenConnConfig must not have stripped
+	// it too. pgx parses sslmode into ConnConfig.TLSConfig, not
+	// RuntimeParams, so its absence from RuntimeParams doesn't mean it was
+	// dropped; this just guards against a naive "clear RuntimeParams
+	// entirely" implementation silently discarding real params should this
+	// function's implementation ever change.
+	if connConfig.Host != "localhost" || connConfig.Port != 5432 || connConfig.Database != "db" {
+		t.Errorf("connConfig host/port/database = %s:%d/%s, want localhost:5432/db (real connection fields must survive)", connConfig.Host, connConfig.Port, connConfig.Database)
+	}
+}
+
+// TestPrepareListenConnConfig_MatchesRawParseIsBrokenDemonstratesTheBug
+// proves the bug this fix closes actually exists in the raw parser
+// NewPGBroker used to call directly (pgx.Connect -> pgx.ParseConfig): the
+// SAME dbURL, parsed the OLD way, retains the pool-only params in
+// RuntimeParams. This is the "before" half of the regression; the "after"
+// half is TestPrepareListenConnConfig_StripsPoolOnlyURLParams above.
+func TestPrepareListenConnConfig_MatchesRawParseIsBrokenDemonstratesTheBug(t *testing.T) {
+	dbURL := "postgres://user:pass@localhost:5432/db?pool_max_conns=5&pool_min_conns=1&sslmode=disable"
+
+	rawCfg, err := pgx.ParseConfig(dbURL)
+	if err != nil {
+		t.Fatalf("pgx.ParseConfig: %v", err)
+	}
+
+	if _, ok := rawCfg.RuntimeParams["pool_max_conns"]; !ok {
+		t.Fatal("expected the raw pgx.ParseConfig path to retain pool_max_conns in RuntimeParams (this is the bug being fixed) — if this fails, pgx's behavior changed and this test's premise needs revisiting")
+	}
+}
 
 func TestHandleReconnectSuccess_BroadcastsToAllCurrentSubscribers(t *testing.T) {
 	mem := NewMemBroker()

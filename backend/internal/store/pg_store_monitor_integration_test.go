@@ -143,18 +143,34 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 	// currently true, but the latest STATE-CHANGING action is the 'undo' —
 	// attribution must fall to unattributed, NOT to station1/zoneOne from
 	// the now-superseded 'checkin' row.
+	// A8: checked in, legacy-clear-then-legacy-re-checkin (PR #81 round-3
+	// convergence, Backend Finding 2) — checked in at station1/zoneOne
+	// (writes a 'checkin' action), cleared via a LEGACY path that writes NO
+	// 'undo' row (e.g. attendee PUT, or a raw sync write — simulated here by
+	// a direct UPDATE), then re-checked-in via ANOTHER legacy path that also
+	// writes NO new checkin_actions row, with a FRESH checked_in_at. The
+	// latest STATE-CHANGING action is still the OLD 'checkin' row (unlike
+	// A7, there's no 'undo' to flip latest_state.action away from
+	// 'checkin'), so Finding A2's undo-supersedes guard alone does not catch
+	// this — only the current-period guard (ls.created_at >=
+	// a.checked_in_at) does: A8's one checkin_actions row predates A8's
+	// fresh checked_in_at, so attribution must fall to unattributed rather
+	// than reattributing to station1/zoneOne for a check-in it never
+	// actually observed.
 	attendees := []struct {
-		id        uuid.UUID
-		checkedIn bool
-		deleted   bool
+		id          uuid.UUID
+		checkedIn   bool
+		deleted     bool
+		checkedInAt time.Time
 	}{
-		{uuid.New(), true, false},  // A1
-		{uuid.New(), true, false},  // A2
-		{uuid.New(), true, false},  // A3
-		{uuid.New(), true, false},  // A4
-		{uuid.New(), false, false}, // A5
-		{uuid.New(), true, true},   // A6
-		{uuid.New(), false, false}, // A7 (flipped to checked-in below via a direct UPDATE)
+		{uuid.New(), true, false, now.Add(-1 * time.Minute)}, // A1 (matches its winning, most-recent checkin action below)
+		{uuid.New(), true, false, now.Add(-5 * time.Minute)}, // A2 (matches its single checkin action below)
+		{uuid.New(), true, false, now.Add(-3 * time.Minute)}, // A3 (matches its single checkin action below)
+		{uuid.New(), true, false, now},                       // A4 (irrelevant: latest action is 'undo', join never fires)
+		{uuid.New(), false, false, now},                      // A5 (irrelevant: not checked in)
+		{uuid.New(), true, true, now},                        // A6 (irrelevant: soft-deleted)
+		{uuid.New(), false, false, now},                      // A7 (flipped to checked-in below via a direct UPDATE)
+		{uuid.New(), false, false, now},                      // A8 (flipped to checked-in below via direct UPDATEs)
 	}
 	for i, a := range attendees {
 		var deletedAt *time.Time
@@ -164,12 +180,12 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 		if _, err := pool.Exec(ctx,
 			`INSERT INTO attendees (id, event_id, first_name, last_name, code, checkin_status, checked_in_at, deleted_at, created_at, updated_at)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
-			a.id, eventID, "A", uuid.New().String()[:8], "CODE-"+uuid.New().String()[:8], a.checkedIn, now, deletedAt, now,
+			a.id, eventID, "A", uuid.New().String()[:8], "CODE-"+uuid.New().String()[:8], a.checkedIn, a.checkedInAt, deletedAt, now,
 		); err != nil {
 			t.Fatalf("insert attendee[%d]: %v", i, err)
 		}
 	}
-	a1, a2, a3, a4, a7 := attendees[0].id, attendees[1].id, attendees[2].id, attendees[3].id, attendees[6].id
+	a1, a2, a3, a4, a7, a8 := attendees[0].id, attendees[1].id, attendees[2].id, attendees[3].id, attendees[6].id, attendees[7].id
 
 	insertAction := func(attendeeID uuid.UUID, stationID *uuid.UUID, action string, createdAt time.Time) {
 		t.Helper()
@@ -184,9 +200,10 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 	insertAction(a1, &station1, "checkin", now.Add(-1*time.Minute))  // wins: most recent
 	insertAction(a2, &station2, "checkin", now.Add(-5*time.Minute))
 	insertAction(a3, &stationless, "checkin", now.Add(-3*time.Minute))
-	insertAction(a4, &station1, "undo", now.Add(-2*time.Minute))    // no 'checkin' row for A4 at all
-	insertAction(a7, &station1, "checkin", now.Add(-8*time.Minute)) // superseded by the undo below
-	insertAction(a7, &station1, "undo", now.Add(-6*time.Minute))    // latest state-changing action for A7
+	insertAction(a4, &station1, "undo", now.Add(-2*time.Minute))     // no 'checkin' row for A4 at all
+	insertAction(a7, &station1, "checkin", now.Add(-8*time.Minute))  // superseded by the undo below
+	insertAction(a7, &station1, "undo", now.Add(-6*time.Minute))     // latest state-changing action for A7
+	insertAction(a8, &station1, "checkin", now.Add(-20*time.Minute)) // A8's only action — predates its fresh re-checkin below
 
 	// Legacy re-checkin: flips checkin_status back to true WITHOUT writing a
 	// new checkin_actions row — the scenario Finding A2 targets.
@@ -197,15 +214,36 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 		t.Fatalf("legacy re-checkin UPDATE for A7: %v", err)
 	}
 
+	// A8: legacy clear (checkin_status -> false, checked_in_at -> NULL,
+	// WITHOUT writing an 'undo' row) followed by a legacy re-checkin
+	// (checkin_status -> true with a FRESH checked_in_at, WITHOUT writing a
+	// new 'checkin' row) — the exact scenario Backend Finding 2 targets.
+	// Unlike A7, A8's latest_state.action is STILL 'checkin' (there's no
+	// 'undo' row at all), so only the current-period guard (ls.created_at
+	// >= a.checked_in_at) — not Finding A2's undo-supersedes guard — can
+	// catch this.
+	if _, err := pool.Exec(ctx,
+		`UPDATE attendees SET checkin_status = false, checked_in_at = NULL WHERE id = $1`,
+		a8,
+	); err != nil {
+		t.Fatalf("legacy clear UPDATE for A8: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`UPDATE attendees SET checkin_status = true, checked_in_at = $2 WHERE id = $1`,
+		a8, now,
+	); err != nil {
+		t.Fatalf("legacy re-checkin UPDATE for A8: %v", err)
+	}
+
 	total, checkedIn, zones, unattributed, err := s.GetMonitorOverview(ctx, eventID)
 	if err != nil {
 		t.Fatalf("GetMonitorOverview: %v", err)
 	}
-	if total != 6 {
-		t.Errorf("total = %d, want 6 (excludes the soft-deleted A6)", total)
+	if total != 7 {
+		t.Errorf("total = %d, want 7 (excludes the soft-deleted A6)", total)
 	}
-	if checkedIn != 5 {
-		t.Errorf("checkedIn = %d, want 5 (A1-A4, A7; A5 not checked in, A6 soft-deleted)", checkedIn)
+	if checkedIn != 6 {
+		t.Errorf("checkedIn = %d, want 6 (A1-A4, A7, A8; A5 not checked in, A6 soft-deleted)", checkedIn)
 	}
 
 	if len(zones) != 3 {
@@ -221,8 +259,8 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 	if zones[2].ZoneID != zoneEmpty || zones[2].CheckedIn != 0 {
 		t.Errorf("zones[2] = %+v, want the empty zone with CheckedIn=0 (zero-count zones must still be listed)", zones[2])
 	}
-	if unattributed != 3 {
-		t.Errorf("unattributed = %d, want 3 (A3: station-less action; A4: no 'checkin' action row at all; A7: latest state-changing action is 'undo')", unattributed)
+	if unattributed != 4 {
+		t.Errorf("unattributed = %d, want 4 (A3: station-less action; A4: no 'checkin' action row at all; A7: latest state-changing action is 'undo'; A8: latest 'checkin' action predates its fresh checked_in_at)", unattributed)
 	}
 
 	sum := 0
@@ -244,8 +282,8 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 			t.Errorf("buckets not strictly ascending at index %d: %v then %v", i, buckets[i-1].Minute, b.Minute)
 		}
 	}
-	if bucketTotal != 5 {
-		t.Errorf("sum of bucket counts = %d, want 5 (A1 has 2 'checkin' rows, A2/A3/A7 have 1 each; A4's only action and A7's second action are 'undo', excluded)", bucketTotal)
+	if bucketTotal != 6 {
+		t.Errorf("sum of bucket counts = %d, want 6 (A1 has 2 'checkin' rows, A2/A3/A7/A8 have 1 each; A4's only action and A7's second action are 'undo', excluded)", bucketTotal)
 	}
 
 	// CountRecentCheckins (PR #81 bot-review round, Finding A3) must agree
@@ -271,11 +309,13 @@ func TestGetMonitorOverview_RealPostgres_InvariantHoldsByConstruction(t *testing
 	for _, st := range stations {
 		byID[st.ID] = st
 	}
-	// Station 1 received A1's newer 'checkin', A4's 'undo', and A7's
-	// 'checkin'+'undo' pair — the FILTER must count only the two 'checkin'
-	// rows (A1's and A7's).
-	if got := byID[station1].CheckinCount; got != 2 {
-		t.Errorf("station1.CheckinCount = %d, want 2 (the 'undo' rows must not inflate it)", got)
+	// Station 1 received A1's newer 'checkin', A4's 'undo', A7's
+	// 'checkin'+'undo' pair, and A8's 'checkin' — the FILTER must count only
+	// the three 'checkin' rows (A1's, A7's, A8's); station attribution
+	// (which the monitor overview computes separately) is irrelevant to
+	// this raw per-station action count.
+	if got := byID[station1].CheckinCount; got != 3 {
+		t.Errorf("station1.CheckinCount = %d, want 3 (the 'undo' rows must not inflate it)", got)
 	}
 	// Station 2 received A1's older 'checkin' AND A2's 'checkin'.
 	if got := byID[station2].CheckinCount; got != 2 {

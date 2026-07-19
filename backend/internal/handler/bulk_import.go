@@ -243,6 +243,16 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 		createdCount++
 	}
 
+	// PR #81 round-3 convergence, Backend Finding 3: a bulk import changes
+	// the monitor's `total` exactly like a single CreateAttendee does, but
+	// as ONE request creating N attendees — publish exactly ONCE for the
+	// whole batch (never once per row), and only when at least one row
+	// actually got created (an all-duplicate/all-error batch changed
+	// nothing monitor-visible).
+	if createdCount > 0 {
+		h.publishCheckinEvent(c.Request().Context(), eventID)
+	}
+
 	response := BulkImportResponse{
 		Message:    "Bulk import completed",
 		Created:    createdCount,

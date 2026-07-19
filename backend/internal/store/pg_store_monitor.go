@@ -34,15 +34,36 @@ import (
 //     row (e.g. the legacy PUT /api/attendees/{id}, or a mobile batch
 //     write) is currently checked in but their latest ACTION is the
 //     'undo' — they must fall to unattributed, not be attributed to
-//     station A's zone from the now-superseded 'checkin' row.
+//     station A's zone from the now-superseded 'checkin' row. ca.created_at
+//     is also carried through here (not just action/station_id) to support
+//     part 3's current-period guard below.
 //  3. attributed: one row per CURRENTLY checked-in attendee (checkin_status
 //     = true AND deleted_at IS NULL), LEFT JOINed to latest_state and then
 //     to checkin_stations — but the checkin_stations join only fires when
-//     latest_state.action = 'checkin' (see the join's extra ON-clause
-//     predicate), so an attendee whose latest state-changing action is
-//     'undo' carries zone_id = NULL (unattributed) even though a 'checkin'
-//     row still physically exists in their history. This is the row set
-//     the zones/unattributed halves are BOTH aggregated from.
+//     latest_state.action = 'checkin' AND that action belongs to the
+//     attendee's CURRENT check-in period (ls.created_at >= a.checked_in_at
+//     — PR #81 round-3 convergence, Backend Finding 2), so an attendee
+//     whose latest state-changing action is 'undo' carries zone_id = NULL
+//     (unattributed) even though a 'checkin' row still physically exists in
+//     their history. The current-period guard closes a narrower gap A2
+//     alone doesn't: attendee checked in at station A (writes a 'checkin'
+//     action), cleared via a LEGACY path that writes NO 'undo' row (e.g.
+//     attendee PUT, or a raw sync write), then re-checked-in via a path
+//     that ALSO writes no action row — the latest state-changing action is
+//     still that OLD 'checkin' row, so without the guard it would be
+//     wrongly attributed to station A's zone for a check-in it never
+//     actually observed. It works because CheckInAttendee's guarded UPDATE
+//     (pg_store.go's checkInAttendeeGuardedUpdateSQL) sets checked_in_at =
+//     now() and checkinActionInsertSQL's created_at DEFAULT now() run in
+//     the SAME transaction — Postgres's now() is transaction-stable, so
+//     they're EXACTLY equal for every legitimate station attribution, while
+//     any action predating a legacy re-checkin's fresh checked_in_at falls
+//     outside the >= comparison and is excluded. a.checked_in_at IS NOT
+//     NULL is required defensively too: a checked-in row with a null
+//     checked_in_at (should not happen, but the column has always been
+//     nullable — see migration 000001) reads as unattributed rather than
+//     comparing NULL >= NULL (which SQL never treats as true). This is the
+//     row set the zones/unattributed halves are BOTH aggregated from.
 //  4. The final SELECT/UNION ALL: one row per event_zones row (LEFT JOIN
 //     FROM event_zones so a zone with zero currently-checked-in attendees
 //     still appears with checked_in = 0), UNION ALL with one row for the
@@ -62,7 +83,7 @@ const monitorOverviewSQL = `
 		WHERE event_id = $1 AND deleted_at IS NULL
 	),
 	latest_state AS (
-		SELECT DISTINCT ON (ca.attendee_id) ca.attendee_id, ca.action, ca.station_id
+		SELECT DISTINCT ON (ca.attendee_id) ca.attendee_id, ca.action, ca.station_id, ca.created_at
 		FROM checkin_actions ca
 		WHERE ca.event_id = $1 AND ca.action IN ('checkin', 'undo')
 		ORDER BY ca.attendee_id, ca.created_at DESC, ca.id DESC
@@ -71,7 +92,10 @@ const monitorOverviewSQL = `
 		SELECT a.id AS attendee_id, cs.zone_id AS zone_id
 		FROM attendees a
 		LEFT JOIN latest_state ls ON ls.attendee_id = a.id
-		LEFT JOIN checkin_stations cs ON cs.id = ls.station_id AND ls.action = 'checkin'
+		LEFT JOIN checkin_stations cs ON cs.id = ls.station_id
+			AND ls.action = 'checkin'
+			AND a.checked_in_at IS NOT NULL
+			AND ls.created_at >= a.checked_in_at
 		WHERE a.event_id = $1 AND a.checkin_status = true AND a.deleted_at IS NULL
 	)
 	SELECT 'zone' AS row_kind, ez.id AS zone_id, ez.name, COUNT(attributed.attendee_id) AS count, ez.order_index AS sort_key, NULL::int AS total
@@ -103,9 +127,15 @@ const monitorOverviewSQL = `
 // LATER 'undo' supersedes it (Finding A2) — DISTINCT ON (ca.attendee_id)
 // over ('checkin', 'undo') actions, ORDER BY ca.attendee_id, ca.created_at
 // DESC, ca.id DESC (the same id tie-breaker as GetCheckinActions, PR #77
-// bot-review round Finding E) — joined through checkin_stations.zone_id to
-// event_zones; a checked-in attendee with no 'checkin' action row, whose
-// latest state-changing action is 'undo', a station-less action, or a
+// bot-review round Finding E) — AND only when that action falls within the
+// attendee's CURRENT check-in period, i.e. ca.created_at >=
+// attendees.checked_in_at (PR #81 round-3 convergence, Backend Finding 2:
+// a legacy clear + legacy re-checkin, neither of which writes an action
+// row, must not inherit attribution from a now-stale 'checkin' action that
+// predates the CURRENT check-in) — joined through checkin_stations.zone_id
+// to event_zones; a checked-in attendee with no 'checkin' action row, whose
+// latest state-changing action is 'undo', whose only 'checkin' action
+// predates their current check-in period, a station-less action, or a
 // zone-less station all count into unattributed rather than any zone.
 // Zones are listed in event_zones.order_index order and INCLUDE zero-count
 // zones (LEFT JOIN FROM event_zones, not the other way around, so an empty

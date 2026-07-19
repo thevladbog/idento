@@ -74,6 +74,13 @@ func (h *Handler) CreateAttendee(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create attendee"})
 	}
 
+	// PR #81 round-3 convergence, Backend Finding 3: a new attendee changes
+	// the monitor's `total` even though checkin_status never touches
+	// checked_in — the monitor snapshot must still refetch, or an
+	// in-flight event with no station heartbeat would show a stale total
+	// indefinitely.
+	h.publishCheckinEvent(c.Request().Context(), eventID)
+
 	// Log usage (best-effort, do not fail request)
 	if err := h.Store.LogUsage(c.Request().Context(), &models.UsageLog{
 		TenantID:     tenantID,
@@ -425,6 +432,15 @@ func (h *Handler) DeleteAttendee(c echo.Context) error {
 	if err := h.Store.UpdateAttendee(c.Request().Context(), attendee); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to delete attendee"})
 	}
+
+	// PR #81 round-3 convergence, Backend Finding 3: a deleted attendee
+	// changes the monitor's `total` (and `checked_in` too, if they were
+	// currently checked in) — see CreateAttendee's matching publish for the
+	// same rationale. The panel's "bulk delete" is this SAME single-item
+	// endpoint called once per selected attendee (BulkBar.tsx's sequential
+	// loop, not a dedicated batch endpoint), so this one publish site also
+	// covers that case — one publish per request, N requests for N deletes.
+	h.publishCheckinEvent(c.Request().Context(), attendee.EventID)
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Attendee deleted successfully"})
 }
