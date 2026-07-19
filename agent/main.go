@@ -157,7 +157,16 @@ func loadConfig() (*AgentConfig, error) {
 		// same id from here on, and desktop/panel callers depend on /info
 		// never returning an empty machine_id once ~/.idento/agent_config.json
 		// exists. Mirrors the AuthToken generate-and-persist pattern.
-		config.MachineID = generateUUIDv4()
+		//
+		// generateUUIDv4's error is propagated (not Fatal'd): this path runs
+		// inside HTTP handlers (e.g. /printers, holding configMu) as well as
+		// at startup, and a transient crypto/rand failure must fail one
+		// request/one loadConfig call, not the whole process.
+		id, err := generateUUIDv4()
+		if err != nil {
+			return nil, err
+		}
+		config.MachineID = id
 		if err := saveConfig(&config); err != nil {
 			return nil, err
 		}
@@ -207,15 +216,21 @@ func generateAuthToken() (string, error) {
 
 // generateUUIDv4 avoids a new dependency: 16 crypto/rand bytes with the
 // version/variant bits set per RFC 4122 §4.4.
-func generateUUIDv4() string {
+//
+// Returns an error instead of Fatal-ing on a crypto/rand failure: this is
+// called from loadConfig's MachineID-upgrade branch, which runs inside HTTP
+// handlers (e.g. /printers) while holding configMu — a transient RNG
+// failure there must fail that one request, not os.Exit the whole agent
+// mid-event. Callers on the startup path (main()) remain free to Fatalf on
+// the returned error at their own discretion.
+func generateUUIDv4() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand failing is unrecoverable for identity purposes.
-		log.Fatalf("generate machine id: %v", err)
+		return "", fmt.Errorf("generate machine id: %w", err)
 	}
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
 // infoHandler reports machine identity + agent metadata. No auth (see
@@ -1144,7 +1159,16 @@ func main() {
 	// tokenJustGenerated immediately above.
 	machineIDJustGenerated := authCfg.MachineID == ""
 	if machineIDJustGenerated {
-		authCfg.MachineID = generateUUIDv4()
+		id, err := generateUUIDv4()
+		if err != nil {
+			// Startup path only: unlike loadConfig's HTTP-handler-reachable
+			// upgrade branch, generateUUIDv4 failing here means the agent
+			// can never mint a machine id at all — nothing to serve yet, so
+			// Fatal is the right call (mirrors ensureAuthToken's Fatalf
+			// immediately above).
+			log.Fatalf("Failed to generate machine id: %v", err)
+		}
+		authCfg.MachineID = id
 	}
 	if tokenJustGenerated || machineIDJustGenerated {
 		// A freshly generated token or machine id MUST be persisted: desktop

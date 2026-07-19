@@ -15,7 +15,14 @@ import (
 var uuidV4Re = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 func TestGenerateUUIDv4_Shape(t *testing.T) {
-	a, b := generateUUIDv4(), generateUUIDv4()
+	a, err := generateUUIDv4()
+	if err != nil {
+		t.Fatalf("generateUUIDv4: %v", err)
+	}
+	b, err := generateUUIDv4()
+	if err != nil {
+		t.Fatalf("generateUUIDv4: %v", err)
+	}
 	if !uuidV4Re.MatchString(a) {
 		t.Fatalf("not a v4 uuid: %q", a)
 	}
@@ -23,6 +30,25 @@ func TestGenerateUUIDv4_Shape(t *testing.T) {
 		t.Fatalf("two calls returned the same id: %q", a)
 	}
 }
+
+// No RNG-failure-path test: crypto/rand.Reader is nominally injectable (a
+// public package-level var), but this repo's Go toolchain (go.mod: go
+// 1.25.4, toolchain go1.26.5; confirmed via `go doc crypto/rand.Read`)
+// documents that Read "never returns an error... crashes the program
+// irrecoverably if an error is returned" from the underlying Reader — the
+// default Reader's OS APIs are "documented to never return an error on all
+// but legacy Linux systems". A prototype test that swapped in a
+// failing io.Reader confirmed this empirically: crypto/rand.Read reads the
+// injected error and calls runtime's fatal() on it, which is NOT
+// recoverable via defer/recover and crashes the whole `go test` binary
+// rather than failing one subtest. So the RNG-failure path is not
+// observably testable in-process on this toolchain without an injection
+// seam added purely for the test (which Finding 1 explicitly says not to
+// add). generateUUIDv4()'s error-propagation contract is instead verified
+// at compile time (it returns (string, error); loadConfig's upgrade branch
+// and main()'s startup branch both check the error — see main.go) and
+// exercised on the success path by TestGenerateUUIDv4_Shape and
+// TestLoadConfig_MissingMachineID_GeneratesAndPersists below.
 
 func TestInfoHandler_Shape(t *testing.T) {
 	agentStartTime = time.Now().Add(-90 * time.Second)
