@@ -326,6 +326,15 @@ func TestOpenAPIContract_CreateEquipmentDevice_400(t *testing.T) {
 		{"printer missing agent_name", `{"class":"printer","kind":"system","display_name":"X","config":{}}`, ""},
 		{"com scanner missing port_name", `{"class":"scanner","kind":"com","display_name":"X","config":{}}`, ""},
 		{"wedge scanner missing terminator", `{"class":"scanner","kind":"usb_wedge","display_name":"X","config":{}}`, ""},
+		// Finding 3 (bot review, PR #83): per-kind config decode must
+		// reject cross-kind keys, not just accept-and-store them verbatim
+		// under a shared shape — a usb_wedge config carrying port_name (a
+		// com-only key), a com config carrying terminator (a usb_wedge-only
+		// key), or a system printer carrying ip (a network-only key) must
+		// all 400.
+		{"wedge scanner with com's port_name is rejected", `{"class":"scanner","kind":"usb_wedge","display_name":"X","config":{"terminator":"enter","port_name":"COM3"}}`, ""},
+		{"com scanner with wedge's terminator is rejected", `{"class":"scanner","kind":"com","display_name":"X","config":{"port_name":"COM3","terminator":"enter"}}`, ""},
+		{"system printer with network's ip is rejected", `{"class":"printer","kind":"system","display_name":"X","config":{"agent_name":"A","ip":"192.168.1.1"}}`, ""},
 	}
 
 	for _, tc := range cases {
@@ -615,6 +624,75 @@ func TestOpenAPIContract_PutDefaultEquipmentPrinter_200Clear(t *testing.T) {
 		t.Fatalf("device_id = %v, want null", v)
 	}
 
+	validateResponse(t, http.MethodPut, path, rec)
+}
+
+// TestOpenAPIContract_PutDefaultEquipmentPrinter_MissingFieldIs400 guards
+// Finding 2 (bot review, PR #83): an accidentally-omitted device_id field
+// must never be treated the same as an explicit `{"device_id":null}`
+// clear-request — that would silently wipe the machine's default printer.
+// The store must not even be called.
+func TestOpenAPIContract_PutDefaultEquipmentPrinter_MissingFieldIs400(t *testing.T) {
+	tenantID := uuid.New()
+	machineID := uuid.New()
+
+	h := New(&fakeStore{
+		setDefaultEquipmentPrinter: func(uuid.UUID, uuid.UUID, *uuid.UUID) error {
+			t.Fatalf("SetDefaultEquipmentPrinter store call should not happen when device_id is omitted")
+			return nil
+		},
+	})
+
+	e := echo.New()
+	path := equipmentDefaultPrinterPath(machineID)
+	body := `{}`
+	c, rec := newAuthedContext(e, http.MethodPut, path, body, tenantID.String(), "staff")
+	setEquipmentDefaultPrinterPathParams(c, machineID)
+
+	if err := h.PutDefaultEquipmentPrinter(c); err != nil {
+		t.Fatalf("PutDefaultEquipmentPrinter: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var got map[string]string
+	if err := jsonUnmarshalBody(rec, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["error"] != "device_id is required; send null to clear" {
+		t.Fatalf("error = %q", got["error"])
+	}
+
+	validateResponse(t, http.MethodPut, path, rec)
+}
+
+// TestOpenAPIContract_PutDefaultEquipmentPrinter_MalformedUUIDIs400 guards
+// the other half of Finding 2's decode: a present-but-invalid device_id
+// must 400, not fall through to the store as a zero-value/garbage id.
+func TestOpenAPIContract_PutDefaultEquipmentPrinter_MalformedUUIDIs400(t *testing.T) {
+	tenantID := uuid.New()
+	machineID := uuid.New()
+
+	h := New(&fakeStore{
+		setDefaultEquipmentPrinter: func(uuid.UUID, uuid.UUID, *uuid.UUID) error {
+			t.Fatalf("SetDefaultEquipmentPrinter store call should not happen for a malformed device_id")
+			return nil
+		},
+	})
+
+	e := echo.New()
+	path := equipmentDefaultPrinterPath(machineID)
+	body := `{"device_id":"not-a-uuid"}`
+	c, rec := newAuthedContext(e, http.MethodPut, path, body, tenantID.String(), "staff")
+	setEquipmentDefaultPrinterPathParams(c, machineID)
+
+	if err := h.PutDefaultEquipmentPrinter(c); err != nil {
+		t.Fatalf("PutDefaultEquipmentPrinter: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d, body=%s", rec.Code, rec.Body.String())
+	}
 	validateResponse(t, http.MethodPut, path, rec)
 }
 

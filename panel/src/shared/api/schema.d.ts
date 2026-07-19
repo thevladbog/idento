@@ -1779,7 +1779,7 @@ export interface components {
             agent_version: string;
             seen_device_ids?: string[];
         };
-        /** @description POST /api/equipment/machines/{machine_id}/devices request body (spec §4.1). class/kind pairs: printer→{system,network}, scanner→{usb_wedge,com}; camera is reserved and rejected (400) until the camera cycle ships. config's required keys depend on class/kind and are validated server-side, with unknown keys rejected: printer (either kind) requires non-empty agent_name (dpi optional); kind=network additionally requires non-empty ip and port in [1,65535]; scanner kind=com requires non-empty port_name; scanner kind=usb_wedge requires terminator ∈ {enter,tab,none}. Config is persisted verbatim (the request's raw bytes). make_default is only accepted for class=printer (400 otherwise) and, when true, atomically replaces whatever device currently holds the machine's default printer (transactional clear-then-set — see store.CreateEquipmentDevice; a lost race against a concurrent default-printer write surfaces as 409, not make_default's ordinary 400). test_passed, when true, additionally stamps test_passed_at at create time (equivalent to immediately calling POST /api/equipment/devices/{device_id}/test-passed). */
+        /** @description POST /api/equipment/machines/{machine_id}/devices request body (spec §4.1). class/kind pairs: printer→{system,network}, scanner→{usb_wedge,com}; camera is reserved and rejected (400) until the camera cycle ships. config's allowed/required keys are validated server-side per EXACT class/kind pair, via a distinct decode shape per kind — a key valid for one kind but not another (e.g. a usb_wedge config carrying com's port_name, or a system printer carrying network's ip/port/dpi) is rejected the same way as a genuinely unrecognized key, not silently accepted and stored: printer kind=system allows only non-empty agent_name; kind=network allows non-empty agent_name, non-empty ip, port in [1,65535], and optional dpi; scanner kind=com allows only non-empty port_name; scanner kind=usb_wedge allows only terminator ∈ {enter,tab,none}. Config is persisted verbatim (the request's raw bytes). make_default is only accepted for class=printer (400 otherwise) and, when true, atomically replaces whatever device currently holds the machine's default printer (transactional clear-then-set — see store.CreateEquipmentDevice; a lost race against a concurrent default-printer write surfaces as 409, not make_default's ordinary 400). test_passed, when true, additionally stamps test_passed_at at create time (equivalent to immediately calling POST /api/equipment/devices/{device_id}/test-passed). */
         EquipmentDeviceCreateRequest: {
             /** @enum {string} */
             class: "printer" | "scanner" | "camera";
@@ -1799,7 +1799,7 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description PUT /api/equipment/machines/{machine_id}/default-printer request body, and also its 200 response shape (echoes back what was set). device_id = null clears the machine's default printer with no replacement; a non-null device_id must be an existing class=printer device of THIS machine (404 otherwise — store.ErrDeviceNotFound). */
+        /** @description PUT /api/equipment/machines/{machine_id}/default-printer request body, and also its 200 response shape (echoes back what was set). device_id = null clears the machine's default printer with no replacement; a non-null device_id must be an existing class=printer device of THIS machine (404 otherwise — store.ErrDeviceNotFound). device_id is REQUIRED and must be stated explicitly on every request — omitting the key entirely is rejected (400), precisely so an accidentally-omitted field can never be silently treated the same as an explicit clear request. */
         EquipmentDefaultPrinterRequest: {
             /** Format: uuid */
             device_id: string | null;
@@ -6994,7 +6994,7 @@ export interface operations {
                     "application/json": components["schemas"]["EquipmentDefaultPrinterRequest"];
                 };
             };
-            /** @description machine_id is not a UUID, or the body is malformed. */
+            /** @description machine_id is not a UUID, the body is malformed, device_id is missing entirely (it is required — send null explicitly to clear, so an accidentally-omitted field can never silently clear the default), or device_id is present but not a valid uuid/null. */
             400: {
                 headers: {
                     [name: string]: unknown;

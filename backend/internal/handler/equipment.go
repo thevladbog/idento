@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -123,31 +124,55 @@ var validKindsByClass = map[string]map[string]bool{
 }
 
 // validWedgeTerminators enumerates the only accepted values of
-// scannerConfigShape.Terminator for kind=usb_wedge.
+// wedgeScannerConfigShape.Terminator for kind=usb_wedge.
 var validWedgeTerminators = map[string]bool{
 	"enter": true,
 	"tab":   true,
 	"none":  true,
 }
 
-// printerConfigShape is the strict shape a class=printer device's config
-// must decode into (unknown fields rejected). agent_name is required for
-// both kinds — the stable agent-side device identity link; ip/port are
-// additionally required for kind=network only; dpi is always optional.
-type printerConfigShape struct {
+// networkPrinterConfigShape is the strict shape a class=printer,
+// kind=network device's config must decode into (unknown fields
+// rejected, including scanner-only keys like port_name/terminator and
+// system printer's absence of ip/port). agent_name is the stable
+// agent-side device identity link (required); ip/port are required;
+// dpi is optional.
+//
+// Finding 3 (bot review, PR #83): this used to be one printerConfigShape
+// shared by both printer kinds, so a system printer's config could carry
+// ip/port/dpi and a network printer's could carry nothing meaningful for
+// ip/port validation beyond "if kind==network" — but DisallowUnknownFields
+// only rejects keys the struct doesn't KNOW about, so cross-kind keys
+// (e.g. system printer + ip) decoded silently and got stored verbatim,
+// misleading reconciliation readers. Splitting per kind makes the decode
+// itself the gate: a key not in a kind's shape is now an unknown field.
+type networkPrinterConfigShape struct {
 	AgentName string `json:"agent_name"`
 	IP        string `json:"ip"`
 	Port      int    `json:"port"`
 	DPI       *int   `json:"dpi"`
 }
 
-// scannerConfigShape is the strict shape a class=scanner device's config
-// must decode into (unknown fields rejected). port_name is required for
-// kind=com; terminator is required (one of enter/tab/none) for
-// kind=usb_wedge — the two kinds' fields are mutually exclusive in
-// practice but share one struct, same idiom as printerConfigShape.
-type scannerConfigShape struct {
-	PortName   string `json:"port_name"`
+// systemPrinterConfigShape is the strict shape a class=printer,
+// kind=system device's config must decode into. agent_name only — no
+// ip/port/dpi (those are network-only; see networkPrinterConfigShape's
+// doc for why cross-kind keys must be rejected, not just unused).
+type systemPrinterConfigShape struct {
+	AgentName string `json:"agent_name"`
+}
+
+// comScannerConfigShape is the strict shape a class=scanner, kind=com
+// device's config must decode into. port_name only — no terminator
+// (usb_wedge-only; see networkPrinterConfigShape's doc for the rationale).
+type comScannerConfigShape struct {
+	PortName string `json:"port_name"`
+}
+
+// wedgeScannerConfigShape is the strict shape a class=scanner,
+// kind=usb_wedge device's config must decode into. terminator only — no
+// port_name (com-only; see networkPrinterConfigShape's doc for the
+// rationale).
+type wedgeScannerConfigShape struct {
 	Terminator string `json:"terminator"`
 }
 
@@ -169,45 +194,71 @@ func decodeStrictConfig(raw json.RawMessage, v interface{}) error {
 }
 
 // validateEquipmentDeviceConfig checks a device's raw config against the
-// per-class shape rules for the given (already validated) class/kind
-// pair. Shared by CreateEquipmentDevice (class/kind from the request) and
+// per-class/kind shape rules for the given (already validated) class/kind
+// pair — a distinct decode struct per kind (DisallowUnknownFields), so a
+// cross-kind key (e.g. a usb_wedge config carrying com's port_name) is
+// rejected as an unknown field rather than silently decoding and being
+// stored verbatim (Finding 3, bot review PR #83). Shared by
+// CreateEquipmentDevice (class/kind from the request) and
 // PatchEquipmentDevice (class/kind from the existing, immutable device).
 func validateEquipmentDeviceConfig(class, kind string, raw json.RawMessage) error {
 	switch class {
 	case "printer":
-		var shape printerConfigShape
-		if err := decodeStrictConfig(raw, &shape); err != nil {
-			return err
-		}
-		if strings.TrimSpace(shape.AgentName) == "" {
-			return errors.New("config.agent_name is required")
-		}
-		if kind == "network" {
+		switch kind {
+		case "network":
+			var shape networkPrinterConfigShape
+			if err := decodeStrictConfig(raw, &shape); err != nil {
+				return err
+			}
+			if strings.TrimSpace(shape.AgentName) == "" {
+				return errors.New("config.agent_name is required")
+			}
 			if strings.TrimSpace(shape.IP) == "" {
 				return errors.New("config.ip is required")
 			}
 			if shape.Port < 1 || shape.Port > 65535 {
 				return errors.New("config.port must be between 1 and 65535")
 			}
+			return nil
+		case "system":
+			var shape systemPrinterConfigShape
+			if err := decodeStrictConfig(raw, &shape); err != nil {
+				return err
+			}
+			if strings.TrimSpace(shape.AgentName) == "" {
+				return errors.New("config.agent_name is required")
+			}
+			return nil
+		default:
+			// Unreachable: callers only invoke this once kind is already
+			// known to be valid for class=printer (validKindsByClass).
+			return fmt.Errorf("unknown printer kind %q", kind)
 		}
-		return nil
 	case "scanner":
-		var shape scannerConfigShape
-		if err := decodeStrictConfig(raw, &shape); err != nil {
-			return err
-		}
-		if kind == "com" {
+		switch kind {
+		case "com":
+			var shape comScannerConfigShape
+			if err := decodeStrictConfig(raw, &shape); err != nil {
+				return err
+			}
 			if strings.TrimSpace(shape.PortName) == "" {
 				return errors.New("config.port_name is required")
 			}
 			return nil
+		case "usb_wedge":
+			var shape wedgeScannerConfigShape
+			if err := decodeStrictConfig(raw, &shape); err != nil {
+				return err
+			}
+			if !validWedgeTerminators[shape.Terminator] {
+				return errors.New("config.terminator must be one of enter, tab, none")
+			}
+			return nil
+		default:
+			// Unreachable: callers only invoke this once kind is already
+			// known to be valid for class=scanner (validKindsByClass).
+			return fmt.Errorf("unknown scanner kind %q", kind)
 		}
-		// kind == "usb_wedge" — the only other class/kind pair
-		// validKindsByClass permits for scanner.
-		if !validWedgeTerminators[shape.Terminator] {
-			return errors.New("config.terminator must be one of enter, tab, none")
-		}
-		return nil
 	default:
 		// Unreachable: callers only invoke this once class is already
 		// known to be "printer" or "scanner".
@@ -412,9 +463,60 @@ func (h *Handler) DeleteEquipmentDevice(c echo.Context) error {
 // response shape (it echoes back what was set). DeviceID = nil clears
 // the machine's default printer with no replacement; a non-nil DeviceID
 // must be an existing class=printer device of THIS machine (404
-// otherwise — store.ErrDeviceNotFound).
+// otherwise — store.ErrDeviceNotFound). device_id is a REQUIRED field on
+// the request (not just nullable): an accidentally-omitted field must 400
+// rather than being silently treated as the clear-request — see
+// decodeEquipmentDefaultPrinterDeviceID, which is what actually enforces
+// this (a plain *uuid.UUID bound via c.Bind cannot tell "key absent" apart
+// from "key present with value null").
 type EquipmentDefaultPrinterRequest struct {
 	DeviceID *uuid.UUID `json:"device_id"`
+}
+
+// equipmentDefaultPrinterWire is the on-the-wire decode shape for PUT
+// .../default-printer. DeviceID as json.RawMessage (instead of
+// *uuid.UUID) is what makes field PRESENCE observable: json.Unmarshal
+// leaves a *uuid.UUID field nil both when the key is absent and when it is
+// present with value null, which is exactly the bug (Finding 2, bot
+// review PR #83) — an accidentally-omitted device_id must 400, not
+// silently clear the machine's default printer the same way an explicit
+// {"device_id":null} does.
+type equipmentDefaultPrinterWire struct {
+	DeviceID json.RawMessage `json:"device_id"`
+}
+
+// decodeEquipmentDefaultPrinterDeviceID decodes a PUT .../default-printer
+// body (DisallowUnknownFields, same idiom as decodeStrictConfig) into the
+// *uuid.UUID SetDefaultEquipmentPrinter expects, requiring the caller to
+// state its intent explicitly:
+//   - device_id absent from the body -> error (the field is required,
+//     precisely to prevent an accidentally-omitted field from silently
+//     clearing the default)
+//   - device_id: null -> (nil, nil): clear the default
+//   - device_id: "<uuid>" -> (&id, nil): set the default
+//   - anything else (malformed JSON, wrong type, invalid uuid) -> error
+func decodeEquipmentDefaultPrinterDeviceID(body io.Reader) (*uuid.UUID, error) {
+	var wire equipmentDefaultPrinterWire
+	dec := json.NewDecoder(body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&wire); err != nil {
+		return nil, errors.New("invalid request body")
+	}
+	if wire.DeviceID == nil {
+		return nil, errors.New("device_id is required; send null to clear")
+	}
+	if string(wire.DeviceID) == "null" {
+		return nil, nil
+	}
+	var idStr string
+	if err := json.Unmarshal(wire.DeviceID, &idStr); err != nil {
+		return nil, errors.New("device_id must be a uuid string or null")
+	}
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		return nil, errors.New("device_id must be a valid uuid")
+	}
+	return &id, nil
 }
 
 // PutDefaultEquipmentPrinter repoints (or clears) the machine's default
@@ -429,19 +531,19 @@ func (h *Handler) PutDefaultEquipmentPrinter(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	var req EquipmentDefaultPrinterRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+	deviceID, err := decodeEquipmentDefaultPrinterDeviceID(c.Request().Body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
-	if err := h.Store.SetDefaultEquipmentPrinter(c.Request().Context(), tenantID, machineID, req.DeviceID); err != nil {
+	if err := h.Store.SetDefaultEquipmentPrinter(c.Request().Context(), tenantID, machineID, deviceID); err != nil {
 		if errors.Is(err, store.ErrDeviceNotFound) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Device not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to set default printer"})
 	}
 
-	return c.JSON(http.StatusOK, EquipmentDefaultPrinterRequest{DeviceID: req.DeviceID})
+	return c.JSON(http.StatusOK, EquipmentDefaultPrinterRequest{DeviceID: deviceID})
 }
 
 // MarkEquipmentDeviceTestPassed stamps test_passed_at = now() on a
