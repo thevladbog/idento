@@ -265,6 +265,32 @@ describe("ScannerWizard", () => {
       await user.type(screen.getByLabelText("Device name"), "Desk scanner");
       expect(screen.getByRole("button", { name: "Save scanner" })).not.toBeDisabled();
     });
+
+    // Task 9 review round 2, Important: with the fields now editable while
+    // listening (Important-1's restructure), a fast typist bursting 3+
+    // chars at wedge speed into the Device name input used to fabricate a
+    // detection ("Scan received" + a later test_passed:true with zero
+    // physical scan). Keydowns targeted at editable elements must never
+    // feed detection.
+    it("a wedge-speed burst typed into the Device name input never fabricates a detection; a following scan with non-editable focus still detects fresh", async () => {
+      renderWizard();
+
+      const nameInput = screen.getByLabelText("Device name");
+      for (const char of "Honeywell") fireEvent.keyDown(nameInput, { key: char });
+      fireEvent.keyDown(nameInput, { key: "Enter" });
+      // Let the 300ms silence path expire too (real timers, one-off wait)
+      // -- neither finalization route may produce a detection.
+      await new Promise((resolve) => setTimeout(resolve, 350));
+
+      expect(screen.queryByTestId("scanner-wizard-detection")).not.toBeInTheDocument();
+      expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+
+      // The accumulator is clean: a legitimate scan with non-editable
+      // focus detects exactly its own code.
+      typeWedgeBurst("TEST-4471");
+      fireEvent.keyDown(window, { key: "Enter" });
+      expect(await screen.findByText("Scan received — TEST-4471")).toBeInTheDocument();
+    });
   });
 
   describe("COM path", () => {
@@ -444,6 +470,35 @@ describe("ScannerWizard", () => {
       // to read the result -- Close is the only way out.
       expect(screen.queryByRole("button", { name: "Save scanner" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    });
+
+    // Task 9 review round 2, Important -- the editable-target guard applies
+    // in retest mode too: a wedge-speed burst landing in ANY editable
+    // element (retest's own dialog has no fields, so a body-level input
+    // stands in for e.g. another surface's stray focus) must never
+    // fabricate the detection that auto-fires markTestPassed.
+    it("retest mode applies the same editable-target guard -- a wedge-speed burst into an editable element never fires markTestPassed", async () => {
+      const stray = document.createElement("input");
+      document.body.appendChild(stray);
+      try {
+        renderWizard({ retest: retestDevice({ id: "dev-scanner-1" }) });
+
+        for (const char of "TEST-4471") fireEvent.keyDown(stray, { key: char });
+        fireEvent.keyDown(stray, { key: "Enter" });
+        await new Promise((resolve) => setTimeout(resolve, 350));
+
+        expect(screen.queryByTestId("scanner-wizard-detection")).not.toBeInTheDocument();
+        expect(testPassedCalls).toEqual([]);
+
+        // A genuine scan with non-editable focus still detects and fires
+        // the test-passed stamp.
+        typeWedgeBurst("REAL-0001");
+        fireEvent.keyDown(window, { key: "Enter" });
+        await screen.findByText("Scan received — REAL-0001");
+        await waitFor(() => expect(testPassedCalls).toEqual(["dev-scanner-1"]));
+      } finally {
+        document.body.removeChild(stray);
+      }
     });
 
     // Review fix round CRITICAL, retest half: retest is the worst case for

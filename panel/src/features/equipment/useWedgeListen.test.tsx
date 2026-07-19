@@ -115,4 +115,65 @@ describe("useWedgeListen", () => {
 
     expect(result.current.detection?.code).toBe("ABC4471");
   });
+
+  // Task 9 review round 2, Important: the wizard's always-editable fields
+  // (round-1's Important-1 restructure) coexist with this window-level
+  // listener, so a fast typist bursting 3+ chars at wedge speed INTO the
+  // Device name input used to fabricate a detection. Keydowns whose target
+  // is an editable element must be ignored for detection purposes AND
+  // clear the accumulator (no mixed bursts).
+  it("never detects from a wedge-speed burst targeted at an editable element, and such a keydown clears any accumulated burst", () => {
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    try {
+      const { result } = renderHook(() => useWedgeListen(true));
+
+      // A full wedge-speed burst typed INTO the input -- Enter suffix AND
+      // the 300ms silence path both stay silent.
+      act(() => {
+        for (const char of "TEST-4471") {
+          fireEvent.keyDown(input, { key: char });
+          vi.advanceTimersByTime(5);
+        }
+        fireEvent.keyDown(input, { key: "Enter" });
+        vi.advanceTimersByTime(300);
+      });
+      expect(result.current.detection).toBeNull();
+
+      // A partial window-level burst interrupted by an input-targeted
+      // keydown is discarded outright -- the accumulator is clean, so a
+      // later legitimate scan detects exactly its own code, never a mix.
+      act(() => {
+        typeBurst("AB", 5);
+        fireEvent.keyDown(input, { key: "C" });
+        vi.advanceTimersByTime(5);
+        typeBurst("XYZ-1", 5);
+        fireEvent.keyDown(window, { key: "Enter" });
+      });
+      expect(result.current.detection?.code).toBe("XYZ-1");
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it("still detects a burst targeted at a non-editable element (e.g. a focused button)", () => {
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    try {
+      const { result } = renderHook(() => useWedgeListen(true));
+
+      act(() => {
+        for (const char of "BTN-7771") {
+          fireEvent.keyDown(button, { key: char });
+          vi.advanceTimersByTime(5);
+        }
+        fireEvent.keyDown(button, { key: "Enter" });
+      });
+
+      expect(result.current.detection?.code).toBe("BTN-7771");
+      expect(result.current.detection?.terminator).toBe("enter");
+    } finally {
+      document.body.removeChild(button);
+    }
+  });
 });

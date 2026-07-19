@@ -62,6 +62,31 @@ interface Burst {
   timestamps: number[];
 }
 
+// Task 9 review round 2, Important: once the wizard's Device-name/Terminator
+// fields became editable WHILE listening (the round-1 Important-1
+// restructure), a fast human typist bursting 3+ chars at wedge speed into
+// the name input could fabricate a detection off this window-level
+// listener. Keydowns targeted at an editable element are therefore ignored
+// for detection purposes (and clear the accumulator -- see the guard in
+// handleKeyDown). Same editable-element classification as
+// checkin/useScanInput.ts's isDeliberateFocusTarget, minus its
+// dialog/menu containers (a keydown inside THIS dialog is exactly what we
+// listen for; only text-entry surfaces are excluded).
+//
+// ACCEPTED LIMITATION (controller decision): a physical scan fired while a
+// text field is focused will NOT detect -- a wedge scanner "types" into
+// whatever has focus, so its characters land in the focused field natively
+// (that is wedge-hardware physics any application has, not something this
+// guard introduces), and the operator sees the garbage land in the field.
+// The flow re-arms itself: clearing the field / clicking "Scan again"
+// moves focus to a non-editable element (a button), where detection works.
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return (target as HTMLElement).isContentEditable;
+}
+
 /**
  * Window-scoped keystroke capture for detecting a keyboard-wedge scan while
  * `active`. Once a detection lands it is STICKY -- further keydowns are
@@ -112,6 +137,16 @@ export function useWedgeListen(active: boolean): UseWedgeListenResult {
     function handleKeyDown(event: KeyboardEvent) {
       // Frozen until reset() -- see this hook's own doc comment.
       if (detectionRef.current) return;
+      // Round-2 Important guard (see isEditableTarget's comment): typing
+      // into an input/textarea/select/contenteditable never feeds
+      // detection, AND abandons any burst in progress -- a detection must
+      // never be assembled from a mix of field-typing and stray
+      // keystrokes.
+      if (isEditableTarget(event.target)) {
+        burstRef.current = null;
+        clearSilenceTimer();
+        return;
+      }
       // A real wedge scan never involves a modifier combo; a human
       // shortcut (Cmd+R, Ctrl+Tab, …) must never feed the buffer.
       if (event.ctrlKey || event.altKey || event.metaKey) return;

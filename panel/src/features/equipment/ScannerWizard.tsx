@@ -123,6 +123,10 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
   //    the operator cancels/closes could still eat a real scan the
   //    check-in station's own poll needed. The cleanup below aborts the
   //    in-flight fetch via AbortController, not just the future ticks.
+  //    Honest scope (review round 2, Minor): the abort stops the CLIENT's
+  //    wait and all further polls -- it cannot un-consume a request the
+  //    agent already processed at abort time (inherent to HTTP; that one
+  //    residual request is the same exposure any in-flight poll has).
   const comListening = open && effectiveKind === "com" && comCode === null && (isRetest || comPhase === "listening");
   React.useEffect(() => {
     if (!comListening) return;
