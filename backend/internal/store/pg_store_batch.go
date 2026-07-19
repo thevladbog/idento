@@ -2,12 +2,15 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"idento/backend/internal/models"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 // BatchCheckinOutcome distinguishes the possible results of applying one
@@ -41,11 +44,14 @@ const (
 // BatchCheckinCreated for a genuine first-time write or
 // BatchCheckinAlreadyCheckedIn if a kind=checkin item's attendee was already
 // checked in (by this or another client_uuid/device).
-// This is intentionally NOT wrapped in one cross-call transaction — each
-// underlying write already has its own uniqueness guarantee: the kind=checkin
-// write is a single `UPDATE ... WHERE checkin_status = false` guarded update
-// (see below — this is what makes the read-then-write for that path atomic,
-// rather than a Go-level check-then-act race), zone_checkins has a UNIQUE
+// The batch_checkin_log insert is intentionally NOT in any shared
+// transaction — each underlying write already has its own uniqueness
+// guarantee: the kind=checkin write is a single `UPDATE ... WHERE
+// checkin_status = false` guarded update (see below — this is what makes
+// the read-then-write for that path atomic, rather than a Go-level
+// check-then-act race) run in one short tx together with its event-wide
+// actions-feed row (2026-07-19 design — the tx makes the feed row atomic
+// with the state change, NOT the dedup), zone_checkins has a UNIQUE
 // (attendee_id, zone_id, event_day) constraint, and batch_checkin_log's
 // PRIMARY KEY on client_uuid means even a true concurrent-retry race can
 // only produce one log row, which is what the mobile client's dedup
@@ -89,8 +95,23 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 		// affects zero rows — it never overwrites the row that already won,
 		// and is reported as BatchCheckinAlreadyCheckedIn rather than
 		// (incorrectly) BatchCheckinCreated.
+		//
+		// The UPDATE and — when it wins — the event-wide actions-feed row
+		// (2026-07-19 design) run in ONE short transaction, mirroring
+		// CheckInAttendee: the feed row commits atomically with the state
+		// change, and a failure rolls BOTH back so a client retry (whose
+		// client_uuid was never logged) re-applies cleanly.
 		deviceNumber := item.DeviceNumber
-		tag, err := s.db.Exec(ctx,
+		tx, err := s.db.Begin(ctx)
+		if err != nil {
+			return BatchCheckinCreated, err
+		}
+		defer func() {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+				log.Printf("rollback batch check-in: %v", rbErr)
+			}
+		}()
+		tag, err := tx.Exec(ctx,
 			`UPDATE attendees
 			 SET checkin_status = true, checked_in_at = $1, checked_in_by = $2,
 			     checked_in_device_number = $3, checked_in_point_name = $4, updated_at = NOW()
@@ -102,12 +123,29 @@ func (s *PGStore) ApplyBatchCheckin(ctx context.Context, eventID, staffUserID uu
 		}
 		if tag.RowsAffected() == 1 {
 			outcome = BatchCheckinCreated
+			// Event-wide actions feed (2026-07-19 design): a station-less
+			// 'checkin' row stamped with created_at = item.At — the exact
+			// value the UPDATE above wrote into checked_in_at, so the
+			// monitor's current-period predicate (ca.created_at >=
+			// a.checked_in_at) holds by equality with zero clock
+			// dependence (the offline device's clock skew is a
+			// pre-existing trust: checked_in_at already carries it).
+			// NULL station_id lands the attendee in the monitor's
+			// unattributed bucket via the existing join, preserving
+			// sum(zones)+unattributed == checked_in by construction.
+			if err := insertCheckinActionAt(ctx, tx, eventID, item.AttendeeID, "checkin", nil, &staffUserID, &item.At); err != nil {
+				return BatchCheckinCreated, err
+			}
 		} else {
 			// Someone else's check-in already landed for this attendee (or the
 			// row was concurrently soft-deleted after the existence check
 			// above) — no write was made here, and this request's data must
-			// not silently overwrite whatever check-in already exists.
+			// not silently overwrite whatever check-in already exists. No
+			// feed row either: nothing changed.
 			outcome = BatchCheckinAlreadyCheckedIn
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return BatchCheckinCreated, err
 		}
 	case "zone_entry":
 		if item.ZoneID == nil {

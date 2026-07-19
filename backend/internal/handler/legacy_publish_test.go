@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"idento/backend/internal/broker"
 	"idento/backend/internal/models"
@@ -42,6 +43,12 @@ func TestUpdateAttendeeHandler_PublishesWhenCheckinStatusChanges(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The flip is DB-arbitered (PR #82 bot round) and also writes an
+		// event-wide actions-feed row (2026-07-19 design) — realistic
+		// claim verdict + a no-op feed hook here; the feed behavior
+		// itself is pinned by checkin_actions_feed_test.go.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
+		insertCheckinActionAt:     func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	mem := broker.NewMemBroker()
 	h.Broker = mem
@@ -84,6 +91,10 @@ func TestUpdateAttendeeHandler_DoesNotPublishWhenCheckinStatusUnchanged(t *testi
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// Already checked in + target true: the guarded claim (PR #82 bot
+		// round) affects 0 rows — the DB verdict, not a Go compare, is
+		// what keeps the no-op PUT silent.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return false, nil },
 	})
 	mem := broker.NewMemBroker()
 	h.Broker = mem
@@ -122,6 +133,11 @@ func TestUpdateAttendeeHandler_DoesNotPublishOnStoreFailure(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return errors.New("boom") },
+		// The claim succeeds (the transition itself persisted) and its
+		// feed row is written; the publish is what must stay suppressed
+		// when the follow-up full-row write fails.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
+		insertCheckinActionAt:     func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	mem := broker.NewMemBroker()
 	h.Broker = mem
@@ -160,6 +176,12 @@ func TestUpdateAttendeeHandler_NilBrokerDoesNotPanic(t *testing.T) {
 		getAttendeeByID: func(uuid.UUID) (*models.Attendee, error) { return attendee, nil },
 		getUserByID:     func(uuid.UUID) (*models.User, error) { return staffUser, nil },
 		updateAttendee:  func(*models.Attendee) error { return nil },
+		// The flip is DB-arbitered (PR #82 bot round) and also writes an
+		// event-wide actions-feed row (2026-07-19 design) — no-op hooks;
+		// the feed behavior itself is pinned by
+		// checkin_actions_feed_test.go.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
+		insertCheckinActionAt:     func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	})
 	// h.Broker intentionally left nil.
 
@@ -443,6 +465,12 @@ func TestSyncPush_PublishesOncePerAffectedEvent(t *testing.T) {
 			return &models.Event{ID: id, TenantID: tenant}, nil
 		},
 		updateAttendee: func(*models.Attendee) error { return nil },
+		// The flips are DB-arbitered (PR #82 bot round) and also write
+		// event-wide actions-feed rows (2026-07-19 design) — no-op hooks;
+		// the feed behavior itself is pinned by
+		// checkin_actions_feed_test.go.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
+		insertCheckinActionAt:     func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	}
 	h := &Handler{Store: fs}
 	mem := broker.NewMemBroker()
@@ -567,6 +595,9 @@ func TestSyncPush_NilBrokerDoesNotPanic(t *testing.T) {
 			return &models.Event{ID: id, TenantID: tenant}, nil
 		},
 		updateAttendee: func(*models.Attendee) error { return nil },
+		// See TestSyncPush_PublishesOncePerAffectedEvent's hook comment.
+		transitionAttendeeCheckin: func(uuid.UUID, bool, *time.Time, *uuid.UUID) (bool, error) { return true, nil },
+		insertCheckinActionAt:     func(uuid.UUID, uuid.UUID, string, *uuid.UUID, *uuid.UUID, *time.Time) error { return nil },
 	}
 	h := &Handler{Store: fs}
 	// h.Broker intentionally left nil.

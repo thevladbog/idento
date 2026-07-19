@@ -288,16 +288,6 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	// Captured BEFORE any field is mutated below (Finding B3, PR #81
-	// bot-review round): this legacy check-in-status write path never
-	// published to the monitor broker before — a mobile-kiosk-only event
-	// (zero panel check-in stations, so zero heartbeats either) would leave
-	// attached monitors stale indefinitely. existingAttendee is already
-	// loaded here, so an exact before/after compare on CheckinStatus is
-	// cheap and avoids a noisy publish on a no-op PUT (e.g. a client
-	// re-sending the same status).
-	beforeCheckinStatus := existingAttendee.CheckinStatus
-
 	// Bind update request
 	var req struct {
 		CheckinStatus bool       `json:"checkin_status"`
@@ -348,13 +338,56 @@ func (h *Handler) UpdateAttendeeHandler(c echo.Context) error {
 
 	existingAttendee.UpdatedAt = time.Now()
 
+	// Atomic transition claim (PR #82 bot round, superseding the original
+	// Go-level before/after compare): a guarded UPDATE on exactly the
+	// check-in columns is the sole arbiter of whether THIS request flipped
+	// checkin_status. Two concurrent PUTs can both observe the old status
+	// in the pre-loaded existingAttendee — a Go compare would let both
+	// insert a duplicate feed row; the database's affected-row count can't
+	// be fooled. This also gates the Finding-B3 publish (PR #81): a no-op
+	// PUT (client re-sending the same status) claims 0 rows and stays
+	// silent. UpdateAttendee still runs afterwards, unchanged, for the
+	// remaining columns and the legacy path's established overwrite
+	// semantics (e.g. an explicit checked_in_at edit on an
+	// already-checked-in attendee).
+	flipped, err := h.Store.TransitionAttendeeCheckinStatus(c.Request().Context(), existingAttendee.ID, req.CheckinStatus, existingAttendee.CheckedInAt, existingAttendee.CheckedInBy)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
+	}
+	if flipped {
+		// The event-wide actions-feed row (2026-07-19 design) is written
+		// immediately after the claim that performed the transition, so
+		// feed and state stay consistent even if the follow-up
+		// UpdateAttendee fails. Log-don't-fail: the transition above
+		// already committed, so failing the request here would report a
+		// write that DID happen as failed.
+		if req.CheckinStatus {
+			// false -> true: station-less 'checkin' row stamped with the
+			// EXACT CheckedInAt the claim persisted, so the monitor's
+			// current-period predicate (ca.created_at >= a.checked_in_at)
+			// holds by equality regardless of app/db clock skew.
+			if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "checkin", nil, &userID, existingAttendee.CheckedInAt); err != nil {
+				c.Logger().Errorf("attendee PUT: checkin feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+			}
+		} else {
+			// true -> false: symmetric 'undo' row (nil at -> now()); makes
+			// legacy clears visible to the feed and to the monitor's
+			// latest-state attribution directly.
+			if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "undo", nil, &userID, nil); err != nil {
+				c.Logger().Errorf("attendee PUT: undo feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+			}
+		}
+	}
+
 	if err := h.Store.UpdateAttendee(c.Request().Context(), existingAttendee); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update attendee"})
 	}
 
-	// Finding B3: publish only when checkin_status actually flipped — see
-	// beforeCheckinStatus's doc comment above.
-	if existingAttendee.CheckinStatus != beforeCheckinStatus {
+	// Finding B3 (PR #81): publish only when checkin_status actually
+	// flipped — gated on the claim's verdict, after the full row write
+	// lands, and always AFTER the feed insert above so a publish-triggered
+	// snapshot refetch already sees the new row.
+	if flipped {
 		h.publishCheckinEvent(c.Request().Context(), existingAttendee.EventID)
 	}
 

@@ -129,6 +129,18 @@ func (h *Handler) SyncPush(c echo.Context) error {
 	// attached monitors stale indefinitely.
 	affectedEvents := make(map[uuid.UUID]struct{})
 
+	// staffUserID attributes this push's event-wide actions-feed rows
+	// (2026-07-19 design) to the syncing user. The route sits behind the
+	// JWT middleware so claims are normally present; if the token's user
+	// id is unparseable the rows carry NULL staff_user_id (the column is
+	// nullable) rather than a fabricated id.
+	var staffUserID *uuid.UUID
+	if claims, err := claimsFromContext(c); err == nil {
+		if uid, err := uuid.Parse(claims.UserID); err == nil {
+			staffUserID = &uid
+		}
+	}
+
 	// Process attendee updates (most common use case: checking in)
 	for _, attendee := range req.Changes.Attendees.Updated {
 		// Verify attendee belongs to tenant's events
@@ -141,6 +153,48 @@ func (h *Handler) SyncPush(c echo.Context) error {
 		event, err := h.Store.GetEventByIDForTenant(c.Request().Context(), existingAttendee.EventID, tenantID)
 		if err != nil || event == nil {
 			continue // Skip if event doesn't belong to tenant
+		}
+
+		// Atomic transition claim (PR #82 bot round, superseding the
+		// original Go-level before/after compare): the guarded UPDATE is
+		// the sole arbiter of whether THIS push flipped checkin_status —
+		// two concurrent pushes (or a push racing a station scan) could
+		// both pass a Go compare against the pre-loaded row and both
+		// insert a duplicate feed row. A push that doesn't change the
+		// status claims 0 rows and writes nothing. UpdateAttendee still
+		// runs afterwards for the full-row Last-Write-Wins overwrite this
+		// MVP path has always performed.
+		flipped, err := h.Store.TransitionAttendeeCheckinStatus(c.Request().Context(), existingAttendee.ID, attendee.CheckinStatus, attendee.CheckedInAt, attendee.CheckedInBy)
+		if err != nil {
+			c.Logger().Errorf("sync: checkin transition failed (event %s, attendee %s): %v — skipping", existingAttendee.EventID, existingAttendee.ID, err)
+			continue
+		}
+
+		// Event-wide actions feed (2026-07-19 design): this raw sync write
+		// is a legacy check-in path — without a feed row its check-ins are
+		// invisible to the monitor's rate/peak/recent. Written immediately
+		// after the claim that performed the transition (feed and state
+		// stay consistent even if the follow-up UpdateAttendee fails),
+		// station-less, and log-don't-fail: sync deliberately never fails
+		// the whole push for one attendee. The flip also marks the event
+		// affected HERE — the transition is already committed monitor-
+		// visible state even if the full-row write below fails.
+		if flipped {
+			if attendee.CheckinStatus {
+				// created_at = the CLIENT-supplied CheckedInAt exactly as
+				// the claim persisted it into checked_in_at (nil → now();
+				// a nil checked_in_at with status=true already reads as
+				// unattributed via the overview's defensive
+				// checked_in_at IS NOT NULL guard).
+				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "checkin", nil, staffUserID, attendee.CheckedInAt); err != nil {
+					c.Logger().Errorf("sync: checkin feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+				}
+			} else {
+				if err := h.Store.InsertCheckinActionAt(c.Request().Context(), existingAttendee.EventID, existingAttendee.ID, "undo", nil, staffUserID, nil); err != nil {
+					c.Logger().Errorf("sync: undo feed row insert failed (event %s, attendee %s): %v", existingAttendee.EventID, existingAttendee.ID, err)
+				}
+			}
+			affectedEvents[existingAttendee.EventID] = struct{}{}
 		}
 
 		// Conflict resolution: Last Write Wins
