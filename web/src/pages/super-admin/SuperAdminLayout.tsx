@@ -16,12 +16,16 @@ export default function SuperAdminLayout() {
   const searchRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState('');
 
+  // Paths are relative to the app's basename ("/super-admin", set on
+  // BrowserRouter in App.tsx) — react-router strips the basename before
+  // matching/reading location, and prepends it back for Link/navigate, so
+  // these must NOT include the "/super-admin" prefix themselves.
   const menuItems = [
-    { icon: BarChart3, label: t('dashboard'), path: '/super-admin' },
-    { icon: Building2, label: t('organizations'), path: '/super-admin/organizations' },
-    { icon: FileText, label: t('subscriptionPlans'), path: '/super-admin/plans' },
-    { icon: Users, label: t('allUsers'), path: '/super-admin/users' },
-    { icon: ClipboardList, label: t('auditLog'), path: '/super-admin/audit' },
+    { icon: BarChart3, label: t('dashboard'), path: '/' },
+    { icon: Building2, label: t('organizations'), path: '/organizations' },
+    { icon: FileText, label: t('subscriptionPlans'), path: '/plans' },
+    { icon: Users, label: t('allUsers'), path: '/users' },
+    { icon: ClipboardList, label: t('auditLog'), path: '/audit' },
   ];
 
   useEffect(() => {
@@ -38,7 +42,7 @@ export default function SuperAdminLayout() {
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
     const q = search.trim();
-    navigate(q ? `/super-admin/organizations?q=${encodeURIComponent(q)}` : '/super-admin/organizations');
+    navigate(q ? `/organizations?q=${encodeURIComponent(q)}` : '/organizations');
   }
 
   function handleLogout() {

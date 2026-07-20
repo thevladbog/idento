@@ -3,10 +3,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useTranslation } from "react-i18next";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { clearImpersonationArtifacts } from "@/lib/impersonation";
-import { useInstanceMode } from "@/hooks/useInstanceMode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +13,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -24,13 +22,12 @@ import { LanguageToggle } from "@/components/language-toggle";
 /**
  * Renders the login page and handles user authentication flow.
  *
- * On successful submission stores `token` and `user` in localStorage, and also stores `tenants` and `current_tenant` when provided, then navigates to `/dashboard`. On failure sets a local error message that is displayed on the form.
+ * On successful submission stores `token` and `user` in localStorage, and also stores `tenants` and `current_tenant` when provided, then navigates to `/` (the console dashboard). On failure sets a local error message that is displayed on the form.
  *
  * @returns The JSX element for the login page.
  */
 export default function LoginPage() {
   const { t, i18n } = useTranslation();
-  const { mode } = useInstanceMode();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +68,7 @@ export default function LoginPage() {
         );
       }
 
-      navigate("/dashboard");
+      navigate("/");
     } catch (err: unknown) {
       const msg =
         err && typeof err === "object" && "response" in err
@@ -152,22 +149,6 @@ export default function LoginPage() {
                 </Button>
               </form>
             </CardContent>
-            <CardFooter className="flex flex-col gap-2 items-center">
-              {mode === "saas" && (
-                <p className="text-sm text-muted-foreground">
-                  {t("dontHaveAccount")}{" "}
-                  <Link to="/register" className="underline hover:text-primary">
-                    {t("register")}
-                  </Link>
-                </p>
-              )}
-              <p className="text-sm text-muted-foreground">
-                {t("staffLogin")}?{" "}
-                <Link to="/qr-login" className="underline hover:text-primary">
-                  {t("qrLogin")}
-                </Link>
-              </p>
-            </CardFooter>
           </Card>
         </div>
       </div>

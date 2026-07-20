@@ -264,7 +264,7 @@ export default function OrganizationDetail() {
 
       <div className="min-w-0 flex-1">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/super-admin/organizations')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate('/organizations')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <Button variant="outline" onClick={() => setImpersonateOpen(true)}>
