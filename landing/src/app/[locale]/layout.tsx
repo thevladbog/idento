@@ -93,7 +93,6 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <head></head>
       <body className="min-h-screen bg-background font-sans antialiased overflow-x-hidden">
         <NextIntlClientProvider messages={messages}>
           <ThemeProvider

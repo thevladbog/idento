@@ -155,7 +155,8 @@ export default function LoginPage() {
         <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-12 lg:py-24 text-center text-white">
           <img
             src="/logo-mark-white.svg"
-            alt={t("appName")}
+            alt=""
+            aria-hidden
             className="h-14 w-auto lg:h-20"
           />
           <p className="mt-5 text-xl font-semibold lg:text-2xl">
