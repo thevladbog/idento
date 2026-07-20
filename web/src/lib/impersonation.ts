@@ -20,7 +20,9 @@ export function startImpersonation(token: string, session: Omit<ImpersonationSes
   }
   localStorage.setItem('token', token);
   localStorage.setItem(SESSION_KEY, JSON.stringify({ ...session, mintedAt: new Date().toISOString() }));
-  window.location.href = '/dashboard';
+  // Post-cutover the tenant workspace is the panel SPA at '/' (same origin);
+  // it reads the shared token and renders its own impersonation banner (P0.2).
+  window.location.href = '/';
 }
 
 /** The operator's own token, parked while an impersonation token is active — used to make authenticated requests as the operator without ending the session (e.g. the exit-summary fetch). */

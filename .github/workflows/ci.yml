@@ -28,6 +28,7 @@ jobs:
       desktop: ${{ steps.filter.outputs.desktop }}
       shared-ui: ${{ steps.filter.outputs.shared-ui }}
       panel: ${{ steps.filter.outputs.panel }}
+      deploy: ${{ steps.filter.outputs.deploy }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -57,6 +58,8 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.npmrc'
+            deploy:
+              - 'deploy/**'
 
   # Backend + web validation (lint, security scan, test, build)
   validate:
@@ -178,12 +181,12 @@ jobs:
           echo "## Desktop Build Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ Tauri desktop built successfully" >> $GITHUB_STEP_SUMMARY
 
-  # Build panel Docker image (verification only, no push)
-  docker-build-panel:
-    name: Docker Build Panel
+  # Build combined Docker image (verification only, no push)
+  docker-build-image:
+    name: Docker Build Combined Image
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.panel == 'true'
+    if: needs.changes.outputs.panel == 'true' || needs.changes.outputs.web == 'true' || needs.changes.outputs.deploy == 'true'
     permissions:
       contents: read
     steps:
@@ -192,12 +195,12 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: panel/Dockerfile
+          file: deploy/Dockerfile
           push: false
       - name: Summary
         run: |
-          echo "## Panel Docker Build" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Panel image built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "## Combined Docker Build" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Combined image built successfully" >> $GITHUB_STEP_SUMMARY
 
   # Security: Dependency review for pull requests
   dependency-review:
@@ -224,7 +227,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [validate, build-android, build-ios, build-desktop, docker-build-panel, dependency-review]
+    needs: [validate, build-android, build-ios, build-desktop, docker-build-image, dependency-review]
     if: always()
     steps:
       - name: Check job statuses
@@ -246,8 +249,8 @@ jobs:
             echo "build-ios failed"
             exit 1
           fi
-          if [[ "${{ needs.docker-build-panel.result }}" != "success" && "${{ needs.docker-build-panel.result }}" != "skipped" ]]; then
-            echo "docker-build-panel failed"
+          if [[ "${{ needs.docker-build-image.result }}" != "success" && "${{ needs.docker-build-image.result }}" != "skipped" ]]; then
+            echo "docker-build-image failed"
             exit 1
           fi
           if [[ "${{ needs.dependency-review.result }}" != "success" && "${{ needs.dependency-review.result }}" != "skipped" ]]; then

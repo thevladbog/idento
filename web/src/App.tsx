@@ -1,21 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "./pages/Login";
-import RegisterPage from "./pages/Register";
-import QRLoginPage from "./pages/QRLogin";
-import Dashboard from "./pages/Dashboard";
-import EventsPage from "./pages/Events";
-import EventLayout from "./pages/event/EventLayout";
-import EventAttendees from "./pages/event/EventAttendees";
-import EventZones from "./pages/event/EventZones";
-import EventStaff from "./pages/event/EventStaff";
-import EventCheckin from "./pages/event/EventCheckin";
-import EventSettings from "./pages/event/EventSettings";
-import BadgeTemplateEditorV2 from "./pages/BadgeTemplateEditorV2";
-import UsersPage from "./pages/Users";
-import CheckinSelectEvent from "./pages/CheckinSelectEvent";
-import CheckinFullscreenPage from "./pages/CheckinFullscreen";
-import EquipmentSettingsPage from "./pages/EquipmentSettings";
-import OrganizationSettings from "./pages/OrganizationSettings";
 import SuperAdminLayout from "./pages/super-admin/SuperAdminLayout";
 import SuperAdminDashboard from "./pages/super-admin/Dashboard";
 import Organizations from "./pages/super-admin/Organizations";
@@ -26,7 +10,6 @@ import Analytics from "./pages/super-admin/Analytics";
 import AuditLog from "./pages/super-admin/AuditLog";
 import { Toaster } from "sonner";
 import { useFavicon } from "./hooks/useFavicon";
-import { useInstanceMode } from "./hooks/useInstanceMode";
 import "./i18n";
 
 function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element, requireSuperAdmin?: boolean }) {
@@ -34,25 +17,16 @@ function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element
   if (!token) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (requireSuperAdmin) {
     const user = JSON.parse(localStorage.getItem("user") || '{}');
     if (!user.is_super_admin) {
-      return <Navigate to="/dashboard" replace />;
+      // This console only serves the super-admin surface now — there is no
+      // "/dashboard" route to send a non-super-admin user to.
+      return <Navigate to="/login" replace />;
     }
   }
-  
-  return children;
-}
 
-function SaasOnlyRoute({ children }: { children: JSX.Element }) {
-  const { mode, loading } = useInstanceMode();
-  if (loading) {
-    return null;
-  }
-  if (mode !== "saas") {
-    return <Navigate to="/login" replace />;
-  }
   return children;
 }
 
@@ -61,85 +35,14 @@ function App() {
   useFavicon();
 
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/super-admin">
       <Toaster position="top-right" richColors />
       <Routes>
+        {/* Console's own login (super-admin entry point) → /super-admin/login */}
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/qr-login" element={<QRLoginPage />} />
-        <Route path="/register" element={<SaasOnlyRoute><RegisterPage /></SaasOnlyRoute>} />
+        {/* Console (was /super-admin/*, now the app root under basename) */}
         <Route
-          path="/dashboard"
-          element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/events"
-          element={
-            <ProtectedRoute>
-              <EventsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/events/:eventId"
-          element={
-            <ProtectedRoute>
-              <EventLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<EventAttendees />} />
-          <Route path="zones" element={<EventZones />} />
-          <Route path="template" element={<BadgeTemplateEditorV2 />} />
-          <Route path="staff" element={<EventStaff />} />
-          <Route path="checkin" element={<EventCheckin />} />
-          <Route path="settings" element={<EventSettings />} />
-        </Route>
-        <Route
-          path="/users"
-          element={
-            <ProtectedRoute>
-              <UsersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/checkin"
-          element={
-            <ProtectedRoute>
-              <CheckinSelectEvent />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/checkin-fullscreen"
-          element={
-            <ProtectedRoute>
-              <CheckinFullscreenPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/equipment"
-          element={
-            <ProtectedRoute>
-              <EquipmentSettingsPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/organization"
-          element={
-            <ProtectedRoute>
-              <OrganizationSettings />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/super-admin"
+          path="/"
           element={
             <ProtectedRoute requireSuperAdmin>
               <SuperAdminLayout />
@@ -154,7 +57,9 @@ function App() {
           <Route path="analytics" element={<Analytics />} />
           <Route path="audit" element={<AuditLog />} />
         </Route>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        {/* Unknown → console dashboard (ProtectedRoute redirects to /login if
+            unauthenticated, same guard as before) */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

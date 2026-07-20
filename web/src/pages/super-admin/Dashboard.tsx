@@ -119,11 +119,11 @@ export default function SuperAdminDashboard() {
             {trialsSoon.length === 0 && <p className="text-sm text-muted-foreground">{t('noItemsInQueue')}</p>}
             {trialsSoon.map((tn) => (
               <div key={tn.tenant?.id} className="flex items-center justify-between text-sm">
-                <Link to={`/super-admin/organizations/${tn.tenant?.id}`} className="hover:underline">
+                <Link to={`/organizations/${tn.tenant?.id}`} className="hover:underline">
                   {tn.tenant?.name}
                 </Link>
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/super-admin/organizations/${tn.tenant?.id}`}>{t('extendTrialAction')}</Link>
+                  <Link to={`/organizations/${tn.tenant?.id}`}>{t('extendTrialAction')}</Link>
                 </Button>
               </div>
             ))}
@@ -146,7 +146,7 @@ export default function SuperAdminDashboard() {
                     </span>
                   </span>
                   <Button variant="outline" size="sm" asChild>
-                    <Link to={`/super-admin/organizations/${tn.tenant?.id}`}>{t('reviewAction')}</Link>
+                    <Link to={`/organizations/${tn.tenant?.id}`}>{t('reviewAction')}</Link>
                   </Button>
                 </div>
               );
@@ -160,7 +160,7 @@ export default function SuperAdminDashboard() {
             {suspended.length === 0 && <p className="text-sm text-muted-foreground">{t('noItemsInQueue')}</p>}
             {suspended.map((tn) => (
               <div key={tn.tenant?.id} className="flex items-center justify-between text-sm">
-                <Link to={`/super-admin/organizations/${tn.tenant?.id}`} className="hover:underline">
+                <Link to={`/organizations/${tn.tenant?.id}`} className="hover:underline">
                   {tn.tenant?.name}
                 </Link>
                 <Button

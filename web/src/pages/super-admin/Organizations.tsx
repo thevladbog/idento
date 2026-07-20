@@ -298,7 +298,7 @@ export default function Organizations() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => navigate(`/super-admin/organizations/${tenant.tenant?.id}`)}
+                      onClick={() => navigate(`/organizations/${tenant.tenant?.id}`)}
                     >
                       {t('view')}
                     </Button>

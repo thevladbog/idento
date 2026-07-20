@@ -8,6 +8,7 @@ const version = (pkg && typeof pkg.version === "string") ? pkg.version : ""
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: "/super-admin/",
   plugins: [react()],
   define: {
     __APP_VERSION__: JSON.stringify(version),
