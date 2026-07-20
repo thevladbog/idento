@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as React from "react";
 import { Label } from "./label";
@@ -121,6 +121,36 @@ describe("NumberInput", () => {
 
     expect(onValueChange).toHaveBeenLastCalledWith("");
   });
+
+  // Browsers let `<input type="number">` hold intermediate strings ("-",
+  // "1e", ".") that aren't valid numbers yet while the user is actively
+  // typing — `e.target.value` reflects that raw, unsanitized string (this is
+  // why `Number(raw)` on it is NaN). jsdom's own `.value` setter, unlike a
+  // real browser's live-typing state, immediately sanitizes any invalid
+  // number string back to "" — so `fireEvent.change(el, { target: { value:
+  // raw } })` can't reproduce the bug here (jsdom hides it before our
+  // onChange even runs). Overriding the `value` getter directly on the node
+  // stands in for that real-browser raw value without going through jsdom's
+  // sanitizing setter, so the guard is exercised the same way it would be
+  // by an actual keystroke.
+  function setRawValue(input: HTMLInputElement, raw: string) {
+    Object.defineProperty(input, "value", { configurable: true, get: () => raw });
+  }
+
+  it.each(["-", "1e", "."])(
+    "typing the intermediate invalid value %j fires onValueChange('') rather than NaN",
+    (raw) => {
+      const onValueChange = vi.fn();
+      render(<Controlled initial={5} onValueChange={onValueChange} />);
+
+      const input = screen.getByLabelText("Quantity") as HTMLInputElement;
+      setRawValue(input, raw);
+      fireEvent.input(input, { bubbles: true });
+
+      expect(onValueChange).toHaveBeenLastCalledWith("");
+      expect(onValueChange).not.toHaveBeenCalledWith(NaN);
+    },
+  );
 
   it("showSteppers={false} hides the +/- buttons", () => {
     render(<Controlled initial={5} showSteppers={false} />);

@@ -26,6 +26,21 @@ describe("DatePicker", () => {
     expect(screen.getByRole("button", { name: "March 14th, 2026" })).toBeInTheDocument();
   });
 
+  // `parse(value, "yyyy-MM-dd", new Date())` returns an Invalid Date for a
+  // malformed `value` instead of throwing — left unguarded, that Invalid
+  // Date flows into `format()` (which throws/garbles) and into Calendar's
+  // `selected`. A malformed value must fall back to the placeholder exactly
+  // like an empty value, not crash the render.
+  it.each(["not-a-date", "2026-13-99"])(
+    "treats a malformed value %j as unset: shows the placeholder and does not throw",
+    (malformed) => {
+      expect(() =>
+        render(<DatePicker value={malformed} onValueChange={() => {}} placeholder="Pick a date" />),
+      ).not.toThrow();
+      expect(screen.getByRole("button", { name: "Pick a date" })).toBeInTheDocument();
+    },
+  );
+
   it("anchors the open calendar to the value's LOCAL month (not shifted a day earlier by UTC parsing) and calls onValueChange with the clicked day's YYYY-MM-DD", async () => {
     const user = userEvent.setup();
     const onValueChange = vi.fn();
@@ -61,7 +76,13 @@ describe("DatePicker", () => {
       await user.click(dayButton("2026-03-14"));
       expect(onValueChange).toHaveBeenCalledExactlyOnceWith("2026-03-14");
     } finally {
-      process.env.TZ = originalTz;
+      // `process.env.TZ = undefined` coerces to the literal string
+      // "undefined" (Node stringifies env values), which would leak a bogus
+      // TZ into every later test in this worker. `originalTz` is genuinely
+      // `undefined` whenever TZ wasn't set before this test, so it must be
+      // deleted, not reassigned.
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
     }
   });
 
@@ -81,7 +102,8 @@ describe("DatePicker", () => {
       await user.click(dayButton("2026-03-14"));
       expect(onValueChange).toHaveBeenCalledExactlyOnceWith("2026-03-14");
     } finally {
-      process.env.TZ = originalTz;
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
     }
   });
 
@@ -93,6 +115,26 @@ describe("DatePicker", () => {
 
     await user.click(screen.getByRole("button", { name: "1 марта 2026 г." }));
     expect(await screen.findByText("март 2026")).toBeInTheDocument();
+  });
+
+  // Plain `date-fns/locale` objects localize dates/months but carry none of
+  // react-day-picker v10's own ARIA/navigation control labels (labelNext,
+  // labelPrevious, etc. — those live on `react-day-picker/locale`'s extended
+  // locale objects and are read via `options.locale.labels` in
+  // react-day-picker's getLabels helper). Without threading that extended
+  // locale through, the next/previous-month button's accessible name stays
+  // English even in locale="ru" mode.
+  it("localizes the calendar's next-month control label (accessible name) when locale=ru", async () => {
+    const user = userEvent.setup();
+    render(
+      <DatePicker value="2026-03-01" onValueChange={() => {}} locale="ru" placeholder="Выберите дату" />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "1 марта 2026 г." }));
+    expect(
+      await screen.findByRole("button", { name: "Перейти к следующему месяцу" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Go to the Next Month" })).not.toBeInTheDocument();
   });
 
   it("closes the popover after a day is picked", async () => {

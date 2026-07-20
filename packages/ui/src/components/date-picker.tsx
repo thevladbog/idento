@@ -1,7 +1,15 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { format, parse } from "date-fns";
-import { enUS, ru } from "date-fns/locale";
+import { format, isValid, parse } from "date-fns";
 import { Calendar as CalendarIcon, X } from "lucide-react";
+// `react-day-picker/locale` (v10) re-exports the date-fns locales extended
+// with DayPicker's own translated ARIA/navigation control labels
+// (labelPrevious/labelNext/labelNav/etc. — see getLabels.js, which reads
+// `locale.labels`). Plain `date-fns/locale` objects don't carry those, so
+// the nav buttons would stay English even in `locale="ru"` mode. This
+// extended locale is a superset of a date-fns `Locale` (same
+// formatLong/localize/match, plus `labels`), so it works for BOTH the
+// `format()` call below and the `Calendar`'s `locale` prop.
+import { enUS, ru } from "react-day-picker/locale";
 import * as React from "react";
 import { Button } from "./button";
 import { Calendar } from "./calendar";
@@ -49,7 +57,12 @@ export function DatePicker({
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
   const dfnsLocale = locale === "ru" ? ru : enUS;
-  const selected = value ? parse(value, FMT, new Date()) : undefined;
+  // `parse` returns an Invalid Date (never throws) for a malformed `value`
+  // instead of a parse error — treat that the same as "no value" rather than
+  // letting an Invalid Date reach `format()` (throws) or Calendar's
+  // `selected` (garbled).
+  const parsed = value ? parse(value, FMT, new Date()) : undefined;
+  const selected = parsed && isValid(parsed) ? parsed : undefined;
   const showClear = Boolean(clearLabel) && Boolean(value) && !disabled;
 
   // The popover's content (and with it, the Calendar's own "which month is

@@ -50,7 +50,10 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           max={max}
           className={cn(NO_SPINNER, className)}
           value={value}
-          onChange={(e) => onValueChange(e.target.value === "" ? "" : Number(e.target.value))}
+          onChange={(e) => {
+            const raw = e.target.value;
+            onValueChange(raw === "" || Number.isNaN(Number(raw)) ? "" : Number(raw));
+          }}
           {...props}
         />
         {showSteppers && (
