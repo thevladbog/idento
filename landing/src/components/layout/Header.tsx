@@ -26,7 +26,7 @@ export function Header() {
       <div className="container flex h-14 items-center">
         <div className="mr-4 hidden md:flex">
           <Link href="/" className="mr-6 flex items-center space-x-2 transition-opacity hover:opacity-80">
-            <Image src="/logo-mark.svg" alt="" aria-hidden width={24} height={24} className="h-6 w-auto" />
+            <Image src="/logo-mark.svg" alt="" aria-hidden width={24} height={24} className="h-6 w-auto" unoptimized />
             <span className="hidden font-bold sm:inline-block">Idento</span>
           </Link>
           <nav className="flex items-center space-x-6 text-sm font-medium">
@@ -71,7 +71,7 @@ export function Header() {
               className="flex items-center"
               onClick={() => setIsOpen(false)}
             >
-              <Image src="/logo-mark.svg" alt="" aria-hidden width={24} height={24} className="h-6 w-auto" />
+              <Image src="/logo-mark.svg" alt="" aria-hidden width={24} height={24} className="h-6 w-auto" unoptimized />
               <span className="font-bold">Idento</span>
             </Link>
             <div className="my-4 h-[calc(100vh-8rem)] pb-10 pl-6">
