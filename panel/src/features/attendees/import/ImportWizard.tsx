@@ -1,5 +1,6 @@
 import {
   Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Progress, Select,
+  SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Loader2 } from "lucide-react";
@@ -968,11 +969,19 @@ function MappingRow({ header, target, samples, isInvalid, onChange }: MappingRow
   const isUnset = target.kind === "unset";
   const isCustom = target.kind === "custom";
   const hasWarning = isUnset || isInvalid;
+  // "" (not a sentinel) is deliberate here, unlike the other Selects this
+  // task migrates: Radix only throws on a rendered SelectItem with
+  // value="" — a bare `value=""` on the Select itself is the documented
+  // "nothing selected" state that makes SelectValue's own `placeholder`
+  // render instead. That's the right primitive for what used to be a
+  // disabled+hidden native `<option value="unset">`: no SelectItem is
+  // rendered for it below, so (unlike a real SelectItem, which would
+  // duplicate the "Don't import" text already used by the real `skip`
+  // item) the open listbox shows that text only once.
   const selectValue =
-    target.kind === "standard" ? target.field : target.kind === "custom" ? "custom" : target.kind === "skip" ? "skip" : "unset";
+    target.kind === "standard" ? target.field : target.kind === "custom" ? "custom" : target.kind === "skip" ? "skip" : "";
 
-  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value;
+  function handleSelectChange(value: string) {
     if (value === "skip") {
       onChange({ kind: "skip" });
     } else if (value === "custom") {
@@ -996,31 +1005,32 @@ function MappingRow({ header, target, samples, isInvalid, onChange }: MappingRow
       </span>
       <ArrowRight aria-hidden className="mt-1.5 size-3.5 shrink-0 text-muted-foreground" />
       <div className="flex flex-col gap-1.5">
-        <Select
-          aria-label={header}
-          value={selectValue}
-          onChange={handleSelectChange}
-          variant="compact"
-          className={hasWarning ? "border-dashed border-warning/40 text-warning" : undefined}
-        >
-          {/* Placeholder-only option: visually reads as "Don't import" (per
-              board 3b's unmapped-column treatment) while the column is
-              still `unset`, but it's a DISTINCT value from the real `skip`
-              option below — picking nothing yet is not the same decision as
-              explicitly confirming a skip, and only the latter clears the
-              must-acknowledge gate on the footer's Import button. */}
-          {isUnset ? (
-            <option value="unset" disabled hidden>
-              {t("importDontImport")}
-            </option>
-          ) : null}
-          {STANDARD_FIELDS.map((field) => (
-            <option key={field} value={field}>
-              {t(STANDARD_FIELD_LABEL_KEYS[field])}
-            </option>
-          ))}
-          <option value="custom">{t("importCustomField")}</option>
-          <option value="skip">{t("importDontImport")}</option>
+        <Select value={selectValue} onValueChange={handleSelectChange}>
+          <SelectTrigger
+            variant="compact"
+            aria-label={header}
+            className={hasWarning ? "border-dashed border-warning/40 text-warning" : undefined}
+          >
+            {/* Placeholder-only text: visually reads as "Don't import" (per
+                board 3b's unmapped-column treatment) while the column is
+                still `unset`, but it's a DISTINCT value from the real `skip`
+                item below — picking nothing yet is not the same decision as
+                explicitly confirming a skip, and only the latter clears the
+                must-acknowledge gate on the footer's Import button. Radix
+                shows this placeholder for value="" without a matching
+                SelectItem ever needing to exist, un-selectable the same way
+                the old native `<option value="unset" hidden>` was. */}
+            <SelectValue placeholder={t("importDontImport")} />
+          </SelectTrigger>
+          <SelectContent>
+            {STANDARD_FIELDS.map((field) => (
+              <SelectItem key={field} value={field}>
+                {t(STANDARD_FIELD_LABEL_KEYS[field])}
+              </SelectItem>
+            ))}
+            <SelectItem value="custom">{t("importCustomField")}</SelectItem>
+            <SelectItem value="skip">{t("importDontImport")}</SelectItem>
+          </SelectContent>
         </Select>
         {isCustom ? (
           <Input

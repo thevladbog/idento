@@ -1077,10 +1077,11 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Reprint badge" });
     expect(within(dialog).getByText("Choose a printer to print Ada Lovelace's badge.")).toBeInTheDocument();
-    const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
-    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+    const combobox = within(dialog).getByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(combobox).toHaveTextContent("Zebra_ZD421"));
 
-    await user.selectOptions(select, "Network_Printer");
+    await user.click(combobox);
+    await user.click(await screen.findByRole("option", { name: "Network_Printer" }));
     await user.click(within(dialog).getByRole("button", { name: "Print" }));
 
     await waitFor(() => expect(printCapture).not.toBeNull());
@@ -1109,8 +1110,8 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     // The choose-a-printer body + select, never the stale default's name.
     expect(within(dialog).getByText("Choose a printer to print Ada Lovelace's badge.")).toBeInTheDocument();
     expect(within(dialog).queryByText(/Unplugged_Old_Printer/)).not.toBeInTheDocument();
-    const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
-    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
+    const combobox = within(dialog).getByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(combobox).toHaveTextContent("Zebra_ZD421"));
 
     await user.click(within(dialog).getByRole("button", { name: "Print" }));
     await waitFor(() => expect(printCapture).not.toBeNull());

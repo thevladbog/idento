@@ -1,7 +1,8 @@
 import {
   Avatar, AvatarFallback, Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Label,
-  Select, Sheet, SheetContent, SheetHeader, SheetTitle, Skeleton, StatusPill,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Sheet, SheetContent, SheetHeader, SheetTitle,
+  Skeleton, StatusPill,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -25,6 +26,15 @@ type AttendeeZoneAccess = components["schemas"]["AttendeeZoneAccess"];
 type MovementHistoryEntry = components["schemas"]["MovementHistoryEntry"];
 
 const RECENT_ACTIVITY_LIMIT = 3;
+
+// Radix's Select throws if any SelectItem has value="" — this sentinel
+// stands in for the inline reprint printer <select>'s "no selection"/
+// "No printers found" state (state was `reprintPrinter: string | null`
+// rendered as value="" before this migration) and is mapped back to
+// `null` at the onValueChange boundary, so `reprintPrinter`'s own type and
+// downstream reads (`reprintTargetPrinter`, `printBadge.printAttendee`)
+// are unchanged.
+const REPRINT_PRINTER_NONE = "__none";
 
 // Board 3e / task brief: times are rendered "HH:MM" pinned to UTC (same
 // rationale as EventRow.tsx/eventDates.ts — a viewer's local timezone must
@@ -478,18 +488,22 @@ function DrawerBody({
         <span className="mt-2 flex flex-col gap-2">
           <Label htmlFor="reprint-printer">{t("printPrinterLabel")}</Label>
           <Select
-            id="reprint-printer"
-            value={reprintPrinter ?? ""}
+            value={reprintPrinter ?? REPRINT_PRINTER_NONE}
             disabled={agent.printers.length === 0 || reprintPrinting}
-            onChange={(event) => setReprintPrinter(event.target.value)}
+            onValueChange={(next) => setReprintPrinter(next === REPRINT_PRINTER_NONE ? null : next)}
           >
-            {agent.printers.length === 0 ? (
-              <option value="">{t("printNoPrinters")}</option>
-            ) : (
-              agent.printers.map((printer) => (
-                <option key={printer.name} value={printer.name}>{printer.name}</option>
-              ))
-            )}
+            <SelectTrigger id="reprint-printer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {agent.printers.length === 0 ? (
+                <SelectItem value={REPRINT_PRINTER_NONE}>{t("printNoPrinters")}</SelectItem>
+              ) : (
+                agent.printers.map((printer) => (
+                  <SelectItem key={printer.name} value={printer.name}>{printer.name}</SelectItem>
+                ))
+              )}
+            </SelectContent>
           </Select>
         </span>
       ) : null}

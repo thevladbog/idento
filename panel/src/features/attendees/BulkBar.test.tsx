@@ -539,9 +539,10 @@ describe("BulkBar", () => {
       await user.click(printButton);
       const dialog = await screen.findByRole("dialog", { name: "Print badges" });
 
-      const select = within(dialog).getByLabelText<HTMLSelectElement>("Printer");
-      await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
-      await user.selectOptions(select, "Network_Printer");
+      const combobox = within(dialog).getByRole("combobox", { name: "Printer" });
+      await waitFor(() => expect(combobox).toHaveTextContent("Zebra_ZD421"));
+      await user.click(combobox);
+      await user.click(await screen.findByRole("option", { name: "Network_Printer" }));
       await user.click(within(dialog).getByRole("button", { name: "Print" }));
 
       await waitFor(() => expect(printCalls).toHaveLength(1));

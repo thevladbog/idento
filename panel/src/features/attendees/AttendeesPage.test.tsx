@@ -5,6 +5,7 @@ import {
 import {
   fireEvent, render, screen, waitFor, within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { AttendeesPage } from "./AttendeesPage";
 import { validateAttendeesSearch } from "./searchParams";
@@ -208,8 +209,8 @@ describe("AttendeesPage", () => {
     await screen.findByText("Ada Lovelace");
     capturedRequests = [];
 
-    const zoneSelect = screen.getByLabelText("Zone: All");
-    fireEvent.change(zoneSelect, { target: { value: "z1" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Zone: All" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Main Hall" }));
 
     await waitFor(() => expect(capturedRequests.length).toBeGreaterThan(0));
     expect(capturedRequests[0]?.params.get("zone")).toBe("z1");
@@ -223,8 +224,8 @@ describe("AttendeesPage", () => {
     await screen.findByText("Ada Lovelace");
     capturedRequests = [];
 
-    const statusSelect = screen.getByLabelText("Status: Any");
-    fireEvent.change(statusSelect, { target: { value: "not_checked_in" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Status: Any" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Not checked in" }));
 
     await waitFor(() => expect(capturedRequests.length).toBeGreaterThan(0));
     expect(capturedRequests[0]?.params.get("status")).toBe("not_checked_in");

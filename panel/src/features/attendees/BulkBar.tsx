@@ -1,5 +1,6 @@
 import {
-  Button, ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle, Label, Select,
+  Button, ConfirmDialog, Dialog, DialogContent, DialogHeader, DialogTitle, Label, Select, SelectContent,
+  SelectItem, SelectTrigger, SelectValue,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -26,6 +27,14 @@ interface Progress {
   done: number;
   total: number;
 }
+
+// Radix's Select throws if any SelectItem has value="" — this sentinel
+// stands in for the inline bulk-print printer <select>'s "no selection"/
+// "No printers found" state (state was `printerSelection: string | null`
+// rendered as value="" before this migration) and is mapped back to
+// `null` at the onValueChange boundary, so `printerSelection`'s own type
+// and downstream reads (`printTargetPrinter`) are unchanged.
+const BULK_PRINT_PRINTER_NONE = "__none";
 
 // Board 1g's bulk-select bar: dark inline bar (bg-foreground/text-background
 // — the codebase's existing dark-inversion utility, e.g. AttendeeTable's
@@ -487,18 +496,22 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
         <span className="mt-2 flex flex-col gap-2">
           <Label htmlFor="bulk-print-printer">{t("printPrinterLabel")}</Label>
           <Select
-            id="bulk-print-printer"
-            value={printerSelection ?? ""}
+            value={printerSelection ?? BULK_PRINT_PRINTER_NONE}
             disabled={agent.printers.length === 0 || printing}
-            onChange={(event) => setPrinterSelection(event.target.value)}
+            onValueChange={(next) => setPrinterSelection(next === BULK_PRINT_PRINTER_NONE ? null : next)}
           >
-            {agent.printers.length === 0 ? (
-              <option value="">{t("printNoPrinters")}</option>
-            ) : (
-              agent.printers.map((printer) => (
-                <option key={printer.name} value={printer.name}>{printer.name}</option>
-              ))
-            )}
+            <SelectTrigger id="bulk-print-printer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {agent.printers.length === 0 ? (
+                <SelectItem value={BULK_PRINT_PRINTER_NONE}>{t("printNoPrinters")}</SelectItem>
+              ) : (
+                agent.printers.map((printer) => (
+                  <SelectItem key={printer.name} value={printer.name}>{printer.name}</SelectItem>
+                ))
+              )}
+            </SelectContent>
           </Select>
         </span>
       ) : null}
