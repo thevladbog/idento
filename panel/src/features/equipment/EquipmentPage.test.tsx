@@ -1171,7 +1171,7 @@ describe("EquipmentPage", () => {
     // yet known-reachable is "checking" (held-open /health probe + cached
     // identity), and the mirror must be skipped outright, not
     // attempted-then-warned.
-    it("agent not yet known-reachable (checking): PATCHes the registry but skips the mirror -- no agent calls, no warning", async () => {
+    it("agent not yet known-reachable (checking): Save stays disabled with an inline reason -- no PATCH, no agent calls", async () => {
       localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
       server.use(
         http.get("http://agent.test/health", async () => {
@@ -1189,12 +1189,16 @@ describe("EquipmentPage", () => {
       const ipInput = within(dialog).getByLabelText("IP address");
       await user.clear(ipInput);
       await user.type(ipInput, "10.0.0.77");
-      await user.click(within(dialog).getByRole("button", { name: "Save" }));
 
-      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      const save = within(dialog).getByRole("button", { name: "Save" });
+      expect(save).toBeDisabled();
+      expect(
+        within(dialog).getByText("Save is unavailable until the agent connection is confirmed."),
+      ).toBeInTheDocument();
+
       await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(patchCalls).toHaveLength(0);
       expect(agentPrinterMirrorCalls).toEqual([]);
-      expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
     });
 
     // Codex PR #85 review, Finding 3: PrinterWizard's own manual-add path

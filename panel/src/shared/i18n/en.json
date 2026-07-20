@@ -677,6 +677,7 @@
   "equipmentEditAddress": "Edit address…",
   "equipmentEditAddressTitle": "Edit address",
   "equipmentEditAddressConsequence": "Changing the address clears this printer's test status — you'll need to re-test it.",
+  "equipmentEditAddressAgentUnreachable": "Save is unavailable until the agent connection is confirmed.",
   "equipmentAddressMirrorWarn": "Address updated — but the agent couldn't apply it. It will sync on the next visit.",
   "equipmentEmptyPrinters": "No printers saved yet",
   "equipmentEmptyScanners": "No scanners saved yet",
