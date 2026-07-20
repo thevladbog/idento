@@ -2,12 +2,24 @@
 // `generateZPL` pipeline (+ web/src/utils/zpl-image-text.ts for the raster
 // branch) into the panel editor (P3.2 Task 1).
 //
-// This is a PORT, not a redesign: every documented limitation of the web
-// pipeline is preserved on purpose, most importantly that the raster branch
-// (fires when text needs non-Latin-script image rendering OR a customFont is
-// set) returns immediately and silently DROPS rotation/valign/^FB-wrap/
-// maxLines -- see generateTextZPL below. Deviating from that is a plan
-// violation, not an improvement.
+// This is a PORT, not a redesign: most documented limitations of the web
+// pipeline are preserved on purpose. One of them was lifted post-P3.2
+// (2026-07-20, see rasterFieldOrigin below): the raster branch (fires when
+// text needs non-Latin-script image rendering OR a customFont is set) used
+// to return immediately and silently drop align/valign along with rotation/
+// ^FB-wrap/maxLines (reconciliation #7). The P3.2 printed-matrix run showed
+// the user-visible cost directly -- EN names printed centered via native
+// ^FB, RU names printed left-pinned, same template -- so align/valign are
+// now honored on this branch too via an ^FO offset computed from the
+// rasterized bitmap's own measured size. rotation and ^FB-wrap/maxLines
+// remain dropped; ^FB is a native-text-only ZPL command family and rotating
+// a pre-rasterized bitmap would require re-rasterizing into a rotated
+// canvas, which is out of scope here -- see generateTextZPL below.
+//
+// One SANCTIONED extension past web parity (2026-07-20 live-run request):
+// barcode elements read `showCaption` to drive ^BC's interpretation-line
+// argument (generateBarcodeZPL). The field's absent-means-Y default keeps
+// every pre-existing template's output byte-identical to web's.
 //
 // The rasterizer itself is injected via `deps.rasterizeText` because jsdom
 // (this task's test environment) has no canvas; the real browser canvas
@@ -126,6 +138,80 @@ function getZPLAlignment(align: "left" | "center" | "right" = "left"): string {
 }
 
 /**
+ * Dot offset to add to a native text element's ^FO y coordinate for
+ * vertical alignment. Ports web/src/utils/zpl.ts:137-148. Returns 0 (no
+ * adjustment) unless BOTH `element.valign` and `element.height` are set --
+ * an element missing either is a documented no-op, not an error.
+ *
+ * Exported (not just inlined in generateTextZPL below) so
+ * ZplPreviewModal.tsx's Rendered-tab canvas can apply the IDENTICAL dot math
+ * to its native-text draw instead of re-deriving it (bot review, PR #87
+ * finding #1) -- one canonical implementation for this offset, never two
+ * that could silently drift apart. See rasterFieldOrigin below for the
+ * raster-branch counterpart of this same adjustment.
+ */
+export function valignOffsetDots(element: RawBadgeElement, fontSize: number, dpi: number): number {
+  if (!element.valign || !element.height) return 0;
+  const heightDots = mmToDots(element.height, dpi);
+  const fontHeightDots = pointsToDots(fontSize, dpi);
+
+  if (element.valign === "middle") return Math.round((heightDots - fontHeightDots) / 2);
+  if (element.valign === "bottom") return heightDots - fontHeightDots;
+  return 0; // 'top' (or any other value) is the unadjusted default
+}
+
+/**
+ * Compute the ^FO origin for a raster-rendered text field, offsetting the
+ * element's plain `mmToDots(x, y)` position by align/valign slack -- the
+ * raster-branch counterpart to the native branch's ^FB justification
+ * (align) and pre-^FO y-adjustment (valign, generateTextZPL below /
+ * valignOffsetDots above). Slack is `max(0, boxSizeDots - rasterSizeDots)`
+ * on each axis, split by align/valign exactly like the native branch's own
+ * rules (center = half slack, right/bottom = full slack, left/top/unset =
+ * none); a raster bitmap that's already as large as or larger than its box
+ * clamps to 0 slack rather than moving backward past the element's own x/y.
+ * Both offsets are gated the same way the native branch gates its own ^FB
+ * (needs `width`) and valign (needs `height`) adjustments: no `width` means
+ * align never applies no matter what `align` says, and likewise for
+ * `height`/valign.
+ *
+ * Pure and exported so ZplPreviewModal's Rendered-tab composition
+ * (`drawElement`'s raster-text case) can call the exact same offset math the
+ * ZPL generator uses -- print and preview can never disagree about where an
+ * aligned raster field lands.
+ */
+export function rasterFieldOrigin(
+  element: Pick<RawBadgeElement, "x" | "y" | "width" | "height" | "align" | "valign">,
+  dpi: number,
+  raster: { width: number; height: number },
+): { x: number; y: number } {
+  let x = mmToDots(element.x, dpi);
+  let y = mmToDots(element.y, dpi);
+
+  if (element.width && element.align) {
+    const boxWidthDots = mmToDots(element.width, dpi);
+    const slack = Math.max(0, boxWidthDots - raster.width);
+    if (element.align === "center") {
+      x += Math.round(slack / 2);
+    } else if (element.align === "right") {
+      x += slack;
+    }
+  }
+
+  if (element.height && element.valign) {
+    const boxHeightDots = mmToDots(element.height, dpi);
+    const slack = Math.max(0, boxHeightDots - raster.height);
+    if (element.valign === "middle") {
+      y += Math.round(slack / 2);
+    } else if (element.valign === "bottom") {
+      y += slack;
+    }
+  }
+
+  return { x, y };
+}
+
+/**
  * Generate ZPL for a text element. Ports web/src/utils/zpl.ts:92-184
  * (`generateTextZPL`).
  */
@@ -145,10 +231,12 @@ async function generateTextZPL(
 
   // Use image rendering when text has non-Latin script OR when a custom
   // font is set (so one font renders all of an element's text). This branch
-  // returns immediately -- rotation/valign/^FB-wrap/maxLines below are never
-  // applied to a raster-rendered element. This is a KNOWN, INTENTIONAL
-  // parity limitation of the web pipeline (reconciliation #7): do not "fix"
-  // it here. Ports web/src/utils/zpl.ts:107-125.
+  // returns immediately -- rotation/^FB-wrap/maxLines below are never
+  // applied to a raster-rendered element (still a KNOWN, INTENTIONAL parity
+  // limitation, reconciliation #7). align/valign, however, ARE honored here
+  // via rasterFieldOrigin -- see that function's own comment for why this
+  // half of the limitation was lifted. Ports web/src/utils/zpl.ts:107-125
+  // minus the align/valign drop.
   const useImageRendering = needsImageRendering(textContent) || !!(element.customFont && element.customFont.trim());
   if (useImageRendering) {
     const fontSize = element.fontSize || 12;
@@ -162,7 +250,8 @@ async function generateTextZPL(
       fontSizePx: fontSizePixels,
       fontWeight,
     });
-    return buildGfaCommand(x, y, raster);
+    const origin = rasterFieldOrigin(element, dpi, raster);
+    return buildGfaCommand(origin.x, origin.y, raster);
   }
 
   // Escape special ZPL characters for regular (native) text.
@@ -175,17 +264,7 @@ async function generateTextZPL(
   const fontWidth = fontHeight; // Same as height by default -- web/src/utils/zpl.ts:132-135
 
   // Adjust Y position for vertical alignment. web/src/utils/zpl.ts:137-148.
-  if (element.valign && element.height) {
-    const heightDots = mmToDots(element.height, dpi);
-    const fontHeightDots = pointsToDots(fontSize, dpi);
-
-    if (element.valign === "middle") {
-      y += Math.round((heightDots - fontHeightDots) / 2);
-    } else if (element.valign === "bottom") {
-      y += heightDots - fontHeightDots;
-    }
-    // 'top' is default, no adjustment needed
-  }
+  y += valignOffsetDots(element, fontSize, dpi);
 
   // Convert rotation to ZPL format (N=0, R=90, I=180, B=270).
   // web/src/utils/zpl.ts:150-154.
@@ -254,8 +333,18 @@ function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, strin
   const heightMM = element.height || 10;
   const height = mmToDots(heightMM, dpi);
 
+  // ^BC's third argument prints the human-readable interpretation line.
+  // web/src/utils/zpl.ts:237 hardcodes Y; this is the panel's one DELIBERATE
+  // extension past web parity (2026-07-20 live-run request): only an
+  // explicit `showCaption: false` flips it to N, so every template saved
+  // before the field existed keeps its caption byte-for-byte. Also honored
+  // by backend/internal/zpl/zpl.go's own `ShowCaption *bool` field + its own
+  // generateBarcodeZPL, kept in sync deliberately -- the real check-in print
+  // path only ever calls the Go generator, never this one.
+  const interpretationLine = element.showCaption === false ? "N" : "Y";
+
   // ^BC = Code 128
-  return `^FO${x},${y}^BCN,${height},Y,N,N^FD${escapeZplData(barcodeData)}^FS`;
+  return `^FO${x},${y}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
 }
 
 /**

@@ -26,6 +26,7 @@ function fontListItem(id: string, family: string): FontListItem {
 
 function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
   const onUpdate = vi.fn();
+  const onUpdateConfig = vi.fn();
   const props: PropertiesPaneProps = {
     element: null,
     fieldSchema: [],
@@ -33,20 +34,108 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
     fonts: [],
     fontCoverage: {},
     onUpdate,
+    onUpdateConfig,
     ...overrides,
   };
   const utils = render(<PropertiesPane {...props} />);
-  return { onUpdate, ...utils };
+  return { onUpdate, onUpdateConfig, ...utils };
 }
 
 describe("PropertiesPane", () => {
-  describe("empty state", () => {
-    it("shows a muted hint and no form controls when nothing is selected", () => {
+  describe("empty state (document settings)", () => {
+    it("shows the document-settings section with the config's current values, plus the element-selection hint", () => {
       renderPane({ element: null });
 
-      expect(screen.getByText("Select an element to edit its properties.")).toBeInTheDocument();
-      expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      expect(screen.getByText("Document settings")).toBeInTheDocument();
+      expect(screen.getByLabelText("Width (mm)")).toHaveValue(90);
+      expect(screen.getByLabelText("Height (mm)")).toHaveValue(55);
+      expect(screen.getByLabelText("DPI")).toHaveValue("300");
+      expect(
+        screen.getByText("Select an element to edit its properties, or set the label's overall size below."),
+      ).toBeInTheDocument();
+    });
+
+    it("lists 203/300/600 as the DPI options", () => {
+      renderPane({ element: null });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
+    });
+
+    it("patches width_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "100" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 100 });
+    });
+
+    it("patches height_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "60" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 60 });
+    });
+
+    it("patches dpi as a number on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("DPI"), { target: { value: "203" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ dpi: 203 });
+    });
+
+    it("clamps a width_mm value below the sane minimum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "1" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 10 });
+    });
+
+    it("clamps a height_mm value above the sane maximum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "999" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 200 });
+    });
+
+    it("ignores a non-numeric width input (cleared field) without dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "" } });
+
+      expect(onUpdateConfig).not.toHaveBeenCalled();
+    });
+
+    // Review fix: a template saved before this picker existed (or edited
+    // via a raw API call, same as the incident that prompted this feature)
+    // can carry a dpi outside the three listed options. A controlled
+    // <select> whose value matches no <option> falls back to silently
+    // DISPLAYING the first option instead -- same "honest disabled
+    // placeholder" fix as the font select's own missingFontFamily case.
+    it("shows a disabled placeholder option (not a silent fallback to 203) for a dpi outside 203/300/600", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 250 } });
+
+      const select = screen.getByLabelText("DPI");
+      expect(select).toHaveValue("250");
+
+      const options = Array.from(select.querySelectorAll("option")) as HTMLOptionElement[];
+      expect(options.map((o) => o.value)).toEqual(["203", "300", "600", "250"]);
+      const placeholder = options.find((o) => o.value === "250")!;
+      expect(placeholder.disabled).toBe(true);
+      expect(placeholder.textContent).toBe("250 (custom)");
+    });
+
+    it("renders no placeholder option for a listed dpi", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 300 } });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
     });
   });
 
@@ -206,6 +295,7 @@ describe("PropertiesPane", () => {
             fonts={[]}
             fontCoverage={{}}
             onUpdate={onUpdate}
+            onUpdateConfig={vi.fn()}
           />,
         );
         expect(screen.getByLabelText("Text")).not.toBeDisabled();
@@ -409,6 +499,105 @@ describe("PropertiesPane", () => {
       });
     });
 
+    // 2026-07-20 live-run request: generateZpl.ts's native text path already
+    // honored element.valign+height (generateTextZPL, ~line 177) but this
+    // control was never exposed. The raster branch used to DROP valign
+    // entirely; PR #88 (2026-07-20, landed after this control shipped)
+    // lifted that limitation too -- rasterFieldOrigin now applies the same
+    // valign slack to raster-rendered text, gated the same way (needs
+    // `height`). So the control is enabled UNCONDITIONALLY regardless of
+    // whether the element is known to route through the raster path -- the
+    // only thing that still matters is `height` being explicit, which
+    // handleValignChange's own auto-persist (see its test above) already
+    // guarantees on first click.
+    describe("vertical align buttons", () => {
+      it("clicking a segment patches valign and only that segment is aria-pressed", () => {
+        const { onUpdate } = renderPane({ element: textElement });
+
+        fireEvent.click(screen.getByRole("button", { name: "Align bottom" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { valign: "bottom" });
+      });
+
+      // Bot review (PR #87, finding #3): generateZpl.ts's native valign block
+      // only fires when `element.height` is truthy (generateTextZPL:178) --
+      // a fresh text element carries no explicit height at all (only the
+      // Properties pane's DISPLAYED footprint fallback, elementFootprint,
+      // shows 8mm without ever writing it onto the element). Clicking a
+      // valign segment on such an element used to be a silent no-op: the
+      // patch set {valign} but the generator's height check still failed.
+      // Setting valign now also persists the SAME footprint height the pane
+      // already displays -- one dispatch, mirroring the two-field-patch
+      // precedent handleFontChange already uses for clearing customFont
+      // alongside setting fontFamily.
+      it("also patches the displayed footprint height when the element has no explicit height (so valign isn't a silent no-op)", () => {
+        const { onUpdate } = renderPane({
+          element: { id: "t1", type: "text", x: 5, y: 5, text: "Hi" }, // no width/height
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "Align middle" }));
+
+        // 8mm: canvasMath's DEFAULT_SIZE_MM.text -- the SAME value the
+        // Height field already displays for this element.
+        expect(onUpdate).toHaveBeenCalledWith("t1", { valign: "middle", height: 8 });
+      });
+
+      it("does NOT patch height when the element already has an explicit height", () => {
+        const { onUpdate } = renderPane({ element: textElement }); // width:40, height:8 explicit
+
+        fireEvent.click(screen.getByRole("button", { name: "Align bottom" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { valign: "bottom" });
+        expect(onUpdate).not.toHaveBeenCalledWith("e1", expect.objectContaining({ height: expect.anything() }));
+      });
+
+      it("defaults to Align top pressed when the element has no explicit valign", () => {
+        renderPane({ element: { ...textElement, valign: undefined } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("shows the element's current valign as pressed", () => {
+        renderPane({ element: { ...textElement, valign: "middle" } });
+
+        expect(screen.getByRole("button", { name: "Align middle" })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", { name: "Align top" })).toHaveAttribute("aria-pressed", "false");
+      });
+
+      it("is enabled for a plain native-path text element (no customFont, Latin static text)", () => {
+        renderPane({ element: { ...textElement, source: undefined, text: "Hello", customFont: undefined } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+      });
+
+      // PR #88 lifted the raster branch's valign limitation (rasterFieldOrigin
+      // now applies the same slack to raster-rendered text, gated on `height`
+      // exactly like the native branch) -- these elements used to get a
+      // disabled control + hint here; now the control works identically
+      // regardless of which path the element ends up routing through.
+      it("stays enabled when customFont is set (raster path now honors valign too, via rasterFieldOrigin)", () => {
+        renderPane({ element: { ...textElement, customFont: "Roboto" } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+      });
+
+      it("stays enabled for unbound Cyrillic static text (also raster-routed, also now honored)", () => {
+        renderPane({
+          element: { ...textElement, source: undefined, text: "Привет", customFont: undefined },
+        });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+      });
+
+      it("stays enabled for bound text regardless of what the per-attendee value turns out to be", () => {
+        renderPane({
+          element: { ...textElement, source: "first_name", text: "fallback", customFont: undefined },
+        });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+      });
+    });
+
     describe("font size / max lines", () => {
       it("patches fontSize on change", () => {
         const { onUpdate } = renderPane({ element: textElement });
@@ -462,7 +651,7 @@ describe("PropertiesPane", () => {
   });
 
   describe("barcode element", () => {
-    it("shows only the common section + binding select", () => {
+    it("shows the common section + binding select + caption toggle", () => {
       renderPane({
         element: {
           id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code",
@@ -471,6 +660,67 @@ describe("PropertiesPane", () => {
 
       expect(screen.getByLabelText("Binding")).toHaveValue("code");
       expect(screen.queryByLabelText("Font")).not.toBeInTheDocument();
+    });
+
+    // 2026-07-20 live-run request: generateBarcodeZPL's ^BC interpretation
+    // line (Y/N) is now driven by element.showCaption (generateZpl.ts) --
+    // absent/true prints the caption (back-compat with every template saved
+    // before this field existed), only an explicit false hides it.
+    describe("caption toggle", () => {
+      it("is checked when showCaption is absent (back-compat default)", () => {
+        renderPane({
+          element: { id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code" },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).toBeChecked();
+      });
+
+      it("is checked when showCaption is explicitly true", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: true,
+          },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).toBeChecked();
+      });
+
+      it("is unchecked when showCaption is false", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: false,
+          },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).not.toBeChecked();
+      });
+
+      it("unchecking dispatches {showCaption: false}", () => {
+        const { onUpdate } = renderPane({
+          element: { id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code" },
+        });
+
+        fireEvent.click(screen.getByLabelText("Print human-readable caption"));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { showCaption: false });
+      });
+
+      it("re-checking dispatches {showCaption: true}", () => {
+        const { onUpdate } = renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: false,
+          },
+        });
+
+        fireEvent.click(screen.getByLabelText("Print human-readable caption"));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { showCaption: true });
+      });
+
+      it("is absent for qrcode/text/line/box elements", () => {
+        renderPane({ element: { id: "e1", type: "qrcode", x: 5, y: 5, source: "code" } });
+        expect(screen.queryByLabelText("Print human-readable caption")).not.toBeInTheDocument();
+      });
     });
   });
 

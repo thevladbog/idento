@@ -1,5 +1,12 @@
-import { Button, Input, Label, Select, cn } from "@idento/ui";
-import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
+import { Button, Input, Label, Select, Switch, cn } from "@idento/ui";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+} from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -25,7 +32,9 @@ export interface PropertiesPaneProps {
   // Needed by canvasMath's clampPosition/clampSize (both take a
   // BadgeConfig) so a typed X/Y/Width/Height change clamps to the SAME
   // artboard bounds BadgeCanvas's own drag/resize/nudge paths already
-  // enforce -- one clamp rule, never re-derived here.
+  // enforce -- one clamp rule, never re-derived here. Also the CURRENT
+  // values shown/edited by the "nothing selected" document-settings
+  // section below.
   config: BadgeConfig;
   // P3.2 Task 4: the event's uploaded fonts (BadgeEditorPage's own inline
   // `$api.useQuery("get", "/api/events/{event_id}/fonts", ...)`, mirroring
@@ -41,6 +50,11 @@ export interface PropertiesPaneProps {
   // label. Never re-derived here; this pane only renders what it's handed.
   fontCoverage: Record<string, boolean | undefined>;
   onUpdate: (id: string, patch: Partial<BadgeElement>) => void;
+  // Document settings (width_mm/height_mm/dpi), edited from the "nothing
+  // selected" branch below -- a single-field patch per change, same
+  // "never batch several fields into one call" convention `onUpdate`
+  // above documents for per-element edits.
+  onUpdateConfig: (patch: Partial<BadgeConfig>) => void;
 }
 
 // Appends a translated Cyrillic-coverage flag to an event font's option
@@ -62,6 +76,16 @@ const ALIGN_OPTIONS: { value: "left" | "center" | "right"; icon: typeof AlignLef
   { value: "right", icon: AlignRight, labelKey: "badgeAlignRight" },
 ];
 
+// 2026-07-20 live-run request: mirrors ALIGN_OPTIONS's shape exactly (same
+// segmented-button pattern) for the vertical axis. Values match
+// generateZpl.ts's generateTextZPL valign check verbatim ("middle"/"bottom";
+// any other value, including "top", takes the no-adjustment default path).
+const VALIGN_OPTIONS: { value: "top" | "middle" | "bottom"; icon: typeof AlignLeft; labelKey: string }[] = [
+  { value: "top", icon: AlignVerticalJustifyStart, labelKey: "badgeValignTop" },
+  { value: "middle", icon: AlignVerticalJustifyCenter, labelKey: "badgeValignMiddle" },
+  { value: "bottom", icon: AlignVerticalJustifyEnd, labelKey: "badgeValignBottom" },
+];
+
 // One id per control, hard-coded (not derived from element.id) -- exactly
 // one PropertiesPane is ever mounted at a time (board 4a's right column),
 // so a static id can never collide with another instance's, and label
@@ -77,26 +101,128 @@ const IDS = {
   fontSize: "badge-props-font-size",
   rotation: "badge-props-rotation",
   maxLines: "badge-props-max-lines",
+  barcodeCaption: "badge-props-barcode-caption",
+  docWidth: "badge-props-doc-width",
+  docHeight: "badge-props-doc-height",
+  docDpi: "badge-props-doc-dpi",
 };
+
+// Sane UI-only bounds for width_mm/height_mm (the backend places no upper
+// bound at all -- zpl.ParseBadgeTemplate only rejects <= 0 -- so this is
+// purely a guard rail against an obviously-unprintable label: below 10mm
+// nothing meaningful fits, above 200mm exceeds the desktop thermal label/
+// badge stock this editor's registered printers (the equipment hub's
+// Zebra ZD-series) actually take).
+const DOC_MM_MIN = 10;
+const DOC_MM_MAX = 200;
+
+// The three DPIs zpl.go/generateZpl.ts's mm<->dots arithmetic (a plain
+// mm/25.4*dpi multiply, no dpi-specific branching) handles correctly --
+// 203/300 are the two the panel's own golden ZPL matrix already pins;
+// goldenMatrix.test.ts adds a 600dpi cell alongside this change to prove
+// the pipeline is dpi-generic, not just parity-tested at two values.
+const DPI_OPTIONS = [203, 300, 600] as const;
 
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
 // EVERY element type, plus a per-type section: text gets binding + static
-// text + font + font size + alignment + rotation + max lines; qrcode/barcode
-// get a binding select only (same options as text's); line/box get nothing
-// beyond the common section. Every control here dispatches a single-field
-// `onUpdate(id, patch)` call -- never a batched multi-field patch -- so each
-// keystroke/click is independently undoable-in-principle and mirrors
-// editorState.ts's "update" action shape (`{id, patch: Partial<BadgeElement>}`).
+// text + font + font size + alignment + vertical align + rotation + max
+// lines; qrcode gets a binding select only (same options as text's); barcode
+// gets a binding select + the human-readable-caption toggle (2026-07-20);
+// line/box get nothing beyond the common section. Every control here
+// dispatches a single-field `onUpdate(id, patch)` call -- never a batched
+// multi-field patch -- so each keystroke/click is independently
+// undoable-in-principle and mirrors editorState.ts's "update" action shape
+// (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
-  element, fieldSchema, config, fonts, fontCoverage, onUpdate,
+  element, fieldSchema, config, fonts, fontCoverage, onUpdate, onUpdateConfig,
 }: PropertiesPaneProps) {
   const { t } = useTranslation();
 
+  // Typed number field -> clamped-patch dispatch for the document-settings
+  // section below. Clamped to DOC_MM_MIN/MAX client-side before dispatch
+  // (the reducer's "updateConfig" case only clamps ELEMENTS against
+  // whatever config it's given -- it doesn't re-validate the config's own
+  // bounds, so an out-of-range value must never reach it in the first
+  // place).
+  function handleConfigMmChange(field: "width_mm" | "height_mm", event: React.ChangeEvent<HTMLInputElement>) {
+    const value = event.target.valueAsNumber;
+    if (Number.isNaN(value)) return;
+    const clamped = Math.min(Math.max(value, DOC_MM_MIN), DOC_MM_MAX);
+    onUpdateConfig(field === "width_mm" ? { width_mm: clamped } : { height_mm: clamped });
+  }
+
+  function handleDpiChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    onUpdateConfig({ dpi: Number(event.target.value) });
+  }
+
+  // A template saved before this feature existed (or before the operator
+  // ever picks a new value from this select) can carry any positive dpi --
+  // zpl.ParseBadgeTemplate only rejects <= 0 -- not just one of
+  // DPI_OPTIONS's three. See the disabled placeholder option below.
+  const isKnownDpi = DPI_OPTIONS.some((dpi: number) => dpi === config.dpi);
+
   if (!element) {
     return (
-      <div className="flex h-full flex-col gap-3 rounded-lg border border-border p-4" data-testid="badge-pane-properties">
+      <div className="flex h-full flex-col gap-4 rounded-lg border border-border p-4" data-testid="badge-pane-properties">
         <h3 className="text-body font-medium text-muted-foreground">{t("badgePaneProperties")}</h3>
+
+        <div className="flex flex-col gap-3">
+          <h4 className="text-card-title text-foreground">{t("badgePropsDocTitle")}</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              id={IDS.docWidth}
+              label={t("badgePropsWidth")}
+              value={config.width_mm}
+              step={1}
+              min={DOC_MM_MIN}
+              max={DOC_MM_MAX}
+              onChange={(e) => handleConfigMmChange("width_mm", e)}
+            />
+            <NumberField
+              id={IDS.docHeight}
+              label={t("badgePropsHeight")}
+              value={config.height_mm}
+              step={1}
+              min={DOC_MM_MIN}
+              max={DOC_MM_MAX}
+              onChange={(e) => handleConfigMmChange("height_mm", e)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor={IDS.docDpi}>{t("badgePropsDpi")}</Label>
+            <Select id={IDS.docDpi} value={String(config.dpi)} onChange={handleDpiChange}>
+              {DPI_OPTIONS.map((dpi) => (
+                <option key={dpi} value={dpi}>
+                  {dpi}
+                </option>
+              ))}
+              {/* A template saved before this picker existed (or edited via
+                  a raw API call -- exactly how the Zebra hardware run that
+                  prompted this feature ended up fixing a wrong dpi in the
+                  first place) can carry a dpi outside the three listed
+                  options. Same "honest disabled placeholder" pattern as the
+                  font select's own missingFontFamily option above: without
+                  it, this controlled <select>'s value wouldn't match any
+                  <option>, and the browser would silently DISPLAY the
+                  first option (203) while the actual saved config.dpi
+                  stayed whatever it really was -- showing the wrong value
+                  without changing it. */}
+              {!isKnownDpi && (
+                <option value={config.dpi} disabled>
+                  {t("badgePropsDpiCustom", { dpi: config.dpi })}
+                </option>
+              )}
+            </Select>
+          </div>
+          {/* Always-visible, same "editing aid honesty" convention as
+              BadgeCanvas.tsx's own permanent badgeCanvasApproximation
+              caption -- not a dynamic per-edit notice (no new transient
+              state to track), just a standing disclosure of what a shrink
+              does to elements that no longer fit. */}
+          <p className="text-caption text-muted-foreground">{t("badgePropsDocShrinkHint")}</p>
+        </div>
+
         <p className="text-caption text-muted-foreground">{t("badgePropsEmpty")}</p>
       </div>
     );
@@ -160,6 +286,23 @@ export function PropertiesPane({
   // Selecting an event font leaves `fontFamily` untouched entirely: it's
   // simply not read by the generator once `customFont` is set, so there is
   // nothing useful to overwrite it with.
+  // Bot review (PR #87, finding #3): generateZpl.ts's native valign block
+  // only applies when `element.height` is truthy (generateTextZPL:178) -- a
+  // fresh text element carries none (elementFootprint's 8mm default is a
+  // DISPLAY fallback only, never written onto the element). Patching just
+  // {valign} on such an element would silently do nothing at generation
+  // time. When height is already explicit, only valign is patched (the
+  // operator's own Height stays authoritative); the footprint height is
+  // read from the SAME `footprint` this pane already computes for the
+  // Width/Height fields below, so what gets persisted matches what's shown.
+  function handleValignChange(value: "top" | "middle" | "bottom") {
+    if (element!.height) {
+      patch({ valign: value });
+    } else {
+      patch({ valign: value, height: footprint.height });
+    }
+  }
+
   function handleFontChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const value = event.target.value;
     const isNativeCode = ZPL_FONTS.some((font) => font.code === value);
@@ -171,6 +314,7 @@ export function PropertiesPane({
   }
 
   const isTextType = element.type === "text";
+  const isBarcodeType = element.type === "barcode";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
 
   // Trim-aware "is customFont actually set?" -- the SAME rule generation
@@ -366,6 +510,33 @@ export function PropertiesPane({
           </div>
 
           <div className="flex flex-col gap-1">
+            <span className="text-card-title text-foreground">{t("badgePropsValign")}</span>
+            <div
+              role="group"
+              aria-label={t("badgePropsValign")}
+              className="inline-flex w-fit gap-1 rounded-md border border-border p-0.5"
+            >
+              {VALIGN_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
+                const pressed = (element.valign ?? "top") === value;
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-pressed={pressed}
+                    aria-label={t(labelKey)}
+                    className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
+                    onClick={() => handleValignChange(value)}
+                  >
+                    <Icon aria-hidden className="size-4" />
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.rotation}>{t("badgePropsRotation")}</Label>
             <Select
               id={IDS.rotation}
@@ -394,24 +565,36 @@ export function PropertiesPane({
           />
         </>
       )}
+
+      {isBarcodeType && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={IDS.barcodeCaption}
+            checked={element.showCaption !== false}
+            onCheckedChange={(checked) => patch({ showCaption: checked })}
+          />
+          <Label htmlFor={IDS.barcodeCaption}>{t("badgePropsBarcodeCaption")}</Label>
+        </div>
+      )}
     </div>
   );
 }
 
 function NumberField({
-  id, label, value, step = 0.5, min, onChange,
+  id, label, value, step = 0.5, min, max, onChange,
 }: {
   id: string;
   label: string;
   value: number | "";
   step?: number;
   min?: number;
+  max?: number;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" step={step} min={min} value={value} onChange={onChange} />
+      <Input id={id} type="number" step={step} min={min} max={max} value={value} onChange={onChange} />
     </div>
   );
 }

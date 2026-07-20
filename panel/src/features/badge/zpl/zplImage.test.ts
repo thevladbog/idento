@@ -63,6 +63,8 @@ describe("bitmapToZPLHex", () => {
       hex: "FF000000",
       totalBytes: 4,
       bytesPerRow: 2,
+      width: 16,
+      height: 2,
     });
   });
 
@@ -76,25 +78,30 @@ describe("bitmapToZPLHex", () => {
       hex: "FF80",
       totalBytes: 2,
       bytesPerRow: 2,
+      width: 9,
+      height: 1,
     });
   });
 
   it("renders an all-white row as 0x00 bytes", () => {
     const bitmap = new Uint8Array(8).fill(0);
     const result = bitmapToZPLHex(bitmap, 8, 1);
-    expect(result).toEqual({ hex: "00", totalBytes: 1, bytesPerRow: 1 });
+    expect(result).toEqual({ hex: "00", totalBytes: 1, bytesPerRow: 1, width: 8, height: 1 });
   });
 
   it("renders an all-black row as 0xFF bytes", () => {
     const bitmap = new Uint8Array(8).fill(1);
     const result = bitmapToZPLHex(bitmap, 8, 1);
-    expect(result).toEqual({ hex: "FF", totalBytes: 1, bytesPerRow: 1 });
+    expect(result).toEqual({ hex: "FF", totalBytes: 1, bytesPerRow: 1, width: 8, height: 1 });
   });
 });
 
 describe("buildGfaCommand", () => {
   it("wraps a RasterResult in the exact ^FO/^GFA/^FS block (uncompressed: both byte-count params equal totalBytes)", () => {
-    const zpl = buildGfaCommand(10, 20, { hex: "FF00", totalBytes: 4, bytesPerRow: 2 });
+    // width/height ride along on RasterResult for the caller's alignment
+    // math (generateZpl.rasterFieldOrigin) but never appear in the ^GFA
+    // command itself -- the emitted bytes are identical with or without them.
+    const zpl = buildGfaCommand(10, 20, { hex: "FF00", totalBytes: 4, bytesPerRow: 2, width: 16, height: 2 });
     expect(zpl).toBe("^FO10,20\n^GFA,4,4,2,FF00\n^FS");
   });
 });

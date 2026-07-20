@@ -766,6 +766,7 @@ export function BadgeEditorPage() {
             fonts={fonts}
             fontCoverage={fontCoverage}
             onUpdate={(id, patch) => dispatch({ type: "update", id, patch })}
+            onUpdateConfig={(patch) => dispatch({ type: "updateConfig", patch })}
           />
         </div>
       )}

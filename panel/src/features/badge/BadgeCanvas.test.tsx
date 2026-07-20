@@ -103,6 +103,82 @@ describe("BadgeCanvas", () => {
       expect(screen.getByLabelText(/approximation/i)).toBeInTheDocument();
     });
 
+    // Bot review (PR #87, finding #4): showCaption: false hides ^BC's
+    // interpretation line at generation time (generateZpl.ts) and in the
+    // ZPL "Rendered" preview tab -- the editor artboard must agree, or an
+    // operator arranging a badge sees text here that will NOT actually
+    // print, and shorter placeholder bars than what's shown misleads about
+    // layout too little space is being reserved for.
+    it("barcode: hides the resolved-value caption when showCaption is false", () => {
+      renderCanvas({
+        doc: docWith([
+          { id: "b1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: false },
+        ]),
+        previewData: { code: "ZZ-9" },
+      });
+
+      const el = screen.getByTestId("badge-canvas-element-b1");
+      expect(el).not.toHaveTextContent("ZZ-9");
+      // The striped placeholder itself (an honest "not scannable" notice)
+      // still renders regardless of the caption toggle.
+      expect(screen.getByLabelText(/approximation/i)).toBeInTheDocument();
+    });
+
+    it("barcode: shows the caption when showCaption is absent or true (back-compat default)", () => {
+      renderCanvas({
+        doc: docWith([
+          { id: "b1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code" },
+          { id: "b2", type: "barcode", x: 5, y: 20, width: 30, height: 10, source: "code", showCaption: true },
+        ]),
+        previewData: { code: "ZZ-9" },
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-b1")).toHaveTextContent("ZZ-9");
+      expect(screen.getByTestId("badge-canvas-element-b2")).toHaveTextContent("ZZ-9");
+    });
+
+    // Bot review (PR #87, finding #1): generateZpl.ts's native path shifts
+    // ^FO's y by (heightDots - fontHeightDots)/2 for "middle" and the full
+    // delta for "bottom" -- but only when BOTH valign and height are
+    // explicit (generateTextZPL:178). The editor artboard must show the
+    // SAME condition, or an operator sees the artboard disagree with what
+    // actually prints. It uses CSS flex alignment on the element's own
+    // footprint-sized box (top/middle/bottom -> flex-start/center/flex-end)
+    // rather than replicating the ZPL dot math, since the box itself is
+    // already sized/positioned to the element's declared height in mm.
+    it("text: vertical-centers within its box when valign is middle and height is explicit", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, height: 10, text: "Hi", valign: "middle" }]),
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-t1")).toHaveStyle({ alignItems: "center" });
+    });
+
+    it("text: bottom-aligns within its box when valign is bottom and height is explicit", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, height: 10, text: "Hi", valign: "bottom" }]),
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-t1")).toHaveStyle({ alignItems: "flex-end" });
+    });
+
+    it("text: does NOT apply a vertical offset when valign is set but height is absent (matches the generator's no-op)", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, text: "Hi", valign: "middle" }]),
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-t1")).not.toHaveStyle({ alignItems: "center" });
+    });
+
+    it("text: defaults to top alignment when valign is absent", () => {
+      renderCanvas({
+        doc: docWith([{ id: "t1", type: "text", x: 5, y: 5, height: 10, text: "Hi" }]),
+      });
+
+      expect(screen.getByTestId("badge-canvas-element-t1")).not.toHaveStyle({ alignItems: "center" });
+      expect(screen.getByTestId("badge-canvas-element-t1")).not.toHaveStyle({ alignItems: "flex-end" });
+    });
+
     // P3.1 Task 12 (spec §6 "never invented values"): a bound element whose
     // source resolves to nothing for the current previewData carries a
     // `title` hint. No static `text` fallback here (ElementsPane's own
