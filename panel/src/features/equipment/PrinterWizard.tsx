@@ -583,6 +583,8 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                     value={manualPort === "" ? "" : Number(manualPort)}
                     onValueChange={(v) => setManualPort(v === "" ? "" : String(v))}
                     disabled={manualSubmitting}
+                    incrementLabel={t("commonIncrement")}
+                    decrementLabel={t("commonDecrement")}
                   />
                 </div>
                 {manualError ? (
@@ -693,6 +695,8 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                         value={savePort === "" ? "" : Number(savePort)}
                         onValueChange={(v) => setSavePort(v === "" ? "" : String(v))}
                         disabled={saving || mirrorWarning}
+                        incrementLabel={t("commonIncrement")}
+                        decrementLabel={t("commonDecrement")}
                       />
                     </div>
                   </div>

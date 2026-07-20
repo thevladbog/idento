@@ -51,6 +51,8 @@
   "homeEmptyBody": "Создайте своё первое мероприятие, чтобы начать импортировать участников и печатать бейджи.",
   "homeLoadError": "Не удалось загрузить мероприятия.",
   "retry": "Повторить",
+  "commonIncrement": "Увеличить",
+  "commonDecrement": "Уменьшить",
   "createEventTitle": "Новое мероприятие",
   "createEventNameLabel": "Название мероприятия",
   "createEventStartLabel": "Начало",

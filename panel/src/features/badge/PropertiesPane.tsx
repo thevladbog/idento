@@ -644,10 +644,26 @@ function NumberField({
   max?: number;
   onValueChange: (value: number | "") => void;
 }) {
+  // Own useTranslation() call rather than threading incrementLabel/
+  // decrementLabel through all eight call sites above -- this is a
+  // standalone function component in the same file as PropertiesPane
+  // (which already calls the hook for its own `t`), and react-i18next's
+  // hook is cheap to call more than once per file (same context, no extra
+  // fetch/subscription cost worth avoiding).
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <NumberInput id={id} step={step} min={min} max={max} value={value} onValueChange={onValueChange} />
+      <NumberInput
+        id={id}
+        step={step}
+        min={min}
+        max={max}
+        value={value}
+        onValueChange={onValueChange}
+        incrementLabel={t("commonIncrement")}
+        decrementLabel={t("commonDecrement")}
+      />
     </div>
   );
 }

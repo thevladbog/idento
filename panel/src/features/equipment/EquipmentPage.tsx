@@ -225,6 +225,8 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending, agentReachab
                 value={port === "" ? "" : Number(port)}
                 onValueChange={(v) => setPort(v === "" ? "" : String(v))}
                 disabled={pending}
+                incrementLabel={t("commonIncrement")}
+                decrementLabel={t("commonDecrement")}
               />
             </div>
           </div>

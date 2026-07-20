@@ -51,6 +51,8 @@
   "homeEmptyBody": "Create your first event to start importing attendees and printing badges.",
   "homeLoadError": "Couldn't load your events.",
   "retry": "Retry",
+  "commonIncrement": "Increase",
+  "commonDecrement": "Decrease",
   "createEventTitle": "New event",
   "createEventNameLabel": "Event name",
   "createEventStartLabel": "Starts",

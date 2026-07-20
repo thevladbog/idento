@@ -374,6 +374,8 @@ export function LaunchCeremony() {
                 min={1}
                 max={30}
                 disabled={!settingsReady}
+                incrementLabel={t("commonIncrement")}
+                decrementLabel={t("commonDecrement")}
                 value={settingsForm.verdict_auto_dismiss_sec}
                 // verdict_auto_dismiss_sec is a plain `number` (never ""),
                 // matching the old Number(e.target.value) behavior where a
