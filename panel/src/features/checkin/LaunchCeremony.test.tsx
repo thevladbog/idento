@@ -283,7 +283,7 @@ describe("LaunchCeremony", () => {
     expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeDisabled();
     expect(screen.getByRole("switch", { name: "Allow manual search" })).toBeDisabled();
     expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toBeDisabled();
-    expect(screen.getByLabelText("Scan input")).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Scan input" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeEnabled());
@@ -403,7 +403,8 @@ describe("LaunchCeremony", () => {
     const nameInput = screen.getByLabelText("Station name");
     await user.clear(nameInput);
     await user.type(nameInput, "Main Door");
-    await user.selectOptions(screen.getByLabelText("Zone (optional)"), "Main Hall");
+    await user.click(screen.getByRole("combobox", { name: "Zone (optional)" }));
+    await user.click(await screen.findByRole("option", { name: "Main Hall" }));
 
     await user.click(screen.getByRole("button", { name: "Start check-in" }));
 
@@ -558,7 +559,7 @@ describe("LaunchCeremony", () => {
 
     await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).not.toBeChecked());
     expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(12);
-    expect(screen.getByLabelText("Scan input")).toHaveValue("manual");
+    expect(screen.getByRole("combobox", { name: "Scan input" })).toHaveTextContent("Manual search");
     expect(screen.getByRole("switch", { name: "Allow manual search" })).not.toBeChecked();
   });
 

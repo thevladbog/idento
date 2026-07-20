@@ -29,7 +29,8 @@
 // class=printer), so stamping it here is safe and consistent, not a
 // readiness side-effect in disguise.
 import {
-  Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, Select, cn,
+  Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, Select, SelectContent,
+  SelectItem, SelectTrigger, SelectValue, cn,
 } from "@idento/ui";
 import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
@@ -452,15 +453,18 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
                   <Label htmlFor="scanner-wizard-terminator">{t("equipmentWizardTerminator")}</Label>
                   <div className="flex items-center gap-2">
                     <Select
-                      id="scanner-wizard-terminator"
-                      className="w-auto"
                       value={terminator}
-                      onChange={(e) => setTerminator(e.target.value as WedgeDetection["terminator"])}
+                      onValueChange={(next) => setTerminator(next as WedgeDetection["terminator"])}
                       disabled={saving}
                     >
-                      <option value="enter">{TERMINATOR_LABELS.enter}</option>
-                      <option value="tab">{TERMINATOR_LABELS.tab}</option>
-                      <option value="none">{TERMINATOR_LABELS.none}</option>
+                      <SelectTrigger id="scanner-wizard-terminator" className="w-auto">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="enter">{TERMINATOR_LABELS.enter}</SelectItem>
+                        <SelectItem value="tab">{TERMINATOR_LABELS.tab}</SelectItem>
+                        <SelectItem value="none">{TERMINATOR_LABELS.none}</SelectItem>
+                      </SelectContent>
                     </Select>
                     {wedge.detection && terminator === wedge.detection.terminator ? (
                       <span className="text-caption text-muted-foreground">{t("equipmentWizardDetected")}</span>

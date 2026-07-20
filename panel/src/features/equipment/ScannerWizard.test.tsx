@@ -176,8 +176,8 @@ describe("ScannerWizard", () => {
       // empty, terminator at its default.
       const nameInput = screen.getByLabelText("Device name") as HTMLInputElement;
       expect(nameInput.value).toBe("");
-      const terminatorSelect = screen.getByLabelText("Terminator") as HTMLSelectElement;
-      expect(terminatorSelect.value).toBe("enter");
+      const terminatorSelect = screen.getByRole("combobox", { name: "Terminator" });
+      expect(terminatorSelect).toHaveTextContent("Enter");
       expect(screen.queryByText("· detected")).not.toBeInTheDocument();
 
       typeWedgeBurst("TEST-4471");
@@ -187,7 +187,7 @@ describe("ScannerWizard", () => {
       expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/Tab/);
       expect(screen.getByTestId("scanner-wizard-detection")).toHaveTextContent(/ms/);
       // Terminator synced to the detection, flagged as detected.
-      expect(terminatorSelect.value).toBe("tab");
+      expect(terminatorSelect).toHaveTextContent("Tab");
       expect(screen.getByText("· detected")).toBeInTheDocument();
     });
 
@@ -243,7 +243,8 @@ describe("ScannerWizard", () => {
       renderWizard();
 
       await user.type(screen.getByLabelText("Device name"), "Future desk scanner");
-      await user.selectOptions(screen.getByLabelText("Terminator"), "tab");
+      await user.click(screen.getByRole("combobox", { name: "Terminator" }));
+      await user.click(await screen.findByRole("option", { name: "Tab" }));
       await user.click(screen.getByRole("button", { name: "Save scanner" }));
 
       await waitFor(() => expect(createDeviceCalls).toHaveLength(1));
