@@ -68,7 +68,9 @@ function useAgentScanners(enabled: boolean) {
   return { state, scanners, refetch: query.refetch };
 }
 
-type DialogState = { kind: "rename" | "delete"; device: EquipmentDevice } | null;
+type DialogState =
+  | { kind: "rename" | "delete" | "edit-address"; device: EquipmentDevice }
+  | null;
 
 // P4.3 Task 8 -- which target (if any) the printer wizard is currently open
 // for: a fresh create (optionally prefilled from an unsaved live printer's
@@ -136,6 +138,88 @@ function RenameDialog({ device, onOpenChange, onSave, pending }: RenameDialogPro
   );
 }
 
+interface EditAddressDialogProps {
+  device: EquipmentDevice | null;
+  onOpenChange: (open: boolean) => void;
+  onSave: (ip: string, port: number) => void;
+  pending: boolean;
+}
+
+// Row menu's "Edit address…" for a saved network printer (the 2026-07-20
+// Zebra run's gap: previously the only way to change a saved network
+// printer's ip/port was delete + recreate). Same "one shared dialog
+// instance, loadedForRef-guarded against a background refetch stomping an
+// in-progress edit" shape as RenameDialog above -- port validation mirrors
+// PrinterWizard.tsx's own rule (Number.isInteger, 1..65535) so the two
+// address forms in this feature enforce the identical range.
+function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddressDialogProps) {
+  const { t } = useTranslation();
+  const [ip, setIp] = React.useState("");
+  const [port, setPort] = React.useState("");
+  const loadedForRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!device) {
+      loadedForRef.current = null;
+      return;
+    }
+    if (loadedForRef.current === device.id) return;
+    setIp((device.config?.ip as string | number | undefined)?.toString() ?? "");
+    setPort((device.config?.port as string | number | undefined)?.toString() ?? "");
+    loadedForRef.current = device.id;
+  }, [device]);
+
+  const trimmedIp = ip.trim();
+  const portNumber = Number(port);
+  const portValid = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+  const valid = trimmedIp.length > 0 && portValid;
+
+  return (
+    <Dialog open={device !== null} onOpenChange={onOpenChange}>
+      <DialogContent closeLabel={t("workspaceDialogClose")}>
+        <DialogHeader>
+          <DialogTitle>{t("equipmentEditAddressTitle")}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          {/* PATCH-ing config unconditionally resets test_passed_at
+              server-side (PR #83 round 2) -- surfaced up front so the
+              operator isn't surprised by the device coming back untested. */}
+          <p className="text-body text-muted-foreground">{t("equipmentEditAddressConsequence")}</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="equipment-edit-address-ip">{t("equipmentWizardManualIpAddress")}</Label>
+              <Input
+                id="equipment-edit-address-ip"
+                value={ip}
+                onChange={(e) => setIp(e.target.value)}
+                disabled={pending}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="equipment-edit-address-port">{t("equipmentWizardManualPort")}</Label>
+              <Input
+                id="equipment-edit-address-port"
+                type="number"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                disabled={pending}
+              />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
+            {t("createEventCancel")}
+          </Button>
+          <Button type="button" disabled={pending || !valid} onClick={() => onSave(trimmedIp, portNumber)}>
+            {t("settingsSave")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function EquipmentPage() {
   const { t } = useTranslation();
 
@@ -169,6 +253,10 @@ export function EquipmentPage() {
   // per-device string like comRemoveWarning) because the copy needs no
   // interpolation -- same shape as PrinterWizard's mirrorWarning.
   const [defaultMirrorWarning, setDefaultMirrorWarning] = React.useState(false);
+  // Same "warn, don't fail; stays visible until the operator's own explicit
+  // dismiss" convention as comRemoveWarning/defaultMirrorWarning above --
+  // the "Edit address…" dialog's agent mirror (mirrorAddressToAgent below).
+  const [addressMirrorWarning, setAddressMirrorWarning] = React.useState(false);
 
   // P4.3 Task 8 -- every printer-wizard entry point is guarded on a known
   // machineId: the wizard's create path POSTs to
@@ -303,6 +391,26 @@ export function EquipmentPage() {
     });
   }
 
+  // "Edit address…" dialog's agent mirror, once the registry PATCH (source
+  // of truth) has already succeeded. The agent's own POST /printers/add is
+  // an exists-check-then-append (agent/main.go) -- an already-known name is
+  // left untouched, so re-adding under the SAME name would apply the new
+  // ip/port only until the agent's next restart, then silently revert to
+  // the stale one. Remove-then-add is the honest sequence for a changed
+  // address; if the remove itself fails, the add is deliberately never
+  // attempted (adding while the stale config entry still exists would
+  // recreate exactly that silent-revert risk) -- same "warn, don't fail"
+  // posture as mirrorDefaultToAgent above.
+  function mirrorAddressToAgent(agentName: string | undefined, ip: string, port: number) {
+    if (!agentReachable || !agentName) return;
+    agentClient
+      .removeNetworkPrinter(agentName)
+      .then(() => agentClient.addNetworkPrinter({ name: agentName, ip, port }))
+      .catch(() => {
+        setAddressMirrorWarning(true);
+      });
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -388,6 +496,7 @@ export function EquipmentPage() {
                 })
               }
               onDelete={(device) => setDialog({ kind: "delete", device })}
+              onEditAddress={(device) => setDialog({ kind: "edit-address", device })}
               onRetryLive={() => void printers.refetch()}
               onSetUp={() => openCreateWizard()}
               onSaveUnsaved={(printer: AgentPrinter) => openCreateWizard({ agentName: printer.name, type: printer.type })}
@@ -427,6 +536,31 @@ export function EquipmentPage() {
           patchDevice.mutate(
             { params: { path: { device_id: dialog.device.id } }, body: { display_name: name } },
             { onSuccess: closeDialog },
+          );
+        }}
+      />
+
+      <EditAddressDialog
+        device={dialog?.kind === "edit-address" ? dialog.device : null}
+        pending={patchDevice.isPending}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+        onSave={(ip, port) => {
+          if (dialog?.kind !== "edit-address") return;
+          const device = dialog.device;
+          const agentName = device.config?.agent_name as string | undefined;
+          const dpi = device.config?.dpi;
+          const config: Record<string, unknown> = { agent_name: agentName, ip, port };
+          if (dpi !== undefined) config.dpi = dpi;
+          patchDevice.mutate(
+            { params: { path: { device_id: device.id } }, body: { config } },
+            {
+              onSuccess: () => {
+                closeDialog();
+                mirrorAddressToAgent(agentName, ip, port);
+              },
+            },
           );
         }}
       />
@@ -497,6 +631,19 @@ export function EquipmentPage() {
         >
           <p className="text-body text-warning">{t("equipmentDefaultMirrorWarn")}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => setDefaultMirrorWarning(false)}>
+            {t("workspaceDialogClose")}
+          </Button>
+        </div>
+      ) : null}
+
+      {addressMirrorWarning ? (
+        <div
+          role="status"
+          data-testid="equipment-address-mirror-warning"
+          className="flex items-center justify-between gap-3 rounded-lg border border-warning bg-warning/5 px-4 py-2"
+        >
+          <p className="text-body text-warning">{t("equipmentAddressMirrorWarn")}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setAddressMirrorWarning(false)}>
             {t("workspaceDialogClose")}
           </Button>
         </div>
