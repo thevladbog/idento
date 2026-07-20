@@ -9,3 +9,6 @@ export { BarcodeBeam, type BarcodeBeamProps } from "./barcode-beam";
 export { ScanFrame, type ScanFrameProps } from "./scan-frame";
 export { BrandSlot, type BrandSlotProps } from "./brand-slot";
 export { LanguageToggle, type LanguageToggleProps } from "./language-toggle";
+export { KioskButton, type KioskButtonProps } from "./kiosk-button";
+export { KioskInput, type KioskInputProps } from "./kiosk-input";
+export { PreflightShell, type PreflightShellProps } from "./preflight-shell";
