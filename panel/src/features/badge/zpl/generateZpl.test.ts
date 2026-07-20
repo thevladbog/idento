@@ -650,6 +650,19 @@ describe("barcodeFieldOrigin emits module width and drives centering", () => {
     expect(o.x).toBe(4 + 795);
     expect(o.rightJustified).toBe(true);
   });
+
+  it("a non-positive width falls back to 30mm (parity with zpl.go's `<= 0` guard)", () => {
+    // A negative width from a hand-edited/legacy doc must behave exactly like
+    // undefined/0 -- 30mm zone -- so the panel and Go generators stay
+    // byte-for-byte. mmToDots(30, 203) = 240.
+    const zone30 = 240;
+    const undef = barcodeFieldOrigin({ x: 0, width: undefined, align: "right" as const }, 203, 10);
+    const zero = barcodeFieldOrigin({ x: 0, width: 0, align: "right" as const }, 203, 10);
+    const negative = barcodeFieldOrigin({ x: 0, width: -5, align: "right" as const }, 203, 10);
+    expect(undef.x).toBe(zone30);
+    expect(zero.x).toBe(zone30);
+    expect(negative.x).toBe(zone30);
+  });
 });
 
 describe("generateBarcodeZPL emits ^BY before ^BC", () => {

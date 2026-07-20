@@ -401,7 +401,11 @@ export function barcodeFieldOrigin(
   overflows: boolean;
 } {
   const zoneLeftDots = mmToDots(element.x, dpi);
-  const zoneWidthDots = mmToDots(element.width || 30, dpi);
+  // Non-positive width (0 OR a negative from a hand-edited/legacy doc) falls
+  // back to 30mm -- `|| 30` alone would let a NEGATIVE width through (it's
+  // truthy), diverging from zpl.go's `widthMM <= 0` guard and breaking the
+  // two generators' byte-for-byte parity.
+  const zoneWidthDots = mmToDots(element.width && element.width > 0 ? element.width : 30, dpi);
   const moduleWidthDots = barcodeModuleWidthDots(dataLength, zoneWidthDots);
   const estimatedWidthDots = estimateBarcodeWidthDots(dataLength, moduleWidthDots);
   const overflows = barcodeOverflows(dataLength, zoneWidthDots);
