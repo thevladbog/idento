@@ -1,0 +1,109 @@
+/* Kiosk-strict theme (dark-only for now). The ONLY place kiosk colors may appear.
+   Font: Inter is bundled by the consuming app (desktop ships the woff2s) — this file
+   only names it. Canvas: Idento Kiosk.dc.html (fixed decisions: chips 1e, 1a/1c). */
+
+:root {
+  --kiosk-bg: #111413;
+  --kiosk-surface: #161917;
+  --kiosk-surface-2: #1b1f1d;
+  --kiosk-border: #232725;
+  --kiosk-border-2: #2a2f2c;
+  --kiosk-outline: #3a403d;
+  --kiosk-brand: #00935e;
+  --kiosk-ok: #2ee6a8;
+  --kiosk-warn: #f5a300;
+  --kiosk-warn-text: #f5c96a;
+  --kiosk-warn-ink: #241a00;
+  --kiosk-danger: #ce2b37;
+  --kiosk-danger-soft: #ff5c68;
+  --kiosk-neutral: #262c2a;
+  --kiosk-text: #ffffff;
+  --kiosk-text-2: #c8d0cc;
+  --kiosk-text-3: #9aa5a0;
+  --kiosk-text-4: #6b736f;
+  --kiosk-overlay-light: rgb(255 255 255 / 18%);
+  --kiosk-overlay-ink: rgb(0 0 0 / 25%);
+  --kiosk-overlay-track: rgb(255 255 255 / 25%);
+
+  --kiosk-font: "Inter", system-ui, sans-serif;
+
+  /* chrome sizes (1920-tier) */
+  --kiosk-bar-h: 76px;
+  --kiosk-banner-h: 112px;
+  --kiosk-footer-h: 88px;
+  --kiosk-panel-w: 440px;
+
+  /* type ramp (1920-tier) */
+  --kiosk-fs-idle-title: 62px;
+  --kiosk-fs-idle-sub: 28px;
+  --kiosk-fs-verdict-name: 116px;
+  --kiosk-fs-verdict-title: 46px;
+  --kiosk-fs-chrome: 20px;
+  --kiosk-fs-chrome-lg: 24px;
+}
+
+@media (max-width: 1679px) {
+  :root {
+    --kiosk-bar-h: 64px;
+    --kiosk-banner-h: 96px;
+    --kiosk-footer-h: 72px;
+    --kiosk-panel-w: 380px;
+    --kiosk-fs-idle-title: 48px;
+    --kiosk-fs-idle-sub: 24px;
+    --kiosk-fs-verdict-name: 84px;
+    --kiosk-fs-verdict-title: 38px;
+    --kiosk-fs-chrome: 17px;
+    --kiosk-fs-chrome-lg: 21px;
+  }
+}
+
+@media (max-width: 1179px) {
+  :root {
+    --kiosk-bar-h: 56px;
+    --kiosk-banner-h: 84px;
+    --kiosk-footer-h: 0px; /* лог убирается — экран мал для трёх зон */
+    --kiosk-panel-w: 320px;
+    --kiosk-fs-idle-title: 38px;
+    --kiosk-fs-idle-sub: 20px;
+    --kiosk-fs-verdict-name: 64px;
+    --kiosk-fs-verdict-title: 30px;
+    --kiosk-fs-chrome: 15px;
+    --kiosk-fs-chrome-lg: 18px;
+  }
+}
+
+@theme inline {
+  --color-kiosk-bg: var(--kiosk-bg);
+  --color-kiosk-surface: var(--kiosk-surface);
+  --color-kiosk-surface-2: var(--kiosk-surface-2);
+  --color-kiosk-border: var(--kiosk-border);
+  --color-kiosk-border-2: var(--kiosk-border-2);
+  --color-kiosk-outline: var(--kiosk-outline);
+  --color-kiosk-brand: var(--kiosk-brand);
+  --color-kiosk-ok: var(--kiosk-ok);
+  --color-kiosk-warn: var(--kiosk-warn);
+  --color-kiosk-warn-text: var(--kiosk-warn-text);
+  --color-kiosk-warn-ink: var(--kiosk-warn-ink);
+  --color-kiosk-danger: var(--kiosk-danger);
+  --color-kiosk-danger-soft: var(--kiosk-danger-soft);
+  --color-kiosk-neutral: var(--kiosk-neutral);
+  --color-kiosk-text: var(--kiosk-text);
+  --color-kiosk-text-2: var(--kiosk-text-2);
+  --color-kiosk-text-3: var(--kiosk-text-3);
+  --color-kiosk-text-4: var(--kiosk-text-4);
+  --color-kiosk-overlay-light: var(--kiosk-overlay-light);
+  --color-kiosk-overlay-ink: var(--kiosk-overlay-ink);
+  --color-kiosk-overlay-track: var(--kiosk-overlay-track);
+}
+
+/* type-ramp helpers (plain classes — no tailwind-merge involvement) */
+.kiosk-type-idle-title { font-size: var(--kiosk-fs-idle-title); font-weight: 800; letter-spacing: -0.02em; }
+.kiosk-type-idle-sub { font-size: var(--kiosk-fs-idle-sub); }
+.kiosk-type-verdict-name { font-size: var(--kiosk-fs-verdict-name); font-weight: 800; letter-spacing: -0.025em; line-height: 1.04; overflow-wrap: anywhere; }
+.kiosk-type-verdict-title { font-size: var(--kiosk-fs-verdict-title); font-weight: 800; letter-spacing: 0.08em; }
+
+/* motion (transform/opacity-only — cheap on Pi) */
+@keyframes kiosk-scan { 0% { top: 8%; opacity: 1; } 48% { top: 88%; opacity: 1; } 52%, 100% { top: 8%; opacity: 0; } }
+@keyframes kiosk-beam { 0%, 100% { transform: translateX(-170px); } 50% { transform: translateX(170px); } }
+@keyframes kiosk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@keyframes kiosk-drift { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(9px, 5px); } 50% { transform: translate(0, 10px); } 75% { transform: translate(-9px, 5px); } }

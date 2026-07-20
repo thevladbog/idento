@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const EXEMPT = new Set(["theme.css", "theme.test.ts"]);
+const EXEMPT = new Set(["theme.css", "theme.test.ts", "kiosk-theme.css", "kiosk-theme.test.ts"]);
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 const RGB = /\brgba?\(/;
 
