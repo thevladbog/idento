@@ -371,6 +371,42 @@ export function PropertiesPane({
   // explicitly sets one (the first edit dispatches it onto the element).
   const footprint = elementFootprint(element);
 
+  // Shared between text (its original position, unchanged) and barcode
+  // (2026-07-20 barcode-alignment request) -- one JSX definition so the two
+  // call sites can never drift apart, mirroring the codebase's existing
+  // "one canonical computation" convention (e.g. rasterFieldOrigin,
+  // valignOffsetDots in generateZpl.ts).
+  function renderAlignmentControl() {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-card-title text-foreground">{t("badgePropsAlignment")}</span>
+        <div
+          role="group"
+          aria-label={t("badgePropsAlignment")}
+          className="inline-flex w-fit gap-1 rounded-md border border-border p-0.5"
+        >
+          {ALIGN_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
+            const pressed = (element!.align ?? "left") === value;
+            return (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-pressed={pressed}
+                aria-label={t(labelKey)}
+                className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
+                onClick={() => patch({ align: value })}
+              >
+                <Icon aria-hidden className="size-4" />
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto rounded-lg border border-border p-4" data-testid="badge-pane-properties">
       <h3 className="text-body font-medium text-muted-foreground">{t("badgePaneProperties")}</h3>
@@ -419,6 +455,8 @@ export function PropertiesPane({
           </Select>
         </div>
       )}
+
+      {isBarcodeType && renderAlignmentControl()}
 
       {isTextType && (
         <>
@@ -482,32 +520,7 @@ export function PropertiesPane({
             }}
           />
 
-          <div className="flex flex-col gap-1">
-            <span className="text-card-title text-foreground">{t("badgePropsAlignment")}</span>
-            <div
-              role="group"
-              aria-label={t("badgePropsAlignment")}
-              className="inline-flex w-fit gap-1 rounded-md border border-border p-0.5"
-            >
-              {ALIGN_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
-                const pressed = (element.align ?? "left") === value;
-                return (
-                  <Button
-                    key={value}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    aria-pressed={pressed}
-                    aria-label={t(labelKey)}
-                    className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
-                    onClick={() => patch({ align: value })}
-                  >
-                    <Icon aria-hidden className="size-4" />
-                  </Button>
-                );
-              })}
-            </div>
-          </div>
+          {renderAlignmentControl()}
 
           <div className="flex flex-col gap-1">
             <span className="text-card-title text-foreground">{t("badgePropsValign")}</span>

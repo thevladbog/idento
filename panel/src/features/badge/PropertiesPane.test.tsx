@@ -662,6 +662,58 @@ describe("PropertiesPane", () => {
       expect(screen.queryByLabelText("Font")).not.toBeInTheDocument();
     });
 
+    // 2026-07-20 barcode-alignment request: the SAME alignment control text
+    // elements already have (ALIGN_OPTIONS, renderAlignmentControl in
+    // PropertiesPane.tsx) now also renders for barcode elements -- reusing
+    // generateZpl.ts's `align` field and this pane's existing i18n keys, no
+    // new ones.
+    describe("alignment buttons", () => {
+      it("shows the alignment buttons for a barcode element", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code",
+          },
+        });
+
+        expect(screen.getByRole("button", { name: "Align left" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Align center" })).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Align right" })).toBeInTheDocument();
+      });
+
+      it("clicking a segment patches align and only that segment is aria-pressed", () => {
+        const { onUpdate } = renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code",
+          },
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "Align center" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { align: "center" });
+      });
+
+      it("defaults to Align left pressed when the element has no explicit align", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code",
+          },
+        });
+
+        expect(screen.getByRole("button", { name: "Align left" })).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("shows the element's current align as pressed", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", align: "right",
+          },
+        });
+
+        expect(screen.getByRole("button", { name: "Align right" })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", { name: "Align left" })).toHaveAttribute("aria-pressed", "false");
+      });
+    });
+
     // 2026-07-20 live-run request: generateBarcodeZPL's ^BC interpretation
     // line (Y/N) is now driven by element.showCaption (generateZpl.ts) --
     // absent/true prints the caption (back-compat with every template saved
