@@ -112,10 +112,6 @@ i18n
           dark: "Dark",
           system: "System",
 
-          // Badge Template Editor
-          badgeTemplateEditor: "Badge Template Editor",
-          badgeTemplateEditorDesc:
-            "Design your badge layout by adding text fields and QR codes",
           templateName: "Template Name",
           width: "Width",
           height: "Height",
@@ -427,7 +423,6 @@ i18n
           deleteEvent: "Delete Event",
           deleteEventWarning:
             "This action cannot be undone. All attendees and data will be permanently deleted.",
-          badgeTemplate: "Badge Template",
           staff: "Staff",
           checkin: "Check-in",
           attendeeName: "Name",
@@ -1036,10 +1031,6 @@ i18n
           dark: "Тёмная",
           system: "Системная",
 
-          // Badge Template Editor
-          badgeTemplateEditor: "Редактор шаблонов бейджей",
-          badgeTemplateEditorDesc:
-            "Создайте макет бейджа, добавляя текстовые поля и QR-коды",
           templateName: "Название шаблона",
           width: "Ширина",
           height: "Высота",
@@ -1356,7 +1347,6 @@ i18n
           deleteEvent: "Удалить мероприятие",
           deleteEventWarning:
             "Это действие нельзя отменить. Все участники и данные будут удалены навсегда.",
-          badgeTemplate: "Шаблон бейджа",
           staff: "Персонал",
           checkin: "Чекин",
           attendeeName: "Имя",

@@ -1615,22 +1615,10 @@ paths:
         member can call this — the handler checks tenant ownership only, no
         role restriction.
       description: >
-        Dual-write (final review Critical 1, P3.1): this is also the legacy
-        web badge editor's save path
-        (web/src/pages/BadgeTemplateEditorV2.tsx's handleSave PUTs its
-        template here as an object-typed custom_fields["badgeTemplate"]).
-        After the primary event update succeeds, when the incoming
-        custom_fields carries a badgeTemplate value that decodes as a JSON
-        OBJECT (mirroring migration 000018's own backfill guard — a
-        string-typed legacy value is print-broken already and is left
-        untouched), the handler ALSO mirrors it into the dedicated
-        badge_template column via store.SyncBadgeTemplateFromLegacy,
-        unconditionally bumping badge_template_version. This write has no
-        expected-version guard (the legacy PUT has no version concept), so
-        it deliberately makes a concurrent panel badge-editor save's NEXT PUT
-        /api/events/{id}/badge-template 409 — correct cross-editor conflict
-        semantics, not a bug. The sync is log-and-continue: a failure there
-        never fails this PUT itself.
+        This endpoint no longer touches the badge template in any way
+        (P5.2 removed the legacy dual-write). The badge template is managed
+        solely via PUT /api/events/{id}/badge-template, which owns the
+        dedicated badge_template column and its version counter.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1895,15 +1883,10 @@ paths:
         semantics: 0 means "no template saved yet" — the first successful
         PUT with version: 0 creates version 1; every subsequent successful
         PUT must supply the exact current version and bumps it by one.
-        Transitional mirror: the same write also mirrors template
-        verbatim into the legacy custom_fields["badgeTemplate"] key (via
-        jsonb_set, in the same statement), so the still-live legacy web
-        badge editor and any other custom_fields["badgeTemplate"] reader
-        never observe a stale value after a panel save. This mirror exists
-        only until the P5 cutover removes both sync directions
-        (this one, and UpdateEvent's existing legacy-to-column sync) —
-        badge_template/badge_template_version remain the canonical source
-        of truth throughout.
+        The write touches only the dedicated badge_template and
+        badge_template_version columns (P5.2 removed the legacy
+        custom_fields["badgeTemplate"] mirror) — those columns remain the
+        sole source of truth.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1951,13 +1934,10 @@ paths:
           description: >
             version does not match the event's current stored version
             (store.ErrVersionConflict). current_version is re-read via
-            GetEventBadgeTemplate so the caller can retry. As of the P3.1
-            dual-write fix, this can also be triggered by the legacy web
-            editor: PUT /api/events/{id} (updateEvent) unconditionally bumps
-            badge_template_version whenever it syncs an object-typed legacy
-            custom_fields["badgeTemplate"] — a save made there between this
-            caller's load and its own PUT surfaces here as an ordinary
-            version conflict, same as two panel saves racing.
+            GetEventBadgeTemplate so the caller can retry. This now only
+            arises from a concurrent PUT /api/events/{id}/badge-template
+            (two panel saves racing) — P5.2 removed the legacy dual-write,
+            so PUT /api/events/{id} no longer bumps badge_template_version.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BadgeTemplateConflict" }
