@@ -66,10 +66,13 @@ describe("theme.css tokens", () => {
     // workspace dark-mode bug). The base layer is the single place that
     // guarantee lives; consumers must not need to remember text-foreground
     // on every layout root.
-    const base = css.slice(css.indexOf("@layer base"));
-    expect(base, "@layer base block missing").not.toBe("");
-    expect(base).toContain("color: var(--color-foreground)");
-    expect(base).toContain("background-color: var(--color-background)");
+    const layerStart = css.indexOf("@layer base");
+    expect(layerStart, "@layer base block missing").toBeGreaterThan(-1);
+    const bodyStart = css.indexOf("body", layerStart);
+    expect(bodyStart, "body rule missing inside @layer base").toBeGreaterThan(-1);
+    const body = css.slice(bodyStart, css.indexOf("}", bodyStart));
+    expect(body).toContain("color: var(--color-foreground)");
+    expect(body).toContain("background-color: var(--color-background)");
   });
 
   it("defines the Inter type ramp utilities", () => {
