@@ -9,6 +9,11 @@
 // maxLines -- see generateTextZPL below. Deviating from that is a plan
 // violation, not an improvement.
 //
+// One SANCTIONED extension past web parity (2026-07-20 live-run request):
+// barcode elements read `showCaption` to drive ^BC's interpretation-line
+// argument (generateBarcodeZPL). The field's absent-means-Y default keeps
+// every pre-existing template's output byte-identical to web's.
+//
 // The rasterizer itself is injected via `deps.rasterizeText` because jsdom
 // (this task's test environment) has no canvas; the real browser canvas
 // rasterizer is Task 5's module. This file and its tests are 100%
@@ -254,8 +259,15 @@ function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, strin
   const heightMM = element.height || 10;
   const height = mmToDots(heightMM, dpi);
 
+  // ^BC's third argument prints the human-readable interpretation line.
+  // web (zpl.ts:237) and backend (zpl.go:255) both hardcode Y; this is the
+  // panel's one DELIBERATE extension past web parity (2026-07-20 live-run
+  // request): only an explicit `showCaption: false` flips it to N, so every
+  // template saved before the field existed keeps its caption byte-for-byte.
+  const interpretationLine = element.showCaption === false ? "N" : "Y";
+
   // ^BC = Code 128
-  return `^FO${x},${y}^BCN,${height},Y,N,N^FD${escapeZplData(barcodeData)}^FS`;
+  return `^FO${x},${y}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
 }
 
 /**

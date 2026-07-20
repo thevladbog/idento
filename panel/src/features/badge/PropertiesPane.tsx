@@ -1,5 +1,12 @@
-import { Button, Input, Label, Select, cn } from "@idento/ui";
-import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
+import { Button, Input, Label, Select, Switch, cn } from "@idento/ui";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+} from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -7,6 +14,7 @@ import { bindingOptions, displayBinding } from "./bindings";
 import { clampPosition, clampSize, elementFootprint } from "./canvasMath";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import { ZPL_FONTS } from "./templateTypes";
+import { needsImageRendering } from "./zpl/generateZpl";
 import type { components } from "../../shared/api/schema";
 
 // Same alias FontsCard.tsx / useEventFontFaces.ts use for this exact schema
@@ -62,6 +70,37 @@ const ALIGN_OPTIONS: { value: "left" | "center" | "right"; icon: typeof AlignLef
   { value: "right", icon: AlignRight, labelKey: "badgeAlignRight" },
 ];
 
+// 2026-07-20 live-run request: mirrors ALIGN_OPTIONS's shape exactly (same
+// segmented-button pattern) for the vertical axis. Values match
+// generateZpl.ts's generateTextZPL valign check verbatim ("middle"/"bottom";
+// any other value, including "top", takes the no-adjustment default path).
+const VALIGN_OPTIONS: { value: "top" | "middle" | "bottom"; icon: typeof AlignLeft; labelKey: string }[] = [
+  { value: "top", icon: AlignVerticalJustifyStart, labelKey: "badgeValignTop" },
+  { value: "middle", icon: AlignVerticalJustifyCenter, labelKey: "badgeValignMiddle" },
+  { value: "bottom", icon: AlignVerticalJustifyEnd, labelKey: "badgeValignBottom" },
+];
+
+// True exactly when THIS element is known, at edit time and independent of
+// attendee data, to route through generateZpl.ts's raster branch -- which
+// silently drops valign (generateTextZPL's raster path returns before the
+// valign block ever runs; goldenMatrix.test.ts pins this). Two cases:
+//   - customFont set (trimmed): forces raster regardless of text or binding
+//     (same rule generateZpl.ts's raster gate and PropertiesPane's own
+//     trimmedCustomFont already apply).
+//   - UNBOUND (no source) text whose literal content needsImageRendering:
+//     resolveElementText returns element.text verbatim when there's no
+//     source, so this is the EXACT text generation will resolve -- no
+//     attendee data involved, so it's just as static/certain as the
+//     customFont case.
+// A BOUND element's per-attendee text isn't known here, so it's deliberately
+// NOT flagged on script grounds alone -- only a set customFont can disable a
+// bound element's valign control.
+function isDeterministicallyRaster(element: BadgeElement): boolean {
+  if (element.customFont?.trim()) return true;
+  if (element.source) return false;
+  return needsImageRendering(element.text ?? "");
+}
+
 // One id per control, hard-coded (not derived from element.id) -- exactly
 // one PropertiesPane is ever mounted at a time (board 4a's right column),
 // so a static id can never collide with another instance's, and label
@@ -77,17 +116,20 @@ const IDS = {
   fontSize: "badge-props-font-size",
   rotation: "badge-props-rotation",
   maxLines: "badge-props-max-lines",
+  barcodeCaption: "badge-props-barcode-caption",
 };
 
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
 // EVERY element type, plus a per-type section: text gets binding + static
-// text + font + font size + alignment + rotation + max lines; qrcode/barcode
-// get a binding select only (same options as text's); line/box get nothing
-// beyond the common section. Every control here dispatches a single-field
-// `onUpdate(id, patch)` call -- never a batched multi-field patch -- so each
-// keystroke/click is independently undoable-in-principle and mirrors
-// editorState.ts's "update" action shape (`{id, patch: Partial<BadgeElement>}`).
+// text + font + font size + alignment + vertical align + rotation + max
+// lines; qrcode gets a binding select only (same options as text's); barcode
+// gets a binding select + the human-readable-caption toggle (2026-07-20);
+// line/box get nothing beyond the common section. Every control here
+// dispatches a single-field `onUpdate(id, patch)` call -- never a batched
+// multi-field patch -- so each keystroke/click is independently
+// undoable-in-principle and mirrors editorState.ts's "update" action shape
+// (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
   element, fieldSchema, config, fonts, fontCoverage, onUpdate,
 }: PropertiesPaneProps) {
@@ -171,7 +213,9 @@ export function PropertiesPane({
   }
 
   const isTextType = element.type === "text";
+  const isBarcodeType = element.type === "barcode";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
+  const deterministicallyRaster = isTextType && isDeterministicallyRaster(element);
 
   // Trim-aware "is customFont actually set?" -- the SAME rule generation
   // applies (generateZpl.ts's raster gate `customFont && customFont.trim()`
@@ -366,6 +410,37 @@ export function PropertiesPane({
           </div>
 
           <div className="flex flex-col gap-1">
+            <span className="text-card-title text-foreground">{t("badgePropsValign")}</span>
+            <div
+              role="group"
+              aria-label={t("badgePropsValign")}
+              className="inline-flex w-fit gap-1 rounded-md border border-border p-0.5"
+            >
+              {VALIGN_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
+                const pressed = (element.valign ?? "top") === value;
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={deterministicallyRaster}
+                    aria-pressed={pressed}
+                    aria-label={t(labelKey)}
+                    className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
+                    onClick={() => patch({ valign: value })}
+                  >
+                    <Icon aria-hidden className="size-4" />
+                  </Button>
+                );
+              })}
+            </div>
+            {deterministicallyRaster && (
+              <p className="text-caption text-muted-foreground">{t("badgeValignRasterHint")}</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.rotation}>{t("badgePropsRotation")}</Label>
             <Select
               id={IDS.rotation}
@@ -393,6 +468,17 @@ export function PropertiesPane({
             }}
           />
         </>
+      )}
+
+      {isBarcodeType && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={IDS.barcodeCaption}
+            checked={element.showCaption !== false}
+            onCheckedChange={(checked) => patch({ showCaption: checked })}
+          />
+          <Label htmlFor={IDS.barcodeCaption}>{t("badgePropsBarcodeCaption")}</Label>
+        </div>
       )}
     </div>
   );

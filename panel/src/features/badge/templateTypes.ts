@@ -41,6 +41,15 @@ export interface BadgeElement {
   // have that EDIT actually propagate on save — see serializeTemplateDoc's
   // own comment for the one behavior change this causes.
   customFont?: string;
+  // Barcode elements only (2026-07-20 live-run request): whether ^BC prints
+  // its human-readable interpretation line below the bars. ABSENT means true
+  // — web/src/utils/zpl.ts:237 and backend zpl.go:255 have always hardcoded
+  // the argument to Y, so every template saved before this field existed
+  // must keep printing the caption. Only an explicit `false` flips the
+  // argument to N (generateZpl.ts's generateBarcodeZPL); the backend/kiosk
+  // generator ignores this field entirely (plain json.Unmarshal drops
+  // unknown keys) and keeps printing Y regardless.
+  showCaption?: boolean;
 }
 
 export interface BadgeTemplateDoc extends BadgeConfig {
@@ -113,6 +122,7 @@ function narrowElement(raw: unknown): BadgeElement | null {
   if (typeof raw.fontFamily === "string") element.fontFamily = raw.fontFamily;
   if (typeof raw.maxLines === "number") element.maxLines = raw.maxLines;
   if (typeof raw.customFont === "string") element.customFont = raw.customFont;
+  if (typeof raw.showCaption === "boolean") element.showCaption = raw.showCaption;
   return element;
 }
 

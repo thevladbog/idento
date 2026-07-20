@@ -438,9 +438,15 @@ function drawElement(
       for (let sx = 0; sx < widthDots; sx += stripeWidth * 2) {
         ctx.fillRect(x + sx, y, stripeWidth, heightDots);
       }
-      ctx.font = `${Math.round(config.dpi / 25)}px monospace`;
-      ctx.textBaseline = "top";
-      ctx.fillText(value, x, y + heightDots + 4);
+      // Mirrors generateZpl.ts's generateBarcodeZPL: showCaption === false is
+      // the only value that suppresses the interpretation line -- absent/true
+      // both print it (back-compat default). Drawn value text below the bars
+      // stands in for ^BC's own caption line, so it follows the same gate.
+      if (element.showCaption !== false) {
+        ctx.font = `${Math.round(config.dpi / 25)}px monospace`;
+        ctx.textBaseline = "top";
+        ctx.fillText(value, x, y + heightDots + 4);
+      }
       return;
     }
 

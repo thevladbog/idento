@@ -409,6 +409,70 @@ describe("PropertiesPane", () => {
       });
     });
 
+    // 2026-07-20 live-run request: generateZpl.ts's native text path already
+    // honors element.valign+height (generateTextZPL, ~line 177) but this
+    // control was never exposed. The raster branch DROPS valign entirely
+    // (goldenMatrix.test.ts pins that), so the control is disabled -- with an
+    // honest hint, never silently applied and then ignored -- whenever THIS
+    // element is deterministically known to raster: a set customFont (forces
+    // raster regardless of text/data), or unbound (no source) text whose
+    // literal content needsImageRendering (Cyrillic/CJK/Arabic). A BOUND
+    // element's actual per-attendee text isn't known at edit time, so it's
+    // never disabled on that basis alone -- only customFont can gate a bound
+    // element.
+    describe("vertical align buttons", () => {
+      it("clicking a segment patches valign and only that segment is aria-pressed", () => {
+        const { onUpdate } = renderPane({ element: textElement });
+
+        fireEvent.click(screen.getByRole("button", { name: "Align bottom" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { valign: "bottom" });
+      });
+
+      it("defaults to Align top pressed when the element has no explicit valign", () => {
+        renderPane({ element: { ...textElement, valign: undefined } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("shows the element's current valign as pressed", () => {
+        renderPane({ element: { ...textElement, valign: "middle" } });
+
+        expect(screen.getByRole("button", { name: "Align middle" })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("button", { name: "Align top" })).toHaveAttribute("aria-pressed", "false");
+      });
+
+      it("is enabled for a plain native-path text element (no customFont, Latin static text)", () => {
+        renderPane({ element: { ...textElement, source: undefined, text: "Hello", customFont: undefined } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+        expect(screen.queryByText(/dropped|ignored|raster/i)).not.toBeInTheDocument();
+      });
+
+      it("disables the group and shows a hint when customFont is set (forces the raster path regardless of text)", () => {
+        renderPane({ element: { ...textElement, customFont: "Roboto" } });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeDisabled();
+        expect(screen.getByText("This element prints as an image; vertical align is ignored.")).toBeInTheDocument();
+      });
+
+      it("disables the group when unbound static text is Cyrillic (deterministically rasters, same rule as generation)", () => {
+        renderPane({
+          element: { ...textElement, source: undefined, text: "Привет", customFont: undefined },
+        });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeDisabled();
+      });
+
+      it("leaves the group enabled for BOUND text even though the bound value might turn out Cyrillic (unknowable at edit time)", () => {
+        renderPane({
+          element: { ...textElement, source: "first_name", text: "fallback", customFont: undefined },
+        });
+
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
+      });
+    });
+
     describe("font size / max lines", () => {
       it("patches fontSize on change", () => {
         const { onUpdate } = renderPane({ element: textElement });
@@ -462,7 +526,7 @@ describe("PropertiesPane", () => {
   });
 
   describe("barcode element", () => {
-    it("shows only the common section + binding select", () => {
+    it("shows the common section + binding select + caption toggle", () => {
       renderPane({
         element: {
           id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code",
@@ -471,6 +535,67 @@ describe("PropertiesPane", () => {
 
       expect(screen.getByLabelText("Binding")).toHaveValue("code");
       expect(screen.queryByLabelText("Font")).not.toBeInTheDocument();
+    });
+
+    // 2026-07-20 live-run request: generateBarcodeZPL's ^BC interpretation
+    // line (Y/N) is now driven by element.showCaption (generateZpl.ts) --
+    // absent/true prints the caption (back-compat with every template saved
+    // before this field existed), only an explicit false hides it.
+    describe("caption toggle", () => {
+      it("is checked when showCaption is absent (back-compat default)", () => {
+        renderPane({
+          element: { id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code" },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).toBeChecked();
+      });
+
+      it("is checked when showCaption is explicitly true", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: true,
+          },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).toBeChecked();
+      });
+
+      it("is unchecked when showCaption is false", () => {
+        renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: false,
+          },
+        });
+
+        expect(screen.getByLabelText("Print human-readable caption")).not.toBeChecked();
+      });
+
+      it("unchecking dispatches {showCaption: false}", () => {
+        const { onUpdate } = renderPane({
+          element: { id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code" },
+        });
+
+        fireEvent.click(screen.getByLabelText("Print human-readable caption"));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { showCaption: false });
+      });
+
+      it("re-checking dispatches {showCaption: true}", () => {
+        const { onUpdate } = renderPane({
+          element: {
+            id: "e1", type: "barcode", x: 5, y: 5, width: 30, height: 10, source: "code", showCaption: false,
+          },
+        });
+
+        fireEvent.click(screen.getByLabelText("Print human-readable caption"));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { showCaption: true });
+      });
+
+      it("is absent for qrcode/text/line/box elements", () => {
+        renderPane({ element: { id: "e1", type: "qrcode", x: 5, y: 5, source: "code" } });
+        expect(screen.queryByLabelText("Print human-readable caption")).not.toBeInTheDocument();
+      });
     });
   });
 

@@ -117,6 +117,47 @@ describe("parseTemplateDoc", () => {
     expect("customFont" in doc.elements[0]).toBe(false);
   });
 
+  // 2026-07-20 live-run request: showCaption is a typed boolean field on
+  // barcode elements (mirrors customFont's narrowing pattern above).
+  it("narrows a raw barcode element's showCaption: false into the typed doc", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "b1", type: "barcode", x: 1, y: 2, showCaption: false }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect(doc.elements[0].showCaption).toBe(false);
+  });
+
+  it("leaves showCaption absent (no key at all) when the raw element doesn't carry one", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "b1", type: "barcode", x: 1, y: 2 }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect("showCaption" in doc.elements[0]).toBe(false);
+  });
+
+  it("skips a non-boolean showCaption (e.g. a stray string) from the typed view, same skip-narrow rule as other optionals", () => {
+    const raw = {
+      width_mm: 90,
+      height_mm: 55,
+      dpi: 300,
+      elements: [{ id: "b1", type: "barcode", x: 1, y: 2, showCaption: "false" }],
+    };
+
+    const doc = parseTemplateDoc(raw);
+
+    expect("showCaption" in doc.elements[0]).toBe(false);
+  });
+
   it("skips elements that don't structurally match (missing id/type/x/y) from the typed view", () => {
     const raw = {
       width_mm: 90,
