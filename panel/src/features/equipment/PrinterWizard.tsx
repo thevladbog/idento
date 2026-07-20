@@ -164,9 +164,23 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
   // Seeds (or resets) the whole session whenever the dialog opens/closes
   // or its target changes -- same "everything resets on close" shape as
   // TestPrintDialog.tsx's own open-keyed effect.
+  //
+  // PR #83 bot-review round 2, Finding 1: this used to reset ONLY on open
+  // (`if (!open) return;` skipped every reset on close), so step/selected/
+  // testPassed stayed exactly as they were when the dialog closed. On
+  // REOPEN, this same effect run reset `firedForRef` to null synchronously
+  // (a ref mutation), while its setStep/setSelected calls below are
+  // deferred setState -- the mount-fires-once auto-print effect runs in
+  // that SAME commit, before those deferred updates land, and used to see
+  // the STALE step="test"/selected={previous printer} alongside the
+  // freshly-cleared firedForRef, firing a real test print at the PREVIOUS
+  // session's printer before the new session ever reached Find. Resetting
+  // step/selected to their find-state on CLOSE too (not just computing the
+  // fresh target on open) makes this impossible by construction: by the
+  // time a reopen's effect run happens, the close-run's reset has already
+  // committed in an earlier render, so there's no stale value left to race.
   React.useEffect(() => {
     sessionRef.current += 1;
-    if (!open) return;
     firedForRef.current = null;
     setPrinting(false);
     setPrintError(null);
@@ -184,6 +198,13 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
     setSavePort(DEFAULT_MANUAL_PORT);
     setTestPassed(false);
     setMakeDefault(true);
+
+    if (!open) {
+      setStep("find");
+      setSelected(null);
+      setDisplayName("");
+      return;
+    }
 
     if (retest) {
       setStep("test");
@@ -295,7 +316,13 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
 
   async function handleRetestConfirm() {
     // Same Minor-3 defense-in-depth re-check as handleManualSubmit above.
-    if (!retest || saving) return;
+    // PR #83 bot-review round 2, Finding 3: `printing` must gate this too,
+    // not just `saving` -- the auto-fired test print can still be in
+    // flight when "Yes, looks right" is clicked in retest mode, and this
+    // handler records test_passed AND calls onClose() directly, bypassing
+    // every other dismiss guard and hiding a LATE print failure the
+    // operator would otherwise never see.
+    if (!retest || saving || printing) return;
     const mySession = sessionRef.current;
     setSaving(true);
     setSaveError(null);
@@ -321,6 +348,11 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
   }
 
   function goBack() {
+    // PR #83 bot-review round 2, Finding 4: `printing` must gate this too
+    // -- Back used to be enabled during an in-flight auto-fired test send;
+    // clicking it cleared `printing` directly (the reset below), silently
+    // re-enabling dismissal while a physical send could still emerge.
+    if (printing) return;
     if (step === "save") {
       setStep("test");
       return;
@@ -418,8 +450,16 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
     }
   }
 
+  // PR #83 bot-review round 2, Finding 6: ONE comprehensive isBusy for this
+  // dialog's dismiss gating, covering every in-flight op (including
+  // `printing` -- Findings 3/4's own gates) instead of re-listing the same
+  // three flags at each call site (handleOpenChange/preventDialogDismiss/
+  // hideClose used to each spell out `printing || saving ||
+  // manualSubmitting` separately).
+  const isBusy = printing || saving || manualSubmitting;
+
   function handleOpenChange(next: boolean) {
-    if (!next && (printing || saving || manualSubmitting)) return;
+    if (!next && isBusy) return;
     if (!next) onClose();
   }
 
@@ -429,7 +469,7 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
   // broken control (the exact concern BulkBar.tsx's no-cancel hint calls
   // out).
   function preventDialogDismiss(e: Event) {
-    if (printing || saving || manualSubmitting) e.preventDefault();
+    if (isBusy) e.preventDefault();
   }
 
   const agentStatusLabel =
@@ -449,7 +489,7 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
         // mirrorWarning also hides the ✕: the footer's explicit Close (the
         // Important-1 dismiss affordance) is the single close control in
         // that state, rather than two same-named "Close" buttons.
-        hideClose={printing || saving || manualSubmitting || mirrorWarning}
+        hideClose={isBusy || mirrorWarning}
         onEscapeKeyDown={preventDialogDismiss}
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
@@ -488,14 +528,21 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
               <ul className="flex flex-col gap-2" data-testid="equipment-wizard-find-list">
                 {findPrinters.map((printer) => (
                   <li key={printer.name}>
-                    <button
+                    {/* PR #83 bot-review round 2, Finding 5: was a
+                        hand-rolled styled <button> -- panel/AGENTS.md
+                        mandates @idento/ui primitives. Same "ghost variant +
+                        className override for row-item styling" composition
+                        as DeviceCard.tsx's own round-1 fix (Finding 10) for
+                        its dropdown trigger. */}
+                    <Button
                       type="button"
+                      variant="ghost"
                       onClick={() => pickPrinter(printer)}
-                      className="flex w-full items-center justify-between rounded-md border border-success bg-success/5 px-3 py-2 text-left hover:bg-success/10"
+                      className="h-auto w-full items-center justify-between rounded-md border border-success bg-success/5 px-3 py-2 text-left font-normal hover:bg-success/10"
                     >
                       <span className="font-bold text-foreground">{printer.name}</span>
                       <span className="font-mono text-caption text-muted-foreground">{printer.type}</span>
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -567,7 +614,7 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                   data-testid="equipment-wizard-test-preview"
                   aria-hidden
                 >
-                  test label
+                  {t("equipmentWizardTestPreviewLabel")}
                 </div>
                 <div className="flex flex-col gap-3">
                   <p className="text-card-title font-bold text-foreground">{t("equipmentWizardTestQuestion")}</p>
@@ -579,7 +626,19 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                   ) : null}
                   {sentTo ? <p className="text-body text-success">{t("equipmentWizardSent", { printer: sentTo })}</p> : null}
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" disabled={saving} onClick={handleTestYes}>
+                    {/* PR #83 bot-review round 2, Finding 3: in retest mode
+                        this button IS the confirm action (handleTestYes ->
+                        handleRetestConfirm) -- it must stay disabled while
+                        the auto-fired test print is in flight, same as
+                        Finding 4's Back gate. Create mode's OWN click just
+                        advances to Save (harmless mid-print -- Save itself
+                        is separately gated on `printing`), so the extra
+                        `printing` check is scoped to `isRetest` only;
+                        gating it unconditionally would block the existing,
+                        deliberate "advance to Save while a slow test print
+                        is still in flight" create-mode flow (Save step's
+                        own test above). */}
+                    <Button type="button" disabled={saving || (isRetest && printing)} onClick={handleTestYes}>
                       {t("equipmentWizardTestYes")}
                     </Button>
                     <Button type="button" variant="outline" disabled={printing || !selected} onClick={handlePrintAgain}>
@@ -678,7 +737,17 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                   </Button>
                 ) : (
                   <>
-                    <Button type="button" variant="outline" disabled={saving} onClick={goBack}>
+                    {/* PR #83 bot-review round 2, Finding 4: `printing`
+                        must gate Back too -- it used to stay enabled during
+                        an in-flight auto-fired test send; clicking it
+                        cleared `printing` directly (goBack's own reset),
+                        silently re-enabling dismissal while a physical send
+                        could still emerge. `isBusy` already covers
+                        printing/saving/manualSubmitting (Finding 6);
+                        manualSubmitting is never true once past Find, so
+                        this is equivalent to the narrower `saving ||
+                        printing` here. */}
+                    <Button type="button" variant="outline" disabled={isBusy} onClick={goBack}>
                       {t("equipmentWizardBack")}
                     </Button>
                     <Button
@@ -689,10 +758,9 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                       // in flight) leaves the physical send unresolved
                       // while Save has already created the registry row
                       // and closed the dialog, with no way for a LATE
-                      // print failure to ever surface.
-                      disabled={
-                        saving || printing || !selected || (step === "save" && needsAddress && !addressValid)
-                      }
+                      // print failure to ever surface. Now expressed via
+                      // the shared `isBusy` (round 2, Finding 6).
+                      disabled={isBusy || !selected || (step === "save" && needsAddress && !addressValid)}
                       onClick={() => void handleSaveClick()}
                     >
                       {t("equipmentWizardSavePrinter")}

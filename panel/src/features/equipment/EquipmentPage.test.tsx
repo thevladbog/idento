@@ -111,6 +111,12 @@ let addComCalls: string[] = [];
 let removeComCalls: string[] = [];
 let removeComStatus = 200;
 let consumeScanResponses: Array<{ code: string; time: string }> = [];
+// PR #83 bot-review round 2, Finding 8: the row-menu "Make default" mirror
+// target -- agentClient.setDefaultPrinter(config.agent_name), same agent
+// endpoint PrinterWizard.test.tsx's own `setDefaultCalls` already covers
+// for the wizard's Save path.
+let agentDefaultCalls: Array<{ default: string }> = [];
+let agentDefaultStatus = 200;
 
 const server = startMswServer(
   http.get("http://api.test/api/equipment/machines/:machineId", () => {
@@ -150,6 +156,12 @@ const server = startMswServer(
     return HttpResponse.json(agentPrinters);
   }),
   http.get("http://agent.test/printers/default", () => HttpResponse.json({ default: null })),
+  http.post("http://agent.test/printers/default", async ({ request }) => {
+    const body = (await request.json()) as { default: string };
+    agentDefaultCalls.push(body);
+    if (agentDefaultStatus !== 200) return new HttpResponse(null, { status: agentDefaultStatus });
+    return HttpResponse.json(body);
+  }),
   http.get("http://agent.test/scanners", () => HttpResponse.json(agentScanners)),
   http.get("http://agent.test/scanners/ports", () =>
     HttpResponse.json(agentScannerPorts.map((port_name) => ({ port_name }))),
@@ -203,6 +215,8 @@ describe("EquipmentPage", () => {
     removeComCalls = [];
     removeComStatus = 200;
     consumeScanResponses = [];
+    agentDefaultCalls = [];
+    agentDefaultStatus = 200;
   });
 
   describe("connected (board 5a)", () => {
@@ -804,7 +818,7 @@ describe("EquipmentPage", () => {
       });
     });
 
-    it("set default: PUTs the default-printer endpoint with this device's id", async () => {
+    it("set default: PUTs the default-printer endpoint with this device's id, then best-effort mirrors the default onto the agent (Finding 8)", async () => {
       machineDevices = [printerLive({ is_default: false }), printerNotSeen({ is_default: true })];
       const user = userEvent.setup();
       renderPage();
@@ -818,6 +832,84 @@ describe("EquipmentPage", () => {
         machineId: "mach-1",
         body: { device_id: "dev-printer-live" },
       });
+
+      // PR #83 bot-review round 2, Finding 8: the wizard's own Save path
+      // already mirrors make_default onto the agent (PrinterWizard.tsx) --
+      // the row-menu's own set-default action used to only write the
+      // registry, leaving a legacy web reader of the agent's own
+      // /printers/default stuck on the old value until SOME other action
+      // happened to re-mirror it. printerLive()'s config.agent_name is
+      // "HP_Smart_Tank_790".
+      await waitFor(() => expect(agentDefaultCalls).toHaveLength(1));
+      expect(agentDefaultCalls[0]).toEqual({ default: "HP_Smart_Tank_790" });
+      expect(screen.queryByTestId("equipment-default-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    // PR #83 bot-review round 2, Finding 8: warn-don't-fail, same idiom as
+    // the wizard's own mirror failure (PrinterWizard.test.tsx's "mirror
+    // failure" test) -- the registry write already committed and must
+    // never be treated as failed just because the agent-side mirror was
+    // rejected.
+    it("set default: agent mirror failure shows a visible warning, but the registry write stands", async () => {
+      machineDevices = [printerLive({ is_default: false }), printerNotSeen({ is_default: true })];
+      agentDefaultStatus = 500;
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Make default" }));
+
+      await waitFor(() => expect(defaultPrinterCalls).toHaveLength(1));
+      await waitFor(() => expect(agentDefaultCalls).toHaveLength(1));
+
+      const warning = await screen.findByTestId("equipment-default-mirror-warning");
+      expect(warning).toBeInTheDocument();
+
+      // The registry write is NOT rolled back -- exactly one PUT, still.
+      expect(defaultPrinterCalls).toHaveLength(1);
+
+      await user.click(within(warning).getByRole("button", { name: "Close" }));
+      expect(screen.queryByTestId("equipment-default-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    // PR #83 bot-review round 2, Finding 8: the agent's own reachability is
+    // already tracked at the hub level (AgentCard shows it prominently) --
+    // attempting (and failing) a mirror call against a known-unreachable
+    // agent would just be noise on top of that, so the mirror is skipped
+    // outright rather than attempted-then-warned. Exercised via the
+    // "checking" (mid-probe) state rather than "disconnected": DeviceCard
+    // hides the ENTIRE row-menu whenever its `agentDown` prop is true (see
+    // DeviceCard.tsx's `{!agentDown ? (...) : null}` row-actions gate), so
+    // "Make default" can never actually be clicked while truly
+    // disconnected -- "checking" is the one state where the row-menu is
+    // still rendered (agentDown is strictly `state === "disconnected"`)
+    // AND the agent isn't yet known-reachable, making it the genuinely
+    // reachable representative of this guard. A cached identity (same
+    // seeding idiom as the "disconnected with cache" describe block above)
+    // supplies `machineId` so the registry renders without waiting on the
+    // live probe; GET /health is held open so `state` never leaves
+    // "checking" during the click.
+    it("set default: agent not yet known-reachable (checking) -- skips the mirror gracefully, no POST and no warning", async () => {
+      machineDevices = [printerLive({ is_default: false }), printerNotSeen({ is_default: true })];
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      server.use(
+        http.get("http://agent.test/health", async () => {
+          await delay("infinite");
+          return new HttpResponse(null, { status: 200 });
+        }),
+      );
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Make default" }));
+
+      await waitFor(() => expect(defaultPrinterCalls).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(agentDefaultCalls).toHaveLength(0);
+      expect(screen.queryByTestId("equipment-default-mirror-warning")).not.toBeInTheDocument();
     });
 
     // Task 7 review finding 4: the clear path (is_default row -> PUT

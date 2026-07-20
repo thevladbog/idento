@@ -161,6 +161,14 @@ export function EquipmentPage() {
   // wizards already follow, cleared ONLY by the operator's own dismiss
   // click -- never auto-cleared by a later render.
   const [comRemoveWarning, setComRemoveWarning] = React.useState<string | null>(null);
+  // PR #83 bot-review round 2, Finding 8: best-effort warning for the
+  // row-menu "Make default" action's agent mirror (see onSetDefault
+  // below) -- same "warn, don't fail; stays visible until the operator's
+  // own explicit dismiss" convention as comRemoveWarning above and
+  // PrinterWizard.tsx's own mirrorWarning. A plain boolean (not a
+  // per-device string like comRemoveWarning) because the copy needs no
+  // interpolation -- same shape as PrinterWizard's mirrorWarning.
+  const [defaultMirrorWarning, setDefaultMirrorWarning] = React.useState(false);
 
   // P4.3 Task 8 -- every printer-wizard entry point is guarded on a known
   // machineId: the wizard's create path POSTs to
@@ -238,6 +246,15 @@ export function EquipmentPage() {
   const unsavedPrinters = unsavedLivePrinters(devices, printers.printers);
 
   const agentDown = agentInfo.state === "disconnected";
+  // PR #83 bot-review round 2, Finding 8: whether the agent can actually
+  // accept an HTTP mirror call right now -- "connected" and
+  // "connected_legacy" both mean a healthy, reachable agent (see
+  // useAgentInfo.ts's own AgentInfoState doc comment); "checking" and
+  // "disconnected" do not. Deliberately its OWN check rather than
+  // `!agentDown` -- "checking" is neither, and attempting a mirror call
+  // mid-probe would be the same premature-attempt hazard `agentDown`
+  // itself doesn't distinguish.
+  const agentReachable = agentInfo.state === "connected" || agentInfo.state === "connected_legacy";
   // Board 5d cold start: no cached/live machine identity AND the agent
   // itself unreachable -- nothing honest to show (no registry to key by,
   // no live agent to discover printers/scanners from either). Every other
@@ -266,6 +283,24 @@ export function EquipmentPage() {
 
   function closeDialog() {
     setDialog(null);
+  }
+
+  // PR #83 bot-review round 2, Finding 8: the wizard's own Save path
+  // already mirrors make_default onto the agent's /printers/default
+  // (PrinterWizard.tsx's handleSaveClick) so a legacy web reader of the
+  // AGENT's own default stays in sync -- the row-menu's "Make default"
+  // action only wrote the registry, leaving that mirror stale until some
+  // OTHER action happened to repoint it. Same "warn, don't fail" posture:
+  // the registry write (source of truth, spec §5.3 "server-wins") has
+  // ALREADY succeeded by the time this runs, so a mirror failure must
+  // never be presented as the set-default failing.
+  function mirrorDefaultToAgent(device: EquipmentDevice) {
+    if (!agentReachable) return;
+    const agentName = device.config?.agent_name as string | undefined;
+    if (!agentName) return;
+    agentClient.setDefaultPrinter(agentName).catch(() => {
+      setDefaultMirrorWarning(true);
+    });
   }
 
   return (
@@ -336,10 +371,15 @@ export function EquipmentPage() {
               disableActions={machineId === null}
               onRename={(device) => setDialog({ kind: "rename", device })}
               onSetDefault={(device) =>
-                setDefaultPrinter.mutate({
-                  params: { path: { machine_id: machineId ?? "" } },
-                  body: { device_id: device.id },
-                })
+                setDefaultPrinter.mutate(
+                  {
+                    params: { path: { machine_id: machineId ?? "" } },
+                    body: { device_id: device.id },
+                  },
+                  // Finding 8: mirror onto the agent AFTER the registry
+                  // write (the source of truth) has actually succeeded.
+                  { onSuccess: () => mirrorDefaultToAgent(device) },
+                )
               }
               onClearDefault={() =>
                 setDefaultPrinter.mutate({
@@ -444,6 +484,19 @@ export function EquipmentPage() {
         >
           <p className="text-body text-warning">{comRemoveWarning}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => setComRemoveWarning(null)}>
+            {t("workspaceDialogClose")}
+          </Button>
+        </div>
+      ) : null}
+
+      {defaultMirrorWarning ? (
+        <div
+          role="status"
+          data-testid="equipment-default-mirror-warning"
+          className="flex items-center justify-between gap-3 rounded-lg border border-warning bg-warning/5 px-4 py-2"
+        >
+          <p className="text-body text-warning">{t("equipmentDefaultMirrorWarn")}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setDefaultMirrorWarning(false)}>
             {t("workspaceDialogClose")}
           </Button>
         </div>

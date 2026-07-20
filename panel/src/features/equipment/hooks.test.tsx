@@ -334,9 +334,18 @@ describe("equipment hooks", () => {
   // Proven here against TWO different events' readiness observers sharing
   // one QueryClient -- a genuine prefix match refetches BOTH, which a
   // (nonexistent, since there's no eventId) scoped call could never do.
-  // patchDevice (rename) and upsertMachine are deliberately NOT covered
-  // here -- neither changes anything the readiness step reads.
-  describe("readiness invalidation (org-level prefix -- create/delete/set-default/mark-test-passed)", () => {
+  //
+  // PR #83 bot-review round 2, Finding 9 (carried from the backend wave):
+  // usePatchDevice now JOINS this list -- the backend (4804a69) clears
+  // test_passed_at whenever a PATCH's config differs (jsonb-semantic) from
+  // the device's stored config, so a config-changing PATCH can flip the
+  // EQUIPMENT readiness step exactly like the four mutations above. Same
+  // "always invalidate on success" shape the other four use, no attempt to
+  // distinguish a rename-only PATCH from a config-changing one client-side
+  // (the backend already makes that distinction; the client can't see it).
+  // upsertMachine is still deliberately NOT covered here -- it only writes
+  // hostname/agent_version/seen_device_ids, never test_passed_at/config.
+  describe("readiness invalidation (org-level prefix -- create/delete/set-default/mark-test-passed/patch)", () => {
     it("useCreateDevice invalidates every event's readiness query", async () => {
       const { Wrapper } = makeWrapper();
       const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
@@ -400,19 +409,26 @@ describe("equipment hooks", () => {
       await waitFor(() => expect(readinessGetCount).toBe(4));
     });
 
-    it("usePatchDevice (rename) does NOT invalidate readiness -- renaming a device doesn't change the readiness step", async () => {
+    // PR #83 bot-review round 2, Finding 9: usePatchDevice used to be the
+    // ONE mutation in this file that skipped the readiness invalidation
+    // its siblings above all carry -- correct back when a PATCH could only
+    // ever rename a device, but the backend (4804a69) now clears
+    // test_passed_at whenever a PATCH's config differs from what's stored,
+    // so a config-changing PATCH can flip the readiness step exactly like
+    // create/delete/set-default/mark-test-passed do.
+    it("usePatchDevice invalidates every event's readiness query", async () => {
       const { Wrapper } = makeWrapper();
       const { result: evt1 } = renderHook(() => useEventReadiness("evt-1"), { wrapper: Wrapper });
+      const { result: evt2 } = renderHook(() => useEventReadiness("evt-2"), { wrapper: Wrapper });
       await waitFor(() => expect(evt1.current.isSuccess).toBe(true));
-      expect(readinessGetCount).toBe(1);
+      await waitFor(() => expect(evt2.current.isSuccess).toBe(true));
+      expect(readinessGetCount).toBe(2);
 
       const { result: patchResult } = renderHook(() => usePatchDevice("mach-1"), { wrapper: Wrapper });
       patchResult.current.mutate({ params: { path: { device_id: "dev-1" } }, body: { display_name: "Renamed" } });
       await waitFor(() => expect(patchResult.current.isSuccess).toBe(true));
 
-      // A beat to (not) see a refetch it has no business causing.
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      expect(readinessGetCount).toBe(1);
+      await waitFor(() => expect(readinessGetCount).toBe(4));
     });
   });
 });

@@ -183,14 +183,28 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
   // Resets (or seeds) the whole session whenever the dialog opens/closes or
   // its retest target changes -- same "everything resets on close" shape
   // as PrinterWizard.tsx's own open-keyed effect.
+  //
+  // PR #83 bot-review round 2, Finding 2: `wedge.reset()`/`setComCode(null)`
+  // used to live BELOW the `if (!open) return;` guard, so closing with a
+  // live detection left it sitting in state. Reopening straight into
+  // retest mode reset `firedTestPassedRef` to null synchronously (a ref
+  // mutation) in the SAME effect run whose `wedge.reset()` call (a
+  // deferred setState) hadn't committed yet -- the retest auto-fire effect
+  // runs in that SAME commit and used to see the STALE detection/comCode
+  // alongside the freshly-cleared ref, POSTing test-passed for the NEW
+  // retest device off a scan from a PREVIOUS, unrelated session. Clearing
+  // both BEFORE the early return means a close's reset always commits (in
+  // an earlier render) before any later reopen's effect run can observe a
+  // stale value -- impossible by construction, not by timing.
   React.useEffect(() => {
     sessionRef.current += 1;
     firedTestPassedRef.current = null;
+    wedge.reset();
+    setComCode(null);
     if (!open) return;
     setKind("usb_wedge");
     setComPhase("pick-port");
     setSelectedPort(null);
-    setComCode(null);
     setComAdding(false);
     setComAddError(null);
     setDisplayName("");
@@ -198,7 +212,6 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
     setSaving(false);
     setSaveError(null);
     setTestPassedWarning(false);
-    wedge.reset();
     // Deliberately keyed on `open` + the retest TARGET identity only --
     // must not re-run just because a parent re-renders with a
     // new-but-equal retest object literal, and must not re-run on
@@ -318,13 +331,20 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
   // open-keyed reset effect above), so a LATE failure's onError saw a
   // stale session and silently dropped the testPassedWarning -- the
   // operator never learned the stamp didn't take.
+  //
+  // PR #83 bot-review round 2, Finding 6 (CodeRabbit Major): this exact
+  // three-flag expression was duplicated verbatim in handleOpenChange and
+  // preventDialogDismiss -- the house dialog convention wants ONE
+  // comprehensive isBusy per dialog. Extracted here and reused below.
+  const isBusy = saving || comAdding || markTestPassed.isPending;
+
   function handleOpenChange(next: boolean) {
-    if (!next && (saving || comAdding || markTestPassed.isPending)) return;
+    if (!next && isBusy) return;
     if (!next) onClose();
   }
 
   function preventDialogDismiss(e: Event) {
-    if (saving || comAdding || markTestPassed.isPending) e.preventDefault();
+    if (isBusy) e.preventDefault();
   }
 
   return (
@@ -334,8 +354,11 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
         // Retest mode's footer always carries its OWN explicit Close (task-
         // 9-brief.md: "Close only") -- hiding the ✕ here avoids two
         // same-named "Close" controls in the same dialog, same reasoning as
-        // PrinterWizard.tsx's mirrorWarning branch.
-        hideClose={saving || comAdding || isRetest}
+        // PrinterWizard.tsx's mirrorWarning branch. `isBusy` already
+        // includes markTestPassed.isPending (retest's only busy signal --
+        // saving/comAdding are always false in retest mode), so this now
+        // covers every in-flight op, not just two of the three.
+        hideClose={isBusy || isRetest}
         onEscapeKeyDown={preventDialogDismiss}
         onPointerDownOutside={preventDialogDismiss}
         onInteractOutside={preventDialogDismiss}
@@ -506,14 +529,22 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
                   <ul className="flex flex-col gap-2" data-testid="scanner-wizard-ports-list">
                     {(portsQuery.data ?? []).map((port) => (
                       <li key={port}>
-                        <button
+                        {/* PR #83 bot-review round 2, Finding 5: was a
+                            hand-rolled styled <button> -- panel/AGENTS.md
+                            mandates @idento/ui primitives. Same
+                            "ghost variant + className override for row-item
+                            styling" composition as PrinterWizard.tsx's own
+                            Find-list fix and DeviceCard.tsx's round-1
+                            dropdown-trigger fix (Finding 10). */}
+                        <Button
                           type="button"
+                          variant="ghost"
                           disabled={comAdding}
-                          className="flex w-full items-center justify-between rounded-md border border-success bg-success/5 px-3 py-2 text-left hover:bg-success/10"
+                          className="h-auto w-full items-center justify-between rounded-md border border-success bg-success/5 px-3 py-2 text-left font-normal hover:bg-success/10"
                           onClick={() => void handlePickPort(port)}
                         >
                           <span className="font-mono text-body text-foreground">{port}</span>
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -542,8 +573,11 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
         <DialogFooter>
           {isRetest ? (
             // Finding 5: disabled while markTestPassed is in flight -- see
-            // the handleOpenChange/preventDialogDismiss comment above.
-            <Button type="button" disabled={markTestPassed.isPending} onClick={onClose}>
+            // the handleOpenChange/preventDialogDismiss comment above. Now
+            // expressed via the shared `isBusy` (round 2, Finding 6) --
+            // saving/comAdding are always false in retest mode, so this is
+            // unchanged behaviorally.
+            <Button type="button" disabled={isBusy} onClick={onClose}>
               {t("workspaceDialogClose")}
             </Button>
           ) : (
@@ -554,11 +588,13 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
                   but this explicit button didn't, so a click mid
                   /scanners/add closed the dialog with no registry row and
                   no warning about the agent-side port possibly already
-                  being open. */}
-              <Button type="button" variant="outline" disabled={saving || comAdding} onClick={onClose}>
+                  being open. Now expressed via `isBusy` (round 2,
+                  Finding 6) -- markTestPassed.isPending is always false in
+                  create mode, so this is unchanged behaviorally. */}
+              <Button type="button" variant="outline" disabled={isBusy} onClick={onClose}>
                 {t("createEventCancel")}
               </Button>
-              <Button type="button" disabled={saving || !canSave} onClick={() => void handleSave()}>
+              <Button type="button" disabled={isBusy || !canSave} onClick={() => void handleSave()}>
                 {t("equipmentWizardSaveScanner")}
               </Button>
             </>

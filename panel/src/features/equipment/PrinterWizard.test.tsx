@@ -13,7 +13,7 @@ import { delay, http, HttpResponse } from "msw";
 import { PrinterWizard, type PrinterWizardProps } from "./PrinterWizard";
 import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
 import { startMswServer } from "../../test/msw";
-import "../../shared/i18n";
+import i18n from "../../shared/i18n";
 
 let agentPrinters: Array<{ name: string; type: string }> = [];
 let printCalls: Array<{ printer_name: string; zpl: string }> = [];
@@ -107,6 +107,10 @@ describe("PrinterWizard", () => {
     createDeviceCalls = [];
     createDeviceStatus = 201;
     testPassedCalls = [];
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
   });
 
   describe("Find step", () => {
@@ -272,6 +276,28 @@ describe("PrinterWizard", () => {
         printSpy.mockRestore();
       }
     });
+
+    // PR #83 bot-review round 2, Finding 7: the visible test-label preview
+    // box used to be a hardcoded English string ("test label"), never
+    // going through react-i18next -- a RU-locale operator saw English
+    // mid-dialog. This proves the ru.json copy actually renders (not just
+    // that the key exists -- keyParity.test.ts already covers that), same
+    // pattern as AgentCard.test.tsx's own uptime-i18n proof (round 1,
+    // Finding 1).
+    it("renders the test-label preview box through i18n -- Russian copy when the locale is ru, not a hardcoded English string", async () => {
+      const user = userEvent.setup();
+      await i18n.changeLanguage("ru");
+      // Inlined rather than reachTestStep (that helper waits on the
+      // ENGLISH test-question copy, which is exactly what's under the
+      // locale switch here).
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+      renderWizard();
+      await user.click(await screen.findByRole("button", { name: /HP_Smart_Tank_790/ }));
+      await screen.findByTestId("equipment-wizard-test-preview");
+
+      expect(screen.getByTestId("equipment-wizard-test-preview")).toHaveTextContent("тестовая этикетка");
+      expect(screen.getByTestId("equipment-wizard-test-preview")).not.toHaveTextContent("test label");
+    });
   });
 
   describe("dismissal locking", () => {
@@ -323,6 +349,59 @@ describe("PrinterWizard", () => {
 
       // Settles into the Test step -- the wizard moved on, not closed.
       expect(await screen.findByText("Did the test label print correctly?")).toBeInTheDocument();
+    });
+  });
+
+  describe("session reset on close (bot-review round 2, Finding 1)", () => {
+    // The open-keyed reset effect used to only reset session state when
+    // OPENING (`if (!open) return;` skipped every reset on close) --
+    // step/selected/testPassed stayed exactly as they were at close time.
+    // Reopening then reset firedForRef to null in the SAME render pass that
+    // (via deferred setState) also tries to reset step/selected back to
+    // "find"/null -- but the mount-fires-once auto-print effect runs in
+    // that SAME pass, before those setState calls commit, and used to see
+    // the STALE step="test"/selected={previous printer} alongside a
+    // freshly-cleared firedForRef -- firing a real test print at the
+    // PREVIOUS session's printer before the new session ever reached Find.
+    it("closing from the Test step then reopening (create mode) lands fresh on Find and fires no print at the previous printer", async () => {
+      const user = userEvent.setup();
+      agentPrinters = [{ name: "OldPrinter", type: "system" }];
+      const rendered = renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /OldPrinter/ }));
+      await screen.findByText("Did the test label print correctly?");
+      await waitFor(() => expect(printCalls).toHaveLength(1));
+
+      // Close -- nothing is in flight, so dismissal is allowed. Same
+      // "parent flips `open` to false" transition EquipmentPage.tsx's
+      // setPrinterWizard(null) performs.
+      rendered.rerender(
+        <QueryClientProvider client={rendered.qc}>
+          <PrinterWizard {...rendered.props} open={false} />
+        </QueryClientProvider>,
+      );
+
+      // Reopen fresh (create mode again, no retest/prefill).
+      rendered.rerender(
+        <QueryClientProvider client={rendered.qc}>
+          <PrinterWizard {...rendered.props} open={true} />
+        </QueryClientProvider>,
+      );
+
+      // Lands back on Find, not Test -- this fresh session hasn't selected
+      // anything yet.
+      expect(await screen.findByRole("button", { name: /OldPrinter/ })).toBeInTheDocument();
+      expect(screen.queryByText("Did the test label print correctly?")).not.toBeInTheDocument();
+
+      // No NEW print fired for the stale previous selection.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(printCalls).toHaveLength(1);
+
+      // The normal auto-fire still works for a genuinely NEW selection in
+      // this fresh session.
+      await user.click(screen.getByRole("button", { name: /OldPrinter/ }));
+      await screen.findByText("Did the test label print correctly?");
+      await waitFor(() => expect(printCalls).toHaveLength(2));
     });
   });
 
@@ -611,6 +690,63 @@ describe("PrinterWizard", () => {
         ),
       ).toBeInTheDocument();
       expect(createDeviceCalls).toHaveLength(0);
+    });
+
+    // PR #83 bot-review round 2, Finding 3: "Yes, looks right" in retest
+    // mode used to gate only on `saving`, not `printing` -- so it could be
+    // clicked while the auto-fired test print was still in flight,
+    // recording test_passed and calling onClose() directly (bypassing
+    // every dismiss guard) with no chance for a LATE print failure to ever
+    // surface. Create mode's OWN "Yes, looks right" (just advances to Save,
+    // which is separately gated on printing -- Save step's own test above)
+    // must stay unaffected by this gate; this test only proves the RETEST
+    // path.
+    it("gates the retest confirm ('Yes, looks right') on printing -- clicking it while the auto-fired print is still in flight neither fires test-passed nor closes", async () => {
+      const user = userEvent.setup();
+      printDelayMs = 120;
+      const rendered = renderWizard({
+        retest: { deviceId: "dev-1", agentName: "HP_Smart_Tank_790", displayName: "Front Desk Printer", kind: "system" },
+      });
+
+      await screen.findByText("Did the test label print correctly?");
+      // The auto-fired print is still in flight (printDelayMs).
+      expect(screen.getByRole("button", { name: "Yes, looks right" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+      expect(testPassedCalls).toEqual([]);
+      expect(rendered.onClose).not.toHaveBeenCalled();
+
+      // Once the send settles, the button re-enables and a real click
+      // fires the confirm.
+      await waitFor(() => expect(screen.getByRole("button", { name: "Yes, looks right" })).not.toBeDisabled());
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+      await waitFor(() => expect(testPassedCalls).toEqual(["dev-1"]));
+      await waitFor(() => expect(rendered.onClose).toHaveBeenCalled());
+    });
+  });
+
+  describe("Back navigation (bot-review round 2, Finding 4)", () => {
+    // create-mode Back (the shared Test/Save footer) used to gate only on
+    // `saving`, not `printing` -- clicking it while the auto-fired test
+    // print was still in flight cleared `printing` directly (goBack's own
+    // reset) and re-enabled dismissal while a physical send could still
+    // emerge.
+    it("gates Back on printing -- clicking it while the auto-fired print is still in flight stays on Test, not Find", async () => {
+      const user = userEvent.setup();
+      printDelayMs = 120;
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+      renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /HP_Smart_Tank_790/ }));
+      await screen.findByText("Did the test label print correctly?");
+      // The auto-fired print is still in flight.
+      expect(screen.getByRole("button", { name: "← Back" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "← Back" }));
+      // Still on Test -- did not fall back to Find.
+      expect(screen.getByText("Did the test label print correctly?")).toBeInTheDocument();
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "← Back" })).not.toBeDisabled());
+      await user.click(screen.getByRole("button", { name: "← Back" }));
+      expect(await screen.findByRole("button", { name: /HP_Smart_Tank_790/ })).toBeInTheDocument();
     });
   });
 });

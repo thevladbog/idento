@@ -477,6 +477,54 @@ describe("ScannerWizard", () => {
     });
   });
 
+  describe("session reset on close (bot-review round 2, Finding 2)", () => {
+    // The open-keyed reset effect used to only clear wedge.detection (via
+    // wedge.reset()) and comCode when REOPENING (`if (!open) return;`
+    // skipped them on close). Reopening into retest mode then reset
+    // firedTestPassedRef to null in the SAME render pass that (via
+    // deferred setState) also tries to clear the stale detection -- but
+    // the retest auto-fire effect runs in that SAME pass, before
+    // wedge.reset()'s setDetection(null) commits, and used to see the
+    // STALE detection alongside a freshly-cleared firedTestPassedRef --
+    // POSTing test-passed for the NEW retest device off a scan from a
+    // PREVIOUS, unrelated session.
+    it("closing with a live detection then reopening in retest mode fires no test-passed until a fresh scan lands", async () => {
+      const rendered = renderWizard();
+
+      typeWedgeBurst("STALE-CODE");
+      fireEvent.keyDown(window, { key: "Enter" });
+      await screen.findByText("Scan received — STALE-CODE");
+
+      // Close -- same "parent flips `open` to false" transition
+      // EquipmentPage.tsx's setScannerWizard(null) performs.
+      rendered.rerender(
+        <QueryClientProvider client={rendered.qc}>
+          <ScannerWizard {...rendered.props} open={false} />
+        </QueryClientProvider>,
+      );
+
+      // Reopen straight into retest mode for a saved device.
+      rendered.rerender(
+        <QueryClientProvider client={rendered.qc}>
+          <ScannerWizard {...rendered.props} open={true} retest={retestDevice({ id: "dev-scanner-1" })} />
+        </QueryClientProvider>,
+      );
+
+      // No stale-scan auto-pass: the previous session's detection must not
+      // leak into this retest session.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(testPassedCalls).toEqual([]);
+      expect(screen.queryByText("Scan received — STALE-CODE")).not.toBeInTheDocument();
+      expect(screen.getByTestId("scanner-wizard-listen-panel")).toBeInTheDocument();
+
+      // A fresh scan in the retest session still fires it correctly.
+      typeWedgeBurst("FRESH-CODE");
+      fireEvent.keyDown(window, { key: "Enter" });
+      await screen.findByText("Scan received — FRESH-CODE");
+      await waitFor(() => expect(testPassedCalls).toEqual(["dev-scanner-1"]));
+    });
+  });
+
   describe("retest mode", () => {
     it("opens directly at the listen step with no kind toggle and no Save button -- Close only", async () => {
       renderWizard({ retest: retestDevice() });

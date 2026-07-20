@@ -105,6 +105,16 @@ export function usePatchDevice(machineId: string) {
   return $api.useMutation("patch", "/api/equipment/devices/{device_id}", {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: EQUIPMENT_MACHINE_KEY(machineId) });
+      // PR #83 bot-review round 2, Finding 9 (carried from the backend
+      // wave): the backend now clears test_passed_at whenever a PATCH's
+      // config differs (jsonb-semantic) from the device's stored config --
+      // a config-changing PATCH can therefore flip the EQUIPMENT readiness
+      // step for every event under this tenant, same as its four siblings
+      // above (Finding 4). Unconditional, same "always invalidate on
+      // success" shape those four use -- the client can't tell a
+      // rename-only PATCH from a config-changing one (and doesn't need
+      // to; the backend already makes that distinction server-side).
+      void queryClient.invalidateQueries({ queryKey: ALL_EVENTS_READINESS_KEY });
     },
   });
 }
