@@ -21,6 +21,11 @@ function Controlled({
   return (
     <NumberInput
       aria-label="Quantity"
+      // Consumer-supplied stepper labels — the primitive itself carries no
+      // i18n; the tests below pass explicit names so the button queries read
+      // clearly, and a dedicated test covers the label-less (symbol-name) case.
+      decrementLabel="Decrease"
+      incrementLabel="Increase"
       value={value}
       onValueChange={(v) => {
         setValue(v);
@@ -32,6 +37,15 @@ function Controlled({
 }
 
 describe("NumberInput", () => {
+  it("uses the visible +/− glyph as the stepper accessible name when no label is given (no hardcoded English)", () => {
+    render(<NumberInput aria-label="Qty" value={1} onValueChange={() => {}} />);
+    // With decrementLabel/incrementLabel omitted, the button's accessible name
+    // is its text content — locale-neutral, never an English "Increase"/"Decrease".
+    expect(screen.getByRole("button", { name: "−" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Increase" })).not.toBeInTheDocument();
+  });
+
   it("is reachable by its label and renders the current value", () => {
     render(
       <>

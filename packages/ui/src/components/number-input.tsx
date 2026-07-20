@@ -15,10 +15,16 @@ export interface NumberInputProps
   min?: number;
   max?: number;
   showSteppers?: boolean;
+  // Optional accessible names for the stepper buttons. @idento/ui carries no
+  // i18n dependency (house rule), so localized labels come from the consumer;
+  // when omitted the visible "−"/"+" glyph is the button's accessible name
+  // (locale-neutral) — never a hardcoded English string.
+  decrementLabel?: string;
+  incrementLabel?: string;
 }
 
 export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
-  ({ className, value, onValueChange, step = 1, min, max, showSteppers = true, ...props }, ref) => {
+  ({ className, value, onValueChange, step = 1, min, max, showSteppers = true, decrementLabel, incrementLabel, ...props }, ref) => {
     const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
     const bump = (dir: 1 | -1) => onValueChange(clamp((typeof value === "number" ? value : 0) + dir * step));
     return (
@@ -28,7 +34,7 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             type="button"
             variant="outline"
             className="size-9 shrink-0 p-0"
-            aria-label="Decrease"
+            aria-label={decrementLabel}
             disabled={props.disabled}
             onClick={() => bump(-1)}
           >
@@ -52,7 +58,7 @@ export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             type="button"
             variant="outline"
             className="size-9 shrink-0 p-0"
-            aria-label="Increase"
+            aria-label={incrementLabel}
             disabled={props.disabled}
             onClick={() => bump(1)}
           >
