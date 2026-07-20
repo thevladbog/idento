@@ -54,10 +54,13 @@ function markerHex(text: string, fontFamily: string, fontSizePx: number, fontWei
  * The one mock rasterizer every cell in this file shares. NEVER draws
  * anything -- it is a pure function of its call arguments, so re-running
  * this suite (any machine, any font environment, CI or local) reproduces
- * byte-identical goldens. `totalBytes`/`bytesPerRow` are simply derived from
- * the hex's own length (4 bytes for an 8-hex-char marker, one fabricated
- * "row") so nothing here is a second independent magic number to keep in
- * sync by hand.
+ * byte-identical goldens. `totalBytes`/`bytesPerRow`/`width`/`height` are all
+ * simply derived from the hex's own length (4 bytes for an 8-hex-char
+ * marker, one fabricated "row" of `totalBytes * 8` bits) so nothing here is
+ * a second independent magic number to keep in sync by hand. None of this
+ * matrix's text elements set `width`/`align`/`valign` (buildElements below),
+ * so rasterFieldOrigin's alignment offset never actually fires in this file
+ * -- that behavior has its own dedicated tests in generateZpl.test.ts.
  */
 function makeDeterministicDeps(): GenerateZplDeps {
   return {
@@ -68,7 +71,7 @@ function makeDeterministicDeps(): GenerateZplDeps {
       ) => {
         const hex = markerHex(text, opts.fontFamily, opts.fontSizePx, opts.fontWeight);
         const totalBytes = hex.length / 2;
-        return { hex, totalBytes, bytesPerRow: totalBytes };
+        return { hex, totalBytes, bytesPerRow: totalBytes, width: totalBytes * 8, height: 1 };
       },
     ),
   };

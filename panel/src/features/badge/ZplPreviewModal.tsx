@@ -26,7 +26,8 @@ import { resolveElementText } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, rasterizeTextToBitmap, RasterUnavailableError } from "./zpl/canvasRasterizer";
 import {
-  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, type RawBadgeElement,
+  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, rasterFieldOrigin,
+  type RawBadgeElement,
 } from "./zpl/generateZpl";
 import { collectMissingCustomFonts } from "./zpl/missingFonts";
 import { useEventFontFaces } from "./zpl/useEventFontFaces";
@@ -368,7 +369,12 @@ function drawElement(
           imageData.data[i * 4 + 2] = on ? 0 : 255;
           imageData.data[i * 4 + 3] = 255;
         }
-        ctx.putImageData(imageData, x, y);
+        // Same rasterFieldOrigin offset generateZpl's raster branch applies
+        // to the printed ^FO -- otherwise the Rendered tab would show a
+        // raster-aligned element in a DIFFERENT position than it actually
+        // prints, defeating the "true preview" point of this tab.
+        const origin = rasterFieldOrigin(element, config.dpi, { width, height });
+        ctx.putImageData(imageData, origin.x, origin.y);
         return;
       }
 

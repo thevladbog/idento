@@ -14,6 +14,13 @@ export interface RasterResult {
   hex: string;
   totalBytes: number;
   bytesPerRow: number;
+  // The rasterized bitmap's own pixel size, in dots -- carried alongside the
+  // hex payload (not derivable from bytesPerRow*8, which is byte-padded)
+  // so generateZpl's raster branch can compute an aligned ^FO offset
+  // (rasterFieldOrigin) without re-measuring anything. Never appears in the
+  // emitted ^GFA command itself; buildGfaCommand ignores both fields.
+  width: number;
+  height: number;
 }
 
 /**
@@ -84,7 +91,7 @@ export function bitmapToZPLHex(
 
   const hex = hexData.join("");
   const totalBytes = bytesPerRow * height;
-  return { hex, totalBytes, bytesPerRow };
+  return { hex, totalBytes, bytesPerRow, width, height };
 }
 
 /**

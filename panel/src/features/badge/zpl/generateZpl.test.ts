@@ -2,11 +2,17 @@
 //
 // This is a parity-first port of web/src/utils/zpl.ts's `generateZPL`
 // pipeline (+ web/src/utils/zpl-image-text.ts for the raster branch). Every
-// case here asserts an EXACT ZPL string; the raster-branch tests additionally
-// pin web's known limitation (dropping rotation/valign/^FB-wrap/maxLines when
-// text routes through the image-rendering path) as a passing assertion, not
-// just a comment -- deviating from that limitation would be a plan
-// violation, not an improvement.
+// case here asserts an EXACT ZPL string.
+//
+// Raster-branch alignment (2026-07-20, post-P3.2): the port originally
+// preserved web's limitation of dropping align/valign/rotation/^FB-wrap/
+// maxLines on the raster path (reconciliation #7) -- the P3.2 printed-matrix
+// run then demonstrated the user-visible cost (EN names centered via native
+// ^FB, RU names left-pinned, same template), so align + valign are now
+// HONORED on the raster branch too, via `rasterFieldOrigin` (^FO offsets
+// computed from the raster bitmap's measured width/height -- the ^GFA bytes
+// themselves never change). rotation and maxLines/^FB-wrap remain dropped on
+// this branch (still-documented deviations); the tests below pin BOTH halves.
 import type { RasterResult } from "./zplImage";
 import {
   escapeZplData,
@@ -15,6 +21,7 @@ import {
   mmToDots,
   needsImageRendering,
   pointsToDots,
+  rasterFieldOrigin,
   type RawBadgeElement,
 } from "./generateZpl";
 
@@ -224,9 +231,9 @@ describe("generateZpl -- line and box", () => {
   });
 });
 
-describe("generateZpl -- raster branch (parity-pinned limitation)", () => {
-  it("routes Cyrillic text through the injected rasterizer and DROPS rotation/valign/maxLines/^FB-wrap", async () => {
-    const result: RasterResult = { hex: "FF00", totalBytes: 4, bytesPerRow: 2 };
+describe("generateZpl -- raster branch (aligned via rasterFieldOrigin; rotation/maxLines still dropped)", () => {
+  it("routes Cyrillic text through the injected rasterizer, offsets ^FO per align/valign, and still DROPS rotation/maxLines/^FB-wrap", async () => {
+    const result: RasterResult = { hex: "FF00", totalBytes: 4, bytesPerRow: 2, width: 200, height: 87 };
     const deps = makeDeps(result);
     const element: RawBadgeElement = {
       id: "e1",
@@ -238,9 +245,9 @@ describe("generateZpl -- raster branch (parity-pinned limitation)", () => {
       fontSize: 14,
       text: "Привет",
       align: "center",
-      valign: "middle", // dropped by the raster branch (parity limitation)
-      rotation: 90, // dropped
-      maxLines: 2, // dropped
+      valign: "middle",
+      rotation: 90, // still dropped (documented deviation)
+      maxLines: 2, // still dropped (documented deviation)
     };
 
     const zpl = await generateZpl({ width_mm: 90, height_mm: 55, dpi: 300 }, [element], {}, deps);
@@ -253,22 +260,25 @@ describe("generateZpl -- raster branch (parity-pinned limitation)", () => {
       fontWeight: "normal",
     });
 
-    // Coordinates are plain mmToDots(x,y) -- NOT valign-adjusted (that
-    // adjustment lives only in the native branch, after this branch's early
-    // return -- web/src/utils/zpl.ts:111-125 vs 137-148).
+    // ^FO carries the alignment offsets now:
+    //   x = mmToDots(10) + round((mmToDots(40) - 200) / 2) = 118 + round((472 - 200) / 2) = 118 + 136 = 254
+    //   y = mmToDots(5) + round((mmToDots(8) - 87) / 2) = 59 + round((94 - 87) / 2) = 59 + 4 = 63
+    // The ^GFA payload (byte counts + hex) is byte-identical to the
+    // unaligned output -- only the ^FO coordinate moves.
     expect(zpl).toBe(
       "^XA\n^CI28\n^PW1063\n^LL650\n^PR4\n^LH0,0\n" +
-        "^FO118,59\n^GFA,4,4,2,FF00\n^FS\n" +
+        "^FO254,63\n^GFA,4,4,2,FF00\n^FS\n" +
         "^XZ\n",
     );
-    // Explicit parity-limitation pins: no native font/orientation command and
-    // no ^FB block ever appear for a raster-routed element.
+    // Still-preserved deviations: no native font/orientation command (the
+    // exact string above already proves rotation 90 changed nothing) and no
+    // ^FB block ever appear for a raster-routed element.
     expect(zpl).not.toContain("^A");
     expect(zpl).not.toContain("^FB");
   });
 
-  it("routes Latin text with a customFont through the rasterizer too, and also drops rotation/valign/maxLines", async () => {
-    const result: RasterResult = { hex: "AA", totalBytes: 1, bytesPerRow: 1 };
+  it("routes Latin text with a customFont through the rasterizer, applies valign middle without an align (no width offset)", async () => {
+    const result: RasterResult = { hex: "AA", totalBytes: 1, bytesPerRow: 1, width: 120, height: 51 };
     const deps = makeDeps(result);
     const element: RawBadgeElement = {
       id: "e2",
@@ -293,12 +303,104 @@ describe("generateZpl -- raster branch (parity-pinned limitation)", () => {
       fontSizePx: 34, // round(12/72*203)
       fontWeight: "bold",
     });
+    // No align set -> x stays put (default left) even though width is set;
+    // valign middle -> y = 0 + round((mmToDots(8, 203) - 51) / 2) = round((64 - 51) / 2) = 7.
     expect(zpl).toBe(
       "^XA\n^CI28\n^PW719\n^LL440\n^PR4\n^LH0,0\n" +
-        "^FO0,0\n^GFA,1,1,1,AA\n^FS\n" +
+        "^FO0,7\n^GFA,1,1,1,AA\n^FS\n" +
         "^XZ\n",
     );
     expect(zpl).not.toContain("^A");
     expect(zpl).not.toContain("^FB");
+  });
+
+  it("clamps overflow to the box origin: a raster wider/taller than its box keeps the unaligned ^FO", async () => {
+    // Raster (200x87) exceeds both the 10mm width box (118 dots) and the
+    // 4mm height box (47 dots) -- both offsets clamp at 0 so the field
+    // stays pinned to the element's own x/y (the pre-alignment behavior),
+    // never drifting left/up out of the box or going negative.
+    const result: RasterResult = { hex: "FF00", totalBytes: 4, bytesPerRow: 2, width: 200, height: 87 };
+    const deps = makeDeps(result);
+    const element: RawBadgeElement = {
+      id: "e3",
+      type: "text",
+      x: 10,
+      y: 5,
+      width: 10,
+      height: 4,
+      fontSize: 14,
+      text: "Привет",
+      align: "center",
+      valign: "bottom",
+    };
+
+    const zpl = await generateZpl({ width_mm: 90, height_mm: 55, dpi: 300 }, [element], {}, deps);
+    expect(zpl).toContain("^FO118,59\n^GFA,4,4,2,FF00\n^FS\n");
+  });
+
+  it("applies no offsets when width/height are unset -- same gates as the native branch's ^FB/valign", async () => {
+    const result: RasterResult = { hex: "FF00", totalBytes: 4, bytesPerRow: 2, width: 200, height: 87 };
+    const deps = makeDeps(result);
+    const element: RawBadgeElement = {
+      id: "e4",
+      type: "text",
+      x: 10,
+      y: 5,
+      fontSize: 14,
+      text: "Привет",
+      align: "center", // no width -> ignored, exactly like native ^FB
+      valign: "middle", // no height -> ignored, exactly like native valign
+    };
+
+    const zpl = await generateZpl({ width_mm: 90, height_mm: 55, dpi: 300 }, [element], {}, deps);
+    expect(zpl).toContain("^FO118,59\n^GFA,4,4,2,FF00\n^FS\n");
+  });
+});
+
+describe("rasterFieldOrigin", () => {
+  // The pure offset math shared by generateTextZPL's raster branch and
+  // ZplPreviewModal's Rendered-tab composition (so preview placement can
+  // never drift from print placement). Element geometry in mm, raster in
+  // dots (the rasterizer's measured bitmap size), result in dots.
+  const raster = { width: 100, height: 60 };
+
+  it("center: x += round((boxWidth - rasterWidth) / 2)", () => {
+    // mmToDots(40, 300) = 472; round((472 - 100) / 2) = 186.
+    const origin = rasterFieldOrigin({ x: 10, y: 5, width: 40, align: "center" }, 300, raster);
+    expect(origin).toEqual({ x: 118 + 186, y: 59 });
+  });
+
+  it("right: x += boxWidth - rasterWidth (full slack)", () => {
+    const origin = rasterFieldOrigin({ x: 10, y: 5, width: 40, align: "right" }, 300, raster);
+    expect(origin).toEqual({ x: 118 + 372, y: 59 });
+  });
+
+  it("middle/bottom valign offsets use the raster bitmap's own height", () => {
+    // mmToDots(8, 300) = 94; middle: round((94 - 60) / 2) = 17; bottom: 34.
+    expect(rasterFieldOrigin({ x: 10, y: 5, height: 8, valign: "middle" }, 300, raster)).toEqual({ x: 118, y: 59 + 17 });
+    expect(rasterFieldOrigin({ x: 10, y: 5, height: 8, valign: "bottom" }, 300, raster)).toEqual({ x: 118, y: 59 + 34 });
+  });
+
+  it("left align / top valign / unset are all no-ops", () => {
+    expect(rasterFieldOrigin({ x: 10, y: 5, width: 40, height: 8, align: "left", valign: "top" }, 300, raster)).toEqual({
+      x: 118,
+      y: 59,
+    });
+    expect(rasterFieldOrigin({ x: 10, y: 5, width: 40, height: 8 }, 300, raster)).toEqual({ x: 118, y: 59 });
+  });
+
+  it("gates mirror the native branch: align needs width, valign needs height", () => {
+    expect(rasterFieldOrigin({ x: 10, y: 5, align: "center" }, 300, raster)).toEqual({ x: 118, y: 59 });
+    expect(rasterFieldOrigin({ x: 10, y: 5, valign: "middle" }, 300, raster)).toEqual({ x: 118, y: 59 });
+  });
+
+  it("clamps negative slack (raster larger than its box) to 0 on both axes", () => {
+    // mmToDots(5, 300) = 59 < 100 wide; mmToDots(4, 300) = 47 < 60 tall.
+    const origin = rasterFieldOrigin(
+      { x: 10, y: 5, width: 5, height: 4, align: "center", valign: "bottom" },
+      300,
+      raster,
+    );
+    expect(origin).toEqual({ x: 118, y: 59 });
   });
 });
