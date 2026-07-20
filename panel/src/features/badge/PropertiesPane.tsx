@@ -25,7 +25,9 @@ export interface PropertiesPaneProps {
   // Needed by canvasMath's clampPosition/clampSize (both take a
   // BadgeConfig) so a typed X/Y/Width/Height change clamps to the SAME
   // artboard bounds BadgeCanvas's own drag/resize/nudge paths already
-  // enforce -- one clamp rule, never re-derived here.
+  // enforce -- one clamp rule, never re-derived here. Also the CURRENT
+  // values shown/edited by the "nothing selected" document-settings
+  // section below.
   config: BadgeConfig;
   // P3.2 Task 4: the event's uploaded fonts (BadgeEditorPage's own inline
   // `$api.useQuery("get", "/api/events/{event_id}/fonts", ...)`, mirroring
@@ -41,6 +43,11 @@ export interface PropertiesPaneProps {
   // label. Never re-derived here; this pane only renders what it's handed.
   fontCoverage: Record<string, boolean | undefined>;
   onUpdate: (id: string, patch: Partial<BadgeElement>) => void;
+  // Document settings (width_mm/height_mm/dpi), edited from the "nothing
+  // selected" branch below -- a single-field patch per change, same
+  // "never batch several fields into one call" convention `onUpdate`
+  // above documents for per-element edits.
+  onUpdateConfig: (patch: Partial<BadgeConfig>) => void;
 }
 
 // Appends a translated Cyrillic-coverage flag to an event font's option
@@ -77,7 +84,26 @@ const IDS = {
   fontSize: "badge-props-font-size",
   rotation: "badge-props-rotation",
   maxLines: "badge-props-max-lines",
+  docWidth: "badge-props-doc-width",
+  docHeight: "badge-props-doc-height",
+  docDpi: "badge-props-doc-dpi",
 };
+
+// Sane UI-only bounds for width_mm/height_mm (the backend places no upper
+// bound at all -- zpl.ParseBadgeTemplate only rejects <= 0 -- so this is
+// purely a guard rail against an obviously-unprintable label: below 10mm
+// nothing meaningful fits, above 200mm exceeds the desktop thermal label/
+// badge stock this editor's registered printers (the equipment hub's
+// Zebra ZD-series) actually take).
+const DOC_MM_MIN = 10;
+const DOC_MM_MAX = 200;
+
+// The three DPIs zpl.go/generateZpl.ts's mm<->dots arithmetic (a plain
+// mm/25.4*dpi multiply, no dpi-specific branching) handles correctly --
+// 203/300 are the two the panel's own golden ZPL matrix already pins;
+// goldenMatrix.test.ts adds a 600dpi cell alongside this change to prove
+// the pipeline is dpi-generic, not just parity-tested at two values.
+const DPI_OPTIONS = [203, 300, 600] as const;
 
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
@@ -89,14 +115,72 @@ const IDS = {
 // keystroke/click is independently undoable-in-principle and mirrors
 // editorState.ts's "update" action shape (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
-  element, fieldSchema, config, fonts, fontCoverage, onUpdate,
+  element, fieldSchema, config, fonts, fontCoverage, onUpdate, onUpdateConfig,
 }: PropertiesPaneProps) {
   const { t } = useTranslation();
 
+  // Typed number field -> clamped-patch dispatch for the document-settings
+  // section below. Clamped to DOC_MM_MIN/MAX client-side before dispatch
+  // (the reducer's "updateConfig" case only clamps ELEMENTS against
+  // whatever config it's given -- it doesn't re-validate the config's own
+  // bounds, so an out-of-range value must never reach it in the first
+  // place).
+  function handleConfigMmChange(field: "width_mm" | "height_mm", event: React.ChangeEvent<HTMLInputElement>) {
+    const value = event.target.valueAsNumber;
+    if (Number.isNaN(value)) return;
+    const clamped = Math.min(Math.max(value, DOC_MM_MIN), DOC_MM_MAX);
+    onUpdateConfig(field === "width_mm" ? { width_mm: clamped } : { height_mm: clamped });
+  }
+
+  function handleDpiChange(event: React.ChangeEvent<HTMLSelectElement>) {
+    onUpdateConfig({ dpi: Number(event.target.value) });
+  }
+
   if (!element) {
     return (
-      <div className="flex h-full flex-col gap-3 rounded-lg border border-border p-4" data-testid="badge-pane-properties">
+      <div className="flex h-full flex-col gap-4 rounded-lg border border-border p-4" data-testid="badge-pane-properties">
         <h3 className="text-body font-medium text-muted-foreground">{t("badgePaneProperties")}</h3>
+
+        <div className="flex flex-col gap-3">
+          <h4 className="text-card-title text-foreground">{t("badgePropsDocTitle")}</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              id={IDS.docWidth}
+              label={t("badgePropsWidth")}
+              value={config.width_mm}
+              step={1}
+              min={DOC_MM_MIN}
+              max={DOC_MM_MAX}
+              onChange={(e) => handleConfigMmChange("width_mm", e)}
+            />
+            <NumberField
+              id={IDS.docHeight}
+              label={t("badgePropsHeight")}
+              value={config.height_mm}
+              step={1}
+              min={DOC_MM_MIN}
+              max={DOC_MM_MAX}
+              onChange={(e) => handleConfigMmChange("height_mm", e)}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor={IDS.docDpi}>{t("badgePropsDpi")}</Label>
+            <Select id={IDS.docDpi} value={String(config.dpi)} onChange={handleDpiChange}>
+              {DPI_OPTIONS.map((dpi) => (
+                <option key={dpi} value={dpi}>
+                  {dpi}
+                </option>
+              ))}
+            </Select>
+          </div>
+          {/* Always-visible, same "editing aid honesty" convention as
+              BadgeCanvas.tsx's own permanent badgeCanvasApproximation
+              caption -- not a dynamic per-edit notice (no new transient
+              state to track), just a standing disclosure of what a shrink
+              does to elements that no longer fit. */}
+          <p className="text-caption text-muted-foreground">{t("badgePropsDocShrinkHint")}</p>
+        </div>
+
         <p className="text-caption text-muted-foreground">{t("badgePropsEmpty")}</p>
       </div>
     );
@@ -399,19 +483,20 @@ export function PropertiesPane({
 }
 
 function NumberField({
-  id, label, value, step = 0.5, min, onChange,
+  id, label, value, step = 0.5, min, max, onChange,
 }: {
   id: string;
   label: string;
   value: number | "";
   step?: number;
   min?: number;
+  max?: number;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" step={step} min={min} value={value} onChange={onChange} />
+      <Input id={id} type="number" step={step} min={min} max={max} value={value} onChange={onChange} />
     </div>
   );
 }

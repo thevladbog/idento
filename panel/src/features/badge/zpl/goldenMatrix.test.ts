@@ -101,9 +101,19 @@ const DATA_RU = { first_name: "Анна", last_name: "Петрова", company: 
 
 const CONFIG_300 = { width_mm: 90, height_mm: 55, dpi: 300 };
 const CONFIG_203 = { width_mm: 90, height_mm: 55, dpi: 203 };
+// P4.4 badge document-settings: 600dpi joins 203/300 as a selectable option
+// in PropertiesPane's new document-settings section (PropertiesPane.tsx's
+// DPI_OPTIONS) -- this cell proves generateZpl.ts's mm<->dots arithmetic
+// (a plain mm/25.4*dpi multiply, no dpi-specific branching anywhere in the
+// pipeline) is genuinely dpi-generic, not just parity-tested at the two
+// values the web port originally shipped with.
+const CONFIG_600 = { width_mm: 90, height_mm: 55, dpi: 600 };
 
 const HEADER_300 = "^XA\n^CI28\n^PW1063\n^LL650\n^PR4\n^LH0,0\n";
 const HEADER_203 = "^XA\n^CI28\n^PW719\n^LL440\n^PR4\n^LH0,0\n";
+// widthDots = round(90/25.4*600) = round(2125.98...) = 2126;
+// heightDots = round(55/25.4*600) = round(1299.21...) = 1299.
+const HEADER_600 = "^XA\n^CI28\n^PW2126\n^LL1299\n^PR4\n^LH0,0\n";
 const FOOTER = "^XZ\n";
 
 describe("golden ZPL matrix -- native font \"0\" vs customFont \"TestFamily\" x RU/EN (spec §1/§9)", () => {
@@ -280,5 +290,27 @@ describe("golden ZPL matrix -- dpi variant (203 vs 300 coordinate scaling)", () 
     );
     expect(deps300.rasterizeText).not.toHaveBeenCalled();
     expect(deps203.rasterizeText).not.toHaveBeenCalled();
+  });
+
+  it("the SAME fixture also scales correctly at 600dpi (document-settings' third DPI option)", async () => {
+    const deps600 = makeDeterministicDeps();
+    const zpl600 = await generateZpl(CONFIG_600, buildElements("native"), DATA_EN, deps600);
+
+    // Every mm->dots/pt->dots value recomputed at 600dpi:
+    //   x/y = round(5/25.4*600) = 118, round(15/25.4*600) = 354,
+    //         round(30/25.4*600) = 709, round(45/25.4*600) = 1063
+    //   fontHeight/Width = pointsToDots(12,600) = 100, pointsToDots(10,600) = 83
+    //   QR module size = max(2, round(mmToDots(20,600)/30)) = max(2, round(472/30)) = 16
+    //   line width = round(50/25.4*600) = 1181
+    expect(zpl600).toBe(
+      HEADER_600 +
+        "^FO118,118^A0N,100,100^FDAnna^FS\n" +
+        "^FO118,354^A0N,100,100^FDPetrova^FS\n" +
+        "^FO118,709^A0N,83,83^FDAcme Inc^FS\n" +
+        "^FO1299,118^BQN,2,16^FDQA,BADGE-EN-01^FS\n" +
+        "^FO118,1063^GB1181,2,2^FS\n" +
+        FOOTER,
+    );
+    expect(deps600.rasterizeText).not.toHaveBeenCalled();
   });
 });

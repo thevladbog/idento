@@ -26,6 +26,7 @@ function fontListItem(id: string, family: string): FontListItem {
 
 function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
   const onUpdate = vi.fn();
+  const onUpdateConfig = vi.fn();
   const props: PropertiesPaneProps = {
     element: null,
     fieldSchema: [],
@@ -33,20 +34,81 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
     fonts: [],
     fontCoverage: {},
     onUpdate,
+    onUpdateConfig,
     ...overrides,
   };
   const utils = render(<PropertiesPane {...props} />);
-  return { onUpdate, ...utils };
+  return { onUpdate, onUpdateConfig, ...utils };
 }
 
 describe("PropertiesPane", () => {
-  describe("empty state", () => {
-    it("shows a muted hint and no form controls when nothing is selected", () => {
+  describe("empty state (document settings)", () => {
+    it("shows the document-settings section with the config's current values, plus the element-selection hint", () => {
       renderPane({ element: null });
 
-      expect(screen.getByText("Select an element to edit its properties.")).toBeInTheDocument();
-      expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      expect(screen.getByText("Document settings")).toBeInTheDocument();
+      expect(screen.getByLabelText("Width (mm)")).toHaveValue(90);
+      expect(screen.getByLabelText("Height (mm)")).toHaveValue(55);
+      expect(screen.getByLabelText("DPI")).toHaveValue("300");
+      expect(
+        screen.getByText("Select an element to edit its properties, or set the label's overall size below."),
+      ).toBeInTheDocument();
+    });
+
+    it("lists 203/300/600 as the DPI options", () => {
+      renderPane({ element: null });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
+    });
+
+    it("patches width_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "100" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 100 });
+    });
+
+    it("patches height_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "60" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 60 });
+    });
+
+    it("patches dpi as a number on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("DPI"), { target: { value: "203" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ dpi: 203 });
+    });
+
+    it("clamps a width_mm value below the sane minimum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "1" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 10 });
+    });
+
+    it("clamps a height_mm value above the sane maximum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "999" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 200 });
+    });
+
+    it("ignores a non-numeric width input (cleared field) without dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "" } });
+
+      expect(onUpdateConfig).not.toHaveBeenCalled();
     });
   });
 
@@ -206,6 +268,7 @@ describe("PropertiesPane", () => {
             fonts={[]}
             fontCoverage={{}}
             onUpdate={onUpdate}
+            onUpdateConfig={vi.fn()}
           />,
         );
         expect(screen.getByLabelText("Text")).not.toBeDisabled();
