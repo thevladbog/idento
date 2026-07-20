@@ -36,7 +36,9 @@
 
 ### 3.3 Rust/Tauri
 
-Обновить crates; плагины: `tauri-plugin-shell` (sidecar), `tauri-plugin-updater`, `tauri-plugin-process` (relaunch после апдейта), `tauri-plugin-single-instance`. Сохраняется команда `agent_request` (проксирование HTTP к агенту без CORS). Новые команды: `agent_sidecar_status` при необходимости. Иконки: регенерация `tauri icon` из нового логотипа (assets из design_handoff), включая tray-template (закрывает pending-пункт логотип-роллаута для desktop).
+Обновить crates; плагины: `tauri-plugin-shell` (sidecar), `tauri-plugin-updater`, `tauri-plugin-process` (relaunch после апдейта), `tauri-plugin-single-instance`. Сохраняется команда `agent_request` (проксирование HTTP к агенту без CORS). Новые команды: `agent_sidecar_status` при необходимости.
+
+**Иконки** — из готовых handoff-ассетов `docs/design-briefs/design_handoff_idento_logo/assets/` (не перерисовывать, геометрия финальная): киоск использует **`app-icon-dark.svg`** (тёмный tile, в handoff README прямо помечен «e.g. Kiosk app»); формы по платформам — `app-icon-macos.svg` (squircle с полями, HIG) для `icon.icns`, `app-icon-windows.svg` (edge-to-edge) для `icon.ico`, PNG-набор для Linux; трей — `tray-icon-template.svg` (monochrome template, `iconAsTemplate` на macOS). Генерация — расширением коммитнутого `generate-favicons.sh` (rsvg-convert + magick) секцией `desktop`, замещающей текущие плейсхолдеры `src-tauri/icons/`. Это закрывает pending-пункт логотип-роллаута для desktop (мобильные drawables — отдельно, вне объёма).
 
 ### 3.4 Дизайн-токены (`@idento/ui/kiosk-theme.css`)
 
