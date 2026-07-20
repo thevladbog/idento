@@ -8,6 +8,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Config holds label dimensions and DPI.
@@ -243,8 +244,59 @@ func generateQRCodeZPL(el BadgeElement, data map[string]interface{}, dpi int) st
 	return fmt.Sprintf("^FO%d,%d^BQN,2,%d^FH^FDQA,%s^FS", x, y, moduleSize, qrData)
 }
 
+// barcodeModuleWidthDots is Zebra's own factory default module width (^BY's
+// default, 2 dots) -- used here because neither this generator nor its
+// panel/generateZpl.ts twin ever emits ^BY, so the printer's built-in
+// default module width is the width every barcode this pipeline generates
+// actually prints at.
+const barcodeModuleWidthDots = 2
+
+// estimateBarcodeWidthDots returns an APPROXIMATE Code 128 rendered width in
+// dots for dataLength input characters (see design doc
+// docs/superpowers/specs/2026-07-20-badge-barcode-alignment-design.md):
+// assumes Code Set B (one symbol character per input character, 11 modules
+// each) plus a start character and a checksum character (also 11 modules
+// each) and the wider 13-module stop character. All-numeric data may print
+// NARROWER than this estimate if the printer's firmware auto-switches to
+// Code Set C (two digits packed per symbol character) -- a documented
+// upper-bound estimate, not an exact value. Mirrors panel/generateZpl.ts's
+// estimateBarcodeWidthDots exactly.
+func estimateBarcodeWidthDots(dataLength int) int {
+	moduleCount := (dataLength+2)*11 + 13
+	return moduleCount * barcodeModuleWidthDots
+}
+
+// barcodeFieldOrigin computes the ^FO x coordinate (and whether to append
+// ^FO's right-justification argument) for a barcode element. Mirrors
+// panel/src/features/badge/zpl/generateZpl.ts's barcodeFieldOrigin exactly
+// -- see that function's own comment for the full left/center/right
+// rationale (^FO's native z=1 justification for right, zero estimation
+// error; a computed estimate-based offset for center, since ^FO has no
+// center-justification option; left/absent unchanged).
+func barcodeFieldOrigin(el BadgeElement, dpi int, dataLength int) (x int, rightJustified bool) {
+	zoneLeft := mmToDots(el.X, dpi)
+	widthMM := el.Width
+	if widthMM <= 0 {
+		widthMM = 30
+	}
+	zoneWidth := mmToDots(widthMM, dpi)
+
+	switch el.Align {
+	case "right":
+		return zoneLeft + zoneWidth, true
+	case "center":
+		estimated := estimateBarcodeWidthDots(dataLength)
+		offset := int(math.Round(float64(zoneWidth-estimated) / 2))
+		if offset < 0 {
+			offset = 0
+		}
+		return zoneLeft + offset, false
+	default:
+		return zoneLeft, false
+	}
+}
+
 func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) string {
-	x := mmToDots(el.X, dpi)
 	y := mmToDots(el.Y, dpi)
 
 	barcodeData := el.Text
@@ -253,6 +305,8 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 			barcodeData = v
 		}
 	}
+
+	x, rightJustified := barcodeFieldOrigin(el, dpi, utf8.RuneCountInString(barcodeData))
 	barcodeData = escapeZPL(barcodeData)
 
 	heightMM := el.Height
@@ -270,7 +324,12 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 		interpretationLine = "N"
 	}
 
-	return fmt.Sprintf("^FO%d,%d^BCN,%d,%s,N,N^FH^FD%s^FS", x, y, height, interpretationLine, barcodeData)
+	foSuffix := ""
+	if rightJustified {
+		foSuffix = ",1"
+	}
+
+	return fmt.Sprintf("^FO%d,%d%s^BCN,%d,%s,N,N^FH^FD%s^FS", x, y, foSuffix, height, interpretationLine, barcodeData)
 }
 
 func generateLineZPL(el BadgeElement, dpi int) string {
