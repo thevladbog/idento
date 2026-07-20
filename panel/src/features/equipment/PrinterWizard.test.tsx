@@ -447,10 +447,10 @@ describe("PrinterWizard", () => {
 
       const nameInput = screen.getByLabelText<HTMLInputElement>("Printer name");
       expect(nameInput.value).toBe("HP_Smart_Tank_790");
-      const checkbox = screen.getByLabelText<HTMLInputElement>(
+      const checkbox = screen.getByLabelText(
         "Make this the default printer for check-in stations on this computer",
       );
-      expect(checkbox.checked).toBe(true);
+      expect(checkbox).toBeChecked();
 
       await user.click(screen.getByRole("button", { name: "Save printer" }));
 

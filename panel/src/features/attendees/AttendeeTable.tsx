@@ -1,4 +1,4 @@
-import { StatusPill } from "@idento/ui";
+import { Checkbox, StatusPill } from "@idento/ui";
 import { CheckCircle2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { pageItems } from "./pageItems";
@@ -27,12 +27,10 @@ export function AttendeeTable({ rows, selected, onToggle, onToggleAll, onRowClic
       <div
         className={`${ROW_GRID} border-b border-border bg-muted/40 px-3.5 py-2 text-caption font-medium uppercase text-muted-foreground`}
       >
-        <input
-          type="checkbox"
+        <Checkbox
           checked={allSelected}
-          onChange={onToggleAll}
+          onCheckedChange={() => onToggleAll()}
           aria-label={t("attendeesSelectAllLabel")}
-          className="size-3.5 rounded-[4px] border-[1.5px] border-input accent-success"
         />
         <span>{t("attendeesColName")}</span>
         <span>{t("attendeesColCompany")}</span>
@@ -69,13 +67,11 @@ export function AttendeeTable({ rows, selected, onToggle, onToggleAll, onRowClic
               aria-label={t("attendeesRowOpenLabel", { name: fullName })}
               className={`${ROW_GRID} cursor-pointer px-3.5 py-2 text-caption hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${isSelected ? "bg-success/5" : ""}`}
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={isSelected}
-                onChange={() => onToggle(row.id)}
+                onCheckedChange={() => onToggle(row.id)}
                 onClick={(e) => e.stopPropagation()}
                 aria-label={t("attendeesSelectAttendeeLabel", { name: fullName })}
-                className="size-3.5 rounded-[4px] border-[1.5px] border-input accent-success"
               />
               <div className="flex flex-col">
                 <span className="font-medium text-body text-foreground">{fullName}</span>

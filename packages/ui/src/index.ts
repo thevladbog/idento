@@ -19,6 +19,8 @@ export {
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/tooltip";
 export { Separator } from "./components/separator";
 export { Switch } from "./components/switch";
+export { Checkbox } from "./components/checkbox";
+export { RadioGroup, RadioGroupItem } from "./components/radio-group";
 export { Avatar, AvatarFallback, AvatarImage } from "./components/avatar";
 export { STATUS_PILL_STATUSES, StatusPill, type StatusPillProps, type StatusPillStatus } from "./components/status-pill";
 export { Skeleton } from "./components/skeleton";

@@ -24,7 +24,7 @@
 // looks right" calls the existing useMarkTestPassed(machineId) mutation
 // directly instead of creating a new registry row.
 import {
-  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
+  Button, Checkbox, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -699,12 +699,11 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                     </div>
                   </div>
                 ) : null}
-                <label className="flex items-center gap-2 text-body text-foreground">
-                  <input
-                    type="checkbox"
-                    className="size-3.5 rounded-[4px] border-[1.5px] border-input accent-success"
+                <label htmlFor="printer-wizard-make-default" className="flex items-center gap-2 text-body text-foreground">
+                  <Checkbox
+                    id="printer-wizard-make-default"
                     checked={makeDefault}
-                    onChange={(e) => setMakeDefault(e.target.checked)}
+                    onCheckedChange={(checked) => setMakeDefault(checked === true)}
                     disabled={saving || mirrorWarning}
                   />
                   {t("equipmentWizardDefaultCheckbox")}

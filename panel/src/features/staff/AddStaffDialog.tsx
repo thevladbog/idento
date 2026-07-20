@@ -1,5 +1,5 @@
 import {
-  Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
+  Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, RadioGroup, RadioGroupItem,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -337,20 +337,22 @@ export function AddStaffDialog({
             </div>
             <fieldset className="flex flex-col gap-2">
               <legend className="text-caption text-muted-foreground">{t("staffAddRoleLabel")}</legend>
-              <div className="flex gap-4">
+              <RadioGroup
+                className="flex gap-4"
+                value={role}
+                onValueChange={(value) => setRole(value as CreateRole)}
+              >
                 {(["staff", "manager"] as const).map((candidateRole) => (
-                  <label key={candidateRole} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="add-staff-role"
-                      value={candidateRole}
-                      checked={role === candidateRole}
-                      onChange={() => setRole(candidateRole)}
-                    />
+                  <label
+                    key={candidateRole}
+                    htmlFor={`add-staff-role-${candidateRole}`}
+                    className="flex items-center gap-2"
+                  >
+                    <RadioGroupItem id={`add-staff-role-${candidateRole}`} value={candidateRole} />
                     <span>{t(ROLE_LABEL_KEYS[candidateRole])}</span>
                   </label>
                 ))}
-              </div>
+              </RadioGroup>
             </fieldset>
             {createFlowError ? (
               <p className="text-body text-destructive">
