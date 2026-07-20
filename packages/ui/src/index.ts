@@ -4,7 +4,10 @@ export { VERDICTS, verdictClasses, type Verdict } from "./lib/verdict";
 export { Button, buttonVariants, type ButtonProps } from "./components/button";
 export { Label } from "./components/label";
 export { Input } from "./components/input";
-export { Select, selectVariants, type SelectProps } from "./components/select";
+export {
+  Select, SelectGroup, SelectValue, SelectTrigger, SelectContent,
+  SelectLabel, SelectItem, SelectSeparator, selectTriggerVariants,
+} from "./components/select";
 export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./components/card";
 export {
   Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
