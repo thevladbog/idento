@@ -29,3 +29,5 @@ export { Progress, type ProgressProps } from "./components/progress";
 export { EmptyState, type EmptyStateProps } from "./components/empty-state";
 export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dialog";
 export { AGENT_STATES, AgentStatus, type AgentState, type AgentStatusProps } from "./components/agent-status";
+export { Calendar, type CalendarProps } from "./components/calendar";
+export { DatePicker, type DatePickerProps } from "./components/date-picker";

@@ -55,6 +55,8 @@
   "createEventNameLabel": "Event name",
   "createEventStartLabel": "Starts",
   "createEventEndLabel": "Ends",
+  "createEventDatePlaceholder": "Pick a date",
+  "createEventDateClear": "Clear date",
   "createEventLocationLabel": "Location",
   "createEventSubmit": "Create event",
   "createEventCancel": "Cancel",

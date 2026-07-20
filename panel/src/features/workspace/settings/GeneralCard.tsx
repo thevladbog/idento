@@ -1,5 +1,5 @@
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, Input, Label,
+  Button, Card, CardContent, CardHeader, CardTitle, DatePicker, Input, Label,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -59,7 +59,8 @@ export interface GeneralCardProps {
 // disables Save entirely for that dirty-state rather than silently dropping
 // the clear attempt or sending a value that wouldn't actually clear it.
 export function GeneralCard({ event }: GeneralCardProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language.startsWith("ru") ? "ru" : "en";
   const queryClient = useQueryClient();
   const [baseline, setBaseline] = React.useState<FormState>(() => toFormState(event));
   const [form, setForm] = React.useState<FormState>(() => toFormState(event));
@@ -185,20 +186,24 @@ export function GeneralCard({ event }: GeneralCardProps) {
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="settings-general-start">{t("createEventStartLabel")}</Label>
-            <Input
+            <DatePicker
               id="settings-general-start"
-              type="date"
               value={form.startDate}
-              onChange={(e) => updateField("startDate", e.target.value)}
+              onValueChange={(v) => updateField("startDate", v)}
+              locale={dateLocale}
+              placeholder={t("createEventDatePlaceholder")}
+              clearLabel={t("createEventDateClear")}
             />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="settings-general-end">{t("createEventEndLabel")}</Label>
-            <Input
+            <DatePicker
               id="settings-general-end"
-              type="date"
               value={form.endDate}
-              onChange={(e) => updateField("endDate", e.target.value)}
+              onValueChange={(v) => updateField("endDate", v)}
+              locale={dateLocale}
+              placeholder={t("createEventDatePlaceholder")}
+              clearLabel={t("createEventDateClear")}
             />
             {fieldErrors.endDate ? <p className="text-caption text-destructive">{t(fieldErrors.endDate)}</p> : null}
           </div>

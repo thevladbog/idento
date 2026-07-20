@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
@@ -40,6 +40,30 @@ function renderWithProviders(ui: ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
+// The date fields are now a DatePicker (Button opening a react-day-picker
+// Calendar). Both fields start empty, so the calendar opens anchored to
+// today's real month — picking the 5th and 10th of THAT month (rather than
+// a hardcoded future date) keeps these tests independent of when they run,
+// with no month navigation required.
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const today = new Date();
+const EARLY_ISO = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 5));
+const LATE_ISO = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 10));
+
+function dayButton(iso: string): HTMLElement {
+  const cell = document.querySelector(`[data-day="${iso}"]`);
+  if (!cell) throw new Error(`No calendar cell rendered for ${iso}`);
+  const button = cell.querySelector("button");
+  if (!button) throw new Error(`No day button rendered for ${iso}`);
+  return button as HTMLElement;
+}
+
 describe("CreateEventDialog", () => {
   beforeEach(() => {
     createCount = 0;
@@ -64,8 +88,10 @@ describe("CreateEventDialog", () => {
     renderWithProviders(<CreateEventDialog open onOpenChange={vi.fn()} />);
 
     await user.type(screen.getByLabelText("Event name"), "Conference");
-    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-08-10" } });
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-08-01" } });
+    await user.click(screen.getByLabelText("Starts"));
+    await user.click(dayButton(LATE_ISO));
+    await user.click(screen.getByLabelText("Ends"));
+    await user.click(dayButton(EARLY_ISO));
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
     expect(await screen.findByText("End date can't be before the start date.")).toBeInTheDocument();
@@ -79,16 +105,18 @@ describe("CreateEventDialog", () => {
     renderWithProviders(<CreateEventDialog open onOpenChange={onOpenChange} />);
 
     await user.type(screen.getByLabelText("Event name"), "Annual Conference");
-    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-08-01" } });
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-08-05" } });
+    await user.click(screen.getByLabelText("Starts"));
+    await user.click(dayButton(EARLY_ISO));
+    await user.click(screen.getByLabelText("Ends"));
+    await user.click(dayButton(LATE_ISO));
     await user.type(screen.getByLabelText("Location"), "Berlin");
     await user.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createCount).toBe(1));
     expect(lastCreateBody).toEqual({
       name: "Annual Conference",
-      start_date: new Date("2026-08-01").toISOString(),
-      end_date: new Date("2026-08-05").toISOString(),
+      start_date: new Date(EARLY_ISO).toISOString(),
+      end_date: new Date(LATE_ISO).toISOString(),
       location: "Berlin",
     });
 

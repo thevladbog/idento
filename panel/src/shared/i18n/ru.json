@@ -55,6 +55,8 @@
   "createEventNameLabel": "Название мероприятия",
   "createEventStartLabel": "Начало",
   "createEventEndLabel": "Окончание",
+  "createEventDatePlaceholder": "Выберите дату",
+  "createEventDateClear": "Очистить дату",
   "createEventLocationLabel": "Место проведения",
   "createEventSubmit": "Создать мероприятие",
   "createEventCancel": "Отмена",

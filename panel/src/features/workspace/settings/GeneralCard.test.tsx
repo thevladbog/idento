@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
@@ -41,6 +41,18 @@ function renderWithProviders(ui: ReactNode) {
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
 }
 
+// The date fields are now a DatePicker (Button opening a react-day-picker
+// Calendar), not a native `<input type="date">`. Days are found by the
+// calendar's locale-independent `data-day="YYYY-MM-DD"` attribute rather
+// than a localized aria-label.
+function dayButton(iso: string): HTMLElement {
+  const cell = document.querySelector(`[data-day="${iso}"]`);
+  if (!cell) throw new Error(`No calendar cell rendered for ${iso}`);
+  const button = cell.querySelector("button");
+  if (!button) throw new Error(`No day button rendered for ${iso}`);
+  return button as HTMLElement;
+}
+
 describe("GeneralCard", () => {
   beforeEach(() => {
     patchCount = 0;
@@ -53,8 +65,8 @@ describe("GeneralCard", () => {
     renderWithProviders(<GeneralCard event={BASE_EVENT} />);
 
     expect(screen.getByLabelText("Event name")).toHaveValue("Partner Day — Autumn");
-    expect(screen.getByLabelText("Starts")).toHaveValue("2026-09-03");
-    expect(screen.getByLabelText("Ends")).toHaveValue("2026-09-05");
+    expect(screen.getByLabelText("Starts")).toHaveTextContent("September 3rd, 2026");
+    expect(screen.getByLabelText("Ends")).toHaveTextContent("September 5th, 2026");
     expect(screen.getByLabelText("Location")).toHaveValue("Hyatt Regency");
   });
 
@@ -93,10 +105,14 @@ describe("GeneralCard", () => {
   });
 
   it("converts a changed date to an ISO string and omits unchanged fields", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<GeneralCard event={BASE_EVENT} />);
 
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-09-10" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    // Baseline "Ends" is 2026-09-05, so the calendar opens already anchored
+    // to September 2026 — no month navigation needed to reach the 10th.
+    await user.click(screen.getByLabelText("Ends"));
+    await user.click(dayButton("2026-09-10"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(patchCount).toBe(1));
     expect(lastPatchBody).toEqual({ end_date: new Date("2026-09-10").toISOString() });
@@ -117,30 +133,40 @@ describe("GeneralCard", () => {
     const user = userEvent.setup();
     renderWithProviders(<GeneralCard event={BASE_EVENT} />);
 
-    fireEvent.change(screen.getByLabelText("Ends"), { target: { value: "2026-09-01" } });
+    await user.click(screen.getByLabelText("Ends"));
+    await user.click(dayButton("2026-09-01"));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("End date can't be before the start date.")).toBeInTheDocument();
     expect(patchCount).toBe(0);
   });
 
-  it("disables Save and shows a muted note instead of PATCHing when a previously-set date is cleared", () => {
+  it("disables Save and shows a muted note instead of PATCHing when a previously-set date is cleared", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<GeneralCard event={BASE_EVENT} />);
 
-    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "" } });
+    const startGroup = screen.getByLabelText("Starts").closest("div");
+    if (!startGroup) throw new Error("Starts field has no wrapping group");
+    await user.click(within(startGroup).getByRole("button", { name: "Clear date" }));
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText("Clearing a date isn't supported yet.")).toBeInTheDocument();
     expect(patchCount).toBe(0);
   });
 
-  it("re-enables Save once a cleared date is restored", () => {
+  it("re-enables Save once a cleared date is restored", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<GeneralCard event={BASE_EVENT} />);
 
-    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "" } });
+    const startGroup = screen.getByLabelText("Starts").closest("div");
+    if (!startGroup) throw new Error("Starts field has no wrapping group");
+    await user.click(within(startGroup).getByRole("button", { name: "Clear date" }));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
-    fireEvent.change(screen.getByLabelText("Starts"), { target: { value: "2026-09-03" } });
+    // Reopening after Clear stays anchored to the last selected month
+    // (September 2026), so the baseline day is still one click away.
+    await user.click(screen.getByLabelText("Starts"));
+    await user.click(dayButton("2026-09-03"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(); // back to baseline, no longer dirty
     expect(screen.queryByText("Clearing a date isn't supported yet.")).not.toBeInTheDocument();
   });
