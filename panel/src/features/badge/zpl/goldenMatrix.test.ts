@@ -324,7 +324,8 @@ describe("golden ZPL matrix -- barcode caption toggle (2026-07-20 live-run reque
 
   it("cell 1/3 -- field absent (every pre-existing saved template): interpretation line stays Y", async () => {
     const zpl = await generateZpl(CONFIG_300, barcodeElement(), DATA, makeDeterministicDeps());
-    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+    // ^BY2: footprintModules(9)=(9+2)*11+13+20=154; floor(354/154)=2 (fit-to-width, matches the old fixed default).
+    expect(zpl).toBe(HEADER_300 + "^BY2^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
   });
 
   it("cell 2/3 -- showCaption: true is byte-identical to the absent-field cell (back-compat default pinned)", async () => {
@@ -335,7 +336,7 @@ describe("golden ZPL matrix -- barcode caption toggle (2026-07-20 live-run reque
 
   it("cell 3/3 -- showCaption: false flips exactly the interpretation-line argument to N, nothing else", async () => {
     const zpl = await generateZpl(CONFIG_300, barcodeElement(false), DATA, makeDeterministicDeps());
-    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,N,N,N^FDBADGE-042^FS\n" + FOOTER);
+    expect(zpl).toBe(HEADER_300 + "^BY2^FO59,59^BCN,142,N,N,N^FDBADGE-042^FS\n" + FOOTER);
   });
 });
 
@@ -353,19 +354,20 @@ describe("golden ZPL matrix -- barcode alignment (left/center/right)", () => {
 
   it("cell 1/3 -- align absent: unchanged from the caption-toggle matrix's own cell 1 (no ^FO third argument)", async () => {
     const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement(), DATA, makeDeterministicDeps());
-    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+    expect(zpl).toBe(HEADER_300 + "^BY2^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
   });
 
   it("cell 2/3 -- align: \"right\" appends ^FO's z=1 argument, x at the zone's right edge", async () => {
     const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement("right"), DATA, makeDeterministicDeps());
     // x = zoneLeftDots(59) + zoneWidthDots(354) = 413.
-    expect(zpl).toBe(HEADER_300 + "^FO413,59,1^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+    expect(zpl).toBe(HEADER_300 + "^BY2^FO413,59,1^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
   });
 
   it("cell 3/3 -- align: \"center\" computes an offset x, no ^FO third argument", async () => {
     const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement("center"), DATA, makeDeterministicDeps());
+    // moduleWidthDots: footprintModules(9)=(9+2)*11+13+20=154; floor(354/154)=2 (fit-to-width, matches the old fixed default).
     // estimatedWidthDots = ((9+2)*11+13)*2 = 268; slack = 354-268 = 86; offset = round(86/2) = 43; x = 59+43 = 102.
-    expect(zpl).toBe(HEADER_300 + "^FO102,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+    expect(zpl).toBe(HEADER_300 + "^BY2^FO102,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
   });
 });
 

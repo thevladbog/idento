@@ -15,7 +15,12 @@
 // this branch (still-documented deviations); the tests below pin BOTH halves.
 import type { RasterResult } from "./zplImage";
 import {
+  BARCODE_MAX_MODULE_DOTS,
+  BARCODE_MIN_MODULE_DOTS,
   barcodeFieldOrigin,
+  barcodeFootprintModules,
+  barcodeModuleWidthDots,
+  barcodeOverflows,
   escapeZplData,
   estimateBarcodeWidthDots,
   generateZpl,
@@ -275,64 +280,68 @@ describe("generateZpl -- barcode", () => {
 });
 
 describe("estimateBarcodeWidthDots", () => {
-  it("computes (dataLength + 2) * 11 + 13 modules at 2 dots/module (Zebra ^BY factory default)", () => {
-    // "ABC123" is 6 chars: (6+2)*11+13 = 101 modules * 2 dots = 202.
-    expect(estimateBarcodeWidthDots(6)).toBe(202);
+  it("computes (dataLength + 2) * 11 + 13 bar-only modules at a given module width (fit-to-width: width is now a parameter, not a fixed constant)", () => {
+    // "ABC123" is 6 chars: (6+2)*11+13 = 101 modules * 2 dots/module = 202.
+    expect(estimateBarcodeWidthDots(6, 2)).toBe(202);
   });
 
   it("still returns a positive width for an empty string (start/checksum/stop overhead only)", () => {
     // (0+2)*11+13 = 35 modules * 2 dots = 70.
-    expect(estimateBarcodeWidthDots(0)).toBe(70);
+    expect(estimateBarcodeWidthDots(0, 2)).toBe(70);
   });
 });
 
 describe("barcodeFieldOrigin", () => {
+  // dataLength=6 ("ABC123"); footprintModules(6) = (6+2)*11+13+2*10 = 121.
   it("left/absent align: x is the zone's left edge, unchanged regardless of width", () => {
+    // zoneWidthDots=mmToDots(30,300)=354 -> floor(354/121)=2 -> moduleWidthDots=2 (no clamping needed).
     expect(barcodeFieldOrigin({ x: 5, width: 30 }, 300, 6)).toEqual({
-      x: 59, rightJustified: false, estimatedWidthDots: 202,
+      x: 59, rightJustified: false, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
     expect(barcodeFieldOrigin({ x: 5, align: "left" }, 300, 6)).toEqual({
-      x: 59, rightJustified: false, estimatedWidthDots: 202,
+      x: 59, rightJustified: false, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
   });
 
   it("right align: x is the zone's right edge (left edge + zone width), rightJustified is true", () => {
     // zoneLeftDots=mmToDots(5,300)=59, zoneWidthDots=mmToDots(30,300)=354 -> x=413.
     expect(barcodeFieldOrigin({ x: 5, width: 30, align: "right" }, 300, 6)).toEqual({
-      x: 413, rightJustified: true, estimatedWidthDots: 202,
+      x: 413, rightJustified: true, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
   });
 
-  it("right align honors an explicit width (not just the 30mm default)", () => {
-    // zoneWidthDots=mmToDots(50,300)=591 -> x=59+591=650.
+  it("right align honors an explicit width (not just the 30mm default) -- a wider zone now computes a LARGER module width, capped at the ceiling", () => {
+    // zoneWidthDots=mmToDots(50,300)=591 -> floor(591/121)=4 -> capped to BARCODE_MAX_MODULE_DOTS(3).
+    // estimatedWidthDots = ((6+2)*11+13)*3 = 101*3 = 303. x is unaffected -- right align uses the zone edge, not the estimate.
     expect(barcodeFieldOrigin({ x: 5, width: 50, align: "right" }, 300, 6)).toEqual({
-      x: 650, rightJustified: true, estimatedWidthDots: 202,
+      x: 650, rightJustified: true, estimatedWidthDots: 303, moduleWidthDots: 3, overflows: false,
     });
   });
 
   it("falls back to the 30mm default zone width when width is omitted", () => {
     expect(barcodeFieldOrigin({ x: 5, align: "right" }, 300, 6)).toEqual({
-      x: 413, rightJustified: true, estimatedWidthDots: 202,
+      x: 413, rightJustified: true, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
   });
 
   it("treats an explicit width: 0 the same as omitted width (falls back to the 30mm default zone), matching the Go generator's <= 0 check", () => {
     expect(barcodeFieldOrigin({ x: 5, width: 0, align: "right" }, 300, 6)).toEqual({
-      x: 413, rightJustified: true, estimatedWidthDots: 202,
+      x: 413, rightJustified: true, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
   });
 
   it("center align: x is offset by half the zone's slack over the estimated barcode width", () => {
     // slack = zoneWidthDots(354) - estimatedWidthDots(202) = 152; offset = round(152/2) = 76 -> x=59+76=135.
     expect(barcodeFieldOrigin({ x: 5, width: 30, align: "center" }, 300, 6)).toEqual({
-      x: 135, rightJustified: false, estimatedWidthDots: 202,
+      x: 135, rightJustified: false, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: false,
     });
   });
 
-  it("center align clamps to zero offset (never moves backward past the zone's left edge) when the estimate exceeds the zone width", () => {
-    // zoneWidthDots=mmToDots(10,300)=118, estimatedWidthDots=202 -> negative slack clamps to 0.
+  it("center align clamps to zero offset (never moves backward past the zone's left edge) when the estimate exceeds the zone width, and flags overflow", () => {
+    // zoneWidthDots=mmToDots(10,300)=118 -> floor(118/121)=0 -> clamped UP to BARCODE_MIN_MODULE_DOTS(2) (readability floor).
+    // estimatedWidthDots=101*2=202 -> negative slack clamps to 0. footprintModules(6)*MIN(2)=242 > 118 -> overflows.
     expect(barcodeFieldOrigin({ x: 5, width: 10, align: "center" }, 300, 6)).toEqual({
-      x: 59, rightJustified: false, estimatedWidthDots: 202,
+      x: 59, rightJustified: false, estimatedWidthDots: 202, moduleWidthDots: 2, overflows: true,
     });
   });
 });
@@ -580,5 +589,92 @@ describe("rasterFieldOrigin", () => {
       raster,
     );
     expect(origin).toEqual({ x: 118, y: 59 });
+  });
+});
+
+// Fit-to-width Code 128 (2026-07-20-badge-barcode-fit-to-width-design.md,
+// Task 1): the module width is now COMPUTED from the zone and data length
+// instead of assuming the printer's ^BY default is 2 -- see generateZpl.ts's
+// own header comment on the ZD410 center-shift bug this fixes.
+describe("barcode module width (fit-to-width)", () => {
+  // footprint = (len+2)*11 + 13 + 20 ; bar-only estimate = (len+2)*11 + 13
+  it("footprint includes quiet zones", () => {
+    expect(barcodeFootprintModules(10)).toBe((10 + 2) * 11 + 13 + 20); // 165
+  });
+
+  it("caps a short code in a wide zone at MAX_MODULE_DOTS", () => {
+    // len 10 -> footprint 165 ; zone 795 dots -> floor(795/165)=4 -> capped to 3
+    expect(barcodeModuleWidthDots(10, 795)).toBe(BARCODE_MAX_MODULE_DOTS);
+  });
+
+  it("gives a medium code its exact fit width above the floor", () => {
+    // len 30 -> footprint (32*11+13+20)=385 ; zone 795 -> floor(795/385)=2
+    expect(barcodeModuleWidthDots(30, 795)).toBe(2);
+  });
+
+  it("clamps a long code UP to the readability floor and flags overflow", () => {
+    // len 36 (UUID) -> footprint (38*11+13+20)=451 ; zone 795 -> floor(795/451)=1 -> clamps to 2
+    expect(barcodeModuleWidthDots(36, 795)).toBe(BARCODE_MIN_MODULE_DOTS);
+    expect(barcodeOverflows(36, 795)).toBe(true);
+  });
+
+  it("does not flag overflow for a code that fits at the floor", () => {
+    expect(barcodeOverflows(30, 795)).toBe(false);
+  });
+});
+
+describe("barcodeFieldOrigin emits module width and drives centering", () => {
+  it("center places the barcode using the COMPUTED module width, not a fixed 2", () => {
+    // barcode x=0.5mm w=99.5mm @203dpi (the 2026-07-20 saved template)
+    const el = { x: 0.5, width: 99.5, align: "center" as const };
+    const o = barcodeFieldOrigin(el, 203, 10);
+    expect(o.moduleWidthDots).toBe(3); // capped
+    // estimatedWidthDots = (10+2)*11+13 bar-modules * 3 = 145*3 = 435
+    expect(o.estimatedWidthDots).toBe(145 * 3);
+    // zoneLeft=mmToDots(0.5,203)=4, zoneWidth=mmToDots(99.5,203)=795
+    // center x = 4 + round((795-435)/2) = 4 + 180 = 184
+    expect(o.x).toBe(184);
+    expect(o.rightJustified).toBe(false);
+    expect(o.overflows).toBe(false);
+  });
+
+  it("left is unchanged (zone-left, module width still computed)", () => {
+    const o = barcodeFieldOrigin({ x: 0.5, width: 99.5, align: "left" as const }, 203, 10);
+    expect(o.x).toBe(4);
+    expect(o.rightJustified).toBe(false);
+    expect(o.moduleWidthDots).toBe(3);
+  });
+
+  it("right uses native z=1 at the zone right edge", () => {
+    const o = barcodeFieldOrigin({ x: 0.5, width: 99.5, align: "right" as const }, 203, 10);
+    expect(o.x).toBe(4 + 795);
+    expect(o.rightJustified).toBe(true);
+  });
+
+  it("a non-positive width falls back to 30mm (parity with zpl.go's `<= 0` guard)", () => {
+    // A negative width from a hand-edited/legacy doc must behave exactly like
+    // undefined/0 -- 30mm zone -- so the panel and Go generators stay
+    // byte-for-byte. mmToDots(30, 203) = 240.
+    const zone30 = 240;
+    const undef = barcodeFieldOrigin({ x: 0, width: undefined, align: "right" as const }, 203, 10);
+    const zero = barcodeFieldOrigin({ x: 0, width: 0, align: "right" as const }, 203, 10);
+    const negative = barcodeFieldOrigin({ x: 0, width: -5, align: "right" as const }, 203, 10);
+    expect(undef.x).toBe(zone30);
+    expect(zero.x).toBe(zone30);
+    expect(negative.x).toBe(zone30);
+  });
+});
+
+describe("generateBarcodeZPL emits ^BY before ^BC", () => {
+  it("prepends ^BY{moduleWidth} to the barcode field", async () => {
+    const zpl = await generateZpl(
+      { width_mm: 100, height_mm: 60, dpi: 203 },
+      [{ id: "b", type: "barcode", source: "code", x: 0.5, y: 37, width: 99.5, height: 17.5, align: "center" }],
+      { code: "QA-EN-0001" },
+      { rasterizeText: async () => { throw new Error("no raster for barcode"); } },
+    );
+    // ^BY3 (capped), then ^FO at the computed center x=184
+    expect(zpl).toContain("^BY3^FO184,");
+    expect(zpl).toContain("^BCN,");
   });
 });

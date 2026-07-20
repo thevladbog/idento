@@ -33,6 +33,7 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
     config: CONFIG,
     fonts: [],
     fontCoverage: {},
+    previewData: {},
     onUpdate,
     onUpdateConfig,
     ...overrides,
@@ -294,6 +295,7 @@ describe("PropertiesPane", () => {
             config={CONFIG}
             fonts={[]}
             fontCoverage={{}}
+            previewData={{}}
             onUpdate={onUpdate}
             onUpdateConfig={vi.fn()}
           />,
@@ -772,6 +774,45 @@ describe("PropertiesPane", () => {
       it("is absent for qrcode/text/line/box elements", () => {
         renderPane({ element: { id: "e1", type: "qrcode", x: 5, y: 5, source: "code" } });
         expect(screen.queryByLabelText("Print human-readable caption")).not.toBeInTheDocument();
+      });
+    });
+
+    // Task 3 (fit-to-width): the advisory guiding an operator away from a
+    // barcode whose resolved preview code can't fit readably at this zone
+    // width -- non-blocking, guides to the QR element instead.
+    describe("overflow advisory", () => {
+      it("shows the overflow advisory for a barcode whose preview code can't fit readably", () => {
+        renderPane({
+          element: {
+            id: "b", type: "barcode", source: "code", x: 0.5, y: 37, width: 40, height: 17.5, align: "center",
+          },
+          config: { width_mm: 100, height_mm: 60, dpi: 203 },
+          previewData: { code: "550e8400-e29b-41d4-a716-446655440000" }, // a UUID
+        });
+
+        expect(screen.getByText(/QR/i)).toBeInTheDocument();
+      });
+
+      it("hides the advisory when the barcode fits", () => {
+        renderPane({
+          element: {
+            id: "b", type: "barcode", source: "code", x: 0.5, y: 37, width: 99.5, height: 17.5, align: "center",
+          },
+          config: { width_mm: 100, height_mm: 60, dpi: 203 },
+          previewData: { code: "QA-EN-0001" },
+        });
+
+        expect(screen.queryByText(/QR/i)).not.toBeInTheDocument();
+      });
+
+      it("never shows the advisory for a non-barcode element", () => {
+        renderPane({
+          element: { id: "t", type: "text", source: "first_name", x: 0, y: 0, width: 99, height: 14 },
+          config: { width_mm: 100, height_mm: 60, dpi: 203 },
+          previewData: { first_name: "550e8400-e29b-41d4-a716-446655440000" },
+        });
+
+        expect(screen.queryByText(/QR/i)).not.toBeInTheDocument();
       });
     });
   });
