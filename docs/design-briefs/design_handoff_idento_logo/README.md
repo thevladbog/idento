@@ -1,10 +1,10 @@
 # Handoff: Idento Logo & App Icon System
 
 ## Overview
-Brand mark for Idento — an event check-in / badge-printing product. The mark is an outlined attendee badge (lanyard slot, avatar silhouette) with a green "checked-in" corner accent. This package contains production-ready SVG assets plus the HTML design reference.
+Brand mark for Idento — an event check-in / badge-printing product. The mark is an outlined attendee badge (lanyard slot, avatar silhouette) with a green "checked-in" corner accent. This package contains the production-ready SVG assets under `assets/`.
 
 ## About the Design Files
-`Idento Logo.dc.html` (+ `support.js`) is a **design reference created in HTML** — the exploration canvas showing all rounds and contexts. It is not production code. The task is to integrate the **SVG assets in `assets/`** into the target codebase (favicons, app icons, headers) and, where needed, re-export raster sizes from them.
+The original handoff also shipped an HTML design-reference canvas (`Idento Logo.dc.html` + `support.js`) showing every exploration round; it is **not** vendored in-repo (design reference only, not production code). The task is to integrate the **SVG assets in `assets/`** into the target codebase (favicons, app icons, headers) and, where needed, re-export raster sizes from them — see `generate-favicons.sh`.
 
 ## Fidelity
 **High-fidelity.** Geometry, colors, and stroke weights are final. Use the SVGs as-is; do not redraw.
@@ -56,4 +56,6 @@ The main badge is centered at (32,32); the check disc is a corner accent that sl
 | `tray-icon-template.svg` | System tray / menu bar, inherits currentColor |
 
 ## Files
-- `Idento Logo.dc.html`, `support.js` — design reference (open the HTML in a browser; Round 3 at top is final)
+- `assets/` — production SVG source (see the Assets table above)
+- `generate-favicons.sh` — regenerates the runtime `favicon.ico` / `favicon.svg` / apple-touch / PWA-manifest PNGs from `assets/` and distributes them into `web/`, `panel/`, and `landing/` `public/` dirs (requires `rsvg-convert` + ImageMagick `magick`)
+- The HTML design-reference canvas (`Idento Logo.dc.html`, `support.js`) is intentionally not vendored here.
