@@ -46,6 +46,10 @@ jobs:
               - 'mobile/**'
             desktop:
               - 'desktop/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.npmrc'
             shared-ui:
               - 'packages/**'
               - 'package.json'
@@ -155,13 +159,13 @@ jobs:
         with:
           node-version: "24"
           cache: "npm"
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies (desktop)
-        run: cd desktop && npm ci
+      - name: Install dependencies
+        run: npm ci
       - name: Lint (desktop)
-        run: cd desktop && npm run lint
+        run: npm run lint -w idento-desktop
       - name: Install Tauri system deps (Linux)
         run: |
           sudo apt-get update
