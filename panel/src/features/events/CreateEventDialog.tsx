@@ -117,8 +117,8 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
               value={startDate}
               onValueChange={setStartDate}
               locale={dateLocale}
-              placeholder={t("createEventDatePlaceholder")}
-              clearLabel={t("createEventDateClear")}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearStart")}
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -128,8 +128,8 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
               value={endDate}
               onValueChange={setEndDate}
               locale={dateLocale}
-              placeholder={t("createEventDatePlaceholder")}
-              clearLabel={t("createEventDateClear")}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearEnd")}
             />
             {fieldErrors.endDate ? <p className="text-caption text-destructive">{t(fieldErrors.endDate)}</p> : null}
           </div>

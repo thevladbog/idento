@@ -191,7 +191,7 @@ export function AttendeesPage() {
           value={search.zone || ZONE_FILTER_ALL}
           onValueChange={(next) => updateFilter({ zone: next === ZONE_FILTER_ALL ? undefined : next })}
         >
-          <SelectTrigger variant="pill" aria-label={t("attendeesZoneFilterAll")}>
+          <SelectTrigger variant="pill" aria-label={t("attendeesZoneFilterLabel")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -213,7 +213,7 @@ export function AttendeesPage() {
             updateFilter({ status: next === STATUS_FILTER_ANY ? undefined : (next as AttendeeStatus) })
           }
         >
-          <SelectTrigger variant="pill" aria-label={t("attendeesStatusFilterAny")}>
+          <SelectTrigger variant="pill" aria-label={t("attendeesStatusFilterLabel")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

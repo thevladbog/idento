@@ -191,8 +191,8 @@ export function GeneralCard({ event }: GeneralCardProps) {
               value={form.startDate}
               onValueChange={(v) => updateField("startDate", v)}
               locale={dateLocale}
-              placeholder={t("createEventDatePlaceholder")}
-              clearLabel={t("createEventDateClear")}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearStart")}
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -202,8 +202,8 @@ export function GeneralCard({ event }: GeneralCardProps) {
               value={form.endDate}
               onValueChange={(v) => updateField("endDate", v)}
               locale={dateLocale}
-              placeholder={t("createEventDatePlaceholder")}
-              clearLabel={t("createEventDateClear")}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearEnd")}
             />
             {fieldErrors.endDate ? <p className="text-caption text-destructive">{t(fieldErrors.endDate)}</p> : null}
           </div>

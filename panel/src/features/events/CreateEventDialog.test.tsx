@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
@@ -97,6 +97,27 @@ describe("CreateEventDialog", () => {
     expect(await screen.findByText("End date can't be before the start date.")).toBeInTheDocument();
     expect(createCount).toBe(0);
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  // Bot review (PR #92, finding #3): Starts and Ends used to share the
+  // identical accessible name "Clear date" for their clear buttons -- a
+  // screen-reader user couldn't tell them apart. Each field's clear button
+  // now has its own field-specific name.
+  it("gives Starts and Ends distinct clear-button accessible names", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CreateEventDialog open onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByLabelText("Starts"));
+    await user.click(dayButton(EARLY_ISO));
+    await user.click(screen.getByLabelText("Ends"));
+    await user.click(dayButton(LATE_ISO));
+
+    const startGroup = screen.getByLabelText("Starts").closest("div");
+    const endGroup = screen.getByLabelText("Ends").closest("div");
+    if (!startGroup || !endGroup) throw new Error("Starts/Ends field is missing its wrapping group");
+
+    expect(within(startGroup).getByRole("button", { name: "Clear start date" })).toBeInTheDocument();
+    expect(within(endGroup).getByRole("button", { name: "Clear end date" })).toBeInTheDocument();
   });
 
   it("posts the correct body and navigates to the created event on valid submit", async () => {

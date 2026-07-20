@@ -147,7 +147,7 @@ describe("GeneralCard", () => {
 
     const startGroup = screen.getByLabelText("Starts").closest("div");
     if (!startGroup) throw new Error("Starts field has no wrapping group");
-    await user.click(within(startGroup).getByRole("button", { name: "Clear date" }));
+    await user.click(within(startGroup).getByRole("button", { name: "Clear start date" }));
 
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText("Clearing a date isn't supported yet.")).toBeInTheDocument();
@@ -160,7 +160,7 @@ describe("GeneralCard", () => {
 
     const startGroup = screen.getByLabelText("Starts").closest("div");
     if (!startGroup) throw new Error("Starts field has no wrapping group");
-    await user.click(within(startGroup).getByRole("button", { name: "Clear date" }));
+    await user.click(within(startGroup).getByRole("button", { name: "Clear start date" }));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     // Reopening after Clear stays anchored to the last selected month
@@ -169,6 +169,21 @@ describe("GeneralCard", () => {
     await user.click(dayButton("2026-09-03"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled(); // back to baseline, no longer dirty
     expect(screen.queryByText("Clearing a date isn't supported yet.")).not.toBeInTheDocument();
+  });
+
+  // Bot review (PR #92, finding #3): Starts and Ends used to share the
+  // identical accessible name "Clear date" for their clear buttons -- a
+  // screen-reader user couldn't tell them apart. Each field's clear button
+  // now has its own field-specific name.
+  it("gives Starts and Ends distinct clear-button accessible names", () => {
+    renderWithProviders(<GeneralCard event={BASE_EVENT} />);
+
+    const startGroup = screen.getByLabelText("Starts").closest("div");
+    const endGroup = screen.getByLabelText("Ends").closest("div");
+    if (!startGroup || !endGroup) throw new Error("Starts/Ends field is missing its wrapping group");
+
+    expect(within(startGroup).getByRole("button", { name: "Clear start date" })).toBeInTheDocument();
+    expect(within(endGroup).getByRole("button", { name: "Clear end date" })).toBeInTheDocument();
   });
 
   // Regression test for the Critical stale-PATCH-response race: `reset()` on

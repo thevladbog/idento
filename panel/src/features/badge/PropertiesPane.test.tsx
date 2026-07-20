@@ -135,7 +135,9 @@ describe("PropertiesPane", () => {
       const { onUpdateConfig } = renderPane({ element: null, config: { width_mm: 200, height_mm: 55, dpi: 300 } });
 
       const widthInput = screen.getByLabelText("Width (mm)");
-      await user.click(within(widthInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+      await user.click(
+        within(widthInput.parentElement as HTMLElement).getByRole("button", { name: "Increase Width (mm)" }),
+      );
 
       expect(widthInput).toHaveValue(200);
       expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 200 });
@@ -263,7 +265,7 @@ describe("PropertiesPane", () => {
       });
 
       const xInput = screen.getByLabelText("X (mm)");
-      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase X (mm)" }));
 
       expect(onUpdate).toHaveBeenCalledWith("e1", { x: 5.5 });
     });
@@ -277,7 +279,7 @@ describe("PropertiesPane", () => {
       });
 
       const xInput = screen.getByLabelText("X (mm)");
-      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase X (mm)" }));
 
       expect(onUpdate).toHaveBeenCalledWith("e1", { x: 70 });
     });
@@ -374,6 +376,50 @@ describe("PropertiesPane", () => {
           />,
         );
         expect(screen.getByLabelText("Text")).not.toBeDisabled();
+      });
+    });
+
+    // Bot review (PR #92, finding #1): the binding select used to map
+    // "Static text" to a bare sentinel string, and a custom field literally
+    // named that raw sentinel value shared its SelectItem's value --
+    // selecting the field silently mapped to `undefined` (the static-text
+    // branch) instead of binding to the field. The fix encodes real field
+    // names with a prefix the static sentinel can never start with, so the
+    // two are disjoint no matter what fieldSchema contains -- these cases
+    // reproduce the collision fieldSchema=["__static"] used to trigger.
+    describe("field named the raw static-text sentinel", () => {
+      it("still lists Static text as its own option alongside the {__static} field", async () => {
+        const user = userEvent.setup();
+        renderPane({ element: textElement, fieldSchema: ["__static"] });
+
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+        expect(options).toEqual([
+          "Static text",
+          "{first_name}",
+          "{last_name}",
+          "{email}",
+          "{company}",
+          "{position}",
+          "{code}",
+          "{__static}",
+        ]);
+      });
+
+      it("selecting the {__static} field patches source with the field's own name, not undefined", async () => {
+        const user = userEvent.setup();
+        const { onUpdate } = renderPane({ element: textElement, fieldSchema: ["__static"] });
+
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        await user.click(await screen.findByRole("option", { name: "{__static}" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { source: "__static" });
+      });
+
+      it("shows the {__static} field as selected (not Static text) when the element is already bound to it", () => {
+        renderPane({ element: { ...textElement, source: "__static" }, fieldSchema: ["__static"] });
+
+        expect(screen.getByRole("combobox", { name: "Binding" })).toHaveTextContent("{__static}");
       });
     });
 

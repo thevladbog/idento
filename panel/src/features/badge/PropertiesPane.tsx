@@ -135,9 +135,34 @@ const DPI_OPTIONS = [203, 300, 600] as const;
 // (source: undefined). This sentinel stands in for it and is mapped back to
 // `undefined` at the onValueChange boundary (same pattern as
 // AttendeesPage.tsx's ZONE_FILTER_ALL/STATUS_FILTER_ANY), so `element.source`
-// is unchanged from before this migration. Never collides with a real
-// binding name: bindingOptions() only ever returns field-schema identifiers.
-const BINDING_STATIC = "__static";
+// is unchanged from before this migration.
+//
+// Bot review (PR #92, finding #1): bindingOptions(fieldSchema) returns
+// user-defined attendee field names -- an operator can name a custom field
+// ANYTHING that passes settingsFieldsBlankError/ReservedError/DuplicateError
+// (blank/standard-name/duplicate checks only), including a field literally
+// named the raw sentinel value. A bare sentinel string is never provably
+// disjoint from that set. Real field values are instead encoded with a
+// prefix real field names can never start with by construction (every
+// encoded value is PREFIX + name, so its value space is exactly
+// {PREFIX + s : s a string} -- BINDING_STATIC, which never starts with
+// PREFIX, cannot ever be a member), so the two kinds are disjoint no matter
+// what fieldSchema contains.
+const BINDING_STATIC = "static";
+const BINDING_FIELD_PREFIX = "field:";
+
+function encodeBindingSource(source: string): string {
+  return `${BINDING_FIELD_PREFIX}${source}`;
+}
+
+// Inverse of encodeBindingSource -- undefined for the static sentinel (or
+// any other value that isn't a PREFIX-encoded field), the original field
+// name otherwise. Slicing off exactly the prefix (not further decoding the
+// remainder) makes this exact for any field name, including one that itself
+// starts with "field:".
+function decodeBindingValue(value: string): string | undefined {
+  return value.startsWith(BINDING_FIELD_PREFIX) ? value.slice(BINDING_FIELD_PREFIX.length) : undefined;
+}
 
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
@@ -291,7 +316,7 @@ export function PropertiesPane({
   }
 
   function handleBindingChange(value: string) {
-    patch({ source: value === BINDING_STATIC ? undefined : value });
+    patch({ source: decodeBindingValue(value) });
   }
 
   // P3.2 Task 4: the font <select> now mixes native ZPL codes (option value
@@ -469,14 +494,17 @@ export function PropertiesPane({
       {hasBindingSection && (
         <div className="flex flex-col gap-1">
           <Label htmlFor={IDS.binding}>{t("badgePropsBinding")}</Label>
-          <Select value={element.source || BINDING_STATIC} onValueChange={handleBindingChange}>
+          <Select
+            value={element.source ? encodeBindingSource(element.source) : BINDING_STATIC}
+            onValueChange={handleBindingChange}
+          >
             <SelectTrigger id={IDS.binding}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={BINDING_STATIC}>{t("badgeBindingStatic")}</SelectItem>
               {bindingOptions(fieldSchema).map((name) => (
-                <SelectItem key={name} value={name}>
+                <SelectItem key={name} value={encodeBindingSource(name)}>
                   {displayBinding(name)}
                 </SelectItem>
               ))}
@@ -661,8 +689,8 @@ function NumberField({
         max={max}
         value={value}
         onValueChange={onValueChange}
-        incrementLabel={t("commonIncrement")}
-        decrementLabel={t("commonDecrement")}
+        incrementLabel={t("commonIncrementField", { field: label })}
+        decrementLabel={t("commonDecrementField", { field: label })}
       />
     </div>
   );
