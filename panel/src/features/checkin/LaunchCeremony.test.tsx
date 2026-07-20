@@ -262,6 +262,33 @@ describe("LaunchCeremony", () => {
     expect(await screen.findByText("Saved")).toBeInTheDocument();
   });
 
+  // Task 6 (form primitives): the verdict-timeout field is now the
+  // @idento/ui NumberInput -- its own +/- steppers must step the seeded
+  // value by 1 and feed straight back into the SAME whole-object PUT the
+  // switch-driven edit above exercises.
+  it("stepping the verdict auto-dismiss field with the NumberInput's + button PUTs the incremented value", async () => {
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-ceremony");
+
+    await waitFor(() => expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(4));
+
+    await user.click(screen.getByRole("button", { name: "Increase" }));
+    expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(5);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(capturedSettingsPut).not.toBeNull());
+    expect(capturedSettingsPut).toEqual({
+      settings: {
+        print_on_checkin: true,
+        verdict_auto_dismiss_sec: 5,
+        scan_input: "wedge",
+        manual_search_enabled: true,
+      },
+    });
+  });
+
   // PR #77 bot-review round, Finding N -- the SAME "ungated load effect" bug
   // class as P3.1's badge editor: `settingsForm`/`settingsBaseline` start as
   // the hardcoded DEFAULT_CHECKIN_SETTINGS until the real GET resolves.

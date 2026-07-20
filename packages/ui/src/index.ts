@@ -4,6 +4,7 @@ export { VERDICTS, verdictClasses, type Verdict } from "./lib/verdict";
 export { Button, buttonVariants, type ButtonProps } from "./components/button";
 export { Label } from "./components/label";
 export { Input } from "./components/input";
+export { NumberInput, type NumberInputProps } from "./components/number-input";
 export {
   Select, SelectGroup, SelectValue, SelectTrigger, SelectContent,
   SelectLabel, SelectItem, SelectSeparator, selectTriggerVariants,

@@ -24,7 +24,7 @@
 // looks right" calls the existing useMarkTestPassed(machineId) mutation
 // directly instead of creating a new registry row.
 import {
-  Button, Checkbox, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
+  Button, Checkbox, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, NumberInput,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -578,11 +578,10 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="printer-wizard-manual-port">{t("equipmentWizardManualPort")}</Label>
-                  <Input
+                  <NumberInput
                     id="printer-wizard-manual-port"
-                    type="number"
-                    value={manualPort}
-                    onChange={(e) => setManualPort(e.target.value)}
+                    value={manualPort === "" ? "" : Number(manualPort)}
+                    onValueChange={(v) => setManualPort(v === "" ? "" : String(v))}
                     disabled={manualSubmitting}
                   />
                 </div>
@@ -689,11 +688,10 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="printer-wizard-save-port">{t("equipmentWizardManualPort")}</Label>
-                      <Input
+                      <NumberInput
                         id="printer-wizard-save-port"
-                        type="number"
-                        value={savePort}
-                        onChange={(e) => setSavePort(e.target.value)}
+                        value={savePort === "" ? "" : Number(savePort)}
+                        onValueChange={(v) => setSavePort(v === "" ? "" : String(v))}
                         disabled={saving || mirrorWarning}
                       />
                     </div>

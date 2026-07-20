@@ -18,7 +18,7 @@
 // devices) readable while the agent is down.
 import {
   Button, ConfirmDialog, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DropdownMenu,
-  DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Label, Skeleton,
+  DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Label, NumberInput, Skeleton,
 } from "@idento/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, ScanLine } from "lucide-react";
@@ -220,11 +220,10 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending, agentReachab
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="equipment-edit-address-port">{t("equipmentWizardManualPort")}</Label>
-              <Input
+              <NumberInput
                 id="equipment-edit-address-port"
-                type="number"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
+                value={port === "" ? "" : Number(port)}
+                onValueChange={(v) => setPort(v === "" ? "" : String(v))}
                 disabled={pending}
               />
             </div>

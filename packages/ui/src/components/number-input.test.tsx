@@ -1,0 +1,142 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import * as React from "react";
+import { Label } from "./label";
+import { NumberInput } from "./number-input";
+
+function Controlled({
+  initial = 5,
+  onValueChange = () => {},
+  ...rest
+}: {
+  initial?: number | "";
+  onValueChange?: (v: number | "") => void;
+  step?: number;
+  min?: number;
+  max?: number;
+  showSteppers?: boolean;
+  disabled?: boolean;
+}) {
+  const [value, setValue] = React.useState<number | "">(initial);
+  return (
+    <NumberInput
+      aria-label="Quantity"
+      value={value}
+      onValueChange={(v) => {
+        setValue(v);
+        onValueChange(v);
+      }}
+      {...rest}
+    />
+  );
+}
+
+describe("NumberInput", () => {
+  it("is reachable by its label and renders the current value", () => {
+    render(
+      <>
+        <Label htmlFor="qty">Quantity</Label>
+        <NumberInput id="qty" value={5} onValueChange={() => {}} />
+      </>,
+    );
+    expect(screen.getByLabelText("Quantity")).toHaveValue(5);
+  });
+
+  it("clicking + increments by step and fires onValueChange(value + step)", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial={5} step={2} onValueChange={onValueChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Increase" }));
+
+    expect(onValueChange).toHaveBeenCalledWith(7);
+    expect(screen.getByLabelText("Quantity")).toHaveValue(7);
+  });
+
+  it("clicking − decrements by step and fires onValueChange(value - step)", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial={5} step={2} onValueChange={onValueChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Decrease" }));
+
+    expect(onValueChange).toHaveBeenCalledWith(3);
+    expect(screen.getByLabelText("Quantity")).toHaveValue(3);
+  });
+
+  it("clamps the + stepper at max", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial={9} max={10} onValueChange={onValueChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Increase" }));
+    expect(onValueChange).toHaveBeenLastCalledWith(10);
+
+    await user.click(screen.getByRole("button", { name: "Increase" }));
+    expect(onValueChange).toHaveBeenLastCalledWith(10);
+  });
+
+  it("clamps the − stepper at min", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial={1} min={0} onValueChange={onValueChange} />);
+
+    await user.click(screen.getByRole("button", { name: "Decrease" }));
+    expect(onValueChange).toHaveBeenLastCalledWith(0);
+
+    await user.click(screen.getByRole("button", { name: "Decrease" }));
+    expect(onValueChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it("typing a number fires onValueChange with the numeric value", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial="" onValueChange={onValueChange} />);
+
+    await user.type(screen.getByLabelText("Quantity"), "42");
+
+    expect(onValueChange).toHaveBeenLastCalledWith(42);
+  });
+
+  it("clearing the field fires onValueChange('')", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(<Controlled initial={5} onValueChange={onValueChange} />);
+
+    await user.clear(screen.getByLabelText("Quantity"));
+
+    expect(onValueChange).toHaveBeenLastCalledWith("");
+  });
+
+  it("showSteppers={false} hides the +/- buttons", () => {
+    render(<Controlled initial={5} showSteppers={false} />);
+
+    expect(screen.queryByRole("button", { name: "Increase" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Decrease" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Quantity")).toBeInTheDocument();
+  });
+
+  it("disables the steppers when the input is disabled", () => {
+    render(<Controlled initial={5} disabled />);
+
+    expect(screen.getByRole("button", { name: "Increase" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Decrease" })).toBeDisabled();
+    expect(screen.getByLabelText("Quantity")).toBeDisabled();
+  });
+
+  it("suppresses the native spinner via the webkit/firefox spinner-hiding class", () => {
+    render(<Controlled initial={5} />);
+
+    const input = screen.getByLabelText("Quantity");
+    expect(input.className).toContain("[appearance:textfield]");
+    expect(input.className).toContain("[&::-webkit-outer-spin-button]:appearance-none");
+    expect(input.className).toContain("[&::-webkit-inner-spin-button]:appearance-none");
+  });
+
+  it("merges a custom className onto the input", () => {
+    render(
+      <NumberInput aria-label="Quantity" value={5} onValueChange={() => {}} className="my-extra" />,
+    );
+    expect(screen.getByLabelText("Quantity")).toHaveClass("my-extra");
+  });
+});

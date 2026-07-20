@@ -42,8 +42,8 @@
 // mounted" wording.
 import * as React from "react";
 import {
-  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue, Skeleton, Switch,
+  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, NumberInput, Select, SelectContent,
+  SelectItem, SelectTrigger, SelectValue, Skeleton, Switch,
 } from "@idento/ui";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -369,14 +369,17 @@ export function LaunchCeremony() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-dismiss-sec">{t("launchDismissSecLabel")}</Label>
-              <Input
+              <NumberInput
                 id="launch-dismiss-sec"
-                type="number"
                 min={1}
                 max={30}
                 disabled={!settingsReady}
                 value={settingsForm.verdict_auto_dismiss_sec}
-                onChange={(e) => updateSetting("verdict_auto_dismiss_sec", Number(e.target.value))}
+                // verdict_auto_dismiss_sec is a plain `number` (never ""),
+                // matching the old Number(e.target.value) behavior where a
+                // cleared/invalid field coerced to 0 (Number("") === 0)
+                // rather than being ignored.
+                onValueChange={(v) => updateSetting("verdict_auto_dismiss_sec", v === "" ? 0 : v)}
               />
             </div>
             <div className="flex flex-col gap-2">

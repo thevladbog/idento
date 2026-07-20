@@ -1,6 +1,6 @@
 import {
-  Button, Input, Label, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
-  Switch, cn,
+  Button, Input, Label, NumberInput, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger,
+  SelectValue, Switch, cn,
 } from "@idento/ui";
 import {
   AlignCenter,
@@ -10,7 +10,6 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
 } from "lucide-react";
-import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { bindingOptions, displayBinding } from "./bindings";
@@ -162,9 +161,11 @@ export function PropertiesPane({
   // whatever config it's given -- it doesn't re-validate the config's own
   // bounds, so an out-of-range value must never reach it in the first
   // place).
-  function handleConfigMmChange(field: "width_mm" | "height_mm", event: React.ChangeEvent<HTMLInputElement>) {
-    const value = event.target.valueAsNumber;
-    if (Number.isNaN(value)) return;
+  function handleConfigMmChange(field: "width_mm" | "height_mm", value: number | "") {
+    // A cleared field reports "" -- ignore rather than dispatching a patch
+    // that would corrupt the document's own bounds (same guard the old
+    // NaN-from-valueAsNumber check enforced).
+    if (value === "") return;
     const clamped = Math.min(Math.max(value, DOC_MM_MIN), DOC_MM_MAX);
     onUpdateConfig(field === "width_mm" ? { width_mm: clamped } : { height_mm: clamped });
   }
@@ -194,7 +195,7 @@ export function PropertiesPane({
               step={1}
               min={DOC_MM_MIN}
               max={DOC_MM_MAX}
-              onChange={(e) => handleConfigMmChange("width_mm", e)}
+              onValueChange={(v) => handleConfigMmChange("width_mm", v)}
             />
             <NumberField
               id={IDS.docHeight}
@@ -203,7 +204,7 @@ export function PropertiesPane({
               step={1}
               min={DOC_MM_MIN}
               max={DOC_MM_MAX}
-              onChange={(e) => handleConfigMmChange("height_mm", e)}
+              onValueChange={(v) => handleConfigMmChange("height_mm", v)}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -259,12 +260,11 @@ export function PropertiesPane({
 
   function handleNumberChange(
     field: "x" | "y" | "width" | "height",
-    event: React.ChangeEvent<HTMLInputElement>,
+    value: number | "",
   ) {
-    const value = event.target.valueAsNumber;
-    // A cleared/invalid field reports NaN -- ignore rather than dispatching
+    // A cleared/invalid field reports "" -- ignore rather than dispatching
     // a patch that would corrupt the element's position/size.
-    if (Number.isNaN(value)) return;
+    if (value === "") return;
 
     // elementFootprint, NOT raw element.width/height: a width/height-less
     // element (a fresh text element) renders 40x8mm on the canvas, and its
@@ -444,25 +444,25 @@ export function PropertiesPane({
           id={IDS.x}
           label={t("badgePropsX")}
           value={element.x}
-          onChange={(e) => handleNumberChange("x", e)}
+          onValueChange={(v) => handleNumberChange("x", v)}
         />
         <NumberField
           id={IDS.y}
           label={t("badgePropsY")}
           value={element.y}
-          onChange={(e) => handleNumberChange("y", e)}
+          onValueChange={(v) => handleNumberChange("y", v)}
         />
         <NumberField
           id={IDS.width}
           label={t("badgePropsWidth")}
           value={footprint.width}
-          onChange={(e) => handleNumberChange("width", e)}
+          onValueChange={(v) => handleNumberChange("width", v)}
         />
         <NumberField
           id={IDS.height}
           label={t("badgePropsHeight")}
           value={footprint.height}
-          onChange={(e) => handleNumberChange("height", e)}
+          onValueChange={(v) => handleNumberChange("height", v)}
         />
       </div>
 
@@ -545,10 +545,9 @@ export function PropertiesPane({
             value={element.fontSize ?? 12}
             step={1}
             min={1}
-            onChange={(e) => {
-              const value = e.target.valueAsNumber;
-              if (Number.isNaN(value)) return;
-              patch({ fontSize: value });
+            onValueChange={(v) => {
+              if (v === "") return;
+              patch({ fontSize: v });
             }}
           />
 
@@ -606,10 +605,9 @@ export function PropertiesPane({
             value={element.maxLines ?? ""}
             step={1}
             min={1}
-            onChange={(e) => {
-              const value = e.target.valueAsNumber;
-              if (Number.isNaN(value)) return;
-              patch({ maxLines: value });
+            onValueChange={(v) => {
+              if (v === "") return;
+              patch({ maxLines: v });
             }}
           />
         </>
@@ -636,7 +634,7 @@ export function PropertiesPane({
 }
 
 function NumberField({
-  id, label, value, step = 0.5, min, max, onChange,
+  id, label, value, step = 0.5, min, max, onValueChange,
 }: {
   id: string;
   label: string;
@@ -644,12 +642,12 @@ function NumberField({
   step?: number;
   min?: number;
   max?: number;
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onValueChange: (value: number | "") => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" step={step} min={min} max={max} value={value} onChange={onChange} />
+      <NumberInput id={id} step={step} min={min} max={max} value={value} onValueChange={onValueChange} />
     </div>
   );
 }

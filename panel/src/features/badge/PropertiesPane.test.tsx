@@ -125,6 +125,22 @@ describe("PropertiesPane", () => {
       expect(onUpdateConfig).not.toHaveBeenCalled();
     });
 
+    // Task 6 (form primitives): Width/Height (mm) are now the @idento/ui
+    // NumberInput WITH min/max passed straight through -- unlike the
+    // element x/y/width/height fields above, the + stepper's OWN internal
+    // clamp() (not just handleConfigMmChange's) must stop at DOC_MM_MAX
+    // when already there.
+    it("clicking Width's + stepper at the sane maximum stays clamped via NumberInput's own min/max", async () => {
+      const user = userEvent.setup();
+      const { onUpdateConfig } = renderPane({ element: null, config: { width_mm: 200, height_mm: 55, dpi: 300 } });
+
+      const widthInput = screen.getByLabelText("Width (mm)");
+      await user.click(within(widthInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+
+      expect(widthInput).toHaveValue(200);
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 200 });
+    });
+
     // Review fix: a template saved before this picker existed (or edited
     // via a raw API call, same as the incident that prompted this feature)
     // can carry a dpi outside the three listed options. A controlled
@@ -230,6 +246,40 @@ describe("PropertiesPane", () => {
       // with -- showing 0 would misstate what's actually on the artboard.
       expect(screen.getByLabelText("Width (mm)")).toHaveValue(40);
       expect(screen.getByLabelText("Height (mm)")).toHaveValue(8);
+    });
+
+    // Task 6 (form primitives): X/Y/Width/Height are now the @idento/ui
+    // NumberInput -- its own + stepper must dispatch through the SAME
+    // handleNumberChange onUpdate path a typed change already exercises
+    // above (no min/max passed to these fields, so NumberInput's own
+    // internal clamp() no-ops; footprint clamping stays handleNumberChange's
+    // job either way). NumberField's own default step (0.5, unchanged by
+    // this migration -- none of these call sites pass an explicit `step`)
+    // means one click moves x by 0.5, not 1.
+    it("clicking X's + stepper increments by the field's 0.5 step and dispatches through handleNumberChange", async () => {
+      const user = userEvent.setup();
+      const { onUpdate } = renderPane({
+        element: { id: "e1", type: "box", x: 5, y: 5, width: 20, height: 10 },
+      });
+
+      const xInput = screen.getByLabelText("X (mm)");
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+
+      expect(onUpdate).toHaveBeenCalledWith("e1", { x: 5.5 });
+    });
+
+    it("clicking X's + stepper past the artboard edge clamps via the same footprint guard as typed input", async () => {
+      // Already at the max-fitting x (90mm board, 20mm-wide element -> 70) --
+      // stepping past it (70.5) must clamp straight back to 70.
+      const user = userEvent.setup();
+      const { onUpdate } = renderPane({
+        element: { id: "e1", type: "box", x: 70, y: 5, width: 20, height: 10 },
+      });
+
+      const xInput = screen.getByLabelText("X (mm)");
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase" }));
+
+      expect(onUpdate).toHaveBeenCalledWith("e1", { x: 70 });
     });
   });
 
