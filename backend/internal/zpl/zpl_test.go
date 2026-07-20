@@ -154,6 +154,14 @@ func TestGenerateBarcodeAlignment(t *testing.T) {
 		}
 	})
 
+	t.Run("treats an explicit width: 0 the same as omitted width (falls back to the 30mm default zone)", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Width: 0, Text: "ABC123", Align: "right"}}
+		zpl := Generate(cfg, els, nil)
+		if want := "^FO413,59,1^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
 	t.Run("right align honors an explicit width zone, not just the 30mm default", func(t *testing.T) {
 		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Width: 50, Text: "ABC123", Align: "right"}}
 		zpl := Generate(cfg, els, nil)

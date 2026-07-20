@@ -316,6 +316,12 @@ describe("barcodeFieldOrigin", () => {
     });
   });
 
+  it("treats an explicit width: 0 the same as omitted width (falls back to the 30mm default zone), matching the Go generator's <= 0 check", () => {
+    expect(barcodeFieldOrigin({ x: 5, width: 0, align: "right" }, 300, 6)).toEqual({
+      x: 413, rightJustified: true, estimatedWidthDots: 202,
+    });
+  });
+
   it("center align: x is offset by half the zone's slack over the estimated barcode width", () => {
     // slack = zoneWidthDots(354) - estimatedWidthDots(202) = 152; offset = round(152/2) = 76 -> x=59+76=135.
     expect(barcodeFieldOrigin({ x: 5, width: 30, align: "center" }, 300, 6)).toEqual({

@@ -375,7 +375,7 @@ export function barcodeFieldOrigin(
   dataLength: number,
 ): { x: number; rightJustified: boolean; estimatedWidthDots: number } {
   const zoneLeftDots = mmToDots(element.x, dpi);
-  const zoneWidthDots = mmToDots(element.width ?? 30, dpi);
+  const zoneWidthDots = mmToDots(element.width || 30, dpi);
   const estimatedWidthDots = estimateBarcodeWidthDots(dataLength);
 
   if (element.align === "right") {
