@@ -154,7 +154,7 @@ export default function LoginPage() {
         <div className="absolute inset-0 login-brand-pattern" aria-hidden />
         <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-12 lg:py-24 text-center text-white">
           <img
-            src="/logo-mark-white.svg"
+            src={`${import.meta.env.BASE_URL}logo-mark-white.svg`}
             alt=""
             aria-hidden
             className="h-14 w-auto lg:h-20"
