@@ -33,7 +33,9 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `npm ci` at root installs desktop deps; `@idento/ui` resolvable from desktop (`"@idento/ui": "*"`); root `package-lock.json` is the single lockfile.
+- Produces: `npm ci` at root installs desktop deps; `@idento/ui` resolvable from desktop (`"@idento/ui": "*"`); root `package-lock.json` is the single lockfile; `desktop` runs React 19.2.7 (matching `panel`).
+
+**Amendment (post-dispatch, discovered during implementation):** joining the workspace while `desktop` stayed pinned to React 18 alongside `panel`'s React 19 broke `desktop`'s `tsc -b` build — npm hoists `react`/`@types/react` for `desktop` from its own 18.x range (genuine conflict, so it nests), but peer-range-only libraries (`lucide-react`, `react-router-dom`, `sonner`) hoist to the *root* 19.x types since their peer ranges accept both majors, so `desktop`'s own JSX resolves against React 18 types while these libraries' `.d.ts` resolve against React 19 types — a real `ReactNode` mismatch (React 19 added `bigint`), not a fluke (reproduced from a clean `npm ci`). The design spec (`docs/superpowers/specs/2026-07-21-kiosk-desktop-v2-design.md` §3.2) already calls for desktop to run "React 19" in the rewrite, and Task 2 Step 6 of this plan already amends `packages/ui/AGENTS.md` to say "the desktop kiosk runs React 19" — so the version bump is not a new decision, it's completing one this plan already made elsewhere. Step 2 below now includes it.
 
 - [ ] **Step 1: Add desktop to workspaces**
 
@@ -43,13 +45,27 @@ In root `package.json` change:
   "workspaces": ["packages/*", "panel", "desktop"],
 ```
 
-- [ ] **Step 2: Reference @idento/ui from desktop**
+- [ ] **Step 2: Reference @idento/ui from desktop, bump to React 19**
 
 In `desktop/package.json` `dependencies` add (keep the rest as-is):
 
 ```json
     "@idento/ui": "*",
 ```
+
+And align `dependencies`/`devDependencies` with `panel/package.json`'s React major (avoids the hoisting conflict below — `@idento/ui`'s peer range `>=18` already allows this, and `desktop`'s other deps — `react-router-dom@7`, `sonner@2`, `lucide-react` — already advertise React 19 support in their own peer ranges):
+
+```json
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+```
+
+```json
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.0.0",
+```
+
+(`@vitejs/plugin-react` stays `^5` — already compatible with both majors.)
 
 - [ ] **Step 3: Remove the separate lockfile and reinstall**
 
