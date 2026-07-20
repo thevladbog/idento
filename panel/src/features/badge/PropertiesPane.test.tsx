@@ -429,6 +429,38 @@ describe("PropertiesPane", () => {
         expect(onUpdate).toHaveBeenCalledWith("e1", { valign: "bottom" });
       });
 
+      // Bot review (PR #87, finding #3): generateZpl.ts's native valign block
+      // only fires when `element.height` is truthy (generateTextZPL:178) --
+      // a fresh text element carries no explicit height at all (only the
+      // Properties pane's DISPLAYED footprint fallback, elementFootprint,
+      // shows 8mm without ever writing it onto the element). Clicking a
+      // valign segment on such an element used to be a silent no-op: the
+      // patch set {valign} but the generator's height check still failed.
+      // Setting valign now also persists the SAME footprint height the pane
+      // already displays -- one dispatch, mirroring the two-field-patch
+      // precedent handleFontChange already uses for clearing customFont
+      // alongside setting fontFamily.
+      it("also patches the displayed footprint height when the element has no explicit height (so valign isn't a silent no-op)", () => {
+        const { onUpdate } = renderPane({
+          element: { id: "t1", type: "text", x: 5, y: 5, text: "Hi" }, // no width/height
+        });
+
+        fireEvent.click(screen.getByRole("button", { name: "Align middle" }));
+
+        // 8mm: canvasMath's DEFAULT_SIZE_MM.text -- the SAME value the
+        // Height field already displays for this element.
+        expect(onUpdate).toHaveBeenCalledWith("t1", { valign: "middle", height: 8 });
+      });
+
+      it("does NOT patch height when the element already has an explicit height", () => {
+        const { onUpdate } = renderPane({ element: textElement }); // width:40, height:8 explicit
+
+        fireEvent.click(screen.getByRole("button", { name: "Align bottom" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { valign: "bottom" });
+        expect(onUpdate).not.toHaveBeenCalledWith("e1", expect.objectContaining({ height: expect.anything() }));
+      });
+
       it("defaults to Align top pressed when the element has no explicit valign", () => {
         renderPane({ element: { ...textElement, valign: undefined } });
 

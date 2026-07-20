@@ -43,12 +43,15 @@ export interface BadgeElement {
   customFont?: string;
   // Barcode elements only (2026-07-20 live-run request): whether ^BC prints
   // its human-readable interpretation line below the bars. ABSENT means true
-  // — web/src/utils/zpl.ts:237 and backend zpl.go:255 have always hardcoded
-  // the argument to Y, so every template saved before this field existed
-  // must keep printing the caption. Only an explicit `false` flips the
-  // argument to N (generateZpl.ts's generateBarcodeZPL); the backend/kiosk
-  // generator ignores this field entirely (plain json.Unmarshal drops
-  // unknown keys) and keeps printing Y regardless.
+  // — web/src/utils/zpl.ts:237 originally hardcoded the argument to Y, so
+  // every template saved before this field existed must keep printing the
+  // caption. Only an explicit `false` flips the argument to N. Honored by
+  // BOTH generators: this panel's own generateZpl.ts (generateBarcodeZPL)
+  // AND the backend/kiosk Go generator (zpl.go's `ShowCaption *bool` field +
+  // generateBarcodeZPL) -- the real check-in print path
+  // (web/src/pages/CheckinFullscreen.tsx -> POST /api/events/:id/badge-zpl)
+  // only ever calls the Go generator, so parity between the two was a
+  // functional requirement, not a nice-to-have (bot review, PR #87).
   showCaption?: boolean;
 }
 

@@ -34,6 +34,15 @@ type BadgeElement struct {
 	FontFamily string  `json:"fontFamily,omitempty"`
 	Bold       bool    `json:"bold,omitempty"`
 	MaxLines   int     `json:"maxLines,omitempty"`
+	// ShowCaption is a barcode-only field (panel editor, 2026-07-20 live-run
+	// request): whether ^BC prints its human-readable interpretation line.
+	// A *bool (not bool) because the JSON key being ABSENT must still mean
+	// "print it" -- every template saved before this field existed has no
+	// such key at all, and a plain bool's Y/N zero value can't distinguish
+	// that from an explicit false. Only an explicit `false` flips ^BC's
+	// interpretation-line argument to N (generateBarcodeZPL below); nil and
+	// a pointer to true both mean Y.
+	ShowCaption *bool `json:"showCaption,omitempty"`
 }
 
 // qrModulesPerSide is the typical number of modules per side for a medium-sized
@@ -252,7 +261,16 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 	}
 	height := mmToDots(heightMM, dpi)
 
-	return fmt.Sprintf("^FO%d,%d^BCN,%d,Y,N,N^FH^FD%s^FS", x, y, height, barcodeData)
+	// ^BC's third argument prints the human-readable interpretation line.
+	// Only an explicit `showCaption: false` flips it to N -- nil (absent,
+	// every template saved before this field existed) and a pointer to true
+	// both keep it Y, matching the panel's own generateZpl.ts port exactly.
+	interpretationLine := "Y"
+	if el.ShowCaption != nil && !*el.ShowCaption {
+		interpretationLine = "N"
+	}
+
+	return fmt.Sprintf("^FO%d,%d^BCN,%d,%s,N,N^FH^FD%s^FS", x, y, height, interpretationLine, barcodeData)
 }
 
 func generateLineZPL(el BadgeElement, dpi int) string {

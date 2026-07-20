@@ -202,6 +202,23 @@ export function PropertiesPane({
   // Selecting an event font leaves `fontFamily` untouched entirely: it's
   // simply not read by the generator once `customFont` is set, so there is
   // nothing useful to overwrite it with.
+  // Bot review (PR #87, finding #3): generateZpl.ts's native valign block
+  // only applies when `element.height` is truthy (generateTextZPL:178) -- a
+  // fresh text element carries none (elementFootprint's 8mm default is a
+  // DISPLAY fallback only, never written onto the element). Patching just
+  // {valign} on such an element would silently do nothing at generation
+  // time. When height is already explicit, only valign is patched (the
+  // operator's own Height stays authoritative); the footprint height is
+  // read from the SAME `footprint` this pane already computes for the
+  // Width/Height fields below, so what gets persisted matches what's shown.
+  function handleValignChange(value: "top" | "middle" | "bottom") {
+    if (element!.height) {
+      patch({ valign: value });
+    } else {
+      patch({ valign: value, height: footprint.height });
+    }
+  }
+
   function handleFontChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const value = event.target.value;
     const isNativeCode = ZPL_FONTS.some((font) => font.code === value);
@@ -428,7 +445,7 @@ export function PropertiesPane({
                     aria-pressed={pressed}
                     aria-label={t(labelKey)}
                     className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
-                    onClick={() => patch({ valign: value })}
+                    onClick={() => handleValignChange(value)}
                   >
                     <Icon aria-hidden className="size-4" />
                   </Button>

@@ -5,83 +5,83 @@ import (
 	"testing"
 )
 
-// TestGenerateBarcodeIgnoresPanelOnlyShowCaptionField pins a cross-cutting
-// contract for the panel editor's 2026-07-20 live-run request: `showCaption`
-// on a barcode element (panel/src/features/badge/templateTypes.ts) is a
-// PANEL-ONLY extension. This backend struct never declares the field, and
-// Go's json.Unmarshal silently drops unknown object keys by default (no
-// DisallowUnknownFields call anywhere in this package) -- so a template
-// saved by the panel with `"showCaption": false` must still parse cleanly
-// here and Generate must still emit the same hardcoded `^BCN,<h>,Y,N,N`
-// interpretation-line argument it always has. If this ever regresses (e.g.
-// someone adds strict decoding, or promotes the field into BadgeElement
-// without updating generateBarcodeZPL), the kiosk/legacy check-in print path
-// -- which only ever calls this Go generator, never the panel's TypeScript
-// port -- would silently start behaving differently for templates the panel
-// edited, which is exactly the drift this test exists to catch.
+// TestGenerateBarcodeHonorsShowCaptionField pins the backend half of the
+// panel editor's 2026-07-20 live-run request: `showCaption` on a barcode
+// element (panel/src/features/badge/templateTypes.ts) must flip ^BC's
+// human-readable interpretation-line argument on the REAL check-in print
+// path too, not just the panel's own TypeScript preview/reprint port.
+//
+// web/src/pages/CheckinFullscreen.tsx (the actual check-in kiosk flow) posts
+// to POST /api/events/:id/badge-zpl, which calls THIS package's Generate --
+// never the panel's generateZpl.ts. An earlier version of this test asserted
+// the field was silently ignored here; that was a real functional gap (bot
+// review, PR #87): the toggle appeared to work in the panel's own preview
+// but had zero effect on badges actually printed via check-in. `ShowCaption`
+// is now a first-class *bool field (a plain bool can't distinguish "absent"
+// from "explicitly false", and absent must still mean Y for back-compat with
+// every template saved before this field existed).
 //
 // Exercises ParseBadgeTemplate's map[string]interface{} decode path (the
 // shape event custom_fields actually decode to off Postgres jsonb).
-func TestGenerateBarcodeIgnoresPanelOnlyShowCaptionField(t *testing.T) {
-	rawWithField := map[string]interface{}{
-		"width_mm":  90.0,
-		"height_mm": 55.0,
-		"dpi":       300.0,
-		"elements": []interface{}{
-			map[string]interface{}{
-				"id":          "b1",
-				"type":        "barcode",
-				"x":           5.0,
-				"y":           5.0,
-				"height":      10.0,
-				"text":        "ABC123",
-				"showCaption": false,
-			},
-		},
-	}
-	rawWithoutField := map[string]interface{}{
-		"width_mm":  90.0,
-		"height_mm": 55.0,
-		"dpi":       300.0,
-		"elements": []interface{}{
-			map[string]interface{}{
-				"id":     "b1",
-				"type":   "barcode",
-				"x":      5.0,
-				"y":      5.0,
-				"height": 10.0,
-				"text":   "ABC123",
-			},
-		},
+func TestGenerateBarcodeHonorsShowCaptionField(t *testing.T) {
+	buildRaw := func(elementExtra map[string]interface{}) map[string]interface{} {
+		element := map[string]interface{}{
+			"id":     "b1",
+			"type":   "barcode",
+			"x":      5.0,
+			"y":      5.0,
+			"height": 10.0,
+			"text":   "ABC123",
+		}
+		for k, v := range elementExtra {
+			element[k] = v
+		}
+		return map[string]interface{}{
+			"width_mm":  90.0,
+			"height_mm": 55.0,
+			"dpi":       300.0,
+			"elements":  []interface{}{element},
+		}
 	}
 
-	cfgWith, elsWith, err := ParseBadgeTemplate(rawWithField)
-	if err != nil {
-		t.Fatalf("ParseBadgeTemplate(with showCaption) error: %v", err)
-	}
-	cfgWithout, elsWithout, err := ParseBadgeTemplate(rawWithoutField)
-	if err != nil {
-		t.Fatalf("ParseBadgeTemplate(without showCaption) error: %v", err)
+	generate := func(raw map[string]interface{}) string {
+		cfg, els, err := ParseBadgeTemplate(raw)
+		if err != nil {
+			t.Fatalf("ParseBadgeTemplate error: %v", err)
+		}
+		return Generate(cfg, els, nil)
 	}
 
-	zplWith := Generate(cfgWith, elsWith, nil)
-	zplWithout := Generate(cfgWithout, elsWithout, nil)
+	t.Run("absent showCaption keeps the interpretation line on (back-compat default)", func(t *testing.T) {
+		zpl := generate(buildRaw(nil))
+		if want := "^BCN,118,Y,N,N"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
 
-	if zplWith != zplWithout {
-		t.Fatalf("showCaption presence changed backend output:\nwith:    %q\nwithout: %q", zplWith, zplWithout)
-	}
-	if want := "^BCN,118,Y,N,N"; !strings.Contains(zplWith, want) {
-		t.Fatalf("expected barcode command %q in output, got: %q", want, zplWith)
-	}
+	t.Run("showCaption: true is byte-identical to the absent-field default", func(t *testing.T) {
+		zplAbsent := generate(buildRaw(nil))
+		zplTrue := generate(buildRaw(map[string]interface{}{"showCaption": true}))
+		if zplTrue != zplAbsent {
+			t.Fatalf("showCaption:true changed output:\nabsent: %q\ntrue:   %q", zplAbsent, zplTrue)
+		}
+	})
+
+	t.Run("showCaption: false flips the interpretation-line argument to N", func(t *testing.T) {
+		zpl := generate(buildRaw(map[string]interface{}{"showCaption": false}))
+		if want := "^BCN,118,N,N,N"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
 }
 
-// TestParseBadgeTemplateStructRawPathAlsoIgnoresShowCaption exercises
+// TestParseBadgeTemplateStructRawPathAlsoHonorsShowCaption exercises
 // ParseBadgeTemplate's OTHER decode branch -- `raw` is some non-
 // map[string]interface{} value (e.g. a typed struct already decoded off a
 // json.RawMessage), which re-marshals and unmarshals through a second,
 // separate anonymous struct (zpl.go's "Try JSON roundtrip" branch). Both
-// branches must agree that an unknown `showCaption` key is silently dropped.
-func TestParseBadgeTemplateStructRawPathAlsoIgnoresShowCaption(t *testing.T) {
+// branches must agree on showCaption's Y/N mapping.
+func TestParseBadgeTemplateStructRawPathAlsoHonorsShowCaption(t *testing.T) {
 	type rawElement struct {
 		ID          string  `json:"id"`
 		Type        string  `json:"type"`
@@ -89,7 +89,7 @@ func TestParseBadgeTemplateStructRawPathAlsoIgnoresShowCaption(t *testing.T) {
 		Y           float64 `json:"y"`
 		Height      float64 `json:"height"`
 		Text        string  `json:"text"`
-		ShowCaption bool    `json:"showCaption"`
+		ShowCaption *bool   `json:"showCaption,omitempty"`
 	}
 	type rawDoc struct {
 		WidthMM  float64      `json:"width_mm"`
@@ -98,28 +98,32 @@ func TestParseBadgeTemplateStructRawPathAlsoIgnoresShowCaption(t *testing.T) {
 		Elements []rawElement `json:"elements"`
 	}
 
-	docWith := rawDoc{
+	falseVal := false
+	docFalse := rawDoc{
 		WidthMM: 90, HeightMM: 55, DPI: 300,
-		Elements: []rawElement{{ID: "b1", Type: "barcode", X: 5, Y: 5, Height: 10, Text: "ABC123", ShowCaption: false}},
+		Elements: []rawElement{{ID: "b1", Type: "barcode", X: 5, Y: 5, Height: 10, Text: "ABC123", ShowCaption: &falseVal}},
 	}
-	docWithout := rawDoc{
+	docAbsent := rawDoc{
 		WidthMM: 90, HeightMM: 55, DPI: 300,
 		Elements: []rawElement{{ID: "b1", Type: "barcode", X: 5, Y: 5, Height: 10, Text: "ABC123"}},
 	}
 
-	cfgWith, elsWith, err := ParseBadgeTemplate(docWith)
+	cfgFalse, elsFalse, err := ParseBadgeTemplate(docFalse)
 	if err != nil {
-		t.Fatalf("ParseBadgeTemplate(struct, with showCaption) error: %v", err)
+		t.Fatalf("ParseBadgeTemplate(struct, showCaption:false) error: %v", err)
 	}
-	cfgWithout, elsWithout, err := ParseBadgeTemplate(docWithout)
+	cfgAbsent, elsAbsent, err := ParseBadgeTemplate(docAbsent)
 	if err != nil {
-		t.Fatalf("ParseBadgeTemplate(struct, without showCaption) error: %v", err)
+		t.Fatalf("ParseBadgeTemplate(struct, showCaption absent) error: %v", err)
 	}
 
-	zplWith := Generate(cfgWith, elsWith, nil)
-	zplWithout := Generate(cfgWithout, elsWithout, nil)
+	zplFalse := Generate(cfgFalse, elsFalse, nil)
+	zplAbsent := Generate(cfgAbsent, elsAbsent, nil)
 
-	if zplWith != zplWithout {
-		t.Fatalf("showCaption presence changed backend output on the struct decode path:\nwith:    %q\nwithout: %q", zplWith, zplWithout)
+	if want := "^BCN,118,N,N,N"; !strings.Contains(zplFalse, want) {
+		t.Fatalf("expected %q in struct-path output, got: %q", want, zplFalse)
+	}
+	if want := "^BCN,118,Y,N,N"; !strings.Contains(zplAbsent, want) {
+		t.Fatalf("expected %q in struct-path output, got: %q", want, zplAbsent)
 	}
 }

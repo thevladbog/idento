@@ -26,7 +26,8 @@ import { resolveElementText } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, rasterizeTextToBitmap, RasterUnavailableError } from "./zpl/canvasRasterizer";
 import {
-  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, type RawBadgeElement,
+  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, valignOffsetDots,
+  type RawBadgeElement,
 } from "./zpl/generateZpl";
 import { collectMissingCustomFonts } from "./zpl/missingFonts";
 import { useEventFontFaces } from "./zpl/useEventFontFaces";
@@ -391,7 +392,15 @@ function drawElement(
       ctx.fillStyle = PRINT_INK;
       ctx.font = `${element.bold ? "bold " : ""}${fontSizePx}px ${mapZPLFontToSystemFont(element.fontFamily)}`;
       ctx.textBaseline = "top";
-      ctx.fillText(text, x, y);
+      // Bot review (PR #87, finding #1): generateZpl.ts's native path shifts
+      // ^FO's y for valign (valignOffsetDots, shared with THIS call so the
+      // two can never drift apart) -- this draw used to ignore that offset
+      // entirely, drawing every native text element at its raw top y
+      // regardless of valign. jsdom has no canvas 2D context (documented
+      // elsewhere in this file), so this exact line can't be asserted by an
+      // automated test; valignOffsetDots's own math is unit-tested instead.
+      const nativeY = y + valignOffsetDots(element, fontSize, config.dpi);
+      ctx.fillText(text, x, nativeY);
       return;
     }
 

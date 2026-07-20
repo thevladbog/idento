@@ -131,6 +131,28 @@ function getZPLAlignment(align: "left" | "center" | "right" = "left"): string {
 }
 
 /**
+ * Dot offset to add to a native text element's ^FO y coordinate for
+ * vertical alignment. Ports web/src/utils/zpl.ts:137-148. Returns 0 (no
+ * adjustment) unless BOTH `element.valign` and `element.height` are set --
+ * an element missing either is a documented no-op, not an error.
+ *
+ * Exported (not just inlined in generateTextZPL below) so
+ * ZplPreviewModal.tsx's Rendered-tab canvas can apply the IDENTICAL dot math
+ * to its native-text draw instead of re-deriving it (bot review, PR #87
+ * finding #1) -- one canonical implementation for this offset, never two
+ * that could silently drift apart.
+ */
+export function valignOffsetDots(element: RawBadgeElement, fontSize: number, dpi: number): number {
+  if (!element.valign || !element.height) return 0;
+  const heightDots = mmToDots(element.height, dpi);
+  const fontHeightDots = pointsToDots(fontSize, dpi);
+
+  if (element.valign === "middle") return Math.round((heightDots - fontHeightDots) / 2);
+  if (element.valign === "bottom") return heightDots - fontHeightDots;
+  return 0; // 'top' (or any other value) is the unadjusted default
+}
+
+/**
  * Generate ZPL for a text element. Ports web/src/utils/zpl.ts:92-184
  * (`generateTextZPL`).
  */
@@ -180,17 +202,7 @@ async function generateTextZPL(
   const fontWidth = fontHeight; // Same as height by default -- web/src/utils/zpl.ts:132-135
 
   // Adjust Y position for vertical alignment. web/src/utils/zpl.ts:137-148.
-  if (element.valign && element.height) {
-    const heightDots = mmToDots(element.height, dpi);
-    const fontHeightDots = pointsToDots(fontSize, dpi);
-
-    if (element.valign === "middle") {
-      y += Math.round((heightDots - fontHeightDots) / 2);
-    } else if (element.valign === "bottom") {
-      y += heightDots - fontHeightDots;
-    }
-    // 'top' is default, no adjustment needed
-  }
+  y += valignOffsetDots(element, fontSize, dpi);
 
   // Convert rotation to ZPL format (N=0, R=90, I=180, B=270).
   // web/src/utils/zpl.ts:150-154.
@@ -260,10 +272,13 @@ function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, strin
   const height = mmToDots(heightMM, dpi);
 
   // ^BC's third argument prints the human-readable interpretation line.
-  // web (zpl.ts:237) and backend (zpl.go:255) both hardcode Y; this is the
-  // panel's one DELIBERATE extension past web parity (2026-07-20 live-run
-  // request): only an explicit `showCaption: false` flips it to N, so every
-  // template saved before the field existed keeps its caption byte-for-byte.
+  // web/src/utils/zpl.ts:237 hardcodes Y; this is the panel's one DELIBERATE
+  // extension past web parity (2026-07-20 live-run request): only an
+  // explicit `showCaption: false` flips it to N, so every template saved
+  // before the field existed keeps its caption byte-for-byte. Also honored
+  // by backend/internal/zpl/zpl.go's own `ShowCaption *bool` field + its own
+  // generateBarcodeZPL, kept in sync deliberately -- the real check-in print
+  // path only ever calls the Go generator, never this one.
   const interpretationLine = element.showCaption === false ? "N" : "Y";
 
   // ^BC = Code 128
