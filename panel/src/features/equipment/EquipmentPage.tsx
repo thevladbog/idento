@@ -143,6 +143,15 @@ interface EditAddressDialogProps {
   onOpenChange: (open: boolean) => void;
   onSave: (ip: string, port: number) => void;
   pending: boolean;
+  // Codex PR #85 review: Save must not be clickable unless the agent is
+  // confirmed reachable -- otherwise a successful registry PATCH could
+  // silently skip its own remove-then-add agent mirror with no visible
+  // sign anything didn't sync (see this file's own mirrorAddressToAgent).
+  // Unlike mirrorDefaultToAgent (which lets its PATCH proceed regardless
+  // and only skips/warns on the mirror), address has no runtime fallback
+  // at print time -- gating the write itself is the only way to guarantee
+  // the mirror is attempted whenever the PATCH succeeds.
+  agentReachable: boolean;
 }
 
 // Row menu's "Edit address…" for a saved network printer (the 2026-07-20
@@ -152,7 +161,7 @@ interface EditAddressDialogProps {
 // in-progress edit" shape as RenameDialog above -- port validation mirrors
 // PrinterWizard.tsx's own rule (Number.isInteger, 1..65535) so the two
 // address forms in this feature enforce the identical range.
-function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddressDialogProps) {
+function EditAddressDialog({ device, onOpenChange, onSave, pending, agentReachable }: EditAddressDialogProps) {
   const { t } = useTranslation();
   const [ip, setIp] = React.useState("");
   const [port, setPort] = React.useState("");
@@ -186,6 +195,7 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddres
   const portValid = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
   const dirty = trimmedIp !== originalIp.trim() || portNumber !== Number(originalPort);
   const valid = trimmedIp.length > 0 && portValid && dirty;
+  const canSave = valid && agentReachable;
 
   return (
     <Dialog open={device !== null} onOpenChange={onOpenChange}>
@@ -220,11 +230,14 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddres
             </div>
           </div>
         </div>
+        {!agentReachable ? (
+          <p className="text-body text-warning">{t("equipmentEditAddressAgentUnreachable")}</p>
+        ) : null}
         <DialogFooter>
           <Button type="button" variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>
             {t("createEventCancel")}
           </Button>
-          <Button type="button" disabled={pending || !valid} onClick={() => onSave(trimmedIp, portNumber)}>
+          <Button type="button" disabled={pending || !canSave} onClick={() => onSave(trimmedIp, portNumber)}>
             {t("settingsSave")}
           </Button>
         </DialogFooter>
@@ -566,6 +579,7 @@ export function EquipmentPage() {
       <EditAddressDialog
         device={dialog?.kind === "edit-address" ? dialog.device : null}
         pending={patchDevice.isPending}
+        agentReachable={agentReachable}
         onOpenChange={(open) => {
           if (!open) closeDialog();
         }}

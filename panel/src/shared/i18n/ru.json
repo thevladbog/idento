@@ -688,6 +688,7 @@
   "equipmentEditAddress": "Изменить адрес…",
   "equipmentEditAddressTitle": "Изменить адрес",
   "equipmentEditAddressConsequence": "Изменение адреса сбрасывает статус теста этого принтера — потребуется протестировать его снова.",
+  "equipmentEditAddressAgentUnreachable": "Сохранение недоступно, пока не подтверждено соединение с агентом.",
   "equipmentAddressMirrorWarn": "Адрес обновлён — но агент не смог его применить. Синхронизируется при следующем визите.",
   "equipmentEmptyPrinters": "Принтеры ещё не сохранены",
   "equipmentEmptyScanners": "Сканеры ещё не сохранены",
