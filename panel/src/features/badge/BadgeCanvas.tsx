@@ -409,6 +409,22 @@ function CanvasElement({
     height: mmToPx(height, scale),
   };
 
+  // Bot review (PR #87, finding #1): mirrors generateZpl.ts's native valign
+  // gate EXACTLY -- `element.valign && element.height` (generateTextZPL:178)
+  // -- not the DISPLAYED footprint height, which falls back to a default
+  // the generator never treats as "explicit". An element with valign set
+  // but no real height is a documented no-op at generation time (also
+  // pinned in goldenMatrix.test.ts); showing a shift here anyway would
+  // itself become the print/preview mismatch this fix exists to close.
+  // CSS flex alignment on this box (already positioned/sized to the
+  // element's own x/y/height in mm) stands in for the ZPL dot-offset math --
+  // top/middle/bottom -> flex-start/center/flex-end, same as ZPL's
+  // "top" is the unadjusted default.
+  if (element.type === "text" && element.valign && element.height) {
+    style.display = "flex";
+    style.alignItems = element.valign === "middle" ? "center" : element.valign === "bottom" ? "flex-end" : "flex-start";
+  }
+
   return (
     <div
       data-testid={`badge-canvas-element-${element.id}`}
@@ -497,7 +513,12 @@ function ElementContent({
       // resolved value printed below in mono so the DATA is still
       // reviewable even though the visual isn't a real, scannable symbol.
       // `aria-label` carries the "approximation" honesty label as the
-      // accessible name, not just a visual footnote.
+      // accessible name, not just a visual footnote. The mono value line
+      // itself is gated on showCaption (bot review, PR #87 finding #4) --
+      // mirrors generateZpl.ts's generateBarcodeZPL and ZplPreviewModal's
+      // own gate exactly (absent/true shows it, only explicit false hides
+      // it), so an operator who's turned the caption off doesn't see text
+      // here that won't actually print.
       return (
         <div
           className="flex h-full w-full flex-col items-center justify-center gap-0.5"
@@ -512,12 +533,14 @@ function ElementContent({
             }}
             aria-hidden
           />
-          <span
-            className="w-full truncate px-0.5 text-center font-mono text-[9px]"
-            style={{ color: ARTBOARD_INK_MUTED }}
-          >
-            {resolvedText}
-          </span>
+          {element.showCaption !== false && (
+            <span
+              className="w-full truncate px-0.5 text-center font-mono text-[9px]"
+              style={{ color: ARTBOARD_INK_MUTED }}
+            >
+              {resolvedText}
+            </span>
+          )}
         </div>
       );
 

@@ -1,5 +1,12 @@
-import { Button, Input, Label, Select, cn } from "@idento/ui";
-import { AlignCenter, AlignLeft, AlignRight } from "lucide-react";
+import { Button, Input, Label, Select, Switch, cn } from "@idento/ui";
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+  AlignVerticalJustifyStart,
+} from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -69,6 +76,16 @@ const ALIGN_OPTIONS: { value: "left" | "center" | "right"; icon: typeof AlignLef
   { value: "right", icon: AlignRight, labelKey: "badgeAlignRight" },
 ];
 
+// 2026-07-20 live-run request: mirrors ALIGN_OPTIONS's shape exactly (same
+// segmented-button pattern) for the vertical axis. Values match
+// generateZpl.ts's generateTextZPL valign check verbatim ("middle"/"bottom";
+// any other value, including "top", takes the no-adjustment default path).
+const VALIGN_OPTIONS: { value: "top" | "middle" | "bottom"; icon: typeof AlignLeft; labelKey: string }[] = [
+  { value: "top", icon: AlignVerticalJustifyStart, labelKey: "badgeValignTop" },
+  { value: "middle", icon: AlignVerticalJustifyCenter, labelKey: "badgeValignMiddle" },
+  { value: "bottom", icon: AlignVerticalJustifyEnd, labelKey: "badgeValignBottom" },
+];
+
 // One id per control, hard-coded (not derived from element.id) -- exactly
 // one PropertiesPane is ever mounted at a time (board 4a's right column),
 // so a static id can never collide with another instance's, and label
@@ -84,6 +101,7 @@ const IDS = {
   fontSize: "badge-props-font-size",
   rotation: "badge-props-rotation",
   maxLines: "badge-props-max-lines",
+  barcodeCaption: "badge-props-barcode-caption",
   docWidth: "badge-props-doc-width",
   docHeight: "badge-props-doc-height",
   docDpi: "badge-props-doc-dpi",
@@ -108,12 +126,14 @@ const DPI_OPTIONS = [203, 300, 600] as const;
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
 // EVERY element type, plus a per-type section: text gets binding + static
-// text + font + font size + alignment + rotation + max lines; qrcode/barcode
-// get a binding select only (same options as text's); line/box get nothing
-// beyond the common section. Every control here dispatches a single-field
-// `onUpdate(id, patch)` call -- never a batched multi-field patch -- so each
-// keystroke/click is independently undoable-in-principle and mirrors
-// editorState.ts's "update" action shape (`{id, patch: Partial<BadgeElement>}`).
+// text + font + font size + alignment + vertical align + rotation + max
+// lines; qrcode gets a binding select only (same options as text's); barcode
+// gets a binding select + the human-readable-caption toggle (2026-07-20);
+// line/box get nothing beyond the common section. Every control here
+// dispatches a single-field `onUpdate(id, patch)` call -- never a batched
+// multi-field patch -- so each keystroke/click is independently
+// undoable-in-principle and mirrors editorState.ts's "update" action shape
+// (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
   element, fieldSchema, config, fonts, fontCoverage, onUpdate, onUpdateConfig,
 }: PropertiesPaneProps) {
@@ -266,6 +286,23 @@ export function PropertiesPane({
   // Selecting an event font leaves `fontFamily` untouched entirely: it's
   // simply not read by the generator once `customFont` is set, so there is
   // nothing useful to overwrite it with.
+  // Bot review (PR #87, finding #3): generateZpl.ts's native valign block
+  // only applies when `element.height` is truthy (generateTextZPL:178) -- a
+  // fresh text element carries none (elementFootprint's 8mm default is a
+  // DISPLAY fallback only, never written onto the element). Patching just
+  // {valign} on such an element would silently do nothing at generation
+  // time. When height is already explicit, only valign is patched (the
+  // operator's own Height stays authoritative); the footprint height is
+  // read from the SAME `footprint` this pane already computes for the
+  // Width/Height fields below, so what gets persisted matches what's shown.
+  function handleValignChange(value: "top" | "middle" | "bottom") {
+    if (element!.height) {
+      patch({ valign: value });
+    } else {
+      patch({ valign: value, height: footprint.height });
+    }
+  }
+
   function handleFontChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const value = event.target.value;
     const isNativeCode = ZPL_FONTS.some((font) => font.code === value);
@@ -277,6 +314,7 @@ export function PropertiesPane({
   }
 
   const isTextType = element.type === "text";
+  const isBarcodeType = element.type === "barcode";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
 
   // Trim-aware "is customFont actually set?" -- the SAME rule generation
@@ -472,6 +510,33 @@ export function PropertiesPane({
           </div>
 
           <div className="flex flex-col gap-1">
+            <span className="text-card-title text-foreground">{t("badgePropsValign")}</span>
+            <div
+              role="group"
+              aria-label={t("badgePropsValign")}
+              className="inline-flex w-fit gap-1 rounded-md border border-border p-0.5"
+            >
+              {VALIGN_OPTIONS.map(({ value, icon: Icon, labelKey }) => {
+                const pressed = (element.valign ?? "top") === value;
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-pressed={pressed}
+                    aria-label={t(labelKey)}
+                    className={cn(pressed && "border-foreground bg-foreground text-background hover:bg-foreground/90")}
+                    onClick={() => handleValignChange(value)}
+                  >
+                    <Icon aria-hidden className="size-4" />
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.rotation}>{t("badgePropsRotation")}</Label>
             <Select
               id={IDS.rotation}
@@ -499,6 +564,17 @@ export function PropertiesPane({
             }}
           />
         </>
+      )}
+
+      {isBarcodeType && (
+        <div className="flex items-center gap-2">
+          <Switch
+            id={IDS.barcodeCaption}
+            checked={element.showCaption !== false}
+            onCheckedChange={(checked) => patch({ showCaption: checked })}
+          />
+          <Label htmlFor={IDS.barcodeCaption}>{t("badgePropsBarcodeCaption")}</Label>
+        </div>
       )}
     </div>
   );

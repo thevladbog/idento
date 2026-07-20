@@ -41,6 +41,18 @@ export interface BadgeElement {
   // have that EDIT actually propagate on save — see serializeTemplateDoc's
   // own comment for the one behavior change this causes.
   customFont?: string;
+  // Barcode elements only (2026-07-20 live-run request): whether ^BC prints
+  // its human-readable interpretation line below the bars. ABSENT means true
+  // — web/src/utils/zpl.ts:237 originally hardcoded the argument to Y, so
+  // every template saved before this field existed must keep printing the
+  // caption. Only an explicit `false` flips the argument to N. Honored by
+  // BOTH generators: this panel's own generateZpl.ts (generateBarcodeZPL)
+  // AND the backend/kiosk Go generator (zpl.go's `ShowCaption *bool` field +
+  // generateBarcodeZPL) -- the real check-in print path
+  // (web/src/pages/CheckinFullscreen.tsx -> POST /api/events/:id/badge-zpl)
+  // only ever calls the Go generator, so parity between the two was a
+  // functional requirement, not a nice-to-have (bot review, PR #87).
+  showCaption?: boolean;
 }
 
 export interface BadgeTemplateDoc extends BadgeConfig {
@@ -113,6 +125,7 @@ function narrowElement(raw: unknown): BadgeElement | null {
   if (typeof raw.fontFamily === "string") element.fontFamily = raw.fontFamily;
   if (typeof raw.maxLines === "number") element.maxLines = raw.maxLines;
   if (typeof raw.customFont === "string") element.customFont = raw.customFont;
+  if (typeof raw.showCaption === "boolean") element.showCaption = raw.showCaption;
   return element;
 }
 

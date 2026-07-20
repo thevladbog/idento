@@ -258,6 +258,87 @@ describe("golden ZPL matrix -- escaping fixture (^~\\ in a company name)", () =>
   });
 });
 
+describe("golden ZPL matrix -- valign (2026-07-20 live-run request: top/middle/bottom on the native path; also honored on raster since PR #88)", () => {
+  // Native-path valign math (generateZpl.ts generateTextZPL): with height
+  // set, y += round((heightDots - fontHeightDots)/2) for "middle" and
+  // += (heightDots - fontHeightDots) for "bottom"; "top" adjusts nothing.
+  // Hand-worked at 300dpi, fontSize 12 (fontHeightDots = 50), height 10mm
+  // (heightDots = 118): middle offset = round(68/2) = 34, bottom = 68.
+  it("adjusts the native ^FO y by the valign offset: top +0, middle +34, bottom +68 (10mm height, 12pt, 300dpi)", async () => {
+    const deps = makeDeterministicDeps();
+    const elements: RawBadgeElement[] = [
+      { id: "v-top", type: "text", x: 5, y: 5, height: 10, fontSize: 12, fontFamily: "0", text: "Top", valign: "top" },
+      { id: "v-mid", type: "text", x: 5, y: 20, height: 10, fontSize: 12, fontFamily: "0", text: "Middle", valign: "middle" },
+      { id: "v-bot", type: "text", x: 5, y: 35, height: 10, fontSize: 12, fontFamily: "0", text: "Bottom", valign: "bottom" },
+    ];
+    const zpl = await generateZpl(CONFIG_300, elements, {}, deps);
+
+    expect(zpl).toBe(
+      HEADER_300 +
+        // mmToDots(5) = 59: "top" is the no-adjustment default.
+        "^FO59,59^A0N,50,50^FDTop^FS\n" +
+        // mmToDots(20) = 236, +34 middle offset = 270.
+        "^FO59,270^A0N,50,50^FDMiddle^FS\n" +
+        // mmToDots(35) = 413, +68 bottom offset = 481.
+        "^FO59,481^A0N,50,50^FDBottom^FS\n" +
+        FOOTER,
+    );
+    expect(deps.rasterizeText).not.toHaveBeenCalled();
+  });
+
+  it("also honors valign on the raster path -- Cyrillic text with valign middle offsets ^FO by rasterFieldOrigin's slack (PR #88)", async () => {
+    const deps = makeDeterministicDeps();
+    const elements: RawBadgeElement[] = [
+      { id: "v-ru", type: "text", x: 5, y: 5, height: 10, fontSize: 12, fontFamily: "0", text: "Анна", valign: "middle" },
+    ];
+    const zpl = await generateZpl(CONFIG_300, elements, {}, deps);
+
+    // Same ("Анна"|Arial|50|normal) marker tuple as matrix cell 2/4's first
+    // call -- deliberately identical hex. rasterFieldOrigin's valign slack
+    // uses the RASTER bitmap's own measured height, not the font's: this
+    // matrix's deterministic mock returns height:1 for every marker
+    // (goldenMatrix's own header comment), so boxHeightDots
+    // (mmToDots(10,300)=118) minus that 1 leaves slack=117, and "middle"
+    // adds round(117/2)=59 to the plain y (mmToDots(5,300)=59), landing at
+    // 118 -- unlike the native-path test above, this offset is NOT
+    // comparable to font-height math since raster and native measure
+    // against different reference heights (the bitmap's vs the font's).
+    expect(zpl).toBe(HEADER_300 + "^FO59,118\n^GFA,4,4,4,AA5FCB93\n^FS\n" + FOOTER);
+    expect(deps.rasterizeText).toHaveBeenCalledWith("Анна", {
+      fontFamily: "Arial",
+      fontSizePx: 50,
+      fontWeight: "normal",
+    });
+  });
+});
+
+describe("golden ZPL matrix -- barcode caption toggle (2026-07-20 live-run request: ^BC interpretation line Y/N)", () => {
+  // One bound barcode element; only `showCaption` varies across the three
+  // cells. height 12mm at 300dpi -> mmToDots(12, 300) = 142.
+  function barcodeElement(showCaption?: boolean): RawBadgeElement[] {
+    const element: RawBadgeElement = { id: "b-code", type: "barcode", x: 5, y: 5, height: 12, source: "code" };
+    if (showCaption !== undefined) element.showCaption = showCaption;
+    return [element];
+  }
+  const DATA = { code: "BADGE-042" };
+
+  it("cell 1/3 -- field absent (every pre-existing saved template): interpretation line stays Y", async () => {
+    const zpl = await generateZpl(CONFIG_300, barcodeElement(), DATA, makeDeterministicDeps());
+    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+  });
+
+  it("cell 2/3 -- showCaption: true is byte-identical to the absent-field cell (back-compat default pinned)", async () => {
+    const zplAbsent = await generateZpl(CONFIG_300, barcodeElement(), DATA, makeDeterministicDeps());
+    const zplTrue = await generateZpl(CONFIG_300, barcodeElement(true), DATA, makeDeterministicDeps());
+    expect(zplTrue).toBe(zplAbsent);
+  });
+
+  it("cell 3/3 -- showCaption: false flips exactly the interpretation-line argument to N, nothing else", async () => {
+    const zpl = await generateZpl(CONFIG_300, barcodeElement(false), DATA, makeDeterministicDeps());
+    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,N,N,N^FDBADGE-042^FS\n" + FOOTER);
+  });
+});
+
 describe("golden ZPL matrix -- dpi variant (203 vs 300 coordinate scaling)", () => {
   it("the SAME fixture (native font \"0\" x EN) scales every coordinate between 203dpi and 300dpi, nothing else", async () => {
     const deps300 = makeDeterministicDeps();

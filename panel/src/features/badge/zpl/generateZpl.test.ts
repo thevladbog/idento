@@ -22,6 +22,7 @@ import {
   needsImageRendering,
   pointsToDots,
   rasterFieldOrigin,
+  valignOffsetDots,
   type RawBadgeElement,
 } from "./generateZpl";
 
@@ -76,6 +77,37 @@ describe("generateZpl -- header/footer", () => {
   it("emits the exact ^XA/^CI28/^PW/^LL/^PR4/^LH0,0 .. ^XZ envelope for 90x55mm@300dpi with no elements", async () => {
     const zpl = await generateZpl(CONFIG_90X55_300, [], {}, makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }));
     expect(zpl).toBe("^XA\n^CI28\n^PW1063\n^LL650\n^PR4\n^LH0,0\n^XZ\n");
+  });
+});
+
+describe("valignOffsetDots", () => {
+  // Extracted out of generateTextZPL's inline valign block (bot review, PR
+  // #87 finding #1) SPECIFICALLY so ZplPreviewModal.tsx's Rendered-tab
+  // native-text draw can apply the IDENTICAL dot math instead of
+  // re-deriving it -- previously that preview drew native text at the raw
+  // (unshifted) y regardless of valign, silently disagreeing with what
+  // actually prints. One canonical implementation; this suite pins its
+  // return value directly (the calling site's canvas draw is untestable
+  // under jsdom, per this file's own documented limitation elsewhere).
+  it("returns 0 when valign is unset, regardless of height", () => {
+    expect(valignOffsetDots({ id: "e1", type: "text", x: 0, y: 0, height: 10 }, 12, 300)).toBe(0);
+  });
+
+  it("returns 0 when height is unset, regardless of valign (matches generateTextZPL's no-op gate)", () => {
+    expect(valignOffsetDots({ id: "e1", type: "text", x: 0, y: 0, valign: "middle" }, 12, 300)).toBe(0);
+  });
+
+  it("returns 0 for valign 'top' -- the unadjusted default", () => {
+    expect(valignOffsetDots({ id: "e1", type: "text", x: 0, y: 0, height: 10, valign: "top" }, 12, 300)).toBe(0);
+  });
+
+  it("returns round((heightDots - fontHeightDots)/2) for 'middle' (10mm height, 12pt, 300dpi)", () => {
+    // heightDots = mmToDots(10,300) = 118; fontHeightDots = pointsToDots(12,300) = 50.
+    expect(valignOffsetDots({ id: "e1", type: "text", x: 0, y: 0, height: 10, valign: "middle" }, 12, 300)).toBe(34);
+  });
+
+  it("returns heightDots - fontHeightDots for 'bottom' (10mm height, 12pt, 300dpi)", () => {
+    expect(valignOffsetDots({ id: "e1", type: "text", x: 0, y: 0, height: 10, valign: "bottom" }, 12, 300)).toBe(68);
   });
 });
 
@@ -204,6 +236,39 @@ describe("generateZpl -- barcode", () => {
       makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
     );
     expect(zpl).toContain("^FO59,59^BCN,118,Y,N,N^FDABC123^FS\n");
+  });
+
+  it("maps showCaption: false to interpretation-line argument N (panel extension, 2026-07-20 live-run request)", async () => {
+    const element: RawBadgeElement = { id: "e1", type: "barcode", x: 5, y: 5, text: "ABC123", showCaption: false };
+    const zpl = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [element],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    expect(zpl).toContain("^FO59,59^BCN,118,N,N,N^FDABC123^FS\n");
+  });
+
+  it("keeps Y for an explicit showCaption: true -- byte-identical to the absent-field default", async () => {
+    const bare: RawBadgeElement = { id: "e1", type: "barcode", x: 5, y: 5, text: "ABC123" };
+    const explicit: RawBadgeElement = { ...bare, showCaption: true };
+    const zplBare = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [bare],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    const zplExplicit = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [explicit],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    // Back-compat pin: every template saved before showCaption existed (the
+    // field absent) and every template where the operator leaves the new
+    // toggle on must produce the same bytes web/backend always printed.
+    expect(zplExplicit).toBe(zplBare);
+    expect(zplBare).toContain("^FO59,59^BCN,118,Y,N,N^FDABC123^FS\n");
   });
 });
 
