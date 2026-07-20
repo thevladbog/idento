@@ -244,55 +244,104 @@ func generateQRCodeZPL(el BadgeElement, data map[string]interface{}, dpi int) st
 	return fmt.Sprintf("^FO%d,%d^BQN,2,%d^FH^FDQA,%s^FS", x, y, moduleSize, qrData)
 }
 
-// barcodeModuleWidthDots is Zebra's own factory default module width (^BY's
-// default, 2 dots) -- used here because neither this generator nor its
-// panel/generateZpl.ts twin ever emits ^BY, so the printer's built-in
-// default module width is the width every barcode this pipeline generates
-// actually prints at.
-const barcodeModuleWidthDots = 2
+// Fit-to-width Code 128 (2026-07-20-badge-barcode-fit-to-width-design.md):
+// the module width is COMPUTED from the zone and data length and emitted as
+// an explicit ^BY, so the estimate and the real print use the identical
+// width -- superseding the old fixed-2 assumption, which broke on any
+// printer whose persisted ^BY default wasn't 2 (the ZD410 center-shift
+// bug). Mirrors panel/src/features/badge/zpl/generateZpl.ts's constants
+// verbatim; both files must stay in sync.
+const (
+	barcodeQuietModules  = 10 // Code 128 min quiet zone, each side
+	barcodeMinModuleDots = 2  // reliable-scan floor @203dpi
+	barcodeMaxModuleDots = 3  // short-code ceiling
+)
 
-// estimateBarcodeWidthDots returns an APPROXIMATE Code 128 rendered width in
-// dots for dataLength input characters (see design doc
-// docs/superpowers/specs/2026-07-20-badge-barcode-alignment-design.md):
+// barcodeFootprintModules is the total footprint in modules INCLUDING quiet
+// zones -- the fit calc, so bars plus their required margins fit the zone.
+// Mirrors panel/generateZpl.ts's barcodeFootprintModules exactly.
+func barcodeFootprintModules(dataLength int) int {
+	return (dataLength+2)*11 + 13 + 2*barcodeQuietModules
+}
+
+// barcodeFootprintBarModules is the bar-only module count -- the centering
+// estimate; quiet zones are layout margin, not part of the ^FO-anchored
+// symbol width.
+func barcodeFootprintBarModules(dataLength int) int {
+	return (dataLength+2)*11 + 13
+}
+
+// barcodeModuleWidthDots computes the ^BY module width that makes the
+// barcode (bars + quiet zones) fit zoneWidthDots, clamped to
+// [barcodeMinModuleDots, barcodeMaxModuleDots]. Mirrors panel/generateZpl.ts's
+// barcodeModuleWidthDots exactly.
+func barcodeModuleWidthDots(dataLength, zoneWidthDots int) int {
+	fit := zoneWidthDots / barcodeFootprintModules(dataLength) // integer floor
+	if fit < barcodeMinModuleDots {
+		return barcodeMinModuleDots
+	}
+	if fit > barcodeMaxModuleDots {
+		return barcodeMaxModuleDots
+	}
+	return fit
+}
+
+// barcodeOverflows reports whether the code can't fit its zone even at the
+// readability floor. The Go print path has no UI to surface this (unlike
+// the panel, which shows an advisory warning), so it's unused here -- kept
+// only to mirror panel/generateZpl.ts's barcodeOverflows for parity and
+// possible future use.
+func barcodeOverflows(dataLength, zoneWidthDots int) bool {
+	return barcodeFootprintModules(dataLength)*barcodeMinModuleDots > zoneWidthDots
+}
+
+// estimateBarcodeWidthDots returns an APPROXIMATE Code 128 rendered BAR
+// width in dots for dataLength input characters, using the COMPUTED module
+// width so the ^FO centering below matches the emitted ^BY (see design doc
+// docs/superpowers/specs/2026-07-20-badge-barcode-fit-to-width-design.md):
 // assumes Code Set B (one symbol character per input character, 11 modules
 // each) plus a start character and a checksum character (also 11 modules
 // each) and the wider 13-module stop character. All-numeric data may print
 // NARROWER than this estimate if the printer's firmware auto-switches to
-// Code Set C (two digits packed per symbol character) -- a documented
-// upper-bound estimate, not an exact value. Mirrors panel/generateZpl.ts's
-// estimateBarcodeWidthDots exactly.
-func estimateBarcodeWidthDots(dataLength int) int {
-	moduleCount := (dataLength+2)*11 + 13
-	return moduleCount * barcodeModuleWidthDots
+// Code Set C (two digits packed per symbol character) -- a documented,
+// bounded left bias, not the old unbounded printer-^BY-state error. Mirrors
+// panel/generateZpl.ts's estimateBarcodeWidthDots exactly.
+func estimateBarcodeWidthDots(dataLength, moduleWidthDots int) int {
+	return barcodeFootprintBarModules(dataLength) * moduleWidthDots
 }
 
-// barcodeFieldOrigin computes the ^FO x coordinate (and whether to append
-// ^FO's right-justification argument) for a barcode element. Mirrors
-// panel/src/features/badge/zpl/generateZpl.ts's barcodeFieldOrigin exactly
-// -- see that function's own comment for the full left/center/right
-// rationale (^FO's native z=1 justification for right, zero estimation
-// error; a computed estimate-based offset for center, since ^FO has no
-// center-justification option; left/absent unchanged).
-func barcodeFieldOrigin(el BadgeElement, dpi int, dataLength int) (x int, rightJustified bool) {
+// barcodeFieldOrigin computes the ^FO x coordinate (whether to append ^FO's
+// right-justification argument), and the ^BY module width for a barcode
+// element. Mirrors panel/src/features/badge/zpl/generateZpl.ts's
+// barcodeFieldOrigin exactly -- see that function's own comment for the
+// full left/center/right rationale (^FO's native z=1 justification for
+// right, zero estimation error; a computed estimate-based offset for
+// center, since ^FO has no center-justification option; left/absent
+// unchanged). The panel additionally returns `estimatedWidthDots` and
+// `overflows` to drive its own UI warning; the Go print path has no such UI
+// (YAGNI), so only `moduleWidthDots` is added here, needed so the caller
+// can emit ^BY.
+func barcodeFieldOrigin(el BadgeElement, dpi, dataLength int) (x int, rightJustified bool, moduleWidthDots int) {
 	zoneLeft := mmToDots(el.X, dpi)
 	widthMM := el.Width
 	if widthMM <= 0 {
 		widthMM = 30
 	}
 	zoneWidth := mmToDots(widthMM, dpi)
+	moduleWidthDots = barcodeModuleWidthDots(dataLength, zoneWidth)
 
 	switch el.Align {
 	case "right":
-		return zoneLeft + zoneWidth, true
+		return zoneLeft + zoneWidth, true, moduleWidthDots
 	case "center":
-		estimated := estimateBarcodeWidthDots(dataLength)
+		estimated := estimateBarcodeWidthDots(dataLength, moduleWidthDots)
 		offset := int(math.Round(float64(zoneWidth-estimated) / 2))
 		if offset < 0 {
 			offset = 0
 		}
-		return zoneLeft + offset, false
+		return zoneLeft + offset, false, moduleWidthDots
 	default:
-		return zoneLeft, false
+		return zoneLeft, false, moduleWidthDots
 	}
 }
 
@@ -306,7 +355,7 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 		}
 	}
 
-	x, rightJustified := barcodeFieldOrigin(el, dpi, utf8.RuneCountInString(barcodeData))
+	x, rightJustified, moduleWidth := barcodeFieldOrigin(el, dpi, utf8.RuneCountInString(barcodeData))
 	barcodeData = escapeZPL(barcodeData)
 
 	heightMM := el.Height
@@ -329,7 +378,13 @@ func generateBarcodeZPL(el BadgeElement, data map[string]interface{}, dpi int) s
 		foSuffix = ",1"
 	}
 
-	return fmt.Sprintf("^FO%d,%d%s^BCN,%d,%s,N,N^FH^FD%s^FS", x, y, foSuffix, height, interpretationLine, barcodeData)
+	// ^BY sets the module width for the barcode that follows -- emitted
+	// explicitly so the print width equals estimateBarcodeWidthDots's
+	// assumption (fit-to-width design). Persistent modal command, but this
+	// label has one barcode and ^BY immediately precedes it, so there's no
+	// cross-element leak. Keep the existing ^FH (Go generator's hex-escape
+	// flag) exactly where it is -- only ^BY%d is prepended.
+	return fmt.Sprintf("^BY%d^FO%d,%d%s^BCN,%d,%s,N,N^FH^FD%s^FS", moduleWidth, x, y, foSuffix, height, interpretationLine, barcodeData)
 }
 
 func generateLineZPL(el BadgeElement, dpi int) string {
