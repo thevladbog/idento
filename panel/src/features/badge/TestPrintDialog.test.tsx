@@ -144,6 +144,7 @@ describe("TestPrintDialog", () => {
   });
 
   it("connects, lists printers, and preselects the agent's default printer", async () => {
+    const user = userEvent.setup();
     printersResponse = [
       { name: "Zebra_ZD421", type: "system" },
       { name: "Network_Printer", type: "network" },
@@ -152,9 +153,11 @@ describe("TestPrintDialog", () => {
     renderDialog();
 
     expect(await screen.findByText("Print agent connected")).toBeInTheDocument();
-    const select = await screen.findByLabelText<HTMLSelectElement>("Printer");
-    await waitFor(() => expect(select.value).toBe("Zebra_ZD421"));
-    expect(screen.getByRole("option", { name: "Network_Printer" })).toBeInTheDocument();
+    const combobox = await screen.findByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(combobox).toHaveTextContent("Zebra_ZD421"));
+
+    await user.click(combobox);
+    expect(await screen.findByRole("option", { name: "Network_Printer" })).toBeInTheDocument();
   });
 
   it("disables the send CTA when the agent is connected but reports no printers", async () => {
