@@ -5,6 +5,11 @@ Shared design system for the customer panel, the platform console, and the deskt
 - **Content boundary:** tokens, presentational primitives, verdict vocabulary — nothing else.
   No data fetching, no router, no i18n dependency: every user-facing string arrives via props.
   Never import from an app (`panel/`, `web/`, `desktop/`).
+- **Form primitives:** feature code uses `@idento/ui` form primitives (Select, Checkbox,
+  RadioGroup, NumberInput, DatePicker, Input, Switch) — raw native `<select>`/`<option>`/
+  `<optgroup>`/`<input type="checkbox"|"radio"|"number"|"date">` are banned outside this
+  package (ESLint-enforced in `panel/eslint.config.js`). This is the ONLY place those native
+  elements may legitimately appear, since these primitives wrap them.
 - **React compat:** peerDependency `react >=18` — the desktop kiosk runs React 18.
   Do not use React-19-only APIs.
 - **Colors:** define or change them only in `src/theme.css` (`:root` + `.dark` + `@theme inline`).

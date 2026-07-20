@@ -20,6 +20,15 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      "no-restricted-syntax": [
+        "error",
+        { selector: "JSXOpeningElement[name.name='select']", message: "Use @idento/ui Select, not a native <select>." },
+        { selector: "JSXOpeningElement[name.name='option']", message: "Use @idento/ui SelectItem, not <option>." },
+        { selector: "JSXOpeningElement[name.name='optgroup']", message: "Use @idento/ui SelectGroup/SelectLabel, not <optgroup>." },
+        { selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value=/^(checkbox|radio)$/]", message: "Use @idento/ui Checkbox / RadioGroup, not <input type=\"checkbox\"|\"radio\">." },
+        { selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='date']", message: "Use @idento/ui DatePicker, not <input type=\"date\">." },
+        { selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='number']", message: "Use @idento/ui NumberInput, not <input type=\"number\">." },
+      ],
     },
   },
 );

@@ -8,6 +8,12 @@ work while this rewrite runs (see root `AGENTS.md`).
   reimplement Button/Dialog/Card/etc. here — if one is missing, add it to the
   package (see [packages/ui/AGENTS.md](../packages/ui/AGENTS.md)), don't
   hand-roll it in `panel/`.
+- **Form controls:** feature code uses `@idento/ui` form primitives (Select,
+  Checkbox, RadioGroup, NumberInput, DatePicker, Input, Switch) — raw native
+  `<select>`/`<option>`/`<optgroup>`/`<input type="checkbox"|"radio"|"number"|
+  "date">` are banned outside `packages/ui` and ESLint-enforced
+  (`no-restricted-syntax` in `panel/eslint.config.js`); a lint error here
+  means a real missed native site to migrate, not a rule to weaken.
 - **Feature-sliced layout:** `src/app/` (providers, router assembly, shell),
   `src/shared/` (api client, session, i18n, theme, cross-cutting ui glue),
   `src/features/` (screen-level slices — one directory per feature, own
