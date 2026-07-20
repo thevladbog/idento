@@ -232,7 +232,11 @@ export function ZplPreviewModal({
           <div className="flex flex-col gap-3">
             <pre
               data-testid="badge-zpl-preview-code"
-              className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-code"
+              // break-all is load-bearing: raster lines (^GFA + hex payload)
+              // are ONE unbroken token that whitespace-pre-wrap alone cannot
+              // wrap -- without it the pre grows horizontally off-screen on
+              // any label containing rasterized (Cyrillic/customFont) text.
+              className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-3 font-mono text-code"
             >
               {generation.status === "ready" ? generation.zpl : t("badgeZplPreviewGenerating")}
             </pre>
