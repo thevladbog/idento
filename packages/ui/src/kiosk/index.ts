@@ -5,3 +5,7 @@ export { BlockingBanner, type BlockingBannerProps } from "./blocking-banner";
 export { RecentLog, type RecentLogEntry, type RecentLogProps } from "./recent-log";
 export { OperatorPanel, type OperatorPanelProps } from "./operator-panel";
 export { VerdictScreen, type VerdictAction, type VerdictScreenProps } from "./verdict-screen";
+export { BarcodeBeam, type BarcodeBeamProps } from "./barcode-beam";
+export { ScanFrame, type ScanFrameProps } from "./scan-frame";
+export { BrandSlot, type BrandSlotProps } from "./brand-slot";
+export { LanguageToggle, type LanguageToggleProps } from "./language-toggle";
