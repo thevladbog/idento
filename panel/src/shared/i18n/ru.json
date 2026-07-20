@@ -175,7 +175,7 @@
   "badgePropsRotation": "Поворот",
   "badgePropsMaxLines": "Макс. строк",
   "badgePropsBarcodeCaption": "Печатать расшифровку штрихкода",
-  "badgeBarcodeOverflow": "Этот код длиннее, чем помещается читаемым штрих-кодом при такой ширине. Для длинных значений (например, UUID) используйте QR-код.",
+  "badgeBarcodeOverflow": "Код слишком длинный, чтобы поместиться читаемым штрих-кодом на этой ширине. Для длинных значений (например, UUID) используйте QR-код.",
   "badgeFontScalable": "Масштабируемый (0)",
   "badgeFontA12pt": "A · 12 пт",
   "badgeFontB14pt": "B · 14 пт",
