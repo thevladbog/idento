@@ -26,7 +26,7 @@ COPY --chown=nginx:nginx --from=build-panel /src/panel/dist /usr/share/nginx/htm
 COPY --chown=nginx:nginx --from=build-web   /web/dist        /usr/share/nginx/html/super-admin
 # Explicit chown: the base image's html dir pre-exists owned by root and
 # COPY --chown only touches entries it creates, so the envsubst entrypoint
-# (unprivileged UID 101) can't write env.js without this (see web/Dockerfile).
+# (unprivileged UID 101) can't write env.js into it without this.
 RUN chown nginx:nginx /usr/share/nginx/html /usr/share/nginx/html/super-admin
 USER nginx
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
