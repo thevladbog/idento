@@ -765,6 +765,7 @@ export function BadgeEditorPage() {
             config={state.doc}
             fonts={fonts}
             fontCoverage={fontCoverage}
+            previewData={preview.data}
             onUpdate={(id, patch) => dispatch({ type: "update", id, patch })}
             onUpdateConfig={(patch) => dispatch({ type: "updateConfig", patch })}
           />

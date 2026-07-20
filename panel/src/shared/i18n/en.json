@@ -175,6 +175,7 @@
   "badgePropsRotation": "Rotation",
   "badgePropsMaxLines": "Max lines",
   "badgePropsBarcodeCaption": "Print human-readable caption",
+  "badgeBarcodeOverflow": "This code is longer than fits as a readable barcode at this width. For long values (e.g. a UUID), use a QR element instead.",
   "badgeFontScalable": "Scalable (0)",
   "badgeFontA12pt": "A · 12 pt",
   "badgeFontB14pt": "B · 14 pt",

@@ -11,9 +11,10 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { bindingOptions, displayBinding } from "./bindings";
-import { clampPosition, clampSize, elementFootprint } from "./canvasMath";
+import { clampPosition, clampSize, elementFootprint, resolveElementText } from "./canvasMath";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import { ZPL_FONTS } from "./templateTypes";
+import { barcodeFieldOrigin } from "./zpl/generateZpl";
 import type { components } from "../../shared/api/schema";
 
 // Same alias FontsCard.tsx / useEventFontFaces.ts use for this exact schema
@@ -55,6 +56,10 @@ export interface PropertiesPaneProps {
   // "never batch several fields into one call" convention `onUpdate`
   // above documents for per-element edits.
   onUpdateConfig: (patch: Partial<BadgeConfig>) => void;
+  // The previewed attendee's data -- same `preview.data` ZplPreviewModal/
+  // BadgeCanvas receive -- used to length-check a barcode's resolved code
+  // for the overflow advisory.
+  previewData: Record<string, string>;
 }
 
 // Appends a translated Cyrillic-coverage flag to an event font's option
@@ -135,7 +140,7 @@ const DPI_OPTIONS = [203, 300, 600] as const;
 // undoable-in-principle and mirrors editorState.ts's "update" action shape
 // (`{id, patch: Partial<BadgeElement>}`).
 export function PropertiesPane({
-  element, fieldSchema, config, fonts, fontCoverage, onUpdate, onUpdateConfig,
+  element, fieldSchema, config, fonts, fontCoverage, onUpdate, onUpdateConfig, previewData,
 }: PropertiesPaneProps) {
   const { t } = useTranslation();
 
@@ -316,6 +321,14 @@ export function PropertiesPane({
   const isTextType = element.type === "text";
   const isBarcodeType = element.type === "barcode";
   const hasBindingSection = element.type === "text" || element.type === "qrcode" || element.type === "barcode";
+
+  // Advisory only: a barcode whose resolved code can't fit its zone at the
+  // readability floor (^BY2). Non-blocking -- guides long values to the QR
+  // element (the compact answer; linear symbologies are wider). Recomputes
+  // when the previewed persona changes (previewData is that reactive input).
+  const barcodeOverflow =
+    isBarcodeType &&
+    barcodeFieldOrigin(element!, config.dpi, resolveElementText(element!, previewData).length).overflows;
 
   // Trim-aware "is customFont actually set?" -- the SAME rule generation
   // applies (generateZpl.ts's raster gate `customFont && customFont.trim()`
@@ -588,6 +601,12 @@ export function PropertiesPane({
           />
           <Label htmlFor={IDS.barcodeCaption}>{t("badgePropsBarcodeCaption")}</Label>
         </div>
+      )}
+
+      {isBarcodeType && barcodeOverflow && (
+        <p role="alert" className="text-caption text-warning">
+          {t("badgeBarcodeOverflow")}
+        </p>
       )}
     </div>
   );
