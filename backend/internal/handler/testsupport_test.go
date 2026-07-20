@@ -63,7 +63,6 @@ type fakeStore struct {
 	getAttendeeZoneCheckins       func(attendeeID uuid.UUID) ([]*models.ZoneCheckin, error)
 	getEventBadgeTemplate         func(eventID uuid.UUID) (json.RawMessage, int, error)
 	updateEventBadgeTemplate      func(eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
-	syncBadgeTemplateFromLegacy   func(eventID uuid.UUID, template json.RawMessage) (int, error)
 	getCheckinSettings            func(eventID uuid.UUID) (json.RawMessage, error)
 	updateCheckinSettings         func(eventID uuid.UUID, settings json.RawMessage) error
 	upsertCheckinStation          func(eventID uuid.UUID, name string, zoneID *uuid.UUID) (*models.CheckinStation, error)
@@ -295,9 +294,6 @@ func (f *fakeStore) GetEventBadgeTemplate(_ context.Context, eventID uuid.UUID) 
 }
 func (f *fakeStore) UpdateEventBadgeTemplate(_ context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error) {
 	return f.updateEventBadgeTemplate(eventID, template, expectedVersion)
-}
-func (f *fakeStore) SyncBadgeTemplateFromLegacy(_ context.Context, eventID uuid.UUID, template json.RawMessage) (int, error) {
-	return f.syncBadgeTemplateFromLegacy(eventID, template)
 }
 func (f *fakeStore) GetCheckinSettings(_ context.Context, eventID uuid.UUID) (json.RawMessage, error) {
 	return f.getCheckinSettings(eventID)

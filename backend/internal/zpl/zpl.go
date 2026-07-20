@@ -462,7 +462,9 @@ func Generate(cfg Config, elements []BadgeElement, data map[string]interface{}) 
 	return b.String()
 }
 
-// ParseBadgeTemplate unmarshals badgeTemplate from event custom_fields (e.g. from JSON).
+// ParseBadgeTemplate builds a Config + elements from a decoded badge
+// template (the events.badge_template column value); a nil template yields
+// the default 50x30mm@203dpi config.
 func ParseBadgeTemplate(raw interface{}) (cfg Config, elements []BadgeElement, err error) {
 	if raw == nil {
 		return Config{WidthMM: 50, HeightMM: 30, DPI: 203}, nil, nil

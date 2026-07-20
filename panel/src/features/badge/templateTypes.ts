@@ -48,10 +48,11 @@ export interface BadgeElement {
   // caption. Only an explicit `false` flips the argument to N. Honored by
   // BOTH generators: this panel's own generateZpl.ts (generateBarcodeZPL)
   // AND the backend/kiosk Go generator (zpl.go's `ShowCaption *bool` field +
-  // generateBarcodeZPL) -- the real check-in print path
-  // (web/src/pages/CheckinFullscreen.tsx -> POST /api/events/:id/badge-zpl)
-  // only ever calls the Go generator, so parity between the two was a
-  // functional requirement, not a nice-to-have (bot review, PR #87).
+  // generateBarcodeZPL) -- the real check-in print path is the Tauri desktop
+  // kiosk (desktop/src/pages/CheckinEvent.tsx -> POST
+  // /api/events/:id/badge-zpl), which only ever calls the Go generator, so
+  // parity between the two was a functional requirement, not a
+  // nice-to-have (bot review, PR #87).
   showCaption?: boolean;
 }
 

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"idento/backend/internal/models"
 	"log"
 	"net/http"
@@ -120,35 +119,6 @@ func (h *Handler) UpdateEvent(c echo.Context) error {
 
 	if err := h.Store.UpdateEvent(c.Request().Context(), event); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update event"})
-	}
-
-	// Critical (final review): the legacy web badge editor
-	// (web/src/pages/BadgeTemplateEditorV2.tsx's handleSave) saves its
-	// template through THIS endpoint as an object-typed
-	// custom_fields["badgeTemplate"] — mirror the migration 000018 backfill's
-	// own guard (jsonb_typeof(...) = 'object') here in Go: only an
-	// object-typed value is meaningful going forward (a string-typed legacy
-	// value is print-broken already, per that migration's comment, so there
-	// is nothing valid to sync). Once P3.1's badge_template column exists,
-	// effectiveBadgeTemplate (badge_template.go) prefers it unconditionally,
-	// so leaving this PUT's legacy write column-blind would make it silently
-	// invisible to printing/readiness. Sync AFTER the primary event update
-	// succeeds, and log-don't-fail on the sync call itself: this PUT's
-	// pre-P3.1 semantics (event fields saved, 200 returned) must not regress
-	// just because the NEW column write hit a transient error — the
-	// authoritative custom_fields write already landed via UpdateEvent above.
-	if legacyTemplate, ok := req.CustomFields["badgeTemplate"].(map[string]interface{}); ok {
-		if raw, err := json.Marshal(legacyTemplate); err != nil {
-			log.Printf("failed to marshal legacy badge template for event %s: %v", event.ID, err)
-		} else if _, err := h.Store.SyncBadgeTemplateFromLegacy(c.Request().Context(), event.ID, raw); err != nil {
-			// Deliberately not surfaced to the caller — see comment above.
-			// A concurrent panel badge-editor save 409ing on ITS next PUT
-			// because of a successful sync here is correct conflict
-			// semantics (SyncBadgeTemplateFromLegacy's doc comment); a
-			// failed sync here just means that cross-editor guard doesn't
-			// engage this time, not that the legacy PUT itself failed.
-			log.Printf("failed to sync legacy badge template into column for event %s: %v", event.ID, err)
-		}
 	}
 
 	return c.JSON(http.StatusOK, event)
