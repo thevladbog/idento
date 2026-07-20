@@ -126,6 +126,10 @@ let agentDefaultStatus = 200;
 let agentPrinterMirrorCalls: Array<{ op: "remove" | "add"; body: Record<string, unknown> }> = [];
 let removePrinterStatus = 200;
 let addPrinterStatus = 200;
+// Codex PR #85 review, Finding 3: proves the live printers cache gets
+// refreshed after a successful address mirror (parity with PrinterWizard's
+// own manual-add path, which already invalidates this same query).
+let agentPrintersFetchCount = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/equipment/machines/:machineId", () => {
@@ -161,6 +165,7 @@ const server = startMswServer(
     return HttpResponse.json(AGENT_INFO);
   }),
   http.get("http://agent.test/printers", () => {
+    agentPrintersFetchCount += 1;
     if (agentPrintersStatus !== 200) return new HttpResponse(null, { status: agentPrintersStatus });
     return HttpResponse.json(agentPrinters);
   }),
@@ -241,6 +246,7 @@ describe("EquipmentPage", () => {
     agentPrinterMirrorCalls = [];
     removePrinterStatus = 200;
     addPrinterStatus = 200;
+    agentPrintersFetchCount = 0;
   });
 
   describe("connected (board 5a)", () => {
@@ -1056,7 +1062,15 @@ describe("EquipmentPage", () => {
       expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
     });
 
-    it("Save stays disabled while the ip is empty or the port is outside 1..65535 (the wizard's own port rule)", async () => {
+    // Codex PR #85 review, Finding 2: Save used to stay enabled even with
+    // the prefilled (unchanged) address, so a no-op click still ran the
+    // registry PATCH AND the remove-then-add agent mirror -- a real risk,
+    // since a transient add failure AFTER a successful remove would delete
+    // a previously-working network printer from the agent for NO reason
+    // (nothing needed mirroring in the first place). Save now requires the
+    // address to actually differ from the saved config, on top of the
+    // wizard's own port-range rule.
+    it("Save stays disabled while the address is unchanged from the saved config, or the ip is empty, or the port is outside 1..65535", async () => {
       const user = userEvent.setup();
       renderPage();
 
@@ -1068,6 +1082,22 @@ describe("EquipmentPage", () => {
       const ipInput = within(dialog).getByLabelText("IP address");
       const portInput = within(dialog).getByLabelText("Port");
       const save = within(dialog).getByRole("button", { name: "Save" });
+      // Nothing edited yet -- the prefilled address matches the saved
+      // config exactly, so there is nothing honest to save.
+      expect(save).toBeDisabled();
+
+      await user.clear(portInput);
+      await user.type(portInput, "6101");
+      expect(save).not.toBeDisabled();
+
+      // Edited BACK to the original port -- the address matches the saved
+      // config again, so Save goes back to disabled.
+      await user.clear(portInput);
+      await user.type(portInput, "9100");
+      expect(save).toBeDisabled();
+
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
       expect(save).not.toBeDisabled();
 
       await user.clear(portInput);
@@ -1165,6 +1195,37 @@ describe("EquipmentPage", () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
       expect(agentPrinterMirrorCalls).toEqual([]);
       expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    // Codex PR #85 review, Finding 3: PrinterWizard's own manual-add path
+    // (handleManualSubmit) invalidates AGENT_PRINTERS_KEY right after a
+    // successful agentClient.addNetworkPrinter -- the edit-address mirror's
+    // own successful add must do the same, or the hub's live-printer list
+    // stays stale (amber/not_seen, "Test print" hidden) until an unrelated
+    // refetch (window refocus, manual Retry) happens to fire.
+    it("a successful address mirror refreshes the cached live-printers list", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByText("Zebra ZD421");
+      const fetchesBeforeSave = agentPrintersFetchCount;
+
+      const row = screen.getByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(agentPrinterMirrorCalls).toEqual([
+          { op: "remove", body: { name: "Godex_G500" } },
+          { op: "add", body: { name: "Godex_G500", ip: "10.0.0.77", port: 9100 } },
+        ]),
+      );
+      await waitFor(() => expect(agentPrintersFetchCount).toBeGreaterThan(fetchesBeforeSave));
     });
   });
 

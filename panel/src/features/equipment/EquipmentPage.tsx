@@ -20,7 +20,7 @@ import {
   Button, ConfirmDialog, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DropdownMenu,
   DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Label, Skeleton,
 } from "@idento/ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer, ScanLine } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -35,7 +35,7 @@ import { computeSeenDeviceIds, deviceLiveness, unsavedLivePrinters } from "./rec
 import { ScannerWizard } from "./ScannerWizard";
 import { agentClient, type AgentPrinter, type AgentScanner } from "../../shared/agent/agentClient";
 import { useAgentInfo } from "../../shared/agent/useAgentInfo";
-import { useAgentPrinters } from "../../shared/agent/useAgentPrinters";
+import { AGENT_PRINTERS_KEY, useAgentPrinters } from "../../shared/agent/useAgentPrinters";
 
 const AGENT_SCANNERS_KEY = ["agent", "scanners"] as const;
 
@@ -156,6 +156,14 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddres
   const { t } = useTranslation();
   const [ip, setIp] = React.useState("");
   const [port, setPort] = React.useState("");
+  // Codex PR #85 review, Finding 2: the ORIGINAL (saved) address, kept
+  // alongside the editable ip/port above so Save can require a genuine
+  // change -- a no-op Save still ran the full registry PATCH + agent
+  // remove-then-add mirror, and a transient add failure after a successful
+  // remove would delete a previously-working network printer from the
+  // agent for NO reason (nothing needed mirroring in the first place).
+  const [originalIp, setOriginalIp] = React.useState("");
+  const [originalPort, setOriginalPort] = React.useState("");
   const loadedForRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -164,15 +172,20 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddres
       return;
     }
     if (loadedForRef.current === device.id) return;
-    setIp((device.config?.ip as string | number | undefined)?.toString() ?? "");
-    setPort((device.config?.port as string | number | undefined)?.toString() ?? "");
+    const loadedIp = (device.config?.ip as string | number | undefined)?.toString() ?? "";
+    const loadedPort = (device.config?.port as string | number | undefined)?.toString() ?? "";
+    setIp(loadedIp);
+    setPort(loadedPort);
+    setOriginalIp(loadedIp);
+    setOriginalPort(loadedPort);
     loadedForRef.current = device.id;
   }, [device]);
 
   const trimmedIp = ip.trim();
   const portNumber = Number(port);
   const portValid = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
-  const valid = trimmedIp.length > 0 && portValid;
+  const dirty = trimmedIp !== originalIp.trim() || portNumber !== Number(originalPort);
+  const valid = trimmedIp.length > 0 && portValid && dirty;
 
   return (
     <Dialog open={device !== null} onOpenChange={onOpenChange}>
@@ -222,6 +235,7 @@ function EditAddressDialog({ device, onOpenChange, onSave, pending }: EditAddres
 
 export function EquipmentPage() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
   const agentInfo = useAgentInfo(true);
   const printers = useAgentPrinters(true);
@@ -406,6 +420,15 @@ export function EquipmentPage() {
     agentClient
       .removeNetworkPrinter(agentName)
       .then(() => agentClient.addNetworkPrinter({ name: agentName, ip, port }))
+      .then(() => {
+        // Codex PR #85 review, Finding 3: parity with PrinterWizard.tsx's
+        // own manual-add path (handleManualSubmit), which already
+        // invalidates this same query right after a successful
+        // agentClient.addNetworkPrinter -- without this, the hub's live
+        // list stays stale (amber/not_seen, "Test print" hidden) until an
+        // unrelated refetch (window refocus, manual Retry) happens to fire.
+        void queryClient.invalidateQueries({ queryKey: AGENT_PRINTERS_KEY });
+      })
       .catch(() => {
         setAddressMirrorWarning(true);
       });
