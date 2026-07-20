@@ -1,5 +1,5 @@
 import {
-  Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ConfirmDialog, Skeleton, StatusPill, cn,
+  Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Checkbox, ConfirmDialog, Skeleton, StatusPill, cn,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -198,12 +198,11 @@ export function FontsCard({ eventId }: FontsCardProps) {
             htmlFor="fonts-card-license-accepted"
             className="flex cursor-pointer items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-caption text-warning"
           >
-            <input
+            <Checkbox
               id="fonts-card-license-accepted"
-              type="checkbox"
               className="mt-0.5 shrink-0"
               checked={licenseAccepted}
-              onChange={(e) => setLicenseAccepted(e.target.checked)}
+              onCheckedChange={(checked) => setLicenseAccepted(checked === true)}
             />
             <span>{t("settingsFontLicense")}</span>
           </label>

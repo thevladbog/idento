@@ -1,5 +1,8 @@
 {
   "name": "idento",
   "private": true,
-  "workspaces": ["packages/*", "panel"]
+  "workspaces": ["packages/*", "panel"],
+  "overrides": {
+    "@radix-ui/react-focus-scope": "1.1.13"
+  }
 }

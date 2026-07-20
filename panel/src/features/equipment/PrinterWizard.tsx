@@ -24,7 +24,7 @@
 // looks right" calls the existing useMarkTestPassed(machineId) mutation
 // directly instead of creating a new registry row.
 import {
-  Button, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
+  Button, Checkbox, cn, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label, NumberInput,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -578,12 +578,13 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="printer-wizard-manual-port">{t("equipmentWizardManualPort")}</Label>
-                  <Input
+                  <NumberInput
                     id="printer-wizard-manual-port"
-                    type="number"
-                    value={manualPort}
-                    onChange={(e) => setManualPort(e.target.value)}
+                    value={manualPort === "" ? "" : Number(manualPort)}
+                    onValueChange={(v) => setManualPort(v === "" ? "" : String(v))}
                     disabled={manualSubmitting}
+                    incrementLabel={t("commonIncrement")}
+                    decrementLabel={t("commonDecrement")}
                   />
                 </div>
                 {manualError ? (
@@ -689,22 +690,22 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
                     </div>
                     <div className="flex flex-col gap-2">
                       <Label htmlFor="printer-wizard-save-port">{t("equipmentWizardManualPort")}</Label>
-                      <Input
+                      <NumberInput
                         id="printer-wizard-save-port"
-                        type="number"
-                        value={savePort}
-                        onChange={(e) => setSavePort(e.target.value)}
+                        value={savePort === "" ? "" : Number(savePort)}
+                        onValueChange={(v) => setSavePort(v === "" ? "" : String(v))}
                         disabled={saving || mirrorWarning}
+                        incrementLabel={t("commonIncrement")}
+                        decrementLabel={t("commonDecrement")}
                       />
                     </div>
                   </div>
                 ) : null}
-                <label className="flex items-center gap-2 text-body text-foreground">
-                  <input
-                    type="checkbox"
-                    className="size-3.5 rounded-[4px] border-[1.5px] border-input accent-success"
+                <label htmlFor="printer-wizard-make-default" className="flex items-center gap-2 text-body text-foreground">
+                  <Checkbox
+                    id="printer-wizard-make-default"
                     checked={makeDefault}
-                    onChange={(e) => setMakeDefault(e.target.checked)}
+                    onCheckedChange={(checked) => setMakeDefault(checked === true)}
                     disabled={saving || mirrorWarning}
                   />
                   {t("equipmentWizardDefaultCheckbox")}

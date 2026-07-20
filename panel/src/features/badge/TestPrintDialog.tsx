@@ -15,6 +15,7 @@
 // reserved for the drawer/bulk ATTENDEE print flows (P3.2 Tasks 8/9).
 import {
   AgentStatus, Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Label, Select,
+  SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@idento/ui";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -42,6 +43,14 @@ type Generation =
   | { status: "loading" }
   | { status: "ready"; zpl: string }
   | { status: "error"; message: string };
+
+// Radix's Select throws if any SelectItem has value="" -- the printer
+// select's own "no printers" placeholder used to be a native
+// `<option value="">`. This sentinel stands in for it (same pattern as
+// AttendeeDrawer.tsx's REPRINT_PRINTER_NONE for its reprint printer select)
+// and is mapped back to `null` at the onValueChange boundary, so
+// `selectedPrinter` is unchanged from before this migration.
+const PRINTER_NONE = "__none";
 
 export function TestPrintDialog({
   open, onOpenChange, doc, config, previewData, previewName, eventId,
@@ -231,18 +240,22 @@ export function TestPrintDialog({
         <div className="flex flex-col gap-2">
           <Label htmlFor="test-print-printer">{t("printPrinterLabel")}</Label>
           <Select
-            id="test-print-printer"
-            value={selectedPrinter ?? ""}
+            value={selectedPrinter ?? PRINTER_NONE}
             disabled={agent.state !== "connected" || agent.printers.length === 0 || printing}
-            onChange={(event) => setSelectedPrinter(event.target.value)}
+            onValueChange={(next) => setSelectedPrinter(next === PRINTER_NONE ? null : next)}
           >
-            {agent.printers.length === 0 ? (
-              <option value="">{t("printNoPrinters")}</option>
-            ) : (
-              agent.printers.map((printer) => (
-                <option key={printer.name} value={printer.name}>{printer.name}</option>
-              ))
-            )}
+            <SelectTrigger id="test-print-printer">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {agent.printers.length === 0 ? (
+                <SelectItem value={PRINTER_NONE}>{t("printNoPrinters")}</SelectItem>
+              ) : (
+                agent.printers.map((printer) => (
+                  <SelectItem key={printer.name} value={printer.name}>{printer.name}</SelectItem>
+                ))
+              )}
+            </SelectContent>
           </Select>
         </div>
 

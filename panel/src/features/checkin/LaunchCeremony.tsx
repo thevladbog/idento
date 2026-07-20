@@ -42,7 +42,8 @@
 // mounted" wording.
 import * as React from "react";
 import {
-  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Skeleton, Switch,
+  AgentStatus, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, NumberInput, Select, SelectContent,
+  SelectItem, SelectTrigger, SelectValue, Skeleton, Switch,
 } from "@idento/ui";
 import { Link, getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
@@ -70,6 +71,13 @@ const SCAN_INPUT_LABEL_KEYS: Record<CheckinSettings["scan_input"], string> = {
   scanner: "launchScanInputScanner",
   manual: "launchScanInputManual",
 };
+
+// Radix's Select throws if any SelectItem has value="" -- the zone select's
+// own "No zone" option used to be a native `<option value="">`. This
+// sentinel stands in for it (same pattern as TestPrintDialog.tsx's
+// PRINTER_NONE) and is mapped back to `""` at the onValueChange boundary, so
+// `zoneId` is unchanged from before this migration.
+const ZONE_NONE = "__none";
 
 export function LaunchCeremony() {
   const { t } = useTranslation();
@@ -310,16 +318,20 @@ export function LaunchCeremony() {
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-zone">{t("launchZoneLabel")}</Label>
               <Select
-                id="launch-zone"
-                value={zoneId}
-                onChange={(e) => setZoneId(e.target.value)}
+                value={zoneId || ZONE_NONE}
+                onValueChange={(next) => setZoneId(next === ZONE_NONE ? "" : next)}
               >
-                <option value="">{t("launchZoneNone")}</option>
-                {zones.map((zone) => (
-                  <option key={zone.id} value={zone.id}>
-                    {zone.name}
-                  </option>
-                ))}
+                <SelectTrigger id="launch-zone">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ZONE_NONE}>{t("launchZoneNone")}</SelectItem>
+                  {zones.map((zone) => (
+                    <SelectItem key={zone.id} value={zone.id}>
+                      {zone.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
           </CardContent>
@@ -357,29 +369,38 @@ export function LaunchCeremony() {
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-dismiss-sec">{t("launchDismissSecLabel")}</Label>
-              <Input
+              <NumberInput
                 id="launch-dismiss-sec"
-                type="number"
                 min={1}
                 max={30}
                 disabled={!settingsReady}
+                incrementLabel={t("commonIncrement")}
+                decrementLabel={t("commonDecrement")}
                 value={settingsForm.verdict_auto_dismiss_sec}
-                onChange={(e) => updateSetting("verdict_auto_dismiss_sec", Number(e.target.value))}
+                // verdict_auto_dismiss_sec is a plain `number` (never ""),
+                // matching the old Number(e.target.value) behavior where a
+                // cleared/invalid field coerced to 0 (Number("") === 0)
+                // rather than being ignored.
+                onValueChange={(v) => updateSetting("verdict_auto_dismiss_sec", v === "" ? 0 : v)}
               />
             </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="launch-scan-input">{t("launchScanInputLabel")}</Label>
               <Select
-                id="launch-scan-input"
                 disabled={!settingsReady}
                 value={settingsForm.scan_input}
-                onChange={(e) => updateSetting("scan_input", e.target.value as CheckinSettings["scan_input"])}
+                onValueChange={(next) => updateSetting("scan_input", next as CheckinSettings["scan_input"])}
               >
-                {SCAN_INPUT_MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {t(SCAN_INPUT_LABEL_KEYS[mode])}
-                  </option>
-                ))}
+                <SelectTrigger id="launch-scan-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCAN_INPUT_MODES.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {t(SCAN_INPUT_LABEL_KEYS[mode])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
             <div className="flex items-center justify-between gap-3">

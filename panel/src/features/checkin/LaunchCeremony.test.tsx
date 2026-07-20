@@ -262,6 +262,33 @@ describe("LaunchCeremony", () => {
     expect(await screen.findByText("Saved")).toBeInTheDocument();
   });
 
+  // Task 6 (form primitives): the verdict-timeout field is now the
+  // @idento/ui NumberInput -- its own +/- steppers must step the seeded
+  // value by 1 and feed straight back into the SAME whole-object PUT the
+  // switch-driven edit above exercises.
+  it("stepping the verdict auto-dismiss field with the NumberInput's + button PUTs the incremented value", async () => {
+    const user = userEvent.setup();
+    renderCorrectAt("/events/evt-1/checkin/launch");
+    await screen.findByTestId("launch-ceremony");
+
+    await waitFor(() => expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(4));
+
+    await user.click(screen.getByRole("button", { name: "Increase" }));
+    expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(5);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(capturedSettingsPut).not.toBeNull());
+    expect(capturedSettingsPut).toEqual({
+      settings: {
+        print_on_checkin: true,
+        verdict_auto_dismiss_sec: 5,
+        scan_input: "wedge",
+        manual_search_enabled: true,
+      },
+    });
+  });
+
   // PR #77 bot-review round, Finding N -- the SAME "ungated load effect" bug
   // class as P3.1's badge editor: `settingsForm`/`settingsBaseline` start as
   // the hardcoded DEFAULT_CHECKIN_SETTINGS until the real GET resolves.
@@ -283,7 +310,7 @@ describe("LaunchCeremony", () => {
     expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeDisabled();
     expect(screen.getByRole("switch", { name: "Allow manual search" })).toBeDisabled();
     expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toBeDisabled();
-    expect(screen.getByLabelText("Scan input")).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Scan input" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).toBeEnabled());
@@ -403,7 +430,8 @@ describe("LaunchCeremony", () => {
     const nameInput = screen.getByLabelText("Station name");
     await user.clear(nameInput);
     await user.type(nameInput, "Main Door");
-    await user.selectOptions(screen.getByLabelText("Zone (optional)"), "Main Hall");
+    await user.click(screen.getByRole("combobox", { name: "Zone (optional)" }));
+    await user.click(await screen.findByRole("option", { name: "Main Hall" }));
 
     await user.click(screen.getByRole("button", { name: "Start check-in" }));
 
@@ -558,7 +586,7 @@ describe("LaunchCeremony", () => {
 
     await waitFor(() => expect(screen.getByRole("switch", { name: "Print badge on check-in" })).not.toBeChecked());
     expect(screen.getByLabelText("Verdict auto-dismiss (seconds)")).toHaveValue(12);
-    expect(screen.getByLabelText("Scan input")).toHaveValue("manual");
+    expect(screen.getByRole("combobox", { name: "Scan input" })).toHaveTextContent("Manual search");
     expect(screen.getByRole("switch", { name: "Allow manual search" })).not.toBeChecked();
   });
 

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { PropertiesPane, type PropertiesPaneProps } from "./PropertiesPane";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import type { components } from "../../shared/api/schema";
@@ -42,6 +43,15 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
   return { onUpdate, onUpdateConfig, ...utils };
 }
 
+// Task 3 (form primitives migration): every control that used to be a
+// native <select>/<option>/<optgroup> is now the styled Radix-backed
+// Select/SelectTrigger/SelectContent/SelectItem/SelectGroup/SelectLabel set
+// -- SelectValue's rendered text (via getByRole("combobox")) stands in for
+// the old `.value`/`toHaveValue()` reads (a Radix trigger is a <button>,
+// not a form control with a `.value`), and the listbox only exists in the
+// DOM once opened (Radix portals SelectContent), so listing/selecting an
+// option now goes through userEvent.click(combobox) ->
+// findByRole("option", {name}) rather than fireEvent.change.
 describe("PropertiesPane", () => {
   describe("empty state (document settings)", () => {
     it("shows the document-settings section with the config's current values, plus the element-selection hint", () => {
@@ -50,17 +60,18 @@ describe("PropertiesPane", () => {
       expect(screen.getByText("Document settings")).toBeInTheDocument();
       expect(screen.getByLabelText("Width (mm)")).toHaveValue(90);
       expect(screen.getByLabelText("Height (mm)")).toHaveValue(55);
-      expect(screen.getByLabelText("DPI")).toHaveValue("300");
+      expect(screen.getByRole("combobox", { name: "DPI" })).toHaveTextContent("300");
       expect(
         screen.getByText("Select an element to edit its properties, or set the label's overall size below."),
       ).toBeInTheDocument();
     });
 
-    it("lists 203/300/600 as the DPI options", () => {
+    it("lists 203/300/600 as the DPI options", async () => {
+      const user = userEvent.setup();
       renderPane({ element: null });
 
-      const select = screen.getByLabelText("DPI");
-      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      await user.click(screen.getByRole("combobox", { name: "DPI" }));
+      const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
       expect(options).toEqual(["203", "300", "600"]);
     });
 
@@ -80,10 +91,12 @@ describe("PropertiesPane", () => {
       expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 60 });
     });
 
-    it("patches dpi as a number on change", () => {
+    it("patches dpi as a number on change", async () => {
+      const user = userEvent.setup();
       const { onUpdateConfig } = renderPane({ element: null });
 
-      fireEvent.change(screen.getByLabelText("DPI"), { target: { value: "203" } });
+      await user.click(screen.getByRole("combobox", { name: "DPI" }));
+      await user.click(await screen.findByRole("option", { name: "203" }));
 
       expect(onUpdateConfig).toHaveBeenCalledWith({ dpi: 203 });
     });
@@ -112,30 +125,53 @@ describe("PropertiesPane", () => {
       expect(onUpdateConfig).not.toHaveBeenCalled();
     });
 
+    // Task 6 (form primitives): Width/Height (mm) are now the @idento/ui
+    // NumberInput WITH min/max passed straight through -- unlike the
+    // element x/y/width/height fields above, the + stepper's OWN internal
+    // clamp() (not just handleConfigMmChange's) must stop at DOC_MM_MAX
+    // when already there.
+    it("clicking Width's + stepper at the sane maximum stays clamped via NumberInput's own min/max", async () => {
+      const user = userEvent.setup();
+      const { onUpdateConfig } = renderPane({ element: null, config: { width_mm: 200, height_mm: 55, dpi: 300 } });
+
+      const widthInput = screen.getByLabelText("Width (mm)");
+      await user.click(
+        within(widthInput.parentElement as HTMLElement).getByRole("button", { name: "Increase Width (mm)" }),
+      );
+
+      expect(widthInput).toHaveValue(200);
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 200 });
+    });
+
     // Review fix: a template saved before this picker existed (or edited
     // via a raw API call, same as the incident that prompted this feature)
     // can carry a dpi outside the three listed options. A controlled
     // <select> whose value matches no <option> falls back to silently
     // DISPLAYING the first option instead -- same "honest disabled
     // placeholder" fix as the font select's own missingFontFamily case.
-    it("shows a disabled placeholder option (not a silent fallback to 203) for a dpi outside 203/300/600", () => {
+    it("shows a disabled placeholder option (not a silent fallback to 203) for a dpi outside 203/300/600", async () => {
+      const user = userEvent.setup();
       renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 250 } });
 
-      const select = screen.getByLabelText("DPI");
-      expect(select).toHaveValue("250");
+      const combobox = screen.getByRole("combobox", { name: "DPI" });
+      // The trigger displays the SELECTED item's label, even though it's
+      // disabled -- same as a native <select> showing a disabled <option>'s
+      // text when its value matches the controlled value.
+      expect(combobox).toHaveTextContent("250 (custom)");
 
-      const options = Array.from(select.querySelectorAll("option")) as HTMLOptionElement[];
-      expect(options.map((o) => o.value)).toEqual(["203", "300", "600", "250"]);
-      const placeholder = options.find((o) => o.value === "250")!;
-      expect(placeholder.disabled).toBe(true);
-      expect(placeholder.textContent).toBe("250 (custom)");
+      await user.click(combobox);
+      const options = await screen.findAllByRole("option");
+      expect(options.map((o) => o.textContent)).toEqual(["203", "300", "600", "250 (custom)"]);
+      const placeholder = options.find((o) => o.textContent === "250 (custom)")!;
+      expect(placeholder).toHaveAttribute("aria-disabled", "true");
     });
 
-    it("renders no placeholder option for a listed dpi", () => {
+    it("renders no placeholder option for a listed dpi", async () => {
+      const user = userEvent.setup();
       renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 300 } });
 
-      const select = screen.getByLabelText("DPI");
-      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      await user.click(screen.getByRole("combobox", { name: "DPI" }));
+      const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
       expect(options).toEqual(["203", "300", "600"]);
     });
   });
@@ -213,6 +249,40 @@ describe("PropertiesPane", () => {
       expect(screen.getByLabelText("Width (mm)")).toHaveValue(40);
       expect(screen.getByLabelText("Height (mm)")).toHaveValue(8);
     });
+
+    // Task 6 (form primitives): X/Y/Width/Height are now the @idento/ui
+    // NumberInput -- its own + stepper must dispatch through the SAME
+    // handleNumberChange onUpdate path a typed change already exercises
+    // above (no min/max passed to these fields, so NumberInput's own
+    // internal clamp() no-ops; footprint clamping stays handleNumberChange's
+    // job either way). NumberField's own default step (0.5, unchanged by
+    // this migration -- none of these call sites pass an explicit `step`)
+    // means one click moves x by 0.5, not 1.
+    it("clicking X's + stepper increments by the field's 0.5 step and dispatches through handleNumberChange", async () => {
+      const user = userEvent.setup();
+      const { onUpdate } = renderPane({
+        element: { id: "e1", type: "box", x: 5, y: 5, width: 20, height: 10 },
+      });
+
+      const xInput = screen.getByLabelText("X (mm)");
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase X (mm)" }));
+
+      expect(onUpdate).toHaveBeenCalledWith("e1", { x: 5.5 });
+    });
+
+    it("clicking X's + stepper past the artboard edge clamps via the same footprint guard as typed input", async () => {
+      // Already at the max-fitting x (90mm board, 20mm-wide element -> 70) --
+      // stepping past it (70.5) must clamp straight back to 70.
+      const user = userEvent.setup();
+      const { onUpdate } = renderPane({
+        element: { id: "e1", type: "box", x: 70, y: 5, width: 20, height: 10 },
+      });
+
+      const xInput = screen.getByLabelText("X (mm)");
+      await user.click(within(xInput.parentElement as HTMLElement).getByRole("button", { name: "Increase X (mm)" }));
+
+      expect(onUpdate).toHaveBeenCalledWith("e1", { x: 70 });
+    });
   });
 
   describe("text element", () => {
@@ -235,11 +305,11 @@ describe("PropertiesPane", () => {
     it("shows all text controls with the element's current values", () => {
       renderPane({ element: textElement });
 
-      expect(screen.getByLabelText("Binding")).toHaveValue("first_name");
+      expect(screen.getByRole("combobox", { name: "Binding" })).toHaveTextContent("{first_name}");
       expect(screen.getByLabelText("Text")).toHaveValue("Hello");
-      expect(screen.getByLabelText("Font")).toHaveValue("A");
+      expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("A · 12 pt");
       expect(screen.getByLabelText("Font size (pt)")).toHaveValue(14);
-      expect(screen.getByLabelText("Rotation")).toHaveValue("90");
+      expect(screen.getByRole("combobox", { name: "Rotation" })).toHaveTextContent("90°");
       expect(screen.getByLabelText("Max lines")).toHaveValue(2);
 
       expect(screen.getByRole("button", { name: "Align center" })).toHaveAttribute("aria-pressed", "true");
@@ -253,11 +323,12 @@ describe("PropertiesPane", () => {
       expect(screen.getByLabelText("Text")).toBeDisabled();
     });
 
-    it("lists 'Static text' plus the standard + custom bindings, shown as {name}", () => {
+    it("lists 'Static text' plus the standard + custom bindings, shown as {name}", async () => {
+      const user = userEvent.setup();
       renderPane({ element: textElement, fieldSchema: ["dietary"] });
 
-      const select = screen.getByLabelText("Binding");
-      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      await user.click(screen.getByRole("combobox", { name: "Binding" }));
+      const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
       expect(options).toEqual([
         "Static text",
         "{first_name}",
@@ -271,18 +342,22 @@ describe("PropertiesPane", () => {
     });
 
     describe("binding switch", () => {
-      it("switching to a real binding option patches {source} with that name", () => {
+      it("switching to a real binding option patches {source} with that name", async () => {
+        const user = userEvent.setup();
         const { onUpdate } = renderPane({ element: textElement });
 
-        fireEvent.change(screen.getByLabelText("Binding"), { target: { value: "last_name" } });
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        await user.click(await screen.findByRole("option", { name: "{last_name}" }));
 
         expect(onUpdate).toHaveBeenCalledWith("e1", { source: "last_name" });
       });
 
-      it("switching to 'Static text' clears source (and the text input becomes enabled on the next render)", () => {
+      it("switching to 'Static text' clears source (and the text input becomes enabled on the next render)", async () => {
+        const user = userEvent.setup();
         const { onUpdate, rerender } = renderPane({ element: textElement });
 
-        fireEvent.change(screen.getByLabelText("Binding"), { target: { value: "" } });
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        await user.click(await screen.findByRole("option", { name: "Static text" }));
 
         expect(onUpdate).toHaveBeenCalledWith("e1", { source: undefined });
 
@@ -304,20 +379,67 @@ describe("PropertiesPane", () => {
       });
     });
 
+    // Bot review (PR #92, finding #1): the binding select used to map
+    // "Static text" to a bare sentinel string, and a custom field literally
+    // named that raw sentinel value shared its SelectItem's value --
+    // selecting the field silently mapped to `undefined` (the static-text
+    // branch) instead of binding to the field. The fix encodes real field
+    // names with a prefix the static sentinel can never start with, so the
+    // two are disjoint no matter what fieldSchema contains -- these cases
+    // reproduce the collision fieldSchema=["__static"] used to trigger.
+    describe("field named the raw static-text sentinel", () => {
+      it("still lists Static text as its own option alongside the {__static} field", async () => {
+        const user = userEvent.setup();
+        renderPane({ element: textElement, fieldSchema: ["__static"] });
+
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+        expect(options).toEqual([
+          "Static text",
+          "{first_name}",
+          "{last_name}",
+          "{email}",
+          "{company}",
+          "{position}",
+          "{code}",
+          "{__static}",
+        ]);
+      });
+
+      it("selecting the {__static} field patches source with the field's own name, not undefined", async () => {
+        const user = userEvent.setup();
+        const { onUpdate } = renderPane({ element: textElement, fieldSchema: ["__static"] });
+
+        await user.click(screen.getByRole("combobox", { name: "Binding" }));
+        await user.click(await screen.findByRole("option", { name: "{__static}" }));
+
+        expect(onUpdate).toHaveBeenCalledWith("e1", { source: "__static" });
+      });
+
+      it("shows the {__static} field as selected (not Static text) when the element is already bound to it", () => {
+        renderPane({ element: { ...textElement, source: "__static" }, fieldSchema: ["__static"] });
+
+        expect(screen.getByRole("combobox", { name: "Binding" })).toHaveTextContent("{__static}");
+      });
+    });
+
     describe("font select", () => {
-      it("patches fontFamily with the CODE, not the visible label", () => {
+      it("patches fontFamily with the CODE, not the visible label", async () => {
+        const user = userEvent.setup();
         const { onUpdate } = renderPane({ element: textElement });
 
-        fireEvent.change(screen.getByLabelText("Font"), { target: { value: "0" } });
+        await user.click(screen.getByRole("combobox", { name: "Font" }));
+        await user.click(await screen.findByRole("option", { name: "Scalable (0)" }));
 
         expect(onUpdate).toHaveBeenCalledWith("e1", { fontFamily: "0" });
       });
 
-      it("renders the documented font labels", () => {
+      it("renders the documented font labels", async () => {
+        const user = userEvent.setup();
         renderPane({ element: textElement });
 
-        const select = screen.getByLabelText("Font");
-        const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+        await user.click(screen.getByRole("combobox", { name: "Font" }));
+        const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
         expect(options).toEqual([
           "Scalable (0)",
           "A · 12 pt",
@@ -328,10 +450,11 @@ describe("PropertiesPane", () => {
         ]);
       });
 
-      // P3.2 Task 4: event fonts in an "Event fonts" optgroup, coverage
-      // flags carried in the option TEXT (native <option> can't hold a
-      // component) -- ✓/no-Cyr per font, and no flag at all while coverage
-      // is still undefined (never a guessed flag).
+      // P3.2 Task 4: event fonts in an "Event fonts" optgroup (now a
+      // SelectGroup + SelectLabel), coverage flags carried in the item TEXT
+      // (a SelectItem's children are plain text here, not a component) --
+      // ✓/no-Cyr per font, and no flag at all while coverage is still
+      // undefined (never a guessed flag).
       describe("event fonts", () => {
         const FONTS = [
           { id: "font-cyr", family: "CyrFont" },
@@ -339,47 +462,55 @@ describe("PropertiesPane", () => {
           { id: "font-loading", family: "LoadingFont" },
         ].map((f) => fontListItem(f.id, f.family));
 
-        it("lists the built-in group plus an Event fonts group with coverage-flagged labels", () => {
+        it("lists the built-in group plus an Event fonts group with coverage-flagged labels", async () => {
+          const user = userEvent.setup();
           renderPane({
             element: textElement,
             fonts: FONTS,
             fontCoverage: { "font-cyr": true, "font-latin": false },
           });
 
-          const select = screen.getByLabelText("Font");
-          const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
-          expect(options).toEqual([
+          await user.click(screen.getByRole("combobox", { name: "Font" }));
+          const listbox = await screen.findByRole("listbox");
+
+          const builtinGroup = within(listbox).getByRole("group", { name: "Built-in ZPL — Latin only" });
+          expect(within(builtinGroup).getAllByRole("option").map((o) => o.textContent)).toEqual([
             "Scalable (0)",
             "A · 12 pt",
             "B · 14 pt",
             "C · 18 pt",
             "D · 24 pt",
             "E · 28 pt",
+          ]);
+
+          const eventGroup = within(listbox).getByRole("group", { name: "Event fonts" });
+          expect(within(eventGroup).getAllByRole("option").map((o) => o.textContent)).toEqual([
             "CyrFont (✓ Cyr)",
             "LatinFont (no Cyr)",
             "LoadingFont", // coverage undefined (still loading/unparseable) -- no flag text at all
           ]);
-
-          const optgroups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.getAttribute("label"));
-          expect(optgroups).toEqual(["Built-in ZPL — Latin only", "Event fonts"]);
         });
 
-        it("selecting an event font patches {customFont: family}, leaving fontFamily untouched", () => {
+        it("selecting an event font patches {customFont: family}, leaving fontFamily untouched", async () => {
+          const user = userEvent.setup();
           const { onUpdate } = renderPane({ element: textElement, fonts: FONTS, fontCoverage: {} });
 
-          fireEvent.change(screen.getByLabelText("Font"), { target: { value: "CyrFont" } });
+          await user.click(screen.getByRole("combobox", { name: "Font" }));
+          await user.click(await screen.findByRole("option", { name: "CyrFont" }));
 
           expect(onUpdate).toHaveBeenCalledWith("e1", { customFont: "CyrFont" });
         });
 
-        it("selecting a native code clears customFont and sets fontFamily to that code", () => {
+        it("selecting a native code clears customFont and sets fontFamily to that code", async () => {
+          const user = userEvent.setup();
           const { onUpdate } = renderPane({
             element: { ...textElement, customFont: "CyrFont" },
             fonts: FONTS,
             fontCoverage: {},
           });
 
-          fireEvent.change(screen.getByLabelText("Font"), { target: { value: "A" } });
+          await user.click(screen.getByRole("combobox", { name: "Font" }));
+          await user.click(await screen.findByRole("option", { name: "A · 12 pt" }));
 
           expect(onUpdate).toHaveBeenCalledWith("e1", { customFont: undefined, fontFamily: "A" });
         });
@@ -391,14 +522,16 @@ describe("PropertiesPane", () => {
             fontCoverage: {},
           });
 
-          expect(screen.getByLabelText("Font")).toHaveValue("LatinFont");
+          // fontCoverage is {} here (coverage undefined for this font) -- no
+          // flag text, same honesty rule as fontOptionLabel's own comment.
+          expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("LatinFont");
         });
 
         // Trim-aware precedence, matching generation exactly: generateZpl.ts
         // only honors customFont when `customFont && customFont.trim()` is
         // truthy (its raster gate at :152 and native-font command at :199),
         // and web's own editor legitimately persists `customFont: ""`
-        // (BadgeTemplateEditorV2.tsx:801-804 writes the free-text field
+        // (BadgeTemplateEditorV2.tsx:801-804 writes its free-text field
         // verbatim). A bare `??` here treated "" as SET, silently showing
         // "Scalable (0)" while the printer used fontFamily "B" -- the select
         // must show what actually prints.
@@ -409,47 +542,49 @@ describe("PropertiesPane", () => {
             fontCoverage: {},
           });
 
-          expect(screen.getByLabelText("Font")).toHaveValue("B");
+          expect(screen.getByRole("combobox", { name: "Font" })).toHaveTextContent("B · 14 pt");
         });
 
-        it("treats a whitespace-only customFont as unset too (no missing-font option, fontFamily wins)", () => {
+        it("treats a whitespace-only customFont as unset too (no missing-font option, fontFamily wins)", async () => {
+          const user = userEvent.setup();
           renderPane({
             element: { ...textElement, fontFamily: "C", customFont: "   " },
             fonts: FONTS,
             fontCoverage: {},
           });
 
-          const select = screen.getByLabelText("Font");
-          expect(select).toHaveValue("C");
+          const combobox = screen.getByRole("combobox", { name: "Font" });
+          expect(combobox).toHaveTextContent("C · 18 pt");
+
+          await user.click(combobox);
           // No phantom "missing font" placeholder for a blank value.
-          expect(
-            Array.from(select.querySelectorAll("option")).some((o) => o.textContent?.includes("font removed")),
-          ).toBe(false);
+          const options = await screen.findAllByRole("option");
+          expect(options.some((o) => o.textContent?.includes("font removed"))).toBe(false);
         });
 
-        it("renders a disabled 'missing font' option when customFont names a font no longer in the list", () => {
+        it("renders a disabled 'missing font' option when customFont names a font no longer in the list", async () => {
+          const user = userEvent.setup();
           renderPane({
             element: { ...textElement, customFont: "DeletedFont" },
             fonts: FONTS,
             fontCoverage: {},
           });
 
-          const select = screen.getByLabelText("Font");
-          expect(select).toHaveValue("DeletedFont");
-          const missingOption = Array.from(select.querySelectorAll("option")).find(
-            (o) => (o as HTMLOptionElement).value === "DeletedFont",
-          ) as HTMLOptionElement;
-          expect(missingOption).toBeDefined();
-          expect(missingOption.disabled).toBe(true);
-          expect(missingOption.textContent).toBe("DeletedFont (font removed)");
+          const combobox = screen.getByRole("combobox", { name: "Font" });
+          expect(combobox).toHaveTextContent("DeletedFont (font removed)");
+
+          await user.click(combobox);
+          const missingOption = await screen.findByRole("option", { name: "DeletedFont (font removed)" });
+          expect(missingOption).toHaveAttribute("aria-disabled", "true");
         });
 
         // The backend's uniqueness constraint is family+weight+style, so one
-        // family can appear several times in the fonts list (e.g. Roboto
-        // normal + Roboto bold). customFont stores only the FAMILY, so two
-        // options with the same value would be duplicate <option value>s --
-        // the optgroup dedupes by family, first occurrence wins.
-        it("dedupes same-family weight/style variants into ONE option (first occurrence's coverage flag)", () => {
+        // family can appear several times in `fonts` (e.g. Roboto normal +
+        // Roboto bold). customFont stores only the FAMILY, so two options
+        // with the same value would be duplicate SelectItem values -- the
+        // group dedupes by family, first occurrence wins.
+        it("dedupes same-family weight/style variants into ONE option (first occurrence's coverage flag)", async () => {
+          const user = userEvent.setup();
           renderPane({
             element: textElement,
             fonts: [
@@ -459,18 +594,21 @@ describe("PropertiesPane", () => {
             fontCoverage: { "font-reg": true, "font-bold": false },
           });
 
-          const select = screen.getByLabelText("Font");
-          const eventGroup = select.querySelector('optgroup[label="Event fonts"]');
-          const options = Array.from(eventGroup?.querySelectorAll("option") ?? []).map((o) => o.textContent);
+          await user.click(screen.getByRole("combobox", { name: "Font" }));
+          const listbox = await screen.findByRole("listbox");
+          const eventGroup = within(listbox).getByRole("group", { name: "Event fonts" });
+          const options = within(eventGroup).getAllByRole("option").map((o) => o.textContent);
           expect(options).toEqual(["Roboto (✓ Cyr)"]);
         });
 
-        it("renders no Event fonts group at all when the event has no uploaded fonts", () => {
+        it("renders no Event fonts group at all when the event has no uploaded fonts", async () => {
+          const user = userEvent.setup();
           renderPane({ element: textElement, fonts: [], fontCoverage: {} });
 
-          const select = screen.getByLabelText("Font");
-          const optgroups = Array.from(select.querySelectorAll("optgroup")).map((g) => g.getAttribute("label"));
-          expect(optgroups).toEqual(["Built-in ZPL — Latin only"]);
+          await user.click(screen.getByRole("combobox", { name: "Font" }));
+          const listbox = await screen.findByRole("listbox");
+          expect(within(listbox).getAllByRole("group")).toHaveLength(1);
+          expect(within(listbox).queryByRole("group", { name: "Event fonts" })).not.toBeInTheDocument();
         });
       });
     });
@@ -492,10 +630,12 @@ describe("PropertiesPane", () => {
     });
 
     describe("rotation select", () => {
-      it("patches rotation as a number", () => {
+      it("patches rotation as a number", async () => {
+        const user = userEvent.setup();
         const { onUpdate } = renderPane({ element: textElement });
 
-        fireEvent.change(screen.getByLabelText("Rotation"), { target: { value: "180" } });
+        await user.click(screen.getByRole("combobox", { name: "Rotation" }));
+        await user.click(await screen.findByRole("option", { name: "180°" }));
 
         expect(onUpdate).toHaveBeenCalledWith("e1", { rotation: 180 });
       });
@@ -629,24 +769,26 @@ describe("PropertiesPane", () => {
 
       expect(screen.getByLabelText("X (mm)")).toBeInTheDocument();
       expect(screen.getByLabelText("Width (mm)")).toBeInTheDocument();
-      expect(screen.getByLabelText("Binding")).toHaveValue("code");
+      expect(screen.getByRole("combobox", { name: "Binding" })).toHaveTextContent("{code}");
 
       expect(screen.queryByLabelText("Text")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("Font")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Font" })).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Font size (pt)")).not.toBeInTheDocument();
-      expect(screen.queryByLabelText("Rotation")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Rotation" })).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Max lines")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Align/ })).not.toBeInTheDocument();
     });
 
-    it("dispatches a binding patch same as text elements", () => {
+    it("dispatches a binding patch same as text elements", async () => {
+      const user = userEvent.setup();
       const { onUpdate } = renderPane({
         element: {
           id: "e1", type: "qrcode", x: 5, y: 5, width: 15, height: 15, source: "code",
         },
       });
 
-      fireEvent.change(screen.getByLabelText("Binding"), { target: { value: "email" } });
+      await user.click(screen.getByRole("combobox", { name: "Binding" }));
+      await user.click(await screen.findByRole("option", { name: "{email}" }));
 
       expect(onUpdate).toHaveBeenCalledWith("e1", { source: "email" });
     });
@@ -660,8 +802,8 @@ describe("PropertiesPane", () => {
         },
       });
 
-      expect(screen.getByLabelText("Binding")).toHaveValue("code");
-      expect(screen.queryByLabelText("Font")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "Binding" })).toHaveTextContent("{code}");
+      expect(screen.queryByRole("combobox", { name: "Font" })).not.toBeInTheDocument();
     });
 
     // 2026-07-20 barcode-alignment request: the SAME alignment control text
@@ -826,7 +968,7 @@ describe("PropertiesPane", () => {
       });
 
       expect(screen.getByLabelText("Width (mm)")).toBeInTheDocument();
-      expect(screen.queryByLabelText("Binding")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Binding" })).not.toBeInTheDocument();
     });
 
     it("same for a line element", () => {
@@ -837,7 +979,7 @@ describe("PropertiesPane", () => {
       });
 
       expect(screen.getByLabelText("Height (mm)")).toBeInTheDocument();
-      expect(screen.queryByLabelText("Binding")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "Binding" })).not.toBeInTheDocument();
     });
   });
 });

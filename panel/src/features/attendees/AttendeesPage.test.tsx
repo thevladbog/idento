@@ -5,6 +5,7 @@ import {
 import {
   fireEvent, render, screen, waitFor, within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { AttendeesPage } from "./AttendeesPage";
 import { validateAttendeesSearch } from "./searchParams";
@@ -208,8 +209,8 @@ describe("AttendeesPage", () => {
     await screen.findByText("Ada Lovelace");
     capturedRequests = [];
 
-    const zoneSelect = screen.getByLabelText("Zone: All");
-    fireEvent.change(zoneSelect, { target: { value: "z1" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Zone" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Main Hall" }));
 
     await waitFor(() => expect(capturedRequests.length).toBeGreaterThan(0));
     expect(capturedRequests[0]?.params.get("zone")).toBe("z1");
@@ -223,14 +224,33 @@ describe("AttendeesPage", () => {
     await screen.findByText("Ada Lovelace");
     capturedRequests = [];
 
-    const statusSelect = screen.getByLabelText("Status: Any");
-    fireEvent.change(statusSelect, { target: { value: "not_checked_in" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Not checked in" }));
 
     await waitFor(() => expect(capturedRequests.length).toBeGreaterThan(0));
     expect(capturedRequests[0]?.params.get("status")).toBe("not_checked_in");
     expect(capturedRequests[0]?.params.get("page")).toBe("1");
     expect(router.state.location.search.status).toBe("not_checked_in");
     expect(router.state.location.search.page).toBe(1);
+  });
+
+  // Bot review (PR #92, finding #4): the Zone/Status filter triggers'
+  // aria-label used to be the selected default option's own TEXT ("Zone:
+  // All" / "Status: Any") -- tied to initial state, not the field, so it
+  // changed once a non-default option was picked. It must stay the stable
+  // field name regardless of selection; the visible option text is
+  // untouched.
+  it("keeps the Zone/Status filter triggers' accessible names stable after a non-default selection", async () => {
+    renderAt("/events/evt-1/attendees");
+    await screen.findByText("Ada Lovelace");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Zone" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Main Hall" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Checked in" }));
+
+    expect(screen.getByRole("combobox", { name: "Zone" })).toHaveTextContent("Main Hall");
+    expect(screen.getByRole("combobox", { name: "Status" })).toHaveTextContent("Checked in");
   });
 
   it("renders a 7-page pager with the expected ellipsis items and navigates on click", async () => {

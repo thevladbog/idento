@@ -1,4 +1,7 @@
-import { Button, Input, Label, Select, Switch, cn } from "@idento/ui";
+import {
+  Button, Input, Label, NumberInput, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger,
+  SelectValue, Switch, cn,
+} from "@idento/ui";
 import {
   AlignCenter,
   AlignLeft,
@@ -7,7 +10,6 @@ import {
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
 } from "lucide-react";
-import * as React from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { bindingOptions, displayBinding } from "./bindings";
@@ -128,6 +130,40 @@ const DOC_MM_MAX = 200;
 // the pipeline is dpi-generic, not just parity-tested at two values.
 const DPI_OPTIONS = [203, 300, 600] as const;
 
+// Radix's Select throws if any SelectItem has value="" -- the binding
+// select's "Static text" option used to be a native `<option value="">`
+// (source: undefined). This sentinel stands in for it and is mapped back to
+// `undefined` at the onValueChange boundary (same pattern as
+// AttendeesPage.tsx's ZONE_FILTER_ALL/STATUS_FILTER_ANY), so `element.source`
+// is unchanged from before this migration.
+//
+// Bot review (PR #92, finding #1): bindingOptions(fieldSchema) returns
+// user-defined attendee field names -- an operator can name a custom field
+// ANYTHING that passes settingsFieldsBlankError/ReservedError/DuplicateError
+// (blank/standard-name/duplicate checks only), including a field literally
+// named the raw sentinel value. A bare sentinel string is never provably
+// disjoint from that set. Real field values are instead encoded with a
+// prefix real field names can never start with by construction (every
+// encoded value is PREFIX + name, so its value space is exactly
+// {PREFIX + s : s a string} -- BINDING_STATIC, which never starts with
+// PREFIX, cannot ever be a member), so the two kinds are disjoint no matter
+// what fieldSchema contains.
+const BINDING_STATIC = "static";
+const BINDING_FIELD_PREFIX = "field:";
+
+function encodeBindingSource(source: string): string {
+  return `${BINDING_FIELD_PREFIX}${source}`;
+}
+
+// Inverse of encodeBindingSource -- undefined for the static sentinel (or
+// any other value that isn't a PREFIX-encoded field), the original field
+// name otherwise. Slicing off exactly the prefix (not further decoding the
+// remainder) makes this exact for any field name, including one that itself
+// starts with "field:".
+function decodeBindingValue(value: string): string | undefined {
+  return value.startsWith(BINDING_FIELD_PREFIX) ? value.slice(BINDING_FIELD_PREFIX.length) : undefined;
+}
+
 // Board 4a's Properties pane (P3.1 Task 9): the right column of the badge
 // editor's three-pane grid. Renders the common X/Y/Width/Height controls for
 // EVERY element type, plus a per-type section: text gets binding + static
@@ -150,15 +186,17 @@ export function PropertiesPane({
   // whatever config it's given -- it doesn't re-validate the config's own
   // bounds, so an out-of-range value must never reach it in the first
   // place).
-  function handleConfigMmChange(field: "width_mm" | "height_mm", event: React.ChangeEvent<HTMLInputElement>) {
-    const value = event.target.valueAsNumber;
-    if (Number.isNaN(value)) return;
+  function handleConfigMmChange(field: "width_mm" | "height_mm", value: number | "") {
+    // A cleared field reports "" -- ignore rather than dispatching a patch
+    // that would corrupt the document's own bounds (same guard the old
+    // NaN-from-valueAsNumber check enforced).
+    if (value === "") return;
     const clamped = Math.min(Math.max(value, DOC_MM_MIN), DOC_MM_MAX);
     onUpdateConfig(field === "width_mm" ? { width_mm: clamped } : { height_mm: clamped });
   }
 
-  function handleDpiChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    onUpdateConfig({ dpi: Number(event.target.value) });
+  function handleDpiChange(value: string) {
+    onUpdateConfig({ dpi: Number(value) });
   }
 
   // A template saved before this feature existed (or before the operator
@@ -182,7 +220,7 @@ export function PropertiesPane({
               step={1}
               min={DOC_MM_MIN}
               max={DOC_MM_MAX}
-              onChange={(e) => handleConfigMmChange("width_mm", e)}
+              onValueChange={(v) => handleConfigMmChange("width_mm", v)}
             />
             <NumberField
               id={IDS.docHeight}
@@ -191,33 +229,38 @@ export function PropertiesPane({
               step={1}
               min={DOC_MM_MIN}
               max={DOC_MM_MAX}
-              onChange={(e) => handleConfigMmChange("height_mm", e)}
+              onValueChange={(v) => handleConfigMmChange("height_mm", v)}
             />
           </div>
           <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.docDpi}>{t("badgePropsDpi")}</Label>
-            <Select id={IDS.docDpi} value={String(config.dpi)} onChange={handleDpiChange}>
-              {DPI_OPTIONS.map((dpi) => (
-                <option key={dpi} value={dpi}>
-                  {dpi}
-                </option>
-              ))}
-              {/* A template saved before this picker existed (or edited via
-                  a raw API call -- exactly how the Zebra hardware run that
-                  prompted this feature ended up fixing a wrong dpi in the
-                  first place) can carry a dpi outside the three listed
-                  options. Same "honest disabled placeholder" pattern as the
-                  font select's own missingFontFamily option above: without
-                  it, this controlled <select>'s value wouldn't match any
-                  <option>, and the browser would silently DISPLAY the
-                  first option (203) while the actual saved config.dpi
-                  stayed whatever it really was -- showing the wrong value
-                  without changing it. */}
-              {!isKnownDpi && (
-                <option value={config.dpi} disabled>
-                  {t("badgePropsDpiCustom", { dpi: config.dpi })}
-                </option>
-              )}
+            <Select value={String(config.dpi)} onValueChange={handleDpiChange}>
+              <SelectTrigger id={IDS.docDpi}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DPI_OPTIONS.map((dpi) => (
+                  <SelectItem key={dpi} value={String(dpi)}>
+                    {dpi}
+                  </SelectItem>
+                ))}
+                {/* A template saved before this picker existed (or edited via
+                    a raw API call -- exactly how the Zebra hardware run that
+                    prompted this feature ended up fixing a wrong dpi in the
+                    first place) can carry a dpi outside the three listed
+                    options. Same "honest disabled placeholder" pattern as the
+                    font select's own missingFontFamily option above: without
+                    it, this controlled Select's value wouldn't match any
+                    SelectItem, and it would silently DISPLAY the first
+                    option (203) while the actual saved config.dpi stayed
+                    whatever it really was -- showing the wrong value
+                    without changing it. */}
+                {!isKnownDpi && (
+                  <SelectItem value={String(config.dpi)} disabled>
+                    {t("badgePropsDpiCustom", { dpi: config.dpi })}
+                  </SelectItem>
+                )}
+              </SelectContent>
             </Select>
           </div>
           {/* Always-visible, same "editing aid honesty" convention as
@@ -242,12 +285,11 @@ export function PropertiesPane({
 
   function handleNumberChange(
     field: "x" | "y" | "width" | "height",
-    event: React.ChangeEvent<HTMLInputElement>,
+    value: number | "",
   ) {
-    const value = event.target.valueAsNumber;
-    // A cleared/invalid field reports NaN -- ignore rather than dispatching
+    // A cleared/invalid field reports "" -- ignore rather than dispatching
     // a patch that would corrupt the element's position/size.
-    if (Number.isNaN(value)) return;
+    if (value === "") return;
 
     // elementFootprint, NOT raw element.width/height: a width/height-less
     // element (a fresh text element) renders 40x8mm on the canvas, and its
@@ -273,9 +315,8 @@ export function PropertiesPane({
     }
   }
 
-  function handleBindingChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const value = event.target.value;
-    patch({ source: value === "" ? undefined : value });
+  function handleBindingChange(value: string) {
+    patch({ source: decodeBindingValue(value) });
   }
 
   // P3.2 Task 4: the font <select> now mixes native ZPL codes (option value
@@ -308,8 +349,7 @@ export function PropertiesPane({
     }
   }
 
-  function handleFontChange(event: React.ChangeEvent<HTMLSelectElement>) {
-    const value = event.target.value;
+  function handleFontChange(value: string) {
     const isNativeCode = ZPL_FONTS.some((font) => font.code === value);
     if (isNativeCode) {
       patch({ customFont: undefined, fontFamily: value });
@@ -429,25 +469,25 @@ export function PropertiesPane({
           id={IDS.x}
           label={t("badgePropsX")}
           value={element.x}
-          onChange={(e) => handleNumberChange("x", e)}
+          onValueChange={(v) => handleNumberChange("x", v)}
         />
         <NumberField
           id={IDS.y}
           label={t("badgePropsY")}
           value={element.y}
-          onChange={(e) => handleNumberChange("y", e)}
+          onValueChange={(v) => handleNumberChange("y", v)}
         />
         <NumberField
           id={IDS.width}
           label={t("badgePropsWidth")}
           value={footprint.width}
-          onChange={(e) => handleNumberChange("width", e)}
+          onValueChange={(v) => handleNumberChange("width", v)}
         />
         <NumberField
           id={IDS.height}
           label={t("badgePropsHeight")}
           value={footprint.height}
-          onChange={(e) => handleNumberChange("height", e)}
+          onValueChange={(v) => handleNumberChange("height", v)}
         />
       </div>
 
@@ -455,16 +495,20 @@ export function PropertiesPane({
         <div className="flex flex-col gap-1">
           <Label htmlFor={IDS.binding}>{t("badgePropsBinding")}</Label>
           <Select
-            id={IDS.binding}
-            value={element.source ?? ""}
-            onChange={handleBindingChange}
+            value={element.source ? encodeBindingSource(element.source) : BINDING_STATIC}
+            onValueChange={handleBindingChange}
           >
-            <option value="">{t("badgeBindingStatic")}</option>
-            {bindingOptions(fieldSchema).map((name) => (
-              <option key={name} value={name}>
-                {displayBinding(name)}
-              </option>
-            ))}
+            <SelectTrigger id={IDS.binding}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={BINDING_STATIC}>{t("badgeBindingStatic")}</SelectItem>
+              {bindingOptions(fieldSchema).map((name) => (
+                <SelectItem key={name} value={encodeBindingSource(name)}>
+                  {displayBinding(name)}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
       )}
@@ -486,37 +530,40 @@ export function PropertiesPane({
 
           <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.font}>{t("badgePropsFont")}</Label>
-            <Select
-              id={IDS.font}
-              value={fontSelectValue}
-              onChange={handleFontChange}
-            >
-              {/* Built-in bitmap/scalable ZPL fonts -- Latin only (reconciliation #2). */}
-              <optgroup label={t("badgeFontsBuiltinNoCyr")}>
-                {ZPL_FONTS.map(({ code, labelKey }) => (
-                  <option key={code} value={code}>
-                    {t(labelKey)}
-                  </option>
-                ))}
-              </optgroup>
-              {/* A customFont naming a font that's been deleted since -- an
-                  honest, disabled placeholder so the select's value still
-                  matches a real option instead of silently falling back to
-                  the first one in the list. */}
-              {missingFontFamily && (
-                <option value={missingFontFamily} disabled>
-                  {t("badgeFontMissing", { family: missingFontFamily })}
-                </option>
-              )}
-              {fontsByFamily.length > 0 && (
-                <optgroup label={t("badgeFontsEventGroup")}>
-                  {fontsByFamily.map((font) => (
-                    <option key={font.id} value={font.family}>
-                      {fontOptionLabel(font.family, fontCoverage[font.id], t)}
-                    </option>
+            <Select value={fontSelectValue} onValueChange={handleFontChange}>
+              <SelectTrigger id={IDS.font}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {/* Built-in bitmap/scalable ZPL fonts -- Latin only (reconciliation #2). */}
+                <SelectGroup>
+                  <SelectLabel>{t("badgeFontsBuiltinNoCyr")}</SelectLabel>
+                  {ZPL_FONTS.map(({ code, labelKey }) => (
+                    <SelectItem key={code} value={code}>
+                      {t(labelKey)}
+                    </SelectItem>
                   ))}
-                </optgroup>
-              )}
+                </SelectGroup>
+                {/* A customFont naming a font that's been deleted since -- an
+                    honest, disabled placeholder so the select's value still
+                    matches a real item instead of silently falling back to
+                    the first one in the list. */}
+                {missingFontFamily && (
+                  <SelectItem value={missingFontFamily} disabled>
+                    {t("badgeFontMissing", { family: missingFontFamily })}
+                  </SelectItem>
+                )}
+                {fontsByFamily.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>{t("badgeFontsEventGroup")}</SelectLabel>
+                    {fontsByFamily.map((font) => (
+                      <SelectItem key={font.id} value={font.family}>
+                        {fontOptionLabel(font.family, fontCoverage[font.id], t)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
             </Select>
           </div>
 
@@ -526,10 +573,9 @@ export function PropertiesPane({
             value={element.fontSize ?? 12}
             step={1}
             min={1}
-            onChange={(e) => {
-              const value = e.target.valueAsNumber;
-              if (Number.isNaN(value)) return;
-              patch({ fontSize: value });
+            onValueChange={(v) => {
+              if (v === "") return;
+              patch({ fontSize: v });
             }}
           />
 
@@ -565,15 +611,19 @@ export function PropertiesPane({
           <div className="flex flex-col gap-1">
             <Label htmlFor={IDS.rotation}>{t("badgePropsRotation")}</Label>
             <Select
-              id={IDS.rotation}
               value={String(element.rotation ?? 0)}
-              onChange={(e) => patch({ rotation: Number(e.target.value) as 0 | 90 | 180 | 270 })}
+              onValueChange={(next) => patch({ rotation: Number(next) as 0 | 90 | 180 | 270 })}
             >
-              {ROTATIONS.map((deg) => (
-                <option key={deg} value={deg}>
-                  {deg}°
-                </option>
-              ))}
+              <SelectTrigger id={IDS.rotation}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROTATIONS.map((deg) => (
+                  <SelectItem key={deg} value={String(deg)}>
+                    {deg}°
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
 
@@ -583,10 +633,9 @@ export function PropertiesPane({
             value={element.maxLines ?? ""}
             step={1}
             min={1}
-            onChange={(e) => {
-              const value = e.target.valueAsNumber;
-              if (Number.isNaN(value)) return;
-              patch({ maxLines: value });
+            onValueChange={(v) => {
+              if (v === "") return;
+              patch({ maxLines: v });
             }}
           />
         </>
@@ -613,7 +662,7 @@ export function PropertiesPane({
 }
 
 function NumberField({
-  id, label, value, step = 0.5, min, max, onChange,
+  id, label, value, step = 0.5, min, max, onValueChange,
 }: {
   id: string;
   label: string;
@@ -621,12 +670,28 @@ function NumberField({
   step?: number;
   min?: number;
   max?: number;
-  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onValueChange: (value: number | "") => void;
 }) {
+  // Own useTranslation() call rather than threading incrementLabel/
+  // decrementLabel through all eight call sites above -- this is a
+  // standalone function component in the same file as PropertiesPane
+  // (which already calls the hook for its own `t`), and react-i18next's
+  // hook is cheap to call more than once per file (same context, no extra
+  // fetch/subscription cost worth avoiding).
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="number" step={step} min={min} max={max} value={value} onChange={onChange} />
+      <NumberInput
+        id={id}
+        step={step}
+        min={min}
+        max={max}
+        value={value}
+        onValueChange={onValueChange}
+        incrementLabel={t("commonIncrementField", { field: label })}
+        decrementLabel={t("commonDecrementField", { field: label })}
+      />
     </div>
   );
 }

@@ -434,10 +434,10 @@ describe("ImportWizard step 2 — column mapping", () => {
     // Default-mapping heuristic: ФИО (no separate Фамилия column) maps to
     // first_name ONLY — no fabricated split. Компания/Email match their
     // heuristics. Примечание matches nothing and defaults to unset.
-    expect(screen.getByRole("combobox", { name: "ФИО" })).toHaveValue("first_name");
-    expect(screen.getByRole("combobox", { name: "Компания" })).toHaveValue("company");
-    expect(screen.getByRole("combobox", { name: "Email" })).toHaveValue("email");
-    expect(screen.getByRole("combobox", { name: "Примечание" })).toHaveValue("unset");
+    expect(screen.getByRole("combobox", { name: "ФИО" })).toHaveTextContent("First name");
+    expect(screen.getByRole("combobox", { name: "Компания" })).toHaveTextContent("Company");
+    expect(screen.getByRole("combobox", { name: "Email" })).toHaveTextContent("Email");
+    expect(screen.getByRole("combobox", { name: "Примечание" })).toHaveTextContent("Don't import");
 
     // Proof the full file (5 data rows, 1 email duplicate) was parsed, not
     // the 3-row preview: footer shows 4 post-dedup rows with 1 merged
@@ -458,8 +458,8 @@ describe("ImportWizard step 2 — column mapping", () => {
     await user.click(screen.getByRole("button", { name: "Continue → Columns" }));
     await screen.findByTestId("import-step-2");
 
-    expect(screen.getByRole("combobox", { name: "Имя" })).toHaveValue("first_name");
-    expect(screen.getByRole("combobox", { name: "Фамилия" })).toHaveValue("last_name");
+    expect(screen.getByRole("combobox", { name: "Имя" })).toHaveTextContent("First name");
+    expect(screen.getByRole("combobox", { name: "Фамилия" })).toHaveTextContent("Last name");
   });
 
   it("shows an unmapped column with amber warning styling and blocks Import N rows", async () => {
@@ -478,7 +478,8 @@ describe("ImportWizard step 2 — column mapping", () => {
     const importButton = screen.getByRole("button", { name: /Import \d+ rows/ });
     expect(importButton).toBeDisabled();
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "skip");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Don't import" }));
 
     expect(importButton).toBeEnabled();
     expect(screen.queryByText("Column unmapped — pick a field or confirm skipping it")).not.toBeInTheDocument();
@@ -492,7 +493,8 @@ describe("ImportWizard step 2 — column mapping", () => {
 
     // Un-map Email (send it to skip) — with no column mapped to email
     // anymore, dedup no longer applies and all 5 rows count.
-    await user.selectOptions(screen.getByRole("combobox", { name: "Email" }), "skip");
+    await user.click(screen.getByRole("combobox", { name: "Email" }));
+    await user.click(await screen.findByRole("option", { name: "Don't import" }));
 
     expect(screen.getByText("5 rows")).toBeInTheDocument();
     expect(screen.queryByText(/duplicates merged/)).not.toBeInTheDocument();
@@ -528,7 +530,8 @@ describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)",
 
     // Примечание defaults to unset; mapping it to the SAME standard field
     // ("email") that the Email column already uses creates a collision.
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "email");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Email" }));
 
     const importButton = screen.getByRole("button", { name: /Import \d+ rows/ });
     expect(importButton).toBeDisabled();
@@ -545,7 +548,8 @@ describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)",
     const user = userEvent.setup();
     await continueToStep2(user);
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "custom");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Custom field" }));
     const nameInput = screen.getByRole("textbox", { name: "Custom field name: Примечание" });
     await user.clear(nameInput);
 
@@ -563,7 +567,8 @@ describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)",
     const user = userEvent.setup();
     await continueToStep2(user);
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "custom");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Custom field" }));
     const nameInput = screen.getByRole("textbox", { name: "Custom field name: Примечание" });
     await user.clear(nameInput);
     // Collides with the standard "email" key the Email column already uses.
@@ -583,12 +588,14 @@ describe("ImportWizard step 2 — mapping validation (duplicate/blank targets)",
     const user = userEvent.setup();
     await continueToStep2(user);
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "email");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Email" }));
     expect(screen.getByRole("button", { name: /Import \d+ rows/ })).toBeDisabled();
 
     // Fix it: send Примечание to skip instead (no longer collides, and no
     // longer unset either).
-    await user.selectOptions(screen.getByRole("combobox", { name: "Примечание" }), "skip");
+    await user.click(screen.getByRole("combobox", { name: "Примечание" }));
+    await user.click(await screen.findByRole("option", { name: "Don't import" }));
 
     expect(screen.getByRole("button", { name: /Import \d+ rows/ })).toBeEnabled();
     expect(

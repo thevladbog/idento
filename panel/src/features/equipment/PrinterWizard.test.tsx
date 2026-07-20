@@ -209,6 +209,28 @@ describe("PrinterWizard", () => {
       await waitFor(() => expect(addPrinterCalls).toHaveLength(1));
       expect(addPrinterCalls[0]).toEqual({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
     });
+
+    // Task 6 (form primitives): the manual-add Port field is now the
+    // @idento/ui NumberInput -- its own + stepper must bump the DEFAULT_
+    // MANUAL_PORT seed by 1 and feed straight into the same string
+    // manualPort state manualPortValid/POST-body derive from.
+    it("stepping the manual Port field's + button increments the default 9100 seed by 1", async () => {
+      const user = userEvent.setup();
+      renderWizard();
+
+      await user.click(await screen.findByText("Enter IP manually"));
+      await user.type(screen.getByLabelText("Printer name"), "Network_Office");
+      await user.type(screen.getByLabelText("IP address"), "192.168.0.245");
+      const portInput = screen.getByLabelText<HTMLInputElement>("Port");
+      expect(portInput).toHaveValue(9100);
+
+      await user.click(screen.getByRole("button", { name: "Increase" }));
+      expect(portInput).toHaveValue(9101);
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+      await waitFor(() => expect(addPrinterCalls).toHaveLength(1));
+      expect(addPrinterCalls[0]).toEqual({ name: "Network_Office", ip: "192.168.0.245", port: 9101 });
+    });
   });
 
   describe("Test step", () => {
@@ -447,10 +469,10 @@ describe("PrinterWizard", () => {
 
       const nameInput = screen.getByLabelText<HTMLInputElement>("Printer name");
       expect(nameInput.value).toBe("HP_Smart_Tank_790");
-      const checkbox = screen.getByLabelText<HTMLInputElement>(
+      const checkbox = screen.getByLabelText(
         "Make this the default printer for check-in stations on this computer",
       );
-      expect(checkbox.checked).toBe(true);
+      expect(checkbox).toBeChecked();
 
       await user.click(screen.getByRole("button", { name: "Save printer" }));
 
@@ -581,6 +603,38 @@ describe("PrinterWizard", () => {
         class: "printer",
         kind: "network",
         config: { agent_name: "Warehouse_Net", ip: "10.0.0.9", port: 9100 },
+      });
+    });
+
+    // Task 6 (form primitives): the Save-step address form's own Port field
+    // is now the @idento/ui NumberInput too -- its + stepper must bump the
+    // same 9100 default seed savePortNumber/addressValid derive from.
+    it("stepping the Save-step Port field's + button increments the default 9100 seed by 1", async () => {
+      const user = userEvent.setup();
+      agentPrinters = [{ name: "Warehouse_Net", type: "network" }];
+      renderWizard();
+
+      await user.click(await screen.findByRole("button", { name: /Warehouse_Net/ }));
+      await screen.findByText("Did the test label print correctly?");
+      await user.click(screen.getByRole("button", { name: "Yes, looks right" }));
+
+      const ipInput = await screen.findByLabelText<HTMLInputElement>("IP address");
+      const portInput = screen.getByLabelText<HTMLInputElement>("Port");
+      expect(portInput).toHaveValue(9100);
+
+      await user.click(screen.getByRole("button", { name: "Increase" }));
+      expect(portInput).toHaveValue(9101);
+
+      await user.type(ipInput, "10.0.0.9");
+      const saveButton = screen.getByRole("button", { name: "Save printer" });
+      await waitFor(() => expect(saveButton).not.toBeDisabled());
+      await user.click(saveButton);
+
+      await waitFor(() => expect(createDeviceCalls).toHaveLength(1));
+      expect(createDeviceCalls[0].body).toMatchObject({
+        class: "printer",
+        kind: "network",
+        config: { agent_name: "Warehouse_Net", ip: "10.0.0.9", port: 9101 },
       });
     });
 

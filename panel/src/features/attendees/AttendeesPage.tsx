@@ -1,4 +1,6 @@
-import { Button, EmptyState, Select, Skeleton } from "@idento/ui";
+import {
+  Button, EmptyState, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Skeleton,
+} from "@idento/ui";
 import { getRouteApi } from "@tanstack/react-router";
 import { Users } from "lucide-react";
 import * as React from "react";
@@ -13,6 +15,14 @@ import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 import type { AttendeesSearch } from "./searchParams";
 
 type AttendeeStatus = NonNullable<AttendeesSearch["status"]>;
+
+// Radix's Select throws if any SelectItem has value="" — these sentinels
+// stand in for the "All zones"/"Any status" options (which used to be a
+// native <option value="">) and are mapped back to `undefined` at the
+// onValueChange boundary, so `search.zone`/`search.status` (and therefore
+// the outgoing query params) are unchanged from before this migration.
+const ZONE_FILTER_ALL = "__all";
+const STATUS_FILTER_ANY = "__all";
 
 // Same rationale as EventWorkspaceLayout.tsx / WorkspaceOverview.tsx:
 // `getRouteApi` with the route's string id avoids a circular import with
@@ -178,31 +188,39 @@ export function AttendeesPage() {
         />
 
         <Select
-          aria-label={t("attendeesZoneFilterAll")}
-          value={search.zone ?? ""}
-          onChange={(e) => updateFilter({ zone: e.target.value || undefined })}
-          variant="pill"
+          value={search.zone || ZONE_FILTER_ALL}
+          onValueChange={(next) => updateFilter({ zone: next === ZONE_FILTER_ALL ? undefined : next })}
         >
-          <option value="">{t("attendeesZoneFilterAll")}</option>
-          {(zonesQuery.data ?? []).map((entry) => {
-            const zone = zoneIdentity(entry);
-            return (
-              <option key={zone.id} value={zone.id}>
-                {zone.name}
-              </option>
-            );
-          })}
+          <SelectTrigger variant="pill" aria-label={t("attendeesZoneFilterLabel")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ZONE_FILTER_ALL}>{t("attendeesZoneFilterAll")}</SelectItem>
+            {(zonesQuery.data ?? []).map((entry) => {
+              const zone = zoneIdentity(entry);
+              return (
+                <SelectItem key={zone.id} value={zone.id}>
+                  {zone.name}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
         </Select>
 
         <Select
-          aria-label={t("attendeesStatusFilterAny")}
-          value={search.status ?? ""}
-          onChange={(e) => updateFilter({ status: (e.target.value || undefined) as AttendeeStatus | undefined })}
-          variant="pill"
+          value={search.status || STATUS_FILTER_ANY}
+          onValueChange={(next) =>
+            updateFilter({ status: next === STATUS_FILTER_ANY ? undefined : (next as AttendeeStatus) })
+          }
         >
-          <option value="">{t("attendeesStatusFilterAny")}</option>
-          <option value="checked_in">{t("attendeesStatusCheckedIn")}</option>
-          <option value="not_checked_in">{t("attendeesStatusNotCheckedIn")}</option>
+          <SelectTrigger variant="pill" aria-label={t("attendeesStatusFilterLabel")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={STATUS_FILTER_ANY}>{t("attendeesStatusFilterAny")}</SelectItem>
+            <SelectItem value="checked_in">{t("attendeesStatusCheckedIn")}</SelectItem>
+            <SelectItem value="not_checked_in">{t("attendeesStatusNotCheckedIn")}</SelectItem>
+          </SelectContent>
         </Select>
 
         <div className="ml-auto flex items-center gap-2">

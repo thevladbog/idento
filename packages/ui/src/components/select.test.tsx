@@ -1,60 +1,39 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Label } from "./label";
-import { Select } from "./select";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./select";
 
-describe("Select", () => {
-  it("is reachable by its label", () => {
-    render(
-      <>
-        <Label htmlFor="zone">Zone</Label>
-        <Select id="zone">
-          <option value="a">Alpha</option>
-        </Select>
-      </>,
-    );
-    expect(screen.getByLabelText("Zone")).toBeInTheDocument();
-  });
+function Basic({ onValueChange = () => {} }: { onValueChange?: (v: string) => void }) {
+  return (
+    <Select onValueChange={onValueChange}>
+      <SelectTrigger><SelectValue placeholder="Pick" /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="a">Alpha</SelectItem>
+        <SelectItem value="b">Beta</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
 
-  it("renders its options and reflects the selected value", () => {
-    render(
-      <Select aria-label="Zone" defaultValue="b">
-        <option value="a">Alpha</option>
-        <option value="b">Beta</option>
-      </Select>,
-    );
-    expect(screen.getByRole("combobox", { name: "Zone" })).toHaveValue("b");
-  });
+it("opens the listbox and selects an item via keyboard/click", async () => {
+  const onValueChange = vi.fn();
+  render(<Basic onValueChange={onValueChange} />);
+  const trigger = screen.getByRole("combobox");
+  await userEvent.click(trigger);
+  await userEvent.click(await screen.findByRole("option", { name: "Beta" }));
+  expect(onValueChange).toHaveBeenCalledWith("b");
+});
 
-  it("fires onChange with the newly picked option", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <Select aria-label="Zone" onChange={onChange}>
-        <option value="a">Alpha</option>
-        <option value="b">Beta</option>
-      </Select>,
-    );
-    await user.selectOptions(screen.getByRole("combobox", { name: "Zone" }), "b");
-    expect(onChange).toHaveBeenCalled();
-    expect(screen.getByRole("combobox", { name: "Zone" })).toHaveValue("b");
-  });
+it("shows the placeholder when no value is set", () => {
+  render(<Basic />);
+  expect(screen.getByText("Pick")).toBeInTheDocument();
+});
 
-  it("applies variant classes from tokens", () => {
-    render(
-      <Select aria-label="Status filter" variant="pill">
-        <option value="a">Alpha</option>
-      </Select>,
-    );
-    expect(screen.getByRole("combobox", { name: "Status filter" })).toHaveClass("rounded-full");
-  });
-
-  it("is disabled when disabled", () => {
-    render(
-      <Select aria-label="Zone" disabled>
-        <option value="a">Alpha</option>
-      </Select>,
-    );
-    expect(screen.getByRole("combobox", { name: "Zone" })).toBeDisabled();
-  });
+it("renders a disabled item that can't be chosen", async () => {
+  render(
+    <Select><SelectTrigger><SelectValue placeholder="p" /></SelectTrigger>
+      <SelectContent><SelectItem value="x" disabled>X</SelectItem></SelectContent>
+    </Select>,
+  );
+  await userEvent.click(screen.getByRole("combobox"));
+  expect(await screen.findByRole("option", { name: "X" })).toHaveAttribute("aria-disabled", "true");
 });

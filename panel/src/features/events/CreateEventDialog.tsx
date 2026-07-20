@@ -1,5 +1,5 @@
 import {
-  Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
+  Button, DatePicker, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, Input, Label,
 } from "@idento/ui";
 import { useNavigate } from "@tanstack/react-router";
 import * as React from "react";
@@ -30,7 +30,8 @@ export type CreateEventDialogProps = {
 };
 
 export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const dateLocale = i18n.language.startsWith("ru") ? "ru" : "en";
   const navigate = useNavigate();
   const createEvent = useCreateEvent();
   const [name, setName] = React.useState("");
@@ -111,16 +112,25 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-event-start">{t("createEventStartLabel")}</Label>
-            <Input
+            <DatePicker
               id="create-event-start"
-              type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onValueChange={setStartDate}
+              locale={dateLocale}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearStart")}
             />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="create-event-end">{t("createEventEndLabel")}</Label>
-            <Input id="create-event-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <DatePicker
+              id="create-event-end"
+              value={endDate}
+              onValueChange={setEndDate}
+              locale={dateLocale}
+              placeholder={t("datePickerPlaceholder")}
+              clearLabel={t("datePickerClearEnd")}
+            />
             {fieldErrors.endDate ? <p className="text-caption text-destructive">{t(fieldErrors.endDate)}</p> : null}
           </div>
           <div className="flex flex-col gap-2">

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  render, screen, waitFor,
+  render, screen, waitFor, within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
@@ -161,7 +161,14 @@ describe("AddStaffDialog", () => {
       await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
-      await user.click(await screen.findByText("bob@example.com"));
+      // The candidate picker is an @idento/ui RadioGroup: a role=radiogroup
+      // wrapping one role=radio per selectable candidate.
+      await screen.findByText("bob@example.com");
+      const candidateGroup = screen.getByRole("radiogroup");
+      const bob = within(candidateGroup).getByRole("radio", { name: /bob@example\.com/ });
+      expect(bob).not.toBeChecked();
+      await user.click(bob);
+      expect(bob).toBeChecked();
       await user.click(screen.getByRole("button", { name: "Add" }));
 
       await waitFor(() => expect(assignCount).toBe(1));
@@ -239,6 +246,17 @@ describe("AddStaffDialog", () => {
       // Role is restricted to staff|manager — admin is never an option here
       // (reconciliation #15; backend rejects it too).
       expect(screen.queryByLabelText("Admin")).not.toBeInTheDocument();
+
+      // The role picker is an @idento/ui RadioGroup: a single role=radiogroup
+      // wrapping two role=radio items, "Staff" selected by default.
+      const roleGroup = screen.getByRole("radiogroup");
+      expect(within(roleGroup).getAllByRole("radio")).toHaveLength(2);
+      expect(screen.getByLabelText("Staff")).toBeChecked();
+      expect(screen.getByLabelText("Manager")).not.toBeChecked();
+
+      await user.click(screen.getByLabelText("Manager"));
+      expect(screen.getByLabelText("Manager")).toBeChecked();
+      expect(screen.getByLabelText("Staff")).not.toBeChecked();
     });
 
     it("validates email format before submitting", async () => {

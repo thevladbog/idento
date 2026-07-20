@@ -1062,6 +1062,37 @@ describe("EquipmentPage", () => {
       expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
     });
 
+    // Task 6 (form primitives): the Port field is now the @idento/ui
+    // NumberInput -- its own + stepper must bump the prefilled numeric
+    // value by 1 and feed straight into the same string port state
+    // (portValid/dirty/canSave) the typed-input path above already covers.
+    it("stepping the Port field's + button increments the prefilled port by 1 and enables Save", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const portInput = within(dialog).getByLabelText("Port");
+      expect(portInput).toHaveValue(9100);
+      const save = within(dialog).getByRole("button", { name: "Save" });
+      expect(save).toBeDisabled();
+
+      await user.click(within(dialog).getByRole("button", { name: "Increase" }));
+      expect(portInput).toHaveValue(9101);
+      expect(save).not.toBeDisabled();
+
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      expect(patchCalls[0]).toEqual({
+        deviceId: "dev-printer-notseen",
+        body: { config: { agent_name: "Godex_G500", ip: "10.0.0.5", port: 9101, dpi: 300 } },
+      });
+    });
+
     // Codex PR #85 review, Finding 2: Save used to stay enabled even with
     // the prefilled (unchanged) address, so a no-op click still ran the
     // registry PATCH AND the remove-then-add agent mirror -- a real risk,
