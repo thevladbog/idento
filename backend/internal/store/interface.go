@@ -87,17 +87,6 @@ type Store interface {
 	// this method does not re-check event existence, so a 0-row result is
 	// always reported as a version conflict, never as "not found".
 	UpdateEventBadgeTemplate(ctx context.Context, eventID uuid.UUID, template json.RawMessage, expectedVersion int) (int, error)
-	// SyncBadgeTemplateFromLegacy mirrors an object-typed
-	// custom_fields["badgeTemplate"] value from the legacy web editor's PUT
-	// /api/events/{id} into the dedicated badge_template column. Unlike
-	// UpdateEventBadgeTemplate, this write is UNCONDITIONAL — no
-	// expected-version guard — because the legacy PUT has no version
-	// concept; it always matches by id (excluding soft-deleted rows) and
-	// always bumps badge_template_version by one. This deliberately means a
-	// concurrent panel badge-editor save's NEXT PUT will 409 — correct
-	// cross-editor conflict semantics, not a bug. Callers must log-and-continue
-	// on error rather than failing the legacy PUT itself.
-	SyncBadgeTemplateFromLegacy(ctx context.Context, eventID uuid.UUID, template json.RawMessage) (int, error)
 
 	// GetCheckinSettings reads the dedicated events.checkin_settings JSONB
 	// column (P4.1). Returns (nil, nil) when the column is NULL (no

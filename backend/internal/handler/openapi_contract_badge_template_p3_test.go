@@ -396,11 +396,13 @@ func TestOpenAPIContract_BadgeTemplate_InvalidEventID400(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Column-first fallback reads (P3.1 Task 3): BadgeZPL and GetEventReadiness
-// must both prefer the dedicated badge_template column over the legacy
-// custom_fields["badgeTemplate"] key, via the shared effectiveBadgeTemplate
-// helper (badge_template.go). PutBadgeTemplate never writes the legacy key
-// back, so once a column value exists it is the only up-to-date source.
+// Column-only reads (originally P3.1 Task 3's column-first fallback; P5.2
+// removed the fallback entirely): BadgeZPL and GetEventReadiness both read
+// the event's badge template EXCLUSIVELY from the dedicated badge_template
+// column via the shared effectiveBadgeTemplate helper (badge_template.go) —
+// the legacy custom_fields["badgeTemplate"] key is never consulted, even
+// when present. PutBadgeTemplate never writes the legacy key, so the column
+// is the sole source of truth.
 // ---------------------------------------------------------------------------
 
 // wantPWDirective mirrors zpl.Generate/mmToDots's rounding so tests can
@@ -465,10 +467,23 @@ func TestOpenAPIContract_BadgeZPL_UsesColumnTemplateWhenLegacyKeyAbsent(t *testi
 	validateResponse(t, http.MethodPost, path, rec)
 }
 
-// event with NO column template (never saved via the P3.1 endpoint) but a
-// legacy map template → BadgeZPL must still fall back and generate from it
-// (brief Step 1, badge-zpl case 2).
-func TestOpenAPIContract_BadgeZPL_FallsBackToLegacyMapWhenColumnAbsent(t *testing.T) {
+// TestOpenAPIContract_BadgeZPL_IgnoresLegacyKeyWhenColumnAbsent pins P5.2's
+// removal of the legacy custom_fields["badgeTemplate"] fallback: a NULL
+// badge_template column now means "no template" even when an object-typed
+// legacy value is still sitting in custom_fields (e.g. an event created
+// before the P5.1 cutover, whose legacy key migration 000024 didn't need to
+// touch because the column was already populated some other way, or a
+// pre-cutover fixture in a test/staging DB).
+//
+// zpl.ParseBadgeTemplate(nil) does NOT error — it returns a default,
+// element-less 50mm x 30mm @ 203dpi Config (zpl.go's `if raw == nil` branch)
+// — so effectiveBadgeTemplate returning nil still yields a 200, never a 400.
+// The correct pin is therefore on WHICH dimensions the generated ZPL
+// reflects: the legacy map's distinctive 45mm width must be ABSENT and the
+// column-absent default's 50mm width must be PRESENT, proving the legacy
+// key was never consulted — the exact inverse of the now-deleted
+// TestOpenAPIContract_BadgeZPL_FallsBackToLegacyMapWhenColumnAbsent.
+func TestOpenAPIContract_BadgeZPL_IgnoresLegacyKeyWhenColumnAbsent(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Tech Summit")
 	// event.BadgeTemplate left as its zero value (nil) — no column saved yet.
@@ -494,15 +509,19 @@ func TestOpenAPIContract_BadgeZPL_FallsBackToLegacyMapWhenColumnAbsent(t *testin
 		t.Fatalf("BadgeZPL: %v", err)
 	}
 	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("want 200 (a NULL column falls to zpl's own nil-template default, not an error), got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	var got BadgeZPLResponse
 	if err := jsonUnmarshalBody(rec, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	want := wantPWDirective(45, 203)
-	if !strings.Contains(got.ZPL, want) {
-		t.Fatalf("ZPL = %q, want it to contain %q (legacy map dims, width_mm=45) — fallback broken", got.ZPL, want)
+	legacyDims := wantPWDirective(45, 203)
+	if strings.Contains(got.ZPL, legacyDims) {
+		t.Fatalf("ZPL = %q, must NOT contain %q — the legacy map's dims leaked through, fallback not removed", got.ZPL, legacyDims)
+	}
+	defaultDims := wantPWDirective(50, 203)
+	if !strings.Contains(got.ZPL, defaultDims) {
+		t.Fatalf("ZPL = %q, want it to contain %q — the column-absent default (50mm), proving effectiveBadgeTemplate returned nil", got.ZPL, defaultDims)
 	}
 	validateResponse(t, http.MethodPost, path, rec)
 }
@@ -533,10 +552,9 @@ func readinessBadgeStep(t *testing.T, rec *httptest.ResponseRecorder, path strin
 
 // TestContractGetEventReadinessBadgeTemplateColumn extends
 // TestContractGetEventReadinessBadgeTemplateShapes (openapi_contract_events_p1_test.go)
-// for the P3.1 dedicated badge_template column: the "badge" readiness step
-// must read the column ahead of the legacy custom_fields map, applying the
-// same "non-empty elements array" done-rule to it (brief Step 1, readiness
-// cases 1-3).
+// for the dedicated badge_template column: the "badge" readiness step reads
+// ONLY the column (P5.2 removed the legacy custom_fields map fallback),
+// applying the "non-empty elements array" done-rule to it.
 func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
 	tenantID := uuid.New()
 	fs := func(event *models.Event) *fakeStore {
@@ -572,8 +590,9 @@ func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
 		t.Fatalf("column template with elements must be badge=done, got status=%s ready=%v", status, ready)
 	}
 
-	// (2) Column NULL (never saved) + legacy map with elements → fallback,
-	// still done.
+	// (2) Column NULL (never saved) + legacy map with elements → the legacy
+	// fallback is gone post-P5.2, so this must be not_done despite the
+	// legacy value looking "done".
 	legacyOnly := contractEvent(tenantID, "Legacy Map Only")
 	legacyOnly.CustomFields = map[string]interface{}{
 		"badgeTemplate": map[string]interface{}{
@@ -584,8 +603,8 @@ func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
 		},
 	}
 	rec, path = run(legacyOnly)
-	if status, ready := readinessBadgeStep(t, rec, path); status != readinessDone || !ready {
-		t.Fatalf("legacy map fallback (no column yet) must be badge=done, got status=%s ready=%v", status, ready)
+	if status, ready := readinessBadgeStep(t, rec, path); status != readinessNotDone || ready {
+		t.Fatalf("legacy map alone (no column) must be badge=not_done post-P5.2 (fallback removed), got status=%s ready=%v", status, ready)
 	}
 
 	// (3) Column NULL + no legacy value either → not done.
@@ -596,15 +615,15 @@ func TestContractGetEventReadinessBadgeTemplateColumn(t *testing.T) {
 	}
 }
 
-// TestContractBadgeTemplatePutThenReadinessRegression is the exact staleness
-// bug this task exists to prevent (reconciliation #7/#8): an event has a
-// "done"-looking legacy custom_fields map (elements present) from before
-// P3.1. A PUT to /badge-template saves a brand-new column template with an
-// EMPTY elements array (the shape a fresh badge-editor canvas produces).
-// Readiness must flip to NOT done — the column, even though "emptier" than
-// the legacy value, wins because it is the only value PutBadgeTemplate keeps
-// current. A regression here means readiness/badge_zpl silently serve stale
-// pre-P3.1 data forever after the first column save.
+// TestContractBadgeTemplatePutThenReadinessRegression pins P5.2's
+// column-only contract end-to-end: an event carries a "done"-looking legacy
+// custom_fields["badgeTemplate"] map (elements present) — the pre-P5.2
+// legacy shape. Readiness must NOT read it at all (the fallback is
+// removed), so the badge step starts not_done despite the legacy value
+// looking complete. A PUT to /badge-template then saves a real column
+// template with a non-empty elements array, and readiness must flip to
+// done — proving the column, not the legacy key, is what readiness/badge_zpl
+// actually observe.
 func TestContractBadgeTemplatePutThenReadinessRegression(t *testing.T) {
 	tenantID := uuid.New()
 	event := contractEvent(tenantID, "Stale Legacy After Column PUT")
@@ -650,18 +669,18 @@ func TestContractBadgeTemplatePutThenReadinessRegression(t *testing.T) {
 		return rec
 	}
 
-	// Precondition: before any column PUT, readiness reads the legacy map
-	// fallback and reports done.
+	// Precondition: the legacy map is ignored entirely — not_done even
+	// though it has elements, since P5.2 removed the fallback.
 	rec := getReadiness()
-	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessDone || !ready {
-		t.Fatalf("precondition failed: legacy map must read as done before any column PUT, got status=%s ready=%v", status, ready)
+	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessNotDone || ready {
+		t.Fatalf("precondition failed: legacy map must be ignored (not_done) before any column PUT, got status=%s ready=%v", status, ready)
 	}
 
-	// PUT a fresh, empty-elements column template — version 0 since none has
-	// been saved via this endpoint yet.
+	// PUT a real column template with a non-empty elements array — version 0
+	// since none has been saved via this endpoint yet.
 	putPath := "/api/events/" + event.ID.String() + "/badge-template"
 	c, rec := newAuthedContext(e, http.MethodPut, putPath,
-		`{"template":{"width_mm":50,"height_mm":30,"dpi":203,"elements":[]},"version":0}`, tenantID.String(), "admin")
+		`{"template":{"width_mm":50,"height_mm":30,"dpi":203,"elements":[{"id":"new-el"}]},"version":0}`, tenantID.String(), "admin")
 	c.SetPath("/api/events/:id/badge-template")
 	c.SetParamNames("id")
 	c.SetParamValues(event.ID.String())
@@ -672,9 +691,10 @@ func TestContractBadgeTemplatePutThenReadinessRegression(t *testing.T) {
 		t.Fatalf("PutBadgeTemplate: want 200, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 
-	// The regression check: readiness must now report NOT done.
+	// The regression check: readiness must now report done — from the
+	// column alone, never from the legacy key.
 	rec = getReadiness()
-	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessNotDone || ready {
-		t.Fatalf("after PUTting an empty-elements column template, badge must be not_done (column must win over the stale, done-looking legacy map), got status=%s ready=%v", status, ready)
+	if status, ready := readinessBadgeStep(t, rec, readinessPath); status != readinessDone || !ready {
+		t.Fatalf("after PUTting a column template, badge must be done (column is the sole source of truth), got status=%s ready=%v", status, ready)
 	}
 }

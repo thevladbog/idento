@@ -125,32 +125,24 @@ func (h *Handler) PutBadgeTemplate(c echo.Context) error {
 	return c.JSON(http.StatusOK, BadgeTemplateResponse{Template: req.Template, Version: newVersion})
 }
 
-// effectiveBadgeTemplate is the single source of truth for "what is this
-// event's badge template right now", shared by handler/badge_zpl.go and
-// handler/readiness.go. It returns:
-//   - the dedicated badge_template column, decoded from its raw JSON bytes
-//     into a generic interface{} (the same map/string shape callers already
-//     branch on), when the column is non-NULL; else
-//   - the legacy custom_fields["badgeTemplate"] value, untouched.
+// effectiveBadgeTemplate returns the event's badge template from the
+// dedicated badge_template column, decoded from its raw JSON bytes into the
+// generic interface{} shape callers branch on (map for a real template,
+// string for a legacy string-encoded one). Returns nil when the column is
+// empty/NULL — i.e. "no template". Shared by handler/badge_zpl.go and
+// handler/readiness.go, both of which nil-check the result.
 //
-// The column always wins when present, even if it is "emptier" than the
-// legacy value (e.g. a just-created, element-less template vs. a populated
-// pre-P3.1 legacy template) — PutBadgeTemplate (above) never writes
-// custom_fields["badgeTemplate"], so once a column value exists it is the
-// only value being kept current. Treating the legacy key as a tiebreaker
-// would let readiness/badge_zpl silently serve stale pre-P3.1 data forever
-// after the first column save (reconciliation #7/#8).
+// P5.2 removed the pre-cutover custom_fields["badgeTemplate"] fallback: the
+// column is the sole source of truth now that the legacy web editor is gone
+// (migration 000024 backfilled any column-NULL legacy template and scrubbed
+// the legacy key).
 func effectiveBadgeTemplate(event *models.Event) interface{} {
-	if len(event.BadgeTemplate) > 0 {
-		var decoded interface{}
-		if err := json.Unmarshal(event.BadgeTemplate, &decoded); err == nil {
-			return decoded
-		}
-		// Column bytes are always written by UpdateEventBadgeTemplate from a
-		// request body already validated as a JSON object (PutBadgeTemplate
-		// above), so this branch should be unreachable in practice. Falling
-		// through to the legacy key here is a "no worse than before P3.1"
-		// default, not a correctness requirement.
+	if len(event.BadgeTemplate) == 0 {
+		return nil
 	}
-	return event.CustomFields["badgeTemplate"]
+	var decoded interface{}
+	if err := json.Unmarshal(event.BadgeTemplate, &decoded); err != nil {
+		return nil
+	}
+	return decoded
 }
