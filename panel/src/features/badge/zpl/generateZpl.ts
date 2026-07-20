@@ -320,26 +320,46 @@ function generateQRCodeZPL(element: RawBadgeElement, data: Record<string, string
   return `^FO${x},${y}^BQN,2,${moduleSize}^FDQA,${escapeZplData(qrData)}^FS`;
 }
 
-// Zebra's own factory default module width (^BY's default, 2 dots) -- used
-// here because neither this generator nor its backend/zpl.go twin ever
-// emits ^BY, so the printer's built-in default module width is the width
-// every barcode this pipeline generates actually prints at.
-const BARCODE_MODULE_WIDTH_DOTS = 2;
+// Fit-to-width Code 128 (2026-07-20-badge-barcode-fit-to-width-design.md):
+// the module width is COMPUTED from the zone and data length and emitted as an
+// explicit ^BY, so the estimate and the real print use the identical width --
+// superseding PR #90's fixed-2 assumption, which broke on any printer whose
+// persisted ^BY default wasn't 2 (the ZD410 center-shift bug). Both this file
+// and its backend/zpl.go twin share these constants verbatim.
+export const BARCODE_QUIET_MODULES = 10; // Code 128 min quiet zone, each side
+export const BARCODE_MIN_MODULE_DOTS = 2; // reliable-scan floor @203dpi
+export const BARCODE_MAX_MODULE_DOTS = 3; // short-code ceiling
 
-/**
- * Estimated Code 128 rendered width in dots for `dataLength` input
- * characters -- APPROXIMATE (see design doc
- * docs/superpowers/specs/2026-07-20-badge-barcode-alignment-design.md):
- * assumes Code Set B (one symbol character per input character, 11 modules
- * each) plus a start character and a checksum character (also 11 modules
- * each) and the wider 13-module stop character. All-numeric data may print
- * NARROWER than this estimate if the printer's firmware auto-switches to
- * Code Set C (two digits packed per symbol character) -- this is a
- * documented upper-bound estimate, not an exact value.
- */
-export function estimateBarcodeWidthDots(dataLength: number): number {
-  const moduleCount = (dataLength + 2) * 11 + 13;
-  return moduleCount * BARCODE_MODULE_WIDTH_DOTS;
+// Total footprint in modules INCLUDING quiet zones -- the fit calc, so bars
+// plus their required margins fit the zone.
+export function barcodeFootprintModules(dataLength: number): number {
+  return (dataLength + 2) * 11 + 13 + 2 * BARCODE_QUIET_MODULES;
+}
+
+// Bar-only module count -- the centering estimate; quiet zones are layout
+// margin, not part of the ^FO-anchored symbol width.
+function barcodeFootprintBarModules(dataLength: number): number {
+  return (dataLength + 2) * 11 + 13;
+}
+
+export function barcodeModuleWidthDots(dataLength: number, zoneWidthDots: number): number {
+  const fit = Math.floor(zoneWidthDots / barcodeFootprintModules(dataLength));
+  return Math.min(BARCODE_MAX_MODULE_DOTS, Math.max(BARCODE_MIN_MODULE_DOTS, fit));
+}
+
+// True when the code can't fit its zone even at the readability floor -- the
+// panel surfaces an advisory warning; zpl.go ignores it (best-effort print).
+export function barcodeOverflows(dataLength: number, zoneWidthDots: number): boolean {
+  return barcodeFootprintModules(dataLength) * BARCODE_MIN_MODULE_DOTS > zoneWidthDots;
+}
+
+// Estimated rendered BAR width in dots, using the COMPUTED module width so the
+// ^FO centering below matches the emitted ^BY. Residual: numeric runs pack two
+// digits per symbol under Code Set C, so a numeric-heavy code prints slightly
+// NARROWER than this -- a small, bounded left bias, not the old unbounded
+// printer-^BY-state error.
+export function estimateBarcodeWidthDots(dataLength: number, moduleWidthDots: number): number {
+  return barcodeFootprintBarModules(dataLength) * moduleWidthDots;
 }
 
 /**
@@ -373,19 +393,27 @@ export function barcodeFieldOrigin(
   element: Pick<RawBadgeElement, "x" | "width" | "align">,
   dpi: number,
   dataLength: number,
-): { x: number; rightJustified: boolean; estimatedWidthDots: number } {
+): {
+  x: number;
+  rightJustified: boolean;
+  estimatedWidthDots: number;
+  moduleWidthDots: number;
+  overflows: boolean;
+} {
   const zoneLeftDots = mmToDots(element.x, dpi);
   const zoneWidthDots = mmToDots(element.width || 30, dpi);
-  const estimatedWidthDots = estimateBarcodeWidthDots(dataLength);
+  const moduleWidthDots = barcodeModuleWidthDots(dataLength, zoneWidthDots);
+  const estimatedWidthDots = estimateBarcodeWidthDots(dataLength, moduleWidthDots);
+  const overflows = barcodeOverflows(dataLength, zoneWidthDots);
 
   if (element.align === "right") {
-    return { x: zoneLeftDots + zoneWidthDots, rightJustified: true, estimatedWidthDots };
+    return { x: zoneLeftDots + zoneWidthDots, rightJustified: true, estimatedWidthDots, moduleWidthDots, overflows };
   }
   if (element.align === "center") {
     const offset = Math.max(0, Math.round((zoneWidthDots - estimatedWidthDots) / 2));
-    return { x: zoneLeftDots + offset, rightJustified: false, estimatedWidthDots };
+    return { x: zoneLeftDots + offset, rightJustified: false, estimatedWidthDots, moduleWidthDots, overflows };
   }
-  return { x: zoneLeftDots, rightJustified: false, estimatedWidthDots };
+  return { x: zoneLeftDots, rightJustified: false, estimatedWidthDots, moduleWidthDots, overflows };
 }
 
 /**
@@ -413,8 +441,12 @@ function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, strin
   const origin = barcodeFieldOrigin(element, dpi, barcodeData.length);
   const foSuffix = origin.rightJustified ? ",1" : "";
 
+  // ^BY sets the module width for the barcode that follows -- emitted
+  // explicitly so the print width equals estimateBarcodeWidthDots's assumption
+  // (fit-to-width design). Persistent modal command, but this label has one
+  // barcode and ^BY immediately precedes it, so there's no cross-element leak.
   // ^BC = Code 128
-  return `^FO${origin.x},${y}${foSuffix}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
+  return `^BY${origin.moduleWidthDots}^FO${origin.x},${y}${foSuffix}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
 }
 
 /**
