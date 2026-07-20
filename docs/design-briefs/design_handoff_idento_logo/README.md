@@ -41,6 +41,7 @@ The main badge is centered at (32,32); the check disc is a corner accent that sl
 > carries `alt="Idento"`.
 
 ## Assets
+
 | File | Use |
 |---|---|
 | `logo-mark.svg` | Primary mark, any light background (masked ring) |

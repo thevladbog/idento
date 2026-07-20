@@ -18,11 +18,9 @@ describe("QrLoginScreen", () => {
   });
 
   it("shows the Idento brand mark", () => {
-    global.fetch = vi.fn().mockImplementation(() =>
-      new Response(JSON.stringify({ mode: "saas", version: "test", license: null }), {
-        status: 200, headers: { "Content-Type": "application/json" },
-      }),
-    );
+    // QrLoginScreen issues no request on mount (unlike LoginScreen it has no
+    // useInstance call), so no fetch stub is needed — the mark renders
+    // statically.
     renderWithQuery(<QrLoginScreen />);
     expect(screen.getByRole("img", { name: "Idento" })).toBeInTheDocument();
   });

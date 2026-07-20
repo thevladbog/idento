@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
+import { http, HttpResponse } from "msw";
 import { AppShell } from "./AppShell";
 import { saveSession } from "../../shared/api/session";
 import type { AuthResponse } from "../../shared/api/types";
 import { ThemeProvider } from "../../shared/theme/ThemeProvider";
+import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
 // AppShell renders `Link` (directly, and via NavDrawer) for in-app
@@ -21,15 +23,15 @@ const AUTH: AuthResponse = {
   current_tenant: { id: "t1", name: "Acme Events" },
 };
 
-// openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch Response,
-// so mocks need real Response instances rather than bare `{ok,status,json}`
-// objects.
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+// AppShell's only mount request is useInstance's GET /api/instance (its
+// sub-components — OrgSwitcher/NavDrawer/ImpersonationBanner — read local
+// session state, they don't fetch). Default to saas; the on-prem case
+// overrides via server.use().
+const server = startMswServer(
+  http.get("http://api.test/api/instance", () =>
+    HttpResponse.json({ mode: "saas", version: "1.0", license: null }),
+  ),
+);
 
 describe("AppShell", () => {
   beforeEach(() => {
@@ -40,7 +42,6 @@ describe("AppShell", () => {
   });
 
   it("renders the nav links and the children content, no ON-PREM tag on saas", () => {
-    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "saas", version: "1.0", license: null }));
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>
@@ -63,7 +64,6 @@ describe("AppShell", () => {
   });
 
   it("renders the Idento brand mark in the header", () => {
-    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "saas", version: "1.0", license: null }));
     const queryClient = new QueryClient();
     const { container } = render(
       <QueryClientProvider client={queryClient}>
@@ -78,7 +78,11 @@ describe("AppShell", () => {
   });
 
   it("shows the ON-PREM version tag when the instance is on-prem", async () => {
-    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "onprem", version: "2.4.1", license: null }));
+    server.use(
+      http.get("http://api.test/api/instance", () =>
+        HttpResponse.json({ mode: "onprem", version: "2.4.1", license: null }),
+      ),
+    );
     const queryClient = new QueryClient();
     render(
       <QueryClientProvider client={queryClient}>

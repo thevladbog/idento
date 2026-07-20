@@ -36,8 +36,11 @@
 The handoff is untracked in the primary checkout, invisible from this worktree. Vendor **only** `assets/` + `README.md` (not the HTML reference or `support.js`):
 
 ```bash
-cd /Users/thevladbog/PRSOME/idento/.claude/worktrees/focused-pare-df1923
-SRC="/Users/thevladbog/PRSOME/idento/docs/design-briefs/design_handoff_idento_logo"
+# Run from anywhere inside this branch's git worktree.
+cd "$(git rev-parse --show-toplevel)"
+# The handoff is untracked in the PRIMARY checkout (a sibling of the worktree),
+# so point SRC at it there (machine-specific path — substitute your own):
+SRC="<PRIMARY_CHECKOUT>/docs/design-briefs/design_handoff_idento_logo"
 mkdir -p docs/design-briefs/design_handoff_idento_logo
 cp -R "$SRC/assets" docs/design-briefs/design_handoff_idento_logo/assets
 cp "$SRC/README.md" docs/design-briefs/design_handoff_idento_logo/README.md
@@ -111,7 +114,7 @@ Run:
 bash docs/design-briefs/design_handoff_idento_logo/generate-favicons.sh
 ```
 Expected tail output includes three sub-images:
-```
+```text
 favicon.ico[0] ICO 16x16 ...
 favicon.ico[1] ICO 32x32 ...
 favicon.ico[2] ICO 48x48 ...
