@@ -136,31 +136,41 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           { x: element.x, y: element.y, width: footprint.width, height: footprint.height },
           nextConfig,
         );
-        // Only an element that already carries an EXPLICIT width/height
-        // gets that dimension re-clamped -- a footprint-only element (e.g.
-        // a fresh text element, which renders/clamps against
-        // DEFAULT_SIZE_MM's fallback everywhere else) must never have an
-        // explicit width/height INVENTED for it here; its position alone
-        // is enough to keep it addressable, same as every other path that
-        // reads `elementFootprint` purely for clamp-bounds math without
-        // writing it back onto the element.
-        const hasExplicitSize = element.width !== undefined || element.height !== undefined;
-        const size = hasExplicitSize
-          ? clampSize({ x: pos.x, y: pos.y, width: footprint.width, height: footprint.height }, nextConfig)
-          : null;
-        const nextWidth = size && element.width !== undefined ? size.width : element.width;
-        const nextHeight = size && element.height !== undefined ? size.height : element.height;
-
-        if (pos.x === element.x && pos.y === element.y && nextWidth === element.width && nextHeight === element.height) {
-          return element; // unchanged: same reference (mirrors "update"/"remove"'s reference-preservation)
+        // A FULLY footprint-only element (NEITHER width nor height
+        // explicit -- e.g. a fresh text element, which renders/clamps
+        // against DEFAULT_SIZE_MM's fallback everywhere else) never gets a
+        // width/height INVENTED for it here; its position alone is enough
+        // to keep it addressable, same as every other path that reads
+        // `elementFootprint` purely for clamp-bounds math without writing
+        // it back onto the element.
+        if (element.width === undefined && element.height === undefined) {
+          if (pos.x === element.x && pos.y === element.y) return element; // same reference
+          return { ...element, x: pos.x, y: pos.y };
         }
-        return {
-          ...element,
-          x: pos.x,
-          y: pos.y,
-          ...(nextWidth !== undefined ? { width: nextWidth } : {}),
-          ...(nextHeight !== undefined ? { height: nextHeight } : {}),
-        };
+        // An element with AT LEAST ONE explicit dimension is no longer
+        // fully flexible, so BOTH sides -- the explicit one and the other
+        // side's fallback -- get clamped and written back together: only
+        // writing back the already-explicit side (as an earlier version of
+        // this case did) left a partially-sized element's fallback side
+        // (e.g. a barcode with a stored `width` but no `height`) silently
+        // un-clamped, still overflowing a shrunk label despite this case's
+        // whole point being "never leave an element hanging off the new
+        // bounds." `minMm: 0` (NOT clampSize's own `minMm: 1` default) is
+        // deliberate: that 1mm floor is form-input validation for
+        // PropertiesPane's typed Width/Height fields (which DO want it),
+        // not a document-fit rule -- with the default floor, a config
+        // change with NO shrink at all (e.g. a dpi-only patch) would still
+        // silently bump any deliberately sub-1mm element (ElementsPane's
+        // own 0.5mm-tall line default) up to 1mm on every dispatch.
+        const size = clampSize(
+          { x: pos.x, y: pos.y, width: footprint.width, height: footprint.height },
+          nextConfig,
+          0,
+        );
+        if (pos.x === element.x && pos.y === element.y && size.width === element.width && size.height === element.height) {
+          return element; // same reference: nothing this element needs actually changed
+        }
+        return { ...element, x: pos.x, y: pos.y, width: size.width, height: size.height };
       });
       return { ...state, doc: { ...nextConfig, elements }, dirty: true };
     }

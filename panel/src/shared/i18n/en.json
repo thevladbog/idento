@@ -148,6 +148,7 @@
   "badgePropsEmpty": "Select an element to edit its properties, or set the label's overall size below.",
   "badgePropsDocTitle": "Document settings",
   "badgePropsDpi": "DPI",
+  "badgePropsDpiCustom": "{{dpi}} (custom)",
   "badgePropsDocShrinkHint": "Shrinking the label moves or resizes elements that no longer fit, so they always stay on the printed badge.",
   "badgePropsX": "X (mm)",
   "badgePropsY": "Y (mm)",

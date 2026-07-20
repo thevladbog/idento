@@ -110,6 +110,33 @@ describe("PropertiesPane", () => {
 
       expect(onUpdateConfig).not.toHaveBeenCalled();
     });
+
+    // Review fix: a template saved before this picker existed (or edited
+    // via a raw API call, same as the incident that prompted this feature)
+    // can carry a dpi outside the three listed options. A controlled
+    // <select> whose value matches no <option> falls back to silently
+    // DISPLAYING the first option instead -- same "honest disabled
+    // placeholder" fix as the font select's own missingFontFamily case.
+    it("shows a disabled placeholder option (not a silent fallback to 203) for a dpi outside 203/300/600", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 250 } });
+
+      const select = screen.getByLabelText("DPI");
+      expect(select).toHaveValue("250");
+
+      const options = Array.from(select.querySelectorAll("option")) as HTMLOptionElement[];
+      expect(options.map((o) => o.value)).toEqual(["203", "300", "600", "250"]);
+      const placeholder = options.find((o) => o.value === "250")!;
+      expect(placeholder.disabled).toBe(true);
+      expect(placeholder.textContent).toBe("250 (custom)");
+    });
+
+    it("renders no placeholder option for a listed dpi", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 300 } });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
+    });
   });
 
   describe("common section (position/size, all types)", () => {

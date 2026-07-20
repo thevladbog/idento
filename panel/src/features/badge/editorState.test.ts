@@ -190,8 +190,8 @@ describe("editorReducer", () => {
       // at all: position clamps to the origin (maxX/maxY floor at 0 per
       // clampPosition's own "footprint bigger than dimension" handling),
       // then size clamps to whatever room is left from that clamped
-      // position to the new edge (clampSize's own minMm=1 floor never
-      // applies here since 8mm of room remains).
+      // position to the new edge (8mm of room remains either way, so
+      // this case doesn't exercise the reducer's own minMm:0 override).
       const next = editorReducer(prior, { type: "updateConfig", patch: { width_mm: 8, height_mm: 8 } });
 
       expect(next.doc.elements[1]).toEqual({ id: "e2", type: "box", x: 0, y: 0, width: 8, height: 8 });
@@ -225,6 +225,53 @@ describe("editorReducer", () => {
       expect(next.doc.elements[0]).toBe(prior.doc.elements[0]);
       expect(next.doc.elements[1]).toBe(prior.doc.elements[1]);
       expect(next.dirty).toBe(true);
+    });
+
+    it("never floor-bumps a deliberately sub-1mm explicit dimension on an unrelated config change (review fix)", () => {
+      // ElementsPane's own line default is 0.5mm tall (ELEMENT_DEFAULTS.line
+      // in ElementsPane.tsx) -- clampSize's OWN default minMm=1 would floor
+      // that to 1mm on every single updateConfig dispatch, even one that
+      // never needed to touch this element at all (a dpi-only patch:
+      // width_mm/height_mm, and therefore this element's available room,
+      // don't change). The reducer must pass minMm:0 to clampSize instead,
+      // since a 1mm floor is PropertiesPane's typed-field validation
+      // concern, not "does this still fit the document."
+      const thinLine: BadgeElement = { id: "e3", type: "line", x: 2, y: 2, width: 5, height: 0.5 };
+      const prior = stateWith({
+        doc: { ...baseDoc, elements: [...baseDoc.elements, thinLine] },
+      });
+
+      const next = editorReducer(prior, { type: "updateConfig", patch: { dpi: 600 } });
+
+      expect(next.doc.elements[2]).toEqual(thinLine);
+    });
+
+    it("clamps BOTH sides of a partially-sized element, not just the explicitly-set one (review fix)", () => {
+      // e1 here carries an EXPLICIT width but no height (unlike baseDoc's
+      // own e1, which has neither) -- e.g. the operator typed only the
+      // Width field on a fresh text element via PropertiesPane, which
+      // dispatches a single-field "update" patch. Its height still falls
+      // back to DEFAULT_SIZE_MM.text.height (8mm) everywhere it's
+      // rendered/clamped. Shrinking height_mm to 5mm must clamp THAT
+      // fallback down too -- writing back only the explicit `width` (as an
+      // earlier version of this reducer case did) would leave the element
+      // still rendering/printing 8mm tall on a 5mm-tall label.
+      const partial: BadgeElement = { id: "e1", type: "text", x: 1, y: 1, width: 40, text: "Hi" };
+      const prior = stateWith({
+        doc: { width_mm: 90, height_mm: 55, dpi: 300, elements: [partial] },
+      });
+
+      const next = editorReducer(prior, { type: "updateConfig", patch: { height_mm: 5 } });
+
+      // Position clamps FIRST, against the 8mm fallback footprint: y=1 no
+      // longer fits an element that tall on a 5mm-tall label at all
+      // (maxY = max(5 - 8, 0) = 0), so y clamps to 0 before size is even
+      // considered. Size then clamps against THAT position: with 5mm of
+      // room from y=0 to the new edge, height clamps to 5 (width, still
+      // well within the 90mm-wide label, is untouched).
+      expect(next.doc.elements[0]).toEqual({
+        id: "e1", type: "text", x: 1, y: 0, width: 40, height: 5, text: "Hi",
+      });
     });
   });
 

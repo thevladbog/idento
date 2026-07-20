@@ -136,6 +136,12 @@ export function PropertiesPane({
     onUpdateConfig({ dpi: Number(event.target.value) });
   }
 
+  // A template saved before this feature existed (or before the operator
+  // ever picks a new value from this select) can carry any positive dpi --
+  // zpl.ParseBadgeTemplate only rejects <= 0 -- not just one of
+  // DPI_OPTIONS's three. See the disabled placeholder option below.
+  const isKnownDpi = DPI_OPTIONS.some((dpi: number) => dpi === config.dpi);
+
   if (!element) {
     return (
       <div className="flex h-full flex-col gap-4 rounded-lg border border-border p-4" data-testid="badge-pane-properties">
@@ -171,6 +177,22 @@ export function PropertiesPane({
                   {dpi}
                 </option>
               ))}
+              {/* A template saved before this picker existed (or edited via
+                  a raw API call -- exactly how the Zebra hardware run that
+                  prompted this feature ended up fixing a wrong dpi in the
+                  first place) can carry a dpi outside the three listed
+                  options. Same "honest disabled placeholder" pattern as the
+                  font select's own missingFontFamily option above: without
+                  it, this controlled <select>'s value wouldn't match any
+                  <option>, and the browser would silently DISPLAY the
+                  first option (203) while the actual saved config.dpi
+                  stayed whatever it really was -- showing the wrong value
+                  without changing it. */}
+              {!isKnownDpi && (
+                <option value={config.dpi} disabled>
+                  {t("badgePropsDpiCustom", { dpi: config.dpi })}
+                </option>
+              )}
             </Select>
           </div>
           {/* Always-visible, same "editing aid honesty" convention as
