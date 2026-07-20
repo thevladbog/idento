@@ -23,7 +23,7 @@
 ### Task 1: Vendor handoff + generate & distribute favicon assets
 
 **Files:**
-- Create (vendored, binary/text): `docs/design-briefs/design_handoff_idento_logo/**` (copied from the primary checkout at `/Users/thevladbog/PRSOME/idento/docs/design-briefs/design_handoff_idento_logo/`)
+- Create (vendored): `docs/design-briefs/design_handoff_idento_logo/assets/**` and `docs/design-briefs/design_handoff_idento_logo/README.md` **only** — do NOT vendor `Idento Logo.dc.html` or `support.js` (the HTML design reference stays out of git).
 - Create: `docs/design-briefs/design_handoff_idento_logo/generate-favicons.sh`
 - Modify: `docs/design-briefs/design_handoff_idento_logo/README.md` (Lockups section)
 - Create (generated): `web/public/{favicon.ico,favicon.svg,apple-touch-icon.png,icon-192.png,icon-512.png,maskable-512.png,logo-mark.svg,logo-mark-white.svg}` and the same eight files under `panel/public/` and `landing/public/`
@@ -33,15 +33,18 @@
 
 - [ ] **Step 1: Copy the handoff into the repo**
 
-The handoff is untracked in the primary checkout, invisible from this worktree. Copy it in:
+The handoff is untracked in the primary checkout, invisible from this worktree. Vendor **only** `assets/` + `README.md` (not the HTML reference or `support.js`):
 
 ```bash
 cd /Users/thevladbog/PRSOME/idento/.claude/worktrees/focused-pare-df1923
-cp -R "/Users/thevladbog/PRSOME/idento/docs/design-briefs/design_handoff_idento_logo" docs/design-briefs/
+SRC="/Users/thevladbog/PRSOME/idento/docs/design-briefs/design_handoff_idento_logo"
+mkdir -p docs/design-briefs/design_handoff_idento_logo
+cp -R "$SRC/assets" docs/design-briefs/design_handoff_idento_logo/assets
+cp "$SRC/README.md" docs/design-briefs/design_handoff_idento_logo/README.md
 find docs/design-briefs/design_handoff_idento_logo -name .DS_Store -delete
 ls docs/design-briefs/design_handoff_idento_logo/assets
 ```
-Expected: the 12 source SVGs listed (`logo-mark.svg`, `logo-mark-white.svg`, `favicon-16.svg`, `favicon-32.svg`, `app-icon-ios.svg`, …).
+Expected: the 12 source SVGs listed (`logo-mark.svg`, `logo-mark-white.svg`, `favicon-16.svg`, `favicon-32.svg`, `app-icon-ios.svg`, …). The dir contains `assets/`, `README.md`, and (after Step 2) `generate-favicons.sh` — nothing else.
 
 - [ ] **Step 2: Write the generation script**
 
