@@ -157,6 +157,18 @@ describe("ZplPreviewModal", () => {
     expect(pre.textContent).toBe(LATIN_EXPECTED_ZPL);
   });
 
+  it("wraps unbroken raster tokens (break-all) so ^GFA hex payloads can't grow the pane off-screen", async () => {
+    renderModal();
+
+    const pre = await findGeneratedPre();
+    // jsdom computes no layout -- the class pair IS the observable contract:
+    // whitespace-pre-wrap alone cannot wrap a ^GFA line's single giant hex
+    // token (the 2026-07-20 Zebra-run finding); break-all is what makes it
+    // wrappable.
+    expect(pre.className).toContain("whitespace-pre-wrap");
+    expect(pre.className).toContain("break-all");
+  });
+
   it("shows an in-modal error line for a Cyrillic doc instead of a silently empty tab (jsdom has no canvas)", async () => {
     renderModal({ doc: CYRILLIC_DOC });
 

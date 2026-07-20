@@ -117,6 +117,19 @@ let consumeScanResponses: Array<{ code: string; time: string }> = [];
 // for the wizard's Save path.
 let agentDefaultCalls: Array<{ default: string }> = [];
 let agentDefaultStatus = 200;
+// Edit-address mirror targets (the row-menu "Edit address…" action): ONE
+// shared, ordered log for BOTH agent printer endpoints -- the honest mirror
+// for a changed ip/port under the same name is remove-THEN-add (the agent's
+// /printers/add exists-check skips the config update for an already-known
+// name, so a bare re-add would silently revert to the old address on the
+// next agent restart), and that ordering is exactly what these tests pin.
+let agentPrinterMirrorCalls: Array<{ op: "remove" | "add"; body: Record<string, unknown> }> = [];
+let removePrinterStatus = 200;
+let addPrinterStatus = 200;
+// Codex PR #85 review, Finding 3: proves the live printers cache gets
+// refreshed after a successful address mirror (parity with PrinterWizard's
+// own manual-add path, which already invalidates this same query).
+let agentPrintersFetchCount = 0;
 
 const server = startMswServer(
   http.get("http://api.test/api/equipment/machines/:machineId", () => {
@@ -152,6 +165,7 @@ const server = startMswServer(
     return HttpResponse.json(AGENT_INFO);
   }),
   http.get("http://agent.test/printers", () => {
+    agentPrintersFetchCount += 1;
     if (agentPrintersStatus !== 200) return new HttpResponse(null, { status: agentPrintersStatus });
     return HttpResponse.json(agentPrinters);
   }),
@@ -161,6 +175,18 @@ const server = startMswServer(
     agentDefaultCalls.push(body);
     if (agentDefaultStatus !== 200) return new HttpResponse(null, { status: agentDefaultStatus });
     return HttpResponse.json(body);
+  }),
+  http.post("http://agent.test/printers/remove", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    agentPrinterMirrorCalls.push({ op: "remove", body });
+    if (removePrinterStatus !== 200) return new HttpResponse("could not remove printer", { status: removePrinterStatus });
+    return HttpResponse.json({ status: "removed", name: body.name });
+  }),
+  http.post("http://agent.test/printers/add", async ({ request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    agentPrinterMirrorCalls.push({ op: "add", body });
+    if (addPrinterStatus !== 200) return new HttpResponse("could not add printer", { status: addPrinterStatus });
+    return HttpResponse.json({ status: "added", name: body.name, address: `${body.ip}:${body.port}` }, { status: 201 });
   }),
   http.get("http://agent.test/scanners", () => HttpResponse.json(agentScanners)),
   http.get("http://agent.test/scanners/ports", () =>
@@ -217,6 +243,10 @@ describe("EquipmentPage", () => {
     consumeScanResponses = [];
     agentDefaultCalls = [];
     agentDefaultStatus = 200;
+    agentPrinterMirrorCalls = [];
+    removePrinterStatus = 200;
+    addPrinterStatus = 200;
+    agentPrintersFetchCount = 0;
   });
 
   describe("connected (board 5a)", () => {
@@ -945,4 +975,258 @@ describe("EquipmentPage", () => {
       await waitFor(() => expect(deleteCalls).toEqual(["dev-printer-live"]));
     });
   });
+
+  // The 2026-07-20 Zebra run's gap: a network printer's ip/port was only
+  // editable by DELETING and recreating the device. The row menu's "Edit
+  // address…" (network printers only) PATCHes config -- preserving
+  // agent_name (the stable agent-side link) and dpi -- then best-effort
+  // mirrors the change onto the agent as remove-THEN-add under the same
+  // name (see agentPrinterMirrorCalls' own comment for why a bare re-add
+  // would be dishonest). The backend clears test_passed_at on any
+  // config-changing PATCH (PR #83 round 2), so the dialog copy must surface
+  // the re-test consequence.
+  describe("edit address (network printers)", () => {
+    beforeEach(() => {
+      machineDevices = [
+        printerLive(),
+        // dpi included to prove the PATCH preserves config keys it does not
+        // edit (agent_name and dpi both survive the ip/port swap verbatim).
+        printerNotSeen({ config: { agent_name: "Godex_G500", ip: "10.0.0.5", port: 9100, dpi: 300 } }),
+        scannerWedge(),
+      ];
+      agentPrinters = [{ name: "HP_Smart_Tank_790", type: "system" }];
+    });
+
+    it("offers 'Edit address…' only on network printer rows -- not system printers, not scanners", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const networkRow = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(networkRow).getByRole("button", { name: /More actions/ }));
+      expect(await screen.findByRole("menuitem", { name: "Edit address…" })).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+
+      const systemRow = screen.getByTestId("equipment-device-row-dev-printer-live");
+      await user.click(within(systemRow).getByRole("button", { name: /More actions/ }));
+      expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Edit address…" })).not.toBeInTheDocument();
+      await user.keyboard("{Escape}");
+
+      const wedgeRow = screen.getByTestId("equipment-device-row-dev-scanner-wedge");
+      await user.click(within(wedgeRow).getByRole("button", { name: /More actions/ }));
+      expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Edit address…" })).not.toBeInTheDocument();
+    });
+
+    it("opens prefilled with the saved ip/port, surfaces the re-test consequence, PATCHes config with agent_name/dpi preserved, then mirrors remove-then-add onto the agent", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      const portInput = within(dialog).getByLabelText("Port");
+      expect(ipInput).toHaveValue("10.0.0.5");
+      expect(portInput).toHaveValue(9100);
+      // The config-change consequence (test_passed_at reset server-side)
+      // must be readable BEFORE the operator commits.
+      expect(within(dialog).getByText(/clears this printer's test status/)).toBeInTheDocument();
+
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.clear(portInput);
+      await user.type(portInput, "6101");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      expect(patchCalls[0]).toEqual({
+        deviceId: "dev-printer-notseen",
+        // config-only PATCH (no display_name), with agent_name and dpi
+        // carried over verbatim -- only ip/port change.
+        body: { config: { agent_name: "Godex_G500", ip: "10.0.0.77", port: 6101, dpi: 300 } },
+      });
+
+      // The agent mirror: remove FIRST, then add with the new address --
+      // both keyed by the unchanged agent_name, never display_name.
+      await waitFor(() =>
+        expect(agentPrinterMirrorCalls).toEqual([
+          { op: "remove", body: { name: "Godex_G500" } },
+          { op: "add", body: { name: "Godex_G500", ip: "10.0.0.77", port: 6101 } },
+        ]),
+      );
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    // Codex PR #85 review, Finding 2: Save used to stay enabled even with
+    // the prefilled (unchanged) address, so a no-op click still ran the
+    // registry PATCH AND the remove-then-add agent mirror -- a real risk,
+    // since a transient add failure AFTER a successful remove would delete
+    // a previously-working network printer from the agent for NO reason
+    // (nothing needed mirroring in the first place). Save now requires the
+    // address to actually differ from the saved config, on top of the
+    // wizard's own port-range rule.
+    it("Save stays disabled while the address is unchanged from the saved config, or the ip is empty, or the port is outside 1..65535", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      const portInput = within(dialog).getByLabelText("Port");
+      const save = within(dialog).getByRole("button", { name: "Save" });
+      // Nothing edited yet -- the prefilled address matches the saved
+      // config exactly, so there is nothing honest to save.
+      expect(save).toBeDisabled();
+
+      await user.clear(portInput);
+      await user.type(portInput, "6101");
+      expect(save).not.toBeDisabled();
+
+      // Edited BACK to the original port -- the address matches the saved
+      // config again, so Save goes back to disabled.
+      await user.clear(portInput);
+      await user.type(portInput, "9100");
+      expect(save).toBeDisabled();
+
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      expect(save).not.toBeDisabled();
+
+      await user.clear(portInput);
+      expect(save).toBeDisabled();
+      await user.type(portInput, "70000");
+      expect(save).toBeDisabled();
+      await user.clear(portInput);
+      await user.type(portInput, "6101");
+      expect(save).not.toBeDisabled();
+
+      await user.clear(ipInput);
+      expect(save).toBeDisabled();
+
+      expect(patchCalls).toHaveLength(0);
+    });
+
+    it("agent remove failure: warns visibly (dismissable), never attempts the add, and the registry PATCH stands", async () => {
+      removePrinterStatus = 500;
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      // The chain short-circuits: a failed remove must NOT be followed by an
+      // add (adding while the stale config entry survives is exactly the
+      // silently-reverts-on-restart state the sequence exists to avoid).
+      const warning = await screen.findByTestId("equipment-address-mirror-warning");
+      expect(warning).toHaveTextContent("couldn't apply");
+      expect(agentPrinterMirrorCalls).toEqual([{ op: "remove", body: { name: "Godex_G500" } }]);
+      // Warn, don't fail: the PATCH is not rolled back or retried.
+      expect(patchCalls).toHaveLength(1);
+
+      await user.click(within(warning).getByRole("button", { name: "Close" }));
+      expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    it("agent add failure after a successful remove: both calls recorded, warning shown, PATCH stands", async () => {
+      addPrinterStatus = 500;
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      const warning = await screen.findByTestId("equipment-address-mirror-warning");
+      expect(warning).toHaveTextContent("couldn't apply");
+      expect(agentPrinterMirrorCalls).toEqual([
+        { op: "remove", body: { name: "Godex_G500" } },
+        { op: "add", body: { name: "Godex_G500", ip: "10.0.0.77", port: 9100 } },
+      ]);
+      expect(patchCalls).toHaveLength(1);
+    });
+
+    // Same guard shape as "set default: agent not yet known-reachable" above
+    // -- the one state where the row menu still renders but the agent is not
+    // yet known-reachable is "checking" (held-open /health probe + cached
+    // identity), and the mirror must be skipped outright, not
+    // attempted-then-warned.
+    it("agent not yet known-reachable (checking): PATCHes the registry but skips the mirror -- no agent calls, no warning", async () => {
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      server.use(
+        http.get("http://agent.test/health", async () => {
+          await delay("infinite");
+          return new HttpResponse(null, { status: 200 });
+        }),
+      );
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => expect(patchCalls).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(agentPrinterMirrorCalls).toEqual([]);
+      expect(screen.queryByTestId("equipment-address-mirror-warning")).not.toBeInTheDocument();
+    });
+
+    // Codex PR #85 review, Finding 3: PrinterWizard's own manual-add path
+    // (handleManualSubmit) invalidates AGENT_PRINTERS_KEY right after a
+    // successful agentClient.addNetworkPrinter -- the edit-address mirror's
+    // own successful add must do the same, or the hub's live-printer list
+    // stays stale (amber/not_seen, "Test print" hidden) until an unrelated
+    // refetch (window refocus, manual Retry) happens to fire.
+    it("a successful address mirror refreshes the cached live-printers list", async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByText("Zebra ZD421");
+      const fetchesBeforeSave = agentPrintersFetchCount;
+
+      const row = screen.getByTestId("equipment-device-row-dev-printer-notseen");
+      await user.click(within(row).getByRole("button", { name: /More actions/ }));
+      await user.click(await screen.findByRole("menuitem", { name: "Edit address…" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit address" });
+      const ipInput = within(dialog).getByLabelText("IP address");
+      await user.clear(ipInput);
+      await user.type(ipInput, "10.0.0.77");
+      await user.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(agentPrinterMirrorCalls).toEqual([
+          { op: "remove", body: { name: "Godex_G500" } },
+          { op: "add", body: { name: "Godex_G500", ip: "10.0.0.77", port: 9100 } },
+        ]),
+      );
+      await waitFor(() => expect(agentPrintersFetchCount).toBeGreaterThan(fetchesBeforeSave));
+    });
+  });
+
 });

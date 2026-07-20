@@ -164,6 +164,117 @@ describe("editorReducer", () => {
     });
   });
 
+  describe("updateConfig", () => {
+    it("merges the patch onto the doc's config fields and sets dirty, leaving unaffected elements' references untouched", () => {
+      const prior = stateWith({ dirty: false });
+
+      // Growing the label can never push an in-bounds element out of
+      // bounds, so both elements clamp to their existing x/y/width/height
+      // -- the reducer must recognize that as a true no-op per element and
+      // keep the SAME element references (mirrors "update"/"remove"'s own
+      // reference-preservation for an unaffected element).
+      const next = editorReducer(prior, { type: "updateConfig", patch: { width_mm: 100, height_mm: 60 } });
+
+      expect(next.doc.width_mm).toBe(100);
+      expect(next.doc.height_mm).toBe(60);
+      expect(next.doc.dpi).toBe(300); // untouched: not part of this patch
+      expect(next.doc.elements[0]).toBe(prior.doc.elements[0]);
+      expect(next.doc.elements[1]).toBe(prior.doc.elements[1]);
+      expect(next.dirty).toBe(true);
+    });
+
+    it("clamps an explicit-size element's position AND size when shrinking the label below it", () => {
+      const prior = stateWith();
+
+      // e2 (box, x=5,y=5,width=10,height=10) no longer fits an 8x8mm label
+      // at all: position clamps to the origin (maxX/maxY floor at 0 per
+      // clampPosition's own "footprint bigger than dimension" handling),
+      // then size clamps to whatever room is left from that clamped
+      // position to the new edge (8mm of room remains either way, so
+      // this case doesn't exercise the reducer's own minMm:0 override).
+      const next = editorReducer(prior, { type: "updateConfig", patch: { width_mm: 8, height_mm: 8 } });
+
+      expect(next.doc.elements[1]).toEqual({ id: "e2", type: "box", x: 0, y: 0, width: 8, height: 8 });
+    });
+
+    it("clamps a footprint-only element's POSITION but never invents an explicit width/height for it", () => {
+      const prior = stateWith();
+
+      // e1 (text, x=1,y=2, no explicit width/height) renders/clamps
+      // against its 40x8mm DEFAULT_SIZE_MM footprint everywhere else in
+      // this editor; shrinking to 8x8mm pushes even that fallback
+      // footprint out of bounds, so its position clamps to the origin --
+      // but it must NOT come back out with an explicit width/height key
+      // that it never had before (canvasMath's elementFootprint is a
+      // clamp-bounds helper, never a value to write back).
+      const next = editorReducer(prior, { type: "updateConfig", patch: { width_mm: 8, height_mm: 8 } });
+
+      expect(next.doc.elements[0]).toEqual({ id: "e1", type: "text", x: 0, y: 0, text: "Hi" });
+      expect(next.doc.elements[0]).not.toHaveProperty("width");
+      expect(next.doc.elements[0]).not.toHaveProperty("height");
+    });
+
+    it("a dpi-only change never touches any element's geometry (dpi is not a clamp bound)", () => {
+      const prior = stateWith();
+
+      const next = editorReducer(prior, { type: "updateConfig", patch: { dpi: 600 } });
+
+      expect(next.doc.dpi).toBe(600);
+      expect(next.doc.width_mm).toBe(90);
+      expect(next.doc.height_mm).toBe(55);
+      expect(next.doc.elements[0]).toBe(prior.doc.elements[0]);
+      expect(next.doc.elements[1]).toBe(prior.doc.elements[1]);
+      expect(next.dirty).toBe(true);
+    });
+
+    it("never floor-bumps a deliberately sub-1mm explicit dimension on an unrelated config change (review fix)", () => {
+      // ElementsPane's own line default is 0.5mm tall (ELEMENT_DEFAULTS.line
+      // in ElementsPane.tsx) -- clampSize's OWN default minMm=1 would floor
+      // that to 1mm on every single updateConfig dispatch, even one that
+      // never needed to touch this element at all (a dpi-only patch:
+      // width_mm/height_mm, and therefore this element's available room,
+      // don't change). The reducer must pass minMm:0 to clampSize instead,
+      // since a 1mm floor is PropertiesPane's typed-field validation
+      // concern, not "does this still fit the document."
+      const thinLine: BadgeElement = { id: "e3", type: "line", x: 2, y: 2, width: 5, height: 0.5 };
+      const prior = stateWith({
+        doc: { ...baseDoc, elements: [...baseDoc.elements, thinLine] },
+      });
+
+      const next = editorReducer(prior, { type: "updateConfig", patch: { dpi: 600 } });
+
+      expect(next.doc.elements[2]).toEqual(thinLine);
+    });
+
+    it("clamps BOTH sides of a partially-sized element, not just the explicitly-set one (review fix)", () => {
+      // e1 here carries an EXPLICIT width but no height (unlike baseDoc's
+      // own e1, which has neither) -- e.g. the operator typed only the
+      // Width field on a fresh text element via PropertiesPane, which
+      // dispatches a single-field "update" patch. Its height still falls
+      // back to DEFAULT_SIZE_MM.text.height (8mm) everywhere it's
+      // rendered/clamped. Shrinking height_mm to 5mm must clamp THAT
+      // fallback down too -- writing back only the explicit `width` (as an
+      // earlier version of this reducer case did) would leave the element
+      // still rendering/printing 8mm tall on a 5mm-tall label.
+      const partial: BadgeElement = { id: "e1", type: "text", x: 1, y: 1, width: 40, text: "Hi" };
+      const prior = stateWith({
+        doc: { width_mm: 90, height_mm: 55, dpi: 300, elements: [partial] },
+      });
+
+      const next = editorReducer(prior, { type: "updateConfig", patch: { height_mm: 5 } });
+
+      // Position clamps FIRST, against the 8mm fallback footprint: y=1 no
+      // longer fits an element that tall on a 5mm-tall label at all
+      // (maxY = max(5 - 8, 0) = 0), so y clamps to 0 before size is even
+      // considered. Size then clamps against THAT position: with 5mm of
+      // room from y=0 to the new edge, height clamps to 5 (width, still
+      // well within the 90mm-wide label, is untouched).
+      expect(next.doc.elements[0]).toEqual({
+        id: "e1", type: "text", x: 1, y: 0, width: 40, height: 5, text: "Hi",
+      });
+    });
+  });
+
   describe("saved", () => {
     it("clears dirty and bumps version + savedAt without touching doc or selection", () => {
       const prior = stateWith({ dirty: true, selectedId: "e2", version: 3 });

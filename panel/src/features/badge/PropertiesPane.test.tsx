@@ -26,6 +26,7 @@ function fontListItem(id: string, family: string): FontListItem {
 
 function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
   const onUpdate = vi.fn();
+  const onUpdateConfig = vi.fn();
   const props: PropertiesPaneProps = {
     element: null,
     fieldSchema: [],
@@ -33,20 +34,108 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
     fonts: [],
     fontCoverage: {},
     onUpdate,
+    onUpdateConfig,
     ...overrides,
   };
   const utils = render(<PropertiesPane {...props} />);
-  return { onUpdate, ...utils };
+  return { onUpdate, onUpdateConfig, ...utils };
 }
 
 describe("PropertiesPane", () => {
-  describe("empty state", () => {
-    it("shows a muted hint and no form controls when nothing is selected", () => {
+  describe("empty state (document settings)", () => {
+    it("shows the document-settings section with the config's current values, plus the element-selection hint", () => {
       renderPane({ element: null });
 
-      expect(screen.getByText("Select an element to edit its properties.")).toBeInTheDocument();
-      expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
-      expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+      expect(screen.getByText("Document settings")).toBeInTheDocument();
+      expect(screen.getByLabelText("Width (mm)")).toHaveValue(90);
+      expect(screen.getByLabelText("Height (mm)")).toHaveValue(55);
+      expect(screen.getByLabelText("DPI")).toHaveValue("300");
+      expect(
+        screen.getByText("Select an element to edit its properties, or set the label's overall size below."),
+      ).toBeInTheDocument();
+    });
+
+    it("lists 203/300/600 as the DPI options", () => {
+      renderPane({ element: null });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
+    });
+
+    it("patches width_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "100" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 100 });
+    });
+
+    it("patches height_mm on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "60" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 60 });
+    });
+
+    it("patches dpi as a number on change", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("DPI"), { target: { value: "203" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ dpi: 203 });
+    });
+
+    it("clamps a width_mm value below the sane minimum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "1" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ width_mm: 10 });
+    });
+
+    it("clamps a height_mm value above the sane maximum before dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Height (mm)"), { target: { value: "999" } });
+
+      expect(onUpdateConfig).toHaveBeenCalledWith({ height_mm: 200 });
+    });
+
+    it("ignores a non-numeric width input (cleared field) without dispatching", () => {
+      const { onUpdateConfig } = renderPane({ element: null });
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "" } });
+
+      expect(onUpdateConfig).not.toHaveBeenCalled();
+    });
+
+    // Review fix: a template saved before this picker existed (or edited
+    // via a raw API call, same as the incident that prompted this feature)
+    // can carry a dpi outside the three listed options. A controlled
+    // <select> whose value matches no <option> falls back to silently
+    // DISPLAYING the first option instead -- same "honest disabled
+    // placeholder" fix as the font select's own missingFontFamily case.
+    it("shows a disabled placeholder option (not a silent fallback to 203) for a dpi outside 203/300/600", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 250 } });
+
+      const select = screen.getByLabelText("DPI");
+      expect(select).toHaveValue("250");
+
+      const options = Array.from(select.querySelectorAll("option")) as HTMLOptionElement[];
+      expect(options.map((o) => o.value)).toEqual(["203", "300", "600", "250"]);
+      const placeholder = options.find((o) => o.value === "250")!;
+      expect(placeholder.disabled).toBe(true);
+      expect(placeholder.textContent).toBe("250 (custom)");
+    });
+
+    it("renders no placeholder option for a listed dpi", () => {
+      renderPane({ element: null, config: { width_mm: 90, height_mm: 55, dpi: 300 } });
+
+      const select = screen.getByLabelText("DPI");
+      const options = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+      expect(options).toEqual(["203", "300", "600"]);
     });
   });
 
@@ -206,6 +295,7 @@ describe("PropertiesPane", () => {
             fonts={[]}
             fontCoverage={{}}
             onUpdate={onUpdate}
+            onUpdateConfig={vi.fn()}
           />,
         );
         expect(screen.getByLabelText("Text")).not.toBeDisabled();
@@ -410,16 +500,16 @@ describe("PropertiesPane", () => {
     });
 
     // 2026-07-20 live-run request: generateZpl.ts's native text path already
-    // honors element.valign+height (generateTextZPL, ~line 177) but this
-    // control was never exposed. The raster branch DROPS valign entirely
-    // (goldenMatrix.test.ts pins that), so the control is disabled -- with an
-    // honest hint, never silently applied and then ignored -- whenever THIS
-    // element is deterministically known to raster: a set customFont (forces
-    // raster regardless of text/data), or unbound (no source) text whose
-    // literal content needsImageRendering (Cyrillic/CJK/Arabic). A BOUND
-    // element's actual per-attendee text isn't known at edit time, so it's
-    // never disabled on that basis alone -- only customFont can gate a bound
-    // element.
+    // honored element.valign+height (generateTextZPL, ~line 177) but this
+    // control was never exposed. The raster branch used to DROP valign
+    // entirely; PR #88 (2026-07-20, landed after this control shipped)
+    // lifted that limitation too -- rasterFieldOrigin now applies the same
+    // valign slack to raster-rendered text, gated the same way (needs
+    // `height`). So the control is enabled UNCONDITIONALLY regardless of
+    // whether the element is known to route through the raster path -- the
+    // only thing that still matters is `height` being explicit, which
+    // handleValignChange's own auto-persist (see its test above) already
+    // guarantees on first click.
     describe("vertical align buttons", () => {
       it("clicking a segment patches valign and only that segment is aria-pressed", () => {
         const { onUpdate } = renderPane({ element: textElement });
@@ -478,25 +568,28 @@ describe("PropertiesPane", () => {
         renderPane({ element: { ...textElement, source: undefined, text: "Hello", customFont: undefined } });
 
         expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
-        expect(screen.queryByText(/dropped|ignored|raster/i)).not.toBeInTheDocument();
       });
 
-      it("disables the group and shows a hint when customFont is set (forces the raster path regardless of text)", () => {
+      // PR #88 lifted the raster branch's valign limitation (rasterFieldOrigin
+      // now applies the same slack to raster-rendered text, gated on `height`
+      // exactly like the native branch) -- these elements used to get a
+      // disabled control + hint here; now the control works identically
+      // regardless of which path the element ends up routing through.
+      it("stays enabled when customFont is set (raster path now honors valign too, via rasterFieldOrigin)", () => {
         renderPane({ element: { ...textElement, customFont: "Roboto" } });
 
-        expect(screen.getByRole("button", { name: "Align top" })).toBeDisabled();
-        expect(screen.getByText("This element prints as an image; vertical align is ignored.")).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
       });
 
-      it("disables the group when unbound static text is Cyrillic (deterministically rasters, same rule as generation)", () => {
+      it("stays enabled for unbound Cyrillic static text (also raster-routed, also now honored)", () => {
         renderPane({
           element: { ...textElement, source: undefined, text: "Привет", customFont: undefined },
         });
 
-        expect(screen.getByRole("button", { name: "Align top" })).toBeDisabled();
+        expect(screen.getByRole("button", { name: "Align top" })).toBeEnabled();
       });
 
-      it("leaves the group enabled for BOUND text even though the bound value might turn out Cyrillic (unknowable at edit time)", () => {
+      it("stays enabled for bound text regardless of what the per-attendee value turns out to be", () => {
         renderPane({
           element: { ...textElement, source: "first_name", text: "fallback", customFont: undefined },
         });

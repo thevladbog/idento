@@ -638,6 +638,32 @@ describe("BadgeEditorPage save model (Task 10)", () => {
   });
 
   it(
+    "editing the document width via PropertiesPane's document-settings section (nothing selected) " +
+      "dirties the doc and PUTs the new width through the SAME save path as an element edit",
+    async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      // Nothing is selected on a fresh load -- PropertiesPane's "nothing
+      // selected" branch is the document-settings surface itself, wired via
+      // BadgeEditorPage's own `onUpdateConfig={(patch) => dispatch({ type:
+      // "updateConfig", patch })}`.
+      await screen.findByTestId("badge-pane-properties");
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+      fireEvent.change(screen.getByLabelText("Width (mm)"), { target: { value: "100" } });
+
+      const saveButton = screen.getByRole("button", { name: "Save" });
+      expect(saveButton).not.toBeDisabled();
+
+      await user.click(saveButton);
+
+      await waitFor(() => expect(putRequests).toHaveLength(1));
+      expect(putRequests[0].body.template.width_mm).toBe(100);
+    },
+  );
+
+  it(
     "PUTs {template, version} (an untouched customFont extra survives verbatim), flips the pill to " +
       "Saved, and invalidates both the badge-template and readiness queries",
     async () => {
@@ -1289,14 +1315,14 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
       const elementsPane = await screen.findByTestId("badge-pane-elements");
       await addTextElement(user); // adds AND selects the new element; doc is now dirty
       expect(screen.getByTestId("badge-pane-properties")).not.toHaveTextContent(
-        "Select an element to edit its properties.",
+        "Select an element to edit its properties, or set the label's overall size below.",
       );
 
       // Focus/event origin is the ELEMENTS pane, not the canvas artboard.
       fireEvent.keyDown(elementsPane, { key: "Escape" });
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
       expect(screen.getByTestId("badge-pane-properties")).toHaveTextContent(
-        "Select an element to edit its properties.",
+        "Select an element to edit its properties, or set the label's overall size below.",
       );
 
       fireEvent.keyDown(elementsPane, { key: "Escape" }); // nothing selected now: opens the guard

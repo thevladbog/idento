@@ -5,7 +5,8 @@
 // ids, and per Task 4's reconciliation, every element that reaches a
 // BadgeTemplateDoc already has a string id (parseTemplateDoc drops any that
 // don't), so lookups here can assume every element in state has one.
-import type { BadgeElement, BadgeTemplateDoc } from "./templateTypes";
+import { clampPosition, clampSize, elementFootprint } from "./canvasMath";
+import type { BadgeConfig, BadgeElement, BadgeTemplateDoc } from "./templateTypes";
 
 export interface EditorState {
   doc: BadgeTemplateDoc;
@@ -23,6 +24,7 @@ export type EditorAction =
   | { type: "remove"; id: string }
   | { type: "move"; id: string; x: number; y: number }
   | { type: "resize"; id: string; width: number; height: number }
+  | { type: "updateConfig"; patch: Partial<BadgeConfig> }
   | { type: "saved"; version: number; savedAt: string };
 
 // The editor's starting state on mount, before any "load" action has been
@@ -105,6 +107,72 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       }));
       if (elements === null) return state; // strict no-op: unknown id
       return { ...state, doc: { ...state.doc, elements }, dirty: true };
+    }
+
+    // Document settings (width_mm/height_mm/dpi), added on an existing
+    // template via PropertiesPane's "nothing selected" section. Unlike
+    // "move"/"resize" -- which store their caller-clamped x/y/width/height
+    // VERBATIM, because the caller (BadgeCanvas's drag handler /
+    // PropertiesPane's typed fields) already has the ONE element and the
+    // CURRENT config in hand to clamp against -- a config change can
+    // invalidate the WHOLE elements array at once (shrinking width_mm/
+    // height_mm can push any number of elements out of the new bounds), and
+    // only the reducer already holds that full array. Re-clamping here,
+    // right where the config itself changes, keeps this editor's one
+    // standing invariant ("every element's x/y/width/height stays within
+    // [0, width_mm] x [0, height_mm]" -- canvasMath.ts's own "one footprint
+    // rule" doc) true immediately after every dispatch, not just after the
+    // next unrelated move/resize happens to re-clamp it.
+    case "updateConfig": {
+      const nextConfig: BadgeConfig = {
+        width_mm: state.doc.width_mm,
+        height_mm: state.doc.height_mm,
+        dpi: state.doc.dpi,
+        ...action.patch,
+      };
+      const elements = state.doc.elements.map((element) => {
+        const footprint = elementFootprint(element);
+        const pos = clampPosition(
+          { x: element.x, y: element.y, width: footprint.width, height: footprint.height },
+          nextConfig,
+        );
+        // A FULLY footprint-only element (NEITHER width nor height
+        // explicit -- e.g. a fresh text element, which renders/clamps
+        // against DEFAULT_SIZE_MM's fallback everywhere else) never gets a
+        // width/height INVENTED for it here; its position alone is enough
+        // to keep it addressable, same as every other path that reads
+        // `elementFootprint` purely for clamp-bounds math without writing
+        // it back onto the element.
+        if (element.width === undefined && element.height === undefined) {
+          if (pos.x === element.x && pos.y === element.y) return element; // same reference
+          return { ...element, x: pos.x, y: pos.y };
+        }
+        // An element with AT LEAST ONE explicit dimension is no longer
+        // fully flexible, so BOTH sides -- the explicit one and the other
+        // side's fallback -- get clamped and written back together: only
+        // writing back the already-explicit side (as an earlier version of
+        // this case did) left a partially-sized element's fallback side
+        // (e.g. a barcode with a stored `width` but no `height`) silently
+        // un-clamped, still overflowing a shrunk label despite this case's
+        // whole point being "never leave an element hanging off the new
+        // bounds." `minMm: 0` (NOT clampSize's own `minMm: 1` default) is
+        // deliberate: that 1mm floor is form-input validation for
+        // PropertiesPane's typed Width/Height fields (which DO want it),
+        // not a document-fit rule -- with the default floor, a config
+        // change with NO shrink at all (e.g. a dpi-only patch) would still
+        // silently bump any deliberately sub-1mm element (ElementsPane's
+        // own 0.5mm-tall line default) up to 1mm on every dispatch.
+        const size = clampSize(
+          { x: pos.x, y: pos.y, width: footprint.width, height: footprint.height },
+          nextConfig,
+          0,
+        );
+        if (pos.x === element.x && pos.y === element.y && size.width === element.width && size.height === element.height) {
+          return element; // same reference: nothing this element needs actually changed
+        }
+        return { ...element, x: pos.x, y: pos.y, width: size.width, height: size.height };
+      });
+      return { ...state, doc: { ...nextConfig, elements }, dirty: true };
     }
 
     case "saved":

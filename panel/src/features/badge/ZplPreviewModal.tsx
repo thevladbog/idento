@@ -26,7 +26,8 @@ import { resolveElementText } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, rasterizeTextToBitmap, RasterUnavailableError } from "./zpl/canvasRasterizer";
 import {
-  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots, valignOffsetDots,
+  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots,
+  rasterFieldOrigin, valignOffsetDots,
   type RawBadgeElement,
 } from "./zpl/generateZpl";
 import { collectMissingCustomFonts } from "./zpl/missingFonts";
@@ -233,7 +234,11 @@ export function ZplPreviewModal({
           <div className="flex flex-col gap-3">
             <pre
               data-testid="badge-zpl-preview-code"
-              className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 font-mono text-code"
+              // break-all is load-bearing: raster lines (^GFA + hex payload)
+              // are ONE unbroken token that whitespace-pre-wrap alone cannot
+              // wrap -- without it the pre grows horizontally off-screen on
+              // any label containing rasterized (Cyrillic/customFont) text.
+              className="max-h-[420px] overflow-auto whitespace-pre-wrap break-all rounded-md border border-border bg-muted/30 p-3 font-mono text-code"
             >
               {generation.status === "ready" ? generation.zpl : t("badgeZplPreviewGenerating")}
             </pre>
@@ -369,7 +374,12 @@ function drawElement(
           imageData.data[i * 4 + 2] = on ? 0 : 255;
           imageData.data[i * 4 + 3] = 255;
         }
-        ctx.putImageData(imageData, x, y);
+        // Same rasterFieldOrigin offset generateZpl's raster branch applies
+        // to the printed ^FO -- otherwise the Rendered tab would show a
+        // raster-aligned element in a DIFFERENT position than it actually
+        // prints, defeating the "true preview" point of this tab.
+        const origin = rasterFieldOrigin(element, config.dpi, { width, height });
+        ctx.putImageData(imageData, origin.x, origin.y);
         return;
       }
 
