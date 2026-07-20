@@ -104,6 +104,19 @@
   --radius-sm: calc(var(--radius) - 4px);
 }
 
+/* Text with no explicit color class INHERITS its color. Without this base
+   rule the inherited value is the BROWSER default (black) — which happens
+   to match the light theme's --foreground and silently becomes invisible
+   dark-on-dark once .dark flips --background (the event-workspace dark-mode
+   bug, 2026-07-20). The base layer is the one place this guarantee lives:
+   layout roots must never need to remember text-foreground themselves. */
+@layer base {
+  body {
+    color: var(--color-foreground);
+    background-color: var(--color-background);
+  }
+}
+
 /* Type ramp — board 1a (px values expressed in rem @16px base) */
 @utility text-page-title {
   font-size: 1.25rem;

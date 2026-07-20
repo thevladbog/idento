@@ -59,6 +59,22 @@ describe("theme.css tokens", () => {
     expect(dark).toContain("--overlay: #09090b");
   });
 
+  it("sets the base body color and background from semantic tokens", () => {
+    // Text with no explicit color class INHERITS — without a base rule it
+    // inherits the browser default (black), which coincidentally matches
+    // the light theme and turns invisible in .dark (the 2026-07-20 event
+    // workspace dark-mode bug). The base layer is the single place that
+    // guarantee lives; consumers must not need to remember text-foreground
+    // on every layout root.
+    const layerStart = css.indexOf("@layer base");
+    expect(layerStart, "@layer base block missing").toBeGreaterThan(-1);
+    const bodyStart = css.indexOf("body", layerStart);
+    expect(bodyStart, "body rule missing inside @layer base").toBeGreaterThan(-1);
+    const body = css.slice(bodyStart, css.indexOf("}", bodyStart));
+    expect(body).toContain("color: var(--color-foreground)");
+    expect(body).toContain("background-color: var(--color-background)");
+  });
+
   it("defines the Inter type ramp utilities", () => {
     for (const u of ["text-page-title", "text-section-title", "text-card-title", "text-body", "text-caption", "text-code"]) {
       expect(css).toContain(`@utility ${u}`);
