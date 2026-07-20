@@ -9,7 +9,6 @@ import AllUsers from "./pages/super-admin/AllUsers";
 import Analytics from "./pages/super-admin/Analytics";
 import AuditLog from "./pages/super-admin/AuditLog";
 import { Toaster } from "sonner";
-import { useFavicon } from "./hooks/useFavicon";
 import "./i18n";
 
 function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element, requireSuperAdmin?: boolean }) {
@@ -31,9 +30,6 @@ function ProtectedRoute({ children, requireSuperAdmin }: { children: JSX.Element
 }
 
 function App() {
-  // Dynamic favicon based on language
-  useFavicon();
-
   return (
     <BrowserRouter basename="/super-admin">
       <Toaster position="top-right" richColors />

@@ -17,6 +17,14 @@ describe("QrLoginScreen", () => {
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
+  it("shows the Idento brand mark", () => {
+    // QrLoginScreen issues no request on mount (unlike LoginScreen it has no
+    // useInstance call), so no fetch stub is needed — the mark renders
+    // statically.
+    renderWithQuery(<QrLoginScreen />);
+    expect(screen.getByRole("img", { name: "Idento" })).toBeInTheDocument();
+  });
+
   it("submits the manually entered code and saves the session on success", async () => {
     // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
     // Response, so the mock needs a real Response instance, and it calls the

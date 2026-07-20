@@ -27,7 +27,7 @@ import { LanguageToggle } from "@/components/language-toggle";
  * @returns The JSX element for the login page.
  */
 export default function LoginPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
 
@@ -79,10 +79,6 @@ export default function LoginPage() {
     }
   };
 
-  const currentLanguage = i18n.resolvedLanguage ?? i18n.language;
-  const logoSrc = currentLanguage?.startsWith("ru")
-    ? "/idento-ru-letter.svg"
-    : "/idento-en-letter.svg";
   const appVersion =
     typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__
       ? __APP_VERSION__
@@ -158,8 +154,9 @@ export default function LoginPage() {
         <div className="absolute inset-0 login-brand-pattern" aria-hidden />
         <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-12 lg:py-24 text-center text-white">
           <img
-            src={logoSrc}
-            alt={t("appName")}
+            src={`${import.meta.env.BASE_URL}logo-mark-white.svg`}
+            alt=""
+            aria-hidden
             className="h-14 w-auto lg:h-20"
           />
           <p className="mt-5 text-xl font-semibold lg:text-2xl">

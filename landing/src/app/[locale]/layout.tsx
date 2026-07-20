@@ -62,6 +62,13 @@ export async function generateMetadata({
         "max-snippet": -1,
       },
     },
+    icons: {
+      icon: [
+        { url: "/favicon.ico", sizes: "32x32" },
+        { url: "/favicon.svg", type: "image/svg+xml" },
+      ],
+      apple: "/apple-touch-icon.png",
+    },
   };
 }
 
@@ -86,9 +93,6 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
-      <head>
-        <link rel="icon" href="/favicon.ico" />
-      </head>
       <body className="min-h-screen bg-background font-sans antialiased overflow-x-hidden">
         <NextIntlClientProvider messages={messages}>
           <ThemeProvider
