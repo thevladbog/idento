@@ -38,13 +38,14 @@ func New(token string, origins []string) *Authorizer {
 // auth path below. Those protections (anti-DNS-rebind, anti-CSRF) only apply
 // once we fall through to the no-token path.
 func (a *Authorizer) authorize(r *http.Request) (int, bool) {
-	// /docs and /openapi.yaml are exempt alongside /health: both are
+	// /docs, /openapi.yaml, and /info are exempt alongside /health: all are
 	// read-only and non-sensitive (the spec is committed to the repo, the
-	// docs page is static HTML), and a browser navigating directly sends no
-	// Origin header, so they would otherwise always 401. The agent's
-	// loopback bind remains the effective protection.
+	// docs page is static HTML, /info carries no authority — see infoHandler),
+	// and a browser navigating directly sends no Origin header, so they would
+	// otherwise always 401. The agent's loopback bind remains the effective
+	// protection.
 	switch r.URL.Path {
-	case "/health", "/docs", "/openapi.yaml":
+	case "/health", "/docs", "/openapi.yaml", "/info":
 		return http.StatusOK, true
 	}
 	if a.validToken(r) {

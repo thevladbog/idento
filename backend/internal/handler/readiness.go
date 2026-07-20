@@ -28,7 +28,10 @@ const (
 
 // GetEventReadiness computes the readiness pipeline for one event.
 // ready = attendees && badge && staff; zones never blocks (skipped when
-// absent); equipment is always not_done until its P3/P4 wiring exists.
+// absent); equipment is done when the event's tenant has at least one
+// machine with a default printer whose test print has passed
+// (TenantHasTestedDefaultPrinter) — like zones, equipment never blocks
+// ready (spec §4.3).
 func (h *Handler) GetEventReadiness(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -49,6 +52,10 @@ func (h *Handler) GetEventReadiness(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute readiness"})
 	}
 	staff, err := h.Store.GetEventStaff(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute readiness"})
+	}
+	equipmentDone, err := h.Store.TenantHasTestedDefaultPrinter(ctx, event.TenantID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to compute readiness"})
 	}
@@ -106,7 +113,7 @@ func (h *Handler) GetEventReadiness(c echo.Context) error {
 		{Key: "badge", Status: boolStatus(badgeDone)},
 		{Key: "zones", Status: zoneStatus, Count: &zoneCount},
 		{Key: "staff", Status: boolStatus(staffCount > 0), Count: &staffCount},
-		{Key: "equipment", Status: readinessNotDone},
+		{Key: "equipment", Status: boolStatus(equipmentDone)},
 	}
 	return c.JSON(http.StatusOK, EventReadinessResponse{
 		Ready: attendeeCount > 0 && badgeDone && staffCount > 0,

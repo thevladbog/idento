@@ -1012,6 +1012,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/equipment/machines/{machine_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The machine's registry root plus every device registered under it (spec §4.1), scoped to the caller's tenant — an ORG-level resource, not tied to any one event, so there is no requireEventOwnership check here; tenant_id from the JWT IS the ownership check. */
+        get: operations["getEquipmentMachine"];
+        /** Register/refresh a machine (P4.3 spec §4.1) — reported whenever the panel/agent phones home with its identity. Idempotent: re-reporting the SAME (tenant, machine_id) updates hostname/agent_version/last_seen_at rather than erroring. An ORG-level resource: tenant_id from the JWT IS the ownership check, no requireEventOwnership. Returns the post-upsert state (machine + every device currently registered under it) — the same shape as GET below. */
+        put: operations["upsertEquipmentMachine"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/equipment/machines/{machine_id}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register a new device under a machine (spec §4.1). See EquipmentDeviceCreateRequest's description for the full class/kind/config validation rules. Responds 201 with the stored device — never wrapped, unlike the machine endpoints' {"machine":...,"devices":...} shape. */
+        post: operations["createEquipmentDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/equipment/devices/{device_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a device outright (spec §4.1). No special-case handling for "was this the default printer" — it is simply gone; another device is never silently promoted to default. */
+        delete: operations["deleteEquipmentDevice"];
+        options?: never;
+        head?: never;
+        /** Rename a device and/or replace its config (spec §4.1). Both fields optional; class/kind/machine_id are immutable. tenant_id from the JWT IS the ownership check — no requireEventOwnership (equipment is an ORG-level resource). */
+        patch: operations["patchEquipmentDevice"];
+        trace?: never;
+    };
+    "/api/equipment/machines/{machine_id}/default-printer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Repoint (or clear) the machine's default printer (spec §4.1). device_id=null clears with no replacement; a non-null device_id must be an existing class=printer device of THIS machine — the clear-then-set transaction rolls back entirely (leaving the prior default untouched) when the target doesn't qualify. */
+        put: operations["putDefaultEquipmentPrinter"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/equipment/devices/{device_id}/test-passed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stamp test_passed_at = now() on a successful test-print/test-scan (the panel wizard's "Test" step, spec §4.1) — feeds TenantHasTestedDefaultPrinter, the equipment-readiness gate's underlying query (Task 4). */
+        post: operations["markEquipmentDeviceTestPassed"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1174,7 +1261,7 @@ export interface components {
             status: "done" | "not_done" | "skipped";
             count?: number;
         };
-        /** @description Per-event readiness aggregate (parent-spec backend #6). Steps are always returned in pipeline order: attendees, badge, zones, staff, equipment. ready = attendees.done && badge.done && staff.done — zones never blocks (skipped when the event has no zones), and equipment is always not_done until its P3/P4 wiring exists and never blocks in P1. */
+        /** @description Per-event readiness aggregate (parent-spec backend #6). Steps are always returned in pipeline order: attendees, badge, zones, staff, equipment. ready = attendees.done && badge.done && staff.done — zones never blocks (skipped when the event has no zones). equipment is done when the event's tenant has at least one equipment machine whose default printer has a passed test print (tenant-wide, not per-event); like zones, equipment never blocks ready. */
         EventReadinessResponse: {
             ready: boolean;
             steps: components["schemas"]["ReadinessStep"][];
@@ -1647,6 +1734,75 @@ export interface components {
         CreateAPIKeyResponse: {
             api_key: components["schemas"]["APIKey"];
             plain_key: string;
+        };
+        /** @description One computer's registry root (models.EquipmentMachine, P4.3 spec §4.1) — identified by the agent's persisted machine_id (the agent's local GET /info), scoped per tenant so a shared physical machine keeps disjoint registries per organization. */
+        EquipmentMachine: {
+            /** Format: uuid */
+            machine_id: string;
+            hostname: string;
+            agent_version: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One saved device (models.EquipmentDevice) — a printer or scanner attached to a registered machine (spec §4.1). config carries per-kind facts plus the stable agent-side identity link (config.agent_name / config.port_name); display_name is user-renameable and must never be treated as that link. The exact per-kind config shape is validated server-side (see EquipmentDeviceCreateRequest's description) but documented here only as a free-form object, since the required keys vary by class/kind. */
+        EquipmentDevice: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            class: "printer" | "scanner" | "camera";
+            /** @enum {string} */
+            kind: "system" | "network" | "usb_wedge" | "com";
+            display_name: string;
+            config: {
+                [key: string]: unknown;
+            };
+            is_default: boolean;
+            /** Format: date-time */
+            test_passed_at: string | null;
+            /** Format: date-time */
+            last_seen_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description PUT/GET /api/equipment/machines/{machine_id}'s 200 response — the machine root plus every device registered under it (spec §4.1). devices is always a JSON array (possibly empty), never null. */
+        EquipmentMachineResponse: {
+            machine: components["schemas"]["EquipmentMachine"];
+            devices: components["schemas"]["EquipmentDevice"][];
+        };
+        /** @description PUT /api/equipment/machines/{machine_id} request body — the agent's self-reported hostname/agent_version, and optionally the device ids it currently sees attached (touches their last_seen_at; a device absent from this list is left untouched, never deleted). */
+        EquipmentMachineUpsertRequest: {
+            hostname: string;
+            agent_version: string;
+            seen_device_ids?: string[];
+        };
+        /** @description POST /api/equipment/machines/{machine_id}/devices request body (spec §4.1). class/kind pairs: printer→{system,network}, scanner→{usb_wedge,com}; camera is reserved and rejected (400) until the camera cycle ships. config's allowed/required keys are validated server-side per EXACT class/kind pair, via a distinct decode shape per kind — a key valid for one kind but not another (e.g. a usb_wedge config carrying com's port_name, or a system printer carrying network's ip/port/dpi) is rejected the same way as a genuinely unrecognized key, not silently accepted and stored: printer kind=system allows only non-empty agent_name; kind=network allows non-empty agent_name, non-empty ip, port in [1,65535], and optional dpi; scanner kind=com allows only non-empty port_name; scanner kind=usb_wedge allows only terminator ∈ {enter,tab,none}. Config is persisted verbatim (the request's raw bytes). make_default is only accepted for class=printer (400 otherwise) and, when true, atomically replaces whatever device currently holds the machine's default printer (transactional clear-then-set — see store.CreateEquipmentDevice; a lost race against a concurrent default-printer write surfaces as 409, not make_default's ordinary 400). test_passed, when true, additionally stamps test_passed_at at create time (equivalent to immediately calling POST /api/equipment/devices/{device_id}/test-passed). */
+        EquipmentDeviceCreateRequest: {
+            /** @enum {string} */
+            class: "printer" | "scanner" | "camera";
+            /** @enum {string} */
+            kind: "system" | "network" | "usb_wedge" | "com";
+            display_name: string;
+            config: {
+                [key: string]: unknown;
+            };
+            make_default?: boolean;
+            test_passed?: boolean;
+        };
+        /** @description PATCH /api/equipment/devices/{device_id} request body. Both fields are optional — an omitted field keeps the device's current value (class/kind/machine_id are immutable and not settable here). When config IS supplied, it is validated against the device's EXISTING class/kind shape rules (the same rules as EquipmentDeviceCreateRequest.config), unknown keys rejected. Replacing config with a value that actually differs from the device's current one unconditionally resets test_passed_at to null, since the previous test result can no longer be trusted to describe this (possibly different) hardware. */
+        EquipmentDevicePatchRequest: {
+            display_name?: string;
+            config?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description PUT /api/equipment/machines/{machine_id}/default-printer request body, and also its 200 response shape (echoes back what was set). device_id = null clears the machine's default printer with no replacement; a non-null device_id must be an existing class=printer device of THIS machine (404 otherwise — store.ErrDeviceNotFound). device_id is REQUIRED and must be stated explicitly on every request — omitting the key entirely is rejected (400), precisely so an accidentally-omitted field can never be silently treated the same as an explicit clear request. */
+        EquipmentDefaultPrinterRequest: {
+            /** Format: uuid */
+            device_id: string | null;
         };
     };
     responses: {
@@ -6504,6 +6660,424 @@ export interface operations {
                 };
             };
             /** @description Store failure resolving the font's event ownership ("Internal error", via requireEventOwnership+writeErr — the font lookup failure above is masked as 404, not surfaced here). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getEquipmentMachine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The machine + its devices. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentMachineResponse"];
+                };
+            };
+            /** @description machine_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description (tenant_id, machine_id) has never been registered — the panel renders this as "empty registry", not an error state. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure loading the machine. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    upsertEquipmentMachine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EquipmentMachineUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Post-upsert state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentMachineResponse"];
+                };
+            };
+            /** @description machine_id is not a UUID, or the body is malformed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Missing/invalid JWT claims (claimsFromContext/ tenantIDFromContext) — "Invalid token". */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure upserting the machine or reloading its state. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createEquipmentDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EquipmentDeviceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description The newly created device. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentDevice"];
+                };
+            };
+            /** @description machine_id is not a UUID, the body is malformed, or the parsed request fails validation — unknown class, class=camera (reserved, "camera devices are not supported yet"), a class/kind mismatch, empty display_name, an invalid/ incomplete config for the class/kind, or make_default=true on a non-printer class. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description make_default=true raced a concurrent default-printer write and lost (the partial-unique-index violation surfaced as a pgconn.PgError 23505, mapped here rather than a raw constraint error — see store.CreateEquipmentDevice). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure creating the device. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    deleteEquipmentDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description device_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description device_id does not exist, or belongs to a different tenant (store.ErrDeviceNotFound). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure deleting the device. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    patchEquipmentDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EquipmentDevicePatchRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated device. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentDevice"];
+                };
+            };
+            /** @description device_id is not a UUID, the body is malformed, display_name is present but empty, or config is present but fails the device's existing class/kind validation rules. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description device_id does not exist, or belongs to a different tenant (GetEquipmentDeviceForTenant masks "foreign" as "missing" — no existence oracle). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure loading or updating the device. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putDefaultEquipmentPrinter: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                machine_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EquipmentDefaultPrinterRequest"];
+            };
+        };
+        responses: {
+            /** @description Echoes the request's device_id (the new default, or null). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EquipmentDefaultPrinterRequest"];
+                };
+            };
+            /** @description machine_id is not a UUID, the body is malformed, device_id is missing entirely (it is required — send null explicitly to clear, so an accidentally-omitted field can never silently clear the default), or device_id is present but not a valid uuid/null. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description device_id doesn't exist, belongs to a different tenant/ machine, or isn't a printer (store.ErrDeviceNotFound) — never returned when device_id is null (clearing always succeeds). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure setting the default printer. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    markEquipmentDeviceTestPassed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stamped. No body. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description device_id is not a UUID. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description device_id does not exist, or belongs to a different tenant (store.ErrDeviceNotFound). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Store failure recording the test result. */
             500: {
                 headers: {
                     [name: string]: unknown;

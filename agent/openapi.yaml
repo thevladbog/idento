@@ -16,8 +16,8 @@ info:
     Агент запускается локально на компьютере с подключенным оборудованием.
 
     ## Авторизация:
-    Все эндпоинты, кроме `GET /health`, `GET /docs` и `GET /openapi.yaml`,
-    защищены. Исключённые эндпоинты read-only и не содержат секретов;
+    Все эндпоинты, кроме `GET /health`, `GET /docs`, `GET /openapi.yaml` и
+    `GET /info`, защищены. Исключённые эндпоинты read-only и не содержат секретов;
     их эффективная защита — привязка агента к loopback-адресу. Запрос к
     защищённым эндпоинтам авторизуется одним из двух способов:
 
@@ -275,6 +275,38 @@ components:
         name:
           type: string
           description: Имя сетевого принтера для удаления
+
+    AgentInfo:
+      type: object
+      description: |
+        Идентификация установки агента и метаданные процесса. См. описание
+        `GET /info`.
+      required:
+        - machine_id
+        - hostname
+        - version
+        - uptime_seconds
+      properties:
+        machine_id:
+          type: string
+          format: uuid
+          description: |
+            Стабильный per-install идентификатор (UUID v4), не даёт
+            полномочий — ключует серверный реестр оборудования панели.
+          example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+        hostname:
+          type: string
+          description: Имя хоста ОС (пустая строка, если недоступно)
+          example: "workstation-01"
+        version:
+          type: string
+          description: Версия сборки агента (`dev`, если не задана через ldflags)
+          example: "1.9.0"
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: Время работы текущего процесса агента, в секундах
+          example: 3600
 
 paths:
   /health:
@@ -803,3 +835,31 @@ paths:
             text/html:
               schema:
                 type: string
+
+  /info:
+    get:
+      tags:
+        - Health
+      summary: Идентификация агента и метаданные
+      description: |
+        Возвращает стабильный идентификатор этой установки агента вместе с
+        метаданными процесса. Доступен без авторизации (см. раздел
+        «Авторизация»), как и `GET /health`.
+
+        `machine_id` — стабильная идентичность конкретной установки агента:
+        UUID v4, генерируется один раз при первом запуске (или при первом
+        чтении конфигурации после обновления агента с версии, где этого поля
+        ещё не было) и сохраняется в `~/.idento/agent_config.json`. Сам по
+        себе `machine_id` не даёт никаких полномочий (в отличие от
+        `auth_token` он не участвует в авторизации запросов) — он служит
+        исключительно ключом для серверного реестра оборудования панели,
+        позволяя связать конкретный физический компьютер с записями его
+        принтеров/сканеров между перезапусками агента.
+      security: []
+      responses:
+        '200':
+          description: Идентификация агента
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentInfo'

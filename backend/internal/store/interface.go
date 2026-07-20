@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"idento/backend/internal/models"
 	"time"
 
@@ -462,7 +463,119 @@ type Store interface {
 
 	// Event Stats (KPI counters for mobile status bar)
 	GetEventStats(ctx context.Context, eventID uuid.UUID, zoneID *uuid.UUID) (*models.EventStatsResponse, error)
+
+	// Equipment Registry (P4.3): a per-tenant, per-machine device registry
+	// keyed by the agent's persisted machine_id (see agent GET /info) —
+	// printers/scanners/cameras attached to one physical/virtual machine,
+	// scoped so a machine shared across tenants (e.g. a kiosk reassigned
+	// between organizations) keeps disjoint registries.
+
+	// UpsertEquipmentMachine registers a machine or refreshes an existing
+	// one's hostname/agent_version/last_seen_at — a fresh (tenant_id,
+	// machine_id) pair inserts; re-reporting the SAME machine (the agent
+	// phones home on every /info poll) is idempotent via ON CONFLICT.
+	// seenDeviceIDs additionally touches last_seen_at on every one of THIS
+	// tenant/machine's devices the agent's report still names as attached
+	// (a second, separate statement — issued only when seenDeviceIDs is
+	// non-empty) — a device absent from a report is left untouched, never
+	// deleted or flagged, since the agent's own device enumeration is
+	// advisory, not authoritative for existence.
+	UpsertEquipmentMachine(ctx context.Context, m *models.EquipmentMachine, seenDeviceIDs []uuid.UUID) error
+	// GetEquipmentMachine returns the machine row plus every device
+	// registered under it, ordered by (class, created_at) — grouped by
+	// class in registration order within each group. Returns (nil, nil,
+	// nil), never an error, when tenantID/machineID has never been
+	// registered (e.g. a fresh agent install that hasn't reported yet) —
+	// callers render "not yet registered" without special-casing an error
+	// type, mirroring GetEventByIDForTenant's not-found idiom.
+	GetEquipmentMachine(ctx context.Context, tenantID, machineID uuid.UUID) (*models.EquipmentMachine, []models.EquipmentDevice, error)
+	// GetEquipmentDeviceForTenant looks up a single device scoped by
+	// tenant_id alone (not machine_id) — callers needing to further confirm
+	// it belongs to a specific machine compare the returned MachineID
+	// themselves. Returns (nil, nil) when the id doesn't exist OR belongs
+	// to a different tenant — callers cannot distinguish "missing" from
+	// "foreign" from this method alone (same contract as
+	// GetEventByIDForTenant/GetAttendeeByIDForTenant).
+	GetEquipmentDeviceForTenant(ctx context.Context, tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
+	// CreateEquipmentDevice inserts a new device under d.TenantID/d.MachineID
+	// and fills d.ID/d.CreatedAt/d.UpdatedAt/d.TestPassedAt from the
+	// INSERT's RETURNING clause (all four are DB-generated/DB-computed).
+	// d.IsDefault is set to makeDefault, overwriting whatever the caller
+	// had set on d. testPassed, when true, stamps test_passed_at = now()
+	// IN THE SAME INSERT statement (Finding 2, bot review PR #83 round 2)
+	// — callers must NOT additionally call MarkEquipmentDeviceTestPassed
+	// after a testPassed=true create; that would reintroduce the
+	// create-then-separate-stamp window this atomicity exists to close
+	// (the create committing while the second write fails, leaving an
+	// already-visible, wrongly-unstamped device that a retry then
+	// 409s/duplicates against). When makeDefault is true this runs inside
+	// a transaction that first clears any existing default printer for the
+	// SAME (tenant_id, machine_id) — the same clear-then-set shape as
+	// SetDefaultEquipmentPrinter — so a crash between the two statements
+	// can never leave two printers marked default; when false it is a
+	// plain, non-transactional INSERT. The caller is responsible for only
+	// passing makeDefault=true for a class="printer" device — this method
+	// does not itself re-validate class, relying on the
+	// equipment_devices_default_is_printer CHECK constraint as the
+	// last-resort guard.
+	CreateEquipmentDevice(ctx context.Context, d *models.EquipmentDevice, makeDefault bool, testPassed bool) error
+	// UpdateEquipmentDevice renames a device and/or replaces its config —
+	// the only two caller-editable columns (class/kind/machine_id are
+	// immutable once created; is_default is repointed only via
+	// SetDefaultEquipmentPrinter, never here). test_passed_at is cleared
+	// UNCONDITIONALLY whenever the supplied config differs (by jsonb-
+	// semantic equality — key order/whitespace insensitive) from the
+	// device's CURRENT config: a stamp recorded against one config must
+	// never be left describing DIFFERENT hardware after a config swap
+	// (Finding 1, bot review PR #83 round 2) — this is enforced at the SQL
+	// level (an UPDATE ... CASE over the OLD row), not left to callers to
+	// remember. A rename-only call (config unchanged) preserves the
+	// existing stamp. On 0 rows (unknown id, or an id belonging to a
+	// different tenant) this returns the exported ErrDeviceNotFound
+	// sentinel.
+	UpdateEquipmentDevice(ctx context.Context, tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error
+	// DeleteEquipmentDevice removes a device outright. No special-case code
+	// exists for "was this the default printer" — the row (and the partial
+	// unique index entry it held) is simply gone; the spec deliberately
+	// forbids silently promoting another device to default on delete. On 0
+	// rows this returns ErrDeviceNotFound.
+	DeleteEquipmentDevice(ctx context.Context, tenantID, deviceID uuid.UUID) error
+	// SetDefaultEquipmentPrinter repoints the default printer for one
+	// (tenant_id, machine_id): inside a transaction, it first clears any
+	// existing default for that machine, then — when deviceID is non-nil —
+	// sets the new one, guarded on class = 'printer' so a scanner/camera id
+	// can never become the default. deviceID = nil clears the default with
+	// no replacement (clear-only, not wrapped in a transaction since it is
+	// a single statement) — 0 rows affected by the clear is NOT an error
+	// (there may have been no previous default). When deviceID is non-nil
+	// and the guarded set-UPDATE affects 0 rows (the id doesn't exist,
+	// belongs to a different tenant/machine, or isn't a printer), the
+	// WHOLE transaction rolls back — including the clear — so the prior
+	// default (if any) is left exactly as it was, never silently promoted
+	// to some other device and never left with zero defaults either; this
+	// returns ErrDeviceNotFound.
+	SetDefaultEquipmentPrinter(ctx context.Context, tenantID, machineID uuid.UUID, deviceID *uuid.UUID) error
+	// MarkEquipmentDeviceTestPassed stamps test_passed_at = now() on a
+	// successful test-print/test-scan (the panel wizard's "Test" step). On
+	// 0 rows this returns ErrDeviceNotFound.
+	MarkEquipmentDeviceTestPassed(ctx context.Context, tenantID, deviceID uuid.UUID) error
+	// TenantHasTestedDefaultPrinter reports whether ANY device across ANY
+	// of the tenant's machines is currently the default printer AND has a
+	// non-null test_passed_at — the equipment-readiness gate's underlying
+	// query (Task 4 wires this into the readiness endpoint alongside the
+	// existing checks).
+	TenantHasTestedDefaultPrinter(ctx context.Context, tenantID uuid.UUID) (bool, error)
 }
+
+// ErrDeviceNotFound is the equipment registry's not-found sentinel —
+// sibling of ErrEventNotFound/ErrCheckinStationNotFound/ErrAttendeeNotFound:
+// UpdateEquipmentDevice, DeleteEquipmentDevice, MarkEquipmentDeviceTestPassed,
+// and SetDefaultEquipmentPrinter (when deviceID is non-nil) all return this
+// on their guarded statement affecting 0 rows — a device that doesn't exist,
+// belongs to a different tenant, or (SetDefaultEquipmentPrinter only) isn't
+// a printer of the target machine. Handlers map it to the house 404 masking,
+// the same convention as every other *NotFound sentinel in this package.
+var ErrDeviceNotFound = errors.New("equipment device not found")
 
 // AttendeeFilter narrows GetAttendeesPage's result set. Every field is
 // optional: Code/Search "" skip that filter (same convention as

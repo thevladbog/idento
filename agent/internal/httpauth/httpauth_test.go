@@ -33,6 +33,7 @@ func TestAuthorize(t *testing.T) {
 		{"health without auth", newReq("GET", "/health", "127.0.0.1:12345", "", "", ""), http.StatusOK, true},
 		{"docs without auth", newReq("GET", "/docs", "127.0.0.1:12345", "", "", ""), http.StatusOK, true},
 		{"openapi spec without auth", newReq("GET", "/openapi.yaml", "127.0.0.1:12345", "", "", ""), http.StatusOK, true},
+		{"info without auth", newReq("GET", "/info", "127.0.0.1:12345", "", "", ""), http.StatusOK, true},
 		{"GET with allowlisted origin", newReq("GET", "/printers", "127.0.0.1:12345", "http://localhost:5173", "", ""), http.StatusOK, true},
 		{"GET with valid token", newReq("GET", "/printers", "127.0.0.1:12345", "", "", "Bearer secret-token-abc"), http.StatusOK, true},
 		{"POST json with token", newReq("POST", "/print", "127.0.0.1:12345", "", "application/json", "Bearer secret-token-abc"), http.StatusOK, true},

@@ -40,6 +40,11 @@ type AgentConfig struct {
 	ScannerPorts    []string               `json:"scanner_ports"`
 	DefaultPrinter  string                 `json:"default_printer"`
 	AuthToken       string                 `json:"auth_token,omitempty"`
+	// MachineID is a stable per-install identity, generated once on first
+	// load and persisted thereafter (see loadConfig). omitempty is safe here
+	// — unlike AllowedOrigins there is no nil-vs-empty distinction to
+	// preserve: an absent field simply means "not generated yet".
+	MachineID string `json:"machine_id,omitempty"`
 	// AllowedOrigins intentionally has no ",omitempty": resolveAllowedOrigins
 	// distinguishes nil ("unset", fall back to dev defaults) from a non-nil
 	// empty slice ("explicitly disabled" via allowed_origins: []). omitempty
@@ -49,8 +54,18 @@ type AgentConfig struct {
 	AllowedOrigins []string `json:"allowed_origins"`
 }
 
-// configMu serializes config load-modify-save; use RLock for read-only access.
+// configMu serializes config load-modify-save. Always use the full Lock, even
+// for reads: loadConfig can itself persist (see the MachineID-upgrade branch
+// below), so RLock would let two concurrent readers race to write.
 var configMu sync.RWMutex
+
+// agentVersion is overridable at release time via
+//
+//	go build -ldflags "-X main.agentVersion=1.9.0"
+var agentVersion = "dev"
+
+// agentStartTime anchors GET /info's uptime_seconds.
+var agentStartTime = time.Now()
 
 func loadOpenAPISpec() ([]byte, error) {
 	root, err := os.OpenRoot(".")
@@ -136,6 +151,26 @@ func loadConfig() (*AgentConfig, error) {
 	if config.ScannerPorts == nil {
 		config.ScannerPorts = []string{}
 	}
+	if config.MachineID == "" {
+		// Upgrade path: a config file written before MachineID existed. Mint
+		// one now and persist immediately — every other reader must see the
+		// same id from here on, and desktop/panel callers depend on /info
+		// never returning an empty machine_id once ~/.idento/agent_config.json
+		// exists. Mirrors the AuthToken generate-and-persist pattern.
+		//
+		// generateUUIDv4's error is propagated (not Fatal'd): this path runs
+		// inside HTTP handlers (e.g. /printers, holding configMu) as well as
+		// at startup, and a transient crypto/rand failure must fail one
+		// request/one loadConfig call, not the whole process.
+		id, err := generateUUIDv4()
+		if err != nil {
+			return nil, err
+		}
+		config.MachineID = id
+		if err := saveConfig(&config); err != nil {
+			return nil, err
+		}
+	}
 	return &config, nil
 }
 
@@ -177,6 +212,52 @@ func generateAuthToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// generateUUIDv4 avoids a new dependency: 16 crypto/rand bytes with the
+// version/variant bits set per RFC 4122 §4.4.
+//
+// Returns an error instead of Fatal-ing on a crypto/rand failure: this is
+// called from loadConfig's MachineID-upgrade branch, which runs inside HTTP
+// handlers (e.g. /printers) while holding configMu — a transient RNG
+// failure there must fail that one request, not os.Exit the whole agent
+// mid-event. Callers on the startup path (main()) remain free to Fatalf on
+// the returned error at their own discretion.
+func generateUUIDv4() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate machine id: %w", err)
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// infoHandler reports machine identity + agent metadata. No auth (see
+// httpauth's exempt list): machine_id carries no authority by itself — it
+// only keys the panel's server-side device registry, so exposing it to any
+// loopback caller is no more sensitive than /health.
+func infoHandler(machineID string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		hostname, err := os.Hostname()
+		if err != nil {
+			// Non-fatal — the panel just shows no hostname for this device.
+			log.Printf("Failed to get hostname: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"machine_id":     machineID,
+			"hostname":       hostname,
+			"version":        agentVersion,
+			"uptime_seconds": int64(time.Since(agentStartTime).Seconds()),
+		}); err != nil {
+			log.Printf("Failed to write info response: %v", err)
+		}
+	}
 }
 
 // ensureAuthToken sets cfg.AuthToken if empty. Returns whether it changed cfg.
@@ -311,9 +392,12 @@ func main() {
 
 	mux.HandleFunc("/printers", func(w http.ResponseWriter, r *http.Request) {
 		names := pm.ListPrinters()
-		configMu.RLock()
+		// Full Lock, not RLock: loadConfig can itself write (MachineID
+		// upgrade branch), so two concurrent readers here could otherwise
+		// race to persist.
+		configMu.Lock()
 		config, err := loadConfig()
-		configMu.RUnlock()
+		configMu.Unlock()
 		networkSet := make(map[string]bool)
 		if err == nil {
 			for _, np := range config.NetworkPrinters {
@@ -1065,14 +1149,41 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to generate agent auth token: %v", err)
 	}
-	if tokenJustGenerated {
-		// A freshly generated token MUST be persisted: desktop reads the
-		// token only from the config file, so an in-memory-only token would
-		// make every desktop request 401 until the agent is restarted.
+	// loadConfig's MachineID-upgrade branch only fires once a config file
+	// exists to unmarshal (it runs after a successful json.Unmarshal). On a
+	// genuinely first-ever run — no ~/.idento yet — authCfg came back from
+	// defaultConfig() instead, which never sets MachineID. Without this,
+	// GET /info would report an empty machine_id for this process's entire
+	// lifetime (fixed only by a restart, once the save below creates the
+	// file loadConfig can then upgrade). Mirrors ensureAuthToken/
+	// tokenJustGenerated immediately above.
+	machineIDJustGenerated := authCfg.MachineID == ""
+	if machineIDJustGenerated {
+		id, err := generateUUIDv4()
+		if err != nil {
+			// Startup path only: unlike loadConfig's HTTP-handler-reachable
+			// upgrade branch, generateUUIDv4 failing here means the agent
+			// can never mint a machine id at all — nothing to serve yet, so
+			// Fatal is the right call (mirrors ensureAuthToken's Fatalf
+			// immediately above).
+			log.Fatalf("Failed to generate machine id: %v", err)
+		}
+		authCfg.MachineID = id
+	}
+	if tokenJustGenerated || machineIDJustGenerated {
+		// A freshly generated token or machine id MUST be persisted: desktop
+		// reads the token only from the config file (an in-memory-only token
+		// would 401 every desktop request until restart), and /info must
+		// keep returning the same machine_id across restarts once assigned.
 		if err := saveConfig(authCfg); err != nil {
-			log.Fatalf("Failed to persist newly generated agent auth token to ~/.idento/agent_config.json: %v", err)
+			log.Fatalf("Failed to persist newly generated agent auth token/machine id to ~/.idento/agent_config.json: %v", err)
 		}
 	}
+	// Registered here (not alongside the other handlers above) because it
+	// needs authCfg.MachineID, which is only guaranteed non-empty once the
+	// generate-and-persist step above has run.
+	mux.HandleFunc("/info", infoHandler(authCfg.MachineID))
+
 	allowedOrigins := resolveAllowedOrigins(authCfg)
 	authorizer := httpauth.New(authCfg.AuthToken, allowedOrigins)
 

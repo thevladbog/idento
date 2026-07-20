@@ -18,9 +18,36 @@ const server = startMswServer(
   http.get("http://agent.test/printers/default", () =>
     HttpResponse.json({ default: "HP_Smart_Tank_790_series" }),
   ),
+  http.get("http://agent.test/scanners", () =>
+    HttpResponse.json([{ name: "Scanner_COM3", port_name: "COM3" }]),
+  ),
+  http.get("http://agent.test/scanners/ports", () =>
+    HttpResponse.json([
+      { port_name: "COM3", display_name: "COM3", device_type: "serial", transport: "usb" },
+      { port_name: "COM4" },
+    ]),
+  ),
+  http.post("http://agent.test/scanners/add", () =>
+    HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" }),
+  ),
+  http.post("http://agent.test/scanners/remove", () =>
+    HttpResponse.json({ status: "removed", name: "Scanner_COM3", port: "COM3" }),
+  ),
   http.post("http://agent.test/print", () => HttpResponse.json({ status: "printed" })),
+  http.post("http://agent.test/printers/add", () =>
+    HttpResponse.json({ status: "added", name: "Network_Office", address: "192.168.0.245:9100" }, { status: 201 }),
+  ),
+  http.post("http://agent.test/printers/default", () => HttpResponse.json({ default: "Network_Office" })),
   http.post("http://agent.test/scan/consume", () =>
     HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" }),
+  ),
+  http.get("http://agent.test/info", () =>
+    HttpResponse.json({
+      machine_id: "mach-abc123",
+      hostname: "kiosk-07",
+      version: "1.4.0",
+      uptime_seconds: 3600,
+    }),
   ),
 );
 
@@ -68,6 +95,121 @@ describe("agentClient", () => {
     it("throws on a non-2xx response", async () => {
       server.use(http.get("http://agent.test/printers", () => new HttpResponse(null, { status: 500 })));
       await expect(agentClient.getPrinters()).rejects.toThrow();
+    });
+  });
+
+  // P4.3 Task 6 -- the equipment hub's com-scanner liveness signal
+  // (agent/openapi.yaml GET /scanners, tag "Scanners"). Mirrors getPrinters'
+  // shape/error tests; no type-narrowing here since GET /scanners only ever
+  // reports com scanners the agent has opened.
+  describe("getScanners", () => {
+    it("returns the open com scanner list", async () => {
+      await expect(agentClient.getScanners()).resolves.toEqual([{ name: "Scanner_COM3", port_name: "COM3" }]);
+    });
+
+    it("returns an empty array when the agent has no com scanner open", async () => {
+      server.use(http.get("http://agent.test/scanners", () => HttpResponse.json([])));
+      await expect(agentClient.getScanners()).resolves.toEqual([]);
+    });
+
+    it("throws on a non-2xx response", async () => {
+      server.use(http.get("http://agent.test/scanners", () => new HttpResponse(null, { status: 500 })));
+      await expect(agentClient.getScanners()).rejects.toThrow();
+    });
+  });
+
+  // P4.3 Task 9 -- the scanner wizard's COM port picker (agent/openapi.yaml
+  // GET /scanners/ports, tag "Scanners"). Narrows the agent's richer
+  // response (optional USB metadata per port) down to just the port_name
+  // strings this app actually uses -- same idiom as getPrinters' type
+  // narrowing.
+  describe("getScannerPorts", () => {
+    it("returns just the port_name strings, discarding the optional USB metadata", async () => {
+      await expect(agentClient.getScannerPorts()).resolves.toEqual(["COM3", "COM4"]);
+    });
+
+    it("returns an empty array when the agent finds no ports (not an error)", async () => {
+      server.use(http.get("http://agent.test/scanners/ports", () => HttpResponse.json([])));
+      await expect(agentClient.getScannerPorts()).resolves.toEqual([]);
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.get("http://agent.test/scanners/ports", () => new HttpResponse("agent misconfigured", { status: 500 })),
+      );
+      await expect(agentClient.getScannerPorts()).rejects.toThrow(/agent misconfigured/);
+    });
+  });
+
+  // P4.3 Task 9 -- the wizard's COM path: pick a port, open it agent-side
+  // (agent/openapi.yaml POST /scanners/add, tag "Scanners", body
+  // `ScannerRequest` = {port_name}).
+  describe("addComScanner", () => {
+    it("POSTs {port_name} to /scanners/add and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/scanners/add", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await expect(agentClient.addComScanner("COM3")).resolves.toBeUndefined();
+      expect(captured).toEqual({ port_name: "COM3" });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/scanners/add", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ status: "added", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await agentClient.addComScanner("COM3");
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/add", () => new HttpResponse("port_name is required", { status: 400 })),
+      );
+      await expect(agentClient.addComScanner("")).rejects.toThrow(/port_name is required/);
+    });
+  });
+
+  // P4.3 Task 9 -- the equipment hub's best-effort mirror cleanup when a
+  // saved kind=com device is deleted (EquipmentPage.tsx). Same ScannerRequest
+  // body shape as addComScanner -- confirmed against agent/openapi.yaml,
+  // POST /scanners/remove takes {port_name} only, never a separate "name"
+  // identifier.
+  describe("removeComScanner", () => {
+    it("POSTs {port_name} to /scanners/remove and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/scanners/remove", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "removed", name: "Scanner_COM3", port: "COM3" });
+        }),
+      );
+      await expect(agentClient.removeComScanner("COM3")).resolves.toBeUndefined();
+      expect(captured).toEqual({ port_name: "COM3" });
+    });
+
+    // The endpoint is documented as idempotent (200 even when the port was
+    // never open) -- this client just passes that 200 straight through as
+    // a normal resolve, no special-casing needed.
+    it("resolves void on 200 even when the agent reports the port was already absent", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/remove", () => HttpResponse.json({ status: "removed" })),
+      );
+      await expect(agentClient.removeComScanner("COM9")).resolves.toBeUndefined();
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/scanners/remove", () => new HttpResponse("port_name is required", { status: 400 })),
+      );
+      await expect(agentClient.removeComScanner("")).rejects.toThrow(/port_name is required/);
     });
   });
 
@@ -165,12 +307,123 @@ describe("agentClient", () => {
     });
   });
 
+  // P4.3 Task 8 -- the printer wizard's "Enter IP manually" escape hatch
+  // (agent/openapi.yaml POST /printers/add, tag "Printers"). Registers a
+  // network printer with the agent by IP; the wizard then selects it by
+  // the SAME `name` it sent (agentClient.ts's own doc comment on this
+  // method -- the 201 response's echoed name/address aren't read).
+  describe("addNetworkPrinter", () => {
+    it("POSTs {name, ip, port} to /printers/add and resolves void on 201", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/printers/add", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ status: "added", name: "Network_Office", address: "192.168.0.245:9100" }, { status: 201 });
+        }),
+      );
+      await expect(
+        agentClient.addNetworkPrinter({ name: "Network_Office", ip: "192.168.0.245", port: 9100 }),
+      ).resolves.toBeUndefined();
+      expect(captured).toEqual({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/printers/add", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ status: "added", name: "n", address: "a" }, { status: 201 });
+        }),
+      );
+      await agentClient.addNetworkPrinter({ name: "Network_Office", ip: "192.168.0.245", port: 9100 });
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/printers/add", () => new HttpResponse("name and ip are required", { status: 400 })),
+      );
+      await expect(
+        agentClient.addNetworkPrinter({ name: "", ip: "", port: 9100 }),
+      ).rejects.toThrow(/name and ip are required/);
+    });
+  });
+
+  // P4.3 Task 8 -- the wizard's Save step default-mirror call (spec §5.3
+  // "server-wins": the registry's make_default write is the source of
+  // truth; this just keeps the agent's OWN /printers/default config in
+  // sync for any agent-local caller). Mirrors setDefaultPrinter, tag
+  // "Printers".
+  describe("setDefaultPrinter", () => {
+    it("POSTs {default: name} to /printers/default and resolves void on 200", async () => {
+      let captured: unknown;
+      server.use(
+        http.post("http://agent.test/printers/default", async ({ request }) => {
+          captured = await request.json();
+          return HttpResponse.json({ default: "Network_Office" });
+        }),
+      );
+      await expect(agentClient.setDefaultPrinter("Network_Office")).resolves.toBeUndefined();
+      expect(captured).toEqual({ default: "Network_Office" });
+    });
+
+    it("sends Content-Type: application/json (required by the agent's Origin-allowlist auth for mutations)", async () => {
+      let capturedContentType: string | null = null;
+      server.use(
+        http.post("http://agent.test/printers/default", ({ request }) => {
+          capturedContentType = request.headers.get("Content-Type");
+          return HttpResponse.json({ default: "Network_Office" });
+        }),
+      );
+      await agentClient.setDefaultPrinter("Network_Office");
+      expect(capturedContentType).toBe("application/json");
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(
+        http.post("http://agent.test/printers/default", () => new HttpResponse("printer not in list", { status: 400 })),
+      );
+      await expect(agentClient.setDefaultPrinter("Missing")).rejects.toThrow(/printer not in list/);
+    });
+  });
+
   // P4.1 Task 7 (+ 2026-07-18 atomic-consume migration) -- the handheld-
   // scanner check-in mode's polling primitive. Confirmed present in the
   // agent's OWN contract (agent/openapi.yaml's POST /scan/consume, tag
   // "Scan") -- not a panel-side invention. Replaces the earlier
   // GET /scan/last + POST /scan/clear pair, which had a real race (see
   // docs/superpowers/plans/2026-07-18-agent-atomic-scan-consume.md).
+  // Task 5 (P4.3) -- GET /info is the agent's own identity/version endpoint
+  // (Task 1, agent/openapi.yaml), unauthenticated. A pre-P4.3 agent binary
+  // has no /info route at all and answers 404 -- that 404 is the ONLY case
+  // that resolves to null; every other non-2xx is a genuine failure and
+  // must throw same as every other agentClient method.
+  describe("getInfo", () => {
+    it("returns the parsed AgentInfo on 200", async () => {
+      await expect(agentClient.getInfo()).resolves.toEqual({
+        machine_id: "mach-abc123",
+        hostname: "kiosk-07",
+        version: "1.4.0",
+        uptime_seconds: 3600,
+      });
+    });
+
+    it("resolves null (not an error) on 404 -- a pre-P4.3 agent with no /info route", async () => {
+      server.use(http.get("http://agent.test/info", () => new HttpResponse(null, { status: 404 })));
+      await expect(agentClient.getInfo()).resolves.toBeNull();
+    });
+
+    it("throws on a non-2xx response, surfacing the agent's plain-text error body", async () => {
+      server.use(http.get("http://agent.test/info", () => new HttpResponse("agent misconfigured", { status: 500 })));
+      await expect(agentClient.getInfo()).rejects.toThrow(/agent misconfigured/);
+    });
+
+    it("throws on a genuine network failure", async () => {
+      server.use(http.get("http://agent.test/info", () => HttpResponse.error()));
+      await expect(agentClient.getInfo()).rejects.toThrow();
+    });
+  });
+
   describe("consumeLastScan", () => {
     it("returns the empty sentinel when nothing has been scanned since the last consume", async () => {
       await expect(agentClient.consumeLastScan()).resolves.toEqual({
@@ -211,6 +464,26 @@ describe("agentClient", () => {
     it("throws on a genuine network failure", async () => {
       server.use(http.post("http://agent.test/scan/consume", () => HttpResponse.error()));
       await expect(agentClient.consumeLastScan()).rejects.toThrow();
+    });
+
+    // Task 9 review fix round, Important-2: the scanner wizard's COM
+    // listen poll must be able to abort an in-flight consume when its
+    // listen phase is cancelled -- otherwise a request already on the
+    // wire when the dialog closes still drains the agent's shared buffer
+    // and can silently eat a real scan the check-in station needs.
+    it("rejects promptly (without waiting for the response) when the caller's AbortSignal fires mid-request", async () => {
+      server.use(
+        http.post("http://agent.test/scan/consume", async () => {
+          await delay(300);
+          return HttpResponse.json({ code: "", time: "0001-01-01T00:00:00Z" });
+        }),
+      );
+      const controller = new AbortController();
+      const start = Date.now();
+      const pending = agentClient.consumeLastScan(controller.signal);
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(Date.now() - start).toBeLessThan(200);
     });
   });
 });

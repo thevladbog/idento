@@ -5,7 +5,11 @@ import type { paths } from "./schema";
 
 declare global {
   interface Window {
-    __ENV__?: { API_URL?: string; AGENT_URL?: string };
+    // AGENT_DOWNLOAD_URL (P4.3 Task 7, board 5d): the "Start the agent"
+    // card's download-link href — read fresh at render time, same
+    // window.__ENV__ runtime-config mechanism as API_URL/AGENT_URL above,
+    // so an on-prem operator can point it at their own mirror.
+    __ENV__?: { API_URL?: string; AGENT_URL?: string; AGENT_DOWNLOAD_URL?: string };
   }
 }
 
