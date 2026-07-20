@@ -60,6 +60,14 @@ export interface DeviceCardProps {
   onSetDefault: (device: EquipmentDevice) => void;
   onClearDefault: (device: EquipmentDevice) => void;
   onDelete: (device: EquipmentDevice) => void;
+  // "Edit address…" row-menu action, shown only for a network printer row
+  // (device.kind === "network" -- the only class/kind pair with an ip/port
+  // to edit; the 2026-07-20 Zebra run's gap: previously the only way to
+  // change a saved network printer's address was delete + recreate).
+  // Printer-column only (mirrors showDefaultControls' own "only the printer
+  // column has this concept" shape) -- undefined for the scanner column,
+  // same "no affordance, not a disabled one" convention as onTestPrint.
+  onEditAddress?: (device: EquipmentDevice) => void;
   onRetryLive: () => void;
   // P4.3 Task 8 -- when provided, the header + empty-state "+ Set up …"
   // buttons become the REAL enabled affordance (opens the class's wizard)
@@ -113,8 +121,8 @@ function formatNotSeenDate(iso: string, locale: string): string {
 
 export function DeviceCard({
   testId, icon: Icon, titleText, emptyTitle, footerText, setUpLabel, rows, unsavedPrinters = [], agentDown,
-  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onRetryLive, onSetUp, onSaveUnsaved,
-  onTestPrint, onTestScan, disableActions = false,
+  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onEditAddress, onRetryLive, onSetUp,
+  onSaveUnsaved, onTestPrint, onTestScan, disableActions = false,
 }: DeviceCardProps) {
   const { t, i18n } = useTranslation();
   const isEmpty = rows.length === 0 && unsavedPrinters.length === 0;
@@ -260,6 +268,11 @@ export function DeviceCard({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onSelect={() => onRename(device)}>{t("equipmentRename")}</DropdownMenuItem>
+                          {onEditAddress && device.kind === "network" ? (
+                            <DropdownMenuItem onSelect={() => onEditAddress(device)}>
+                              {t("equipmentEditAddress")}
+                            </DropdownMenuItem>
+                          ) : null}
                           {showDefaultControls ? (
                             <DropdownMenuItem
                               onSelect={() => (device.is_default ? onClearDefault(device) : onSetDefault(device))}

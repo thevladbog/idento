@@ -205,6 +205,31 @@ async function addNetworkPrinter(request: AddNetworkPrinterRequest): Promise<voi
 }
 
 /**
+ * Removes a printer from the agent's manager AND its persisted config
+ * (agent/openapi.yaml's POST /printers/remove). Paired with
+ * addNetworkPrinter by the hub's "Edit address…" mirror: the agent's own
+ * /printers/add keeps an ALREADY-KNOWN name's persisted config untouched
+ * (agent/main.go's exists-check only appends genuinely new names), so a
+ * bare re-add under the same name would apply the new address only until
+ * the next agent restart, then silently revert to the old one --
+ * remove-then-add is the honest sequence for a changed address. Like every
+ * other agent mirror, strictly best-effort for callers (warn, don't fail
+ * -- the registry PATCH is the source of truth); see EquipmentPage.tsx's
+ * mirrorAddressToAgent.
+ */
+async function removeNetworkPrinter(name: string): Promise<void> {
+  const response = await fetch(agentUrl("/printers/remove"), {
+    method: "POST",
+    // Required for the agent's Origin-allowlist browser fallback auth on
+    // mutating requests (see agent/openapi.yaml's Авторизация section) --
+    // without it a same-origin-allowlisted-but-tokenless request gets 415.
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  await ensureOk(response, "agent POST /printers/remove failed");
+}
+
+/**
  * P4.3 Task 8 -- sets the agent's own configured default printer (agent/
  * openapi.yaml's POST /printers/default). This is a MIRROR of the
  * equipment registry's `make_default` rule (spec §5.3 "server-wins" --
@@ -377,6 +402,7 @@ export const agentClient = {
   removeComScanner,
   getDefaultPrinter,
   addNetworkPrinter,
+  removeNetworkPrinter,
   setDefaultPrinter,
   getInfo,
   print,
