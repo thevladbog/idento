@@ -36,10 +36,12 @@ services:
 
   web:
     build:
-      context: ./web
+      context: .
+      dockerfile: deploy/Dockerfile
     restart: always
     environment:
       PUBLIC_API_URL: ${PUBLIC_API_URL:?set PUBLIC_API_URL in .env (e.g. http://your-host:8008)}
+      PUBLIC_AGENT_URL: ${PUBLIC_AGENT_URL:-}
     ports:
       - "80:8080" # container nginx is unprivileged and listens on 8080
     depends_on:
