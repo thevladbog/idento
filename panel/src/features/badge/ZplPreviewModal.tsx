@@ -26,7 +26,7 @@ import { resolveElementText } from "./canvasMath";
 import type { BadgeConfig } from "./templateTypes";
 import { rasterizeText, rasterizeTextToBitmap, RasterUnavailableError } from "./zpl/canvasRasterizer";
 import {
-  generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots,
+  barcodeFieldOrigin, generateZpl, mapZPLFontToSystemFont, mmToDots, needsImageRendering, pointsToDots,
   rasterFieldOrigin, valignOffsetDots,
   type RawBadgeElement,
 } from "./zpl/generateZpl";
@@ -447,15 +447,35 @@ function drawElement(
     case "barcode": {
       const value = resolveElementText(element, previewData);
       const heightDots = mmToDots(element.height || 10, config.dpi);
-      const widthDots = mmToDots(element.width || 30, config.dpi);
+      const zoneWidthDots = mmToDots(element.width || 30, config.dpi);
+      const origin = barcodeFieldOrigin(element, config.dpi, value.length);
+      // Placeholder span: the full zone width for left/absent align
+      // (matches this approximation's existing behavior), or the SAME
+      // estimated width barcodeFieldOrigin used to compute a center offset
+      // / that a real right-aligned barcode would occupy -- otherwise a
+      // centered or right-aligned barcode would still visually fill the
+      // WHOLE zone, defeating the point of showing alignment at all here.
+      const placeholderWidthDots = element.align === "center" || element.align === "right"
+        ? origin.estimatedWidthDots
+        : zoneWidthDots;
+      // For right align, origin.x is the zone's RIGHT edge (what the real
+      // ^FO needs); the placeholder draws left-to-right, so its start is
+      // that edge minus the span above. Left/center already start exactly
+      // where the placeholder should.
+      const placeholderStartX = element.align === "right"
+        ? origin.x - placeholderWidthDots
+        : origin.x;
       // Striped placeholder -- no barcode-rendering lib in this repo
       // (YAGNI, per plan), same honest "approximation, not scannable"
-      // treatment BadgeCanvas.tsx's own barcode placeholder uses.
+      // treatment BadgeCanvas.tsx's own barcode placeholder uses. Shifted by
+      // barcodeFieldOrigin's SAME offset generateZpl's real ^FO uses, so
+      // this preview can never disagree with what actually prints (same
+      // "true preview" principle PR #88 established for raster align/valign).
       // PRINT_INK -- see this file's exception comment above.
       ctx.fillStyle = PRINT_INK;
-      const stripeWidth = Math.max(2, Math.round(widthDots / 40));
-      for (let sx = 0; sx < widthDots; sx += stripeWidth * 2) {
-        ctx.fillRect(x + sx, y, stripeWidth, heightDots);
+      const stripeWidth = Math.max(2, Math.round(placeholderWidthDots / 40));
+      for (let sx = 0; sx < placeholderWidthDots; sx += stripeWidth * 2) {
+        ctx.fillRect(placeholderStartX + sx, y, stripeWidth, heightDots);
       }
       // Mirrors generateZpl.ts's generateBarcodeZPL: showCaption === false is
       // the only value that suppresses the interpretation line -- absent/true
@@ -464,7 +484,7 @@ function drawElement(
       if (element.showCaption !== false) {
         ctx.font = `${Math.round(config.dpi / 25)}px monospace`;
         ctx.textBaseline = "top";
-        ctx.fillText(value, x, y + heightDots + 4);
+        ctx.fillText(value, placeholderStartX, y + heightDots + 4);
       }
       return;
     }
