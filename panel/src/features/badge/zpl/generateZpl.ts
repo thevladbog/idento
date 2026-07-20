@@ -2,12 +2,19 @@
 // `generateZPL` pipeline (+ web/src/utils/zpl-image-text.ts for the raster
 // branch) into the panel editor (P3.2 Task 1).
 //
-// This is a PORT, not a redesign: every documented limitation of the web
-// pipeline is preserved on purpose, most importantly that the raster branch
-// (fires when text needs non-Latin-script image rendering OR a customFont is
-// set) returns immediately and silently DROPS rotation/valign/^FB-wrap/
-// maxLines -- see generateTextZPL below. Deviating from that is a plan
-// violation, not an improvement.
+// This is a PORT, not a redesign: most documented limitations of the web
+// pipeline are preserved on purpose. One of them was lifted post-P3.2
+// (2026-07-20, see rasterFieldOrigin below): the raster branch (fires when
+// text needs non-Latin-script image rendering OR a customFont is set) used
+// to return immediately and silently drop align/valign along with rotation/
+// ^FB-wrap/maxLines (reconciliation #7). The P3.2 printed-matrix run showed
+// the user-visible cost directly -- EN names printed centered via native
+// ^FB, RU names printed left-pinned, same template -- so align/valign are
+// now honored on this branch too via an ^FO offset computed from the
+// rasterized bitmap's own measured size. rotation and ^FB-wrap/maxLines
+// remain dropped; ^FB is a native-text-only ZPL command family and rotating
+// a pre-rasterized bitmap would require re-rasterizing into a rotated
+// canvas, which is out of scope here -- see generateTextZPL below.
 //
 // The rasterizer itself is injected via `deps.rasterizeText` because jsdom
 // (this task's test environment) has no canvas; the real browser canvas
@@ -126,6 +133,56 @@ function getZPLAlignment(align: "left" | "center" | "right" = "left"): string {
 }
 
 /**
+ * Compute the ^FO origin for a raster-rendered text field, offsetting the
+ * element's plain `mmToDots(x, y)` position by align/valign slack -- the
+ * raster-branch counterpart to the native branch's ^FB justification
+ * (align) and pre-^FO y-adjustment (valign, generateTextZPL below). Slack is
+ * `max(0, boxSizeDots - rasterSizeDots)` on each axis, split by align/valign
+ * exactly like the native branch's own rules (center = half slack, right/
+ * bottom = full slack, left/top/unset = none); a raster bitmap that's
+ * already as large as or larger than its box clamps to 0 slack rather than
+ * moving backward past the element's own x/y. Both offsets are gated the
+ * same way the native branch gates its own ^FB (needs `width`) and valign
+ * (needs `height`) adjustments: no `width` means align never applies no
+ * matter what `align` says, and likewise for `height`/valign.
+ *
+ * Pure and exported so ZplPreviewModal's Rendered-tab composition
+ * (`drawElement`'s raster-text case) can call the exact same offset math the
+ * ZPL generator uses -- print and preview can never disagree about where an
+ * aligned raster field lands.
+ */
+export function rasterFieldOrigin(
+  element: Pick<RawBadgeElement, "x" | "y" | "width" | "height" | "align" | "valign">,
+  dpi: number,
+  raster: { width: number; height: number },
+): { x: number; y: number } {
+  let x = mmToDots(element.x, dpi);
+  let y = mmToDots(element.y, dpi);
+
+  if (element.width && element.align) {
+    const boxWidthDots = mmToDots(element.width, dpi);
+    const slack = Math.max(0, boxWidthDots - raster.width);
+    if (element.align === "center") {
+      x += Math.round(slack / 2);
+    } else if (element.align === "right") {
+      x += slack;
+    }
+  }
+
+  if (element.height && element.valign) {
+    const boxHeightDots = mmToDots(element.height, dpi);
+    const slack = Math.max(0, boxHeightDots - raster.height);
+    if (element.valign === "middle") {
+      y += Math.round(slack / 2);
+    } else if (element.valign === "bottom") {
+      y += slack;
+    }
+  }
+
+  return { x, y };
+}
+
+/**
  * Generate ZPL for a text element. Ports web/src/utils/zpl.ts:92-184
  * (`generateTextZPL`).
  */
@@ -145,10 +202,12 @@ async function generateTextZPL(
 
   // Use image rendering when text has non-Latin script OR when a custom
   // font is set (so one font renders all of an element's text). This branch
-  // returns immediately -- rotation/valign/^FB-wrap/maxLines below are never
-  // applied to a raster-rendered element. This is a KNOWN, INTENTIONAL
-  // parity limitation of the web pipeline (reconciliation #7): do not "fix"
-  // it here. Ports web/src/utils/zpl.ts:107-125.
+  // returns immediately -- rotation/^FB-wrap/maxLines below are never
+  // applied to a raster-rendered element (still a KNOWN, INTENTIONAL parity
+  // limitation, reconciliation #7). align/valign, however, ARE honored here
+  // via rasterFieldOrigin -- see that function's own comment for why this
+  // half of the limitation was lifted. Ports web/src/utils/zpl.ts:107-125
+  // minus the align/valign drop.
   const useImageRendering = needsImageRendering(textContent) || !!(element.customFont && element.customFont.trim());
   if (useImageRendering) {
     const fontSize = element.fontSize || 12;
@@ -162,7 +221,8 @@ async function generateTextZPL(
       fontSizePx: fontSizePixels,
       fontWeight,
     });
-    return buildGfaCommand(x, y, raster);
+    const origin = rasterFieldOrigin(element, dpi, raster);
+    return buildGfaCommand(origin.x, origin.y, raster);
   }
 
   // Escape special ZPL characters for regular (native) text.
