@@ -161,7 +161,14 @@ describe("AddStaffDialog", () => {
       await waitFor(() => expect(readinessHitCount).toBe(1));
       const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
-      await user.click(await screen.findByText("bob@example.com"));
+      // The candidate picker is an @idento/ui RadioGroup: a role=radiogroup
+      // wrapping one role=radio per selectable candidate.
+      await screen.findByText("bob@example.com");
+      const candidateGroup = screen.getByRole("radiogroup");
+      const bob = within(candidateGroup).getByRole("radio", { name: /bob@example\.com/ });
+      expect(bob).not.toBeChecked();
+      await user.click(bob);
+      expect(bob).toBeChecked();
       await user.click(screen.getByRole("button", { name: "Add" }));
 
       await waitFor(() => expect(assignCount).toBe(1));

@@ -273,29 +273,29 @@ export function AddStaffDialog({
             ) : candidates.length === 0 ? (
               <p className="text-body text-muted-foreground">{t("staffAddNoCandidates")}</p>
             ) : (
-              <fieldset className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+              <fieldset className="flex max-h-64 flex-col overflow-y-auto">
                 <legend className="mb-1 text-caption text-muted-foreground">{t("staffAddExistingLabel")}</legend>
-                {candidates.map((candidate: StaffUser) => (
-                  <label
-                    key={candidate.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border p-2 has-[:checked]:border-primary"
-                  >
-                    <input
-                      type="radio"
-                      name="add-staff-candidate"
-                      value={candidate.id}
-                      checked={selectedUserId === candidate.id}
-                      onChange={() => {
-                        setSelectedUserId(candidate.id);
-                        setExistingError(false);
-                      }}
-                    />
-                    <span className="flex flex-col">
-                      <span className="text-body">{candidate.email}</span>
-                      <span className="text-caption text-muted-foreground">{t(ROLE_LABEL_KEYS[candidate.role])}</span>
-                    </span>
-                  </label>
-                ))}
+                <RadioGroup
+                  value={selectedUserId ?? undefined}
+                  onValueChange={(value) => {
+                    setSelectedUserId(value);
+                    setExistingError(false);
+                  }}
+                >
+                  {candidates.map((candidate: StaffUser) => (
+                    <label
+                      key={candidate.id}
+                      htmlFor={`add-staff-candidate-${candidate.id}`}
+                      className="flex cursor-pointer items-center gap-2 rounded-md border border-border p-2 has-[[data-state=checked]]:border-primary"
+                    >
+                      <RadioGroupItem id={`add-staff-candidate-${candidate.id}`} value={candidate.id} />
+                      <span className="flex flex-col">
+                        <span className="text-body">{candidate.email}</span>
+                        <span className="text-caption text-muted-foreground">{t(ROLE_LABEL_KEYS[candidate.role])}</span>
+                      </span>
+                    </label>
+                  ))}
+                </RadioGroup>
               </fieldset>
             )}
             {existingError ? <p className="text-body text-destructive">{t("staffAddAssignError")}</p> : null}
