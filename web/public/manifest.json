@@ -8,18 +8,10 @@
   "theme_color": "#00935e",
   "orientation": "portrait-primary",
   "icons": [
-    {
-      "src": "/super-admin/idento-en-letter.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/super-admin/idento-ru-letter.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/super-admin/favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/super-admin/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "/super-admin/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "/super-admin/maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
   ],
   "categories": ["business", "productivity", "utilities"],
   "lang": "en-US",
