@@ -339,6 +339,36 @@ describe("golden ZPL matrix -- barcode caption toggle (2026-07-20 live-run reque
   });
 });
 
+describe("golden ZPL matrix -- barcode alignment (left/center/right)", () => {
+  // Same bound barcode element as the caption-toggle matrix above, plus
+  // `align` varying across cells. height 12mm at 300dpi -> 142 dots (as
+  // above); default 30mm width zone -> mmToDots(30,300) = 354 dots.
+  // "BADGE-042" is 9 chars: estimatedWidthDots = ((9+2)*11+13)*2 = 268.
+  function alignedBarcodeElement(align?: "left" | "center" | "right"): RawBadgeElement[] {
+    const element: RawBadgeElement = { id: "b-code", type: "barcode", x: 5, y: 5, height: 12, source: "code" };
+    if (align !== undefined) element.align = align;
+    return [element];
+  }
+  const DATA = { code: "BADGE-042" };
+
+  it("cell 1/3 -- align absent: unchanged from the caption-toggle matrix's own cell 1 (no ^FO third argument)", async () => {
+    const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement(), DATA, makeDeterministicDeps());
+    expect(zpl).toBe(HEADER_300 + "^FO59,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+  });
+
+  it("cell 2/3 -- align: \"right\" appends ^FO's z=1 argument, x at the zone's right edge", async () => {
+    const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement("right"), DATA, makeDeterministicDeps());
+    // x = zoneLeftDots(59) + zoneWidthDots(354) = 413.
+    expect(zpl).toBe(HEADER_300 + "^FO413,59,1^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+  });
+
+  it("cell 3/3 -- align: \"center\" computes an offset x, no ^FO third argument", async () => {
+    const zpl = await generateZpl(CONFIG_300, alignedBarcodeElement("center"), DATA, makeDeterministicDeps());
+    // estimatedWidthDots = ((9+2)*11+13)*2 = 268; slack = 354-268 = 86; offset = round(86/2) = 43; x = 59+43 = 102.
+    expect(zpl).toBe(HEADER_300 + "^FO102,59^BCN,142,Y,N,N^FDBADGE-042^FS\n" + FOOTER);
+  });
+});
+
 describe("golden ZPL matrix -- dpi variant (203 vs 300 coordinate scaling)", () => {
   it("the SAME fixture (native font \"0\" x EN) scales every coordinate between 203dpi and 300dpi, nothing else", async () => {
     const deps300 = makeDeterministicDeps();

@@ -320,12 +320,79 @@ function generateQRCodeZPL(element: RawBadgeElement, data: Record<string, string
   return `^FO${x},${y}^BQN,2,${moduleSize}^FDQA,${escapeZplData(qrData)}^FS`;
 }
 
+// Zebra's own factory default module width (^BY's default, 2 dots) -- used
+// here because neither this generator nor its backend/zpl.go twin ever
+// emits ^BY, so the printer's built-in default module width is the width
+// every barcode this pipeline generates actually prints at.
+const BARCODE_MODULE_WIDTH_DOTS = 2;
+
+/**
+ * Estimated Code 128 rendered width in dots for `dataLength` input
+ * characters -- APPROXIMATE (see design doc
+ * docs/superpowers/specs/2026-07-20-badge-barcode-alignment-design.md):
+ * assumes Code Set B (one symbol character per input character, 11 modules
+ * each) plus a start character and a checksum character (also 11 modules
+ * each) and the wider 13-module stop character. All-numeric data may print
+ * NARROWER than this estimate if the printer's firmware auto-switches to
+ * Code Set C (two digits packed per symbol character) -- this is a
+ * documented upper-bound estimate, not an exact value.
+ */
+export function estimateBarcodeWidthDots(dataLength: number): number {
+  const moduleCount = (dataLength + 2) * 11 + 13;
+  return moduleCount * BARCODE_MODULE_WIDTH_DOTS;
+}
+
+/**
+ * Compute the ^FO origin (and whether to append ^FO's right-justification
+ * argument) for a barcode element -- the barcode-branch counterpart to
+ * rasterFieldOrigin above, for the SAME reason: exported so
+ * ZplPreviewModal.tsx's Rendered-tab barcode placeholder can apply the exact
+ * same offset generateBarcodeZPL's real ^FO uses, so the preview can never
+ * disagree with what actually prints.
+ *
+ *  - "right": uses ^FO's own native z=1 justification argument -- `x`
+ *    becomes the zone's RIGHT edge, and the printer computes the barcode's
+ *    true rendered width itself at print time (zero estimation error,
+ *    since Code 128's exact width depends on data-driven subset switching
+ *    this pipeline can't fully predict).
+ *  - "center": ^FO has no center-justification option, so `x` is computed
+ *    from estimateBarcodeWidthDots's approximation, with left justification
+ *    (no ^FO third argument) at that computed x. Slack is clamped to 0 so
+ *    an estimated-wider-than-zone barcode never moves backward past the
+ *    zone's own left edge.
+ *  - "left"/absent: UNCHANGED -- `x` is the zone's left edge, no ^FO third
+ *    argument, byte-identical to every template saved before this feature
+ *    existed.
+ *
+ * Zone width is `element.width ?? 30` (mm), matching canvasMath.ts's
+ * DEFAULT_SIZE_MM.barcode.width and ZplPreviewModal.tsx's own existing
+ * barcode-placeholder fallback -- generateBarcodeZPL didn't read `width` at
+ * all before this feature, so this is a new but precedent-matching default.
+ */
+export function barcodeFieldOrigin(
+  element: Pick<RawBadgeElement, "x" | "width" | "align">,
+  dpi: number,
+  dataLength: number,
+): { x: number; rightJustified: boolean; estimatedWidthDots: number } {
+  const zoneLeftDots = mmToDots(element.x, dpi);
+  const zoneWidthDots = mmToDots(element.width || 30, dpi);
+  const estimatedWidthDots = estimateBarcodeWidthDots(dataLength);
+
+  if (element.align === "right") {
+    return { x: zoneLeftDots + zoneWidthDots, rightJustified: true, estimatedWidthDots };
+  }
+  if (element.align === "center") {
+    const offset = Math.max(0, Math.round((zoneWidthDots - estimatedWidthDots) / 2));
+    return { x: zoneLeftDots + offset, rightJustified: false, estimatedWidthDots };
+  }
+  return { x: zoneLeftDots, rightJustified: false, estimatedWidthDots };
+}
+
 /**
  * Generate ZPL for a barcode (Code 128) element. Ports
  * web/src/utils/zpl.ts:219-240 (`generateBarcodeZPL`).
  */
 function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, string>, dpi: number): string {
-  const x = mmToDots(element.x, dpi);
   const y = mmToDots(element.y, dpi);
 
   const barcodeData = resolveElementText(element, data);
@@ -343,8 +410,11 @@ function generateBarcodeZPL(element: RawBadgeElement, data: Record<string, strin
   // path only ever calls the Go generator, never this one.
   const interpretationLine = element.showCaption === false ? "N" : "Y";
 
+  const origin = barcodeFieldOrigin(element, dpi, barcodeData.length);
+  const foSuffix = origin.rightJustified ? ",1" : "";
+
   // ^BC = Code 128
-  return `^FO${x},${y}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
+  return `^FO${origin.x},${y}${foSuffix}^BCN,${height},${interpretationLine},N,N^FD${escapeZplData(barcodeData)}^FS`;
 }
 
 /**

@@ -15,7 +15,9 @@
 // this branch (still-documented deviations); the tests below pin BOTH halves.
 import type { RasterResult } from "./zplImage";
 import {
+  barcodeFieldOrigin,
   escapeZplData,
+  estimateBarcodeWidthDots,
   generateZpl,
   mapZPLFontToSystemFont,
   mmToDots,
@@ -269,6 +271,117 @@ describe("generateZpl -- barcode", () => {
     // toggle on must produce the same bytes web/backend always printed.
     expect(zplExplicit).toBe(zplBare);
     expect(zplBare).toContain("^FO59,59^BCN,118,Y,N,N^FDABC123^FS\n");
+  });
+});
+
+describe("estimateBarcodeWidthDots", () => {
+  it("computes (dataLength + 2) * 11 + 13 modules at 2 dots/module (Zebra ^BY factory default)", () => {
+    // "ABC123" is 6 chars: (6+2)*11+13 = 101 modules * 2 dots = 202.
+    expect(estimateBarcodeWidthDots(6)).toBe(202);
+  });
+
+  it("still returns a positive width for an empty string (start/checksum/stop overhead only)", () => {
+    // (0+2)*11+13 = 35 modules * 2 dots = 70.
+    expect(estimateBarcodeWidthDots(0)).toBe(70);
+  });
+});
+
+describe("barcodeFieldOrigin", () => {
+  it("left/absent align: x is the zone's left edge, unchanged regardless of width", () => {
+    expect(barcodeFieldOrigin({ x: 5, width: 30 }, 300, 6)).toEqual({
+      x: 59, rightJustified: false, estimatedWidthDots: 202,
+    });
+    expect(barcodeFieldOrigin({ x: 5, align: "left" }, 300, 6)).toEqual({
+      x: 59, rightJustified: false, estimatedWidthDots: 202,
+    });
+  });
+
+  it("right align: x is the zone's right edge (left edge + zone width), rightJustified is true", () => {
+    // zoneLeftDots=mmToDots(5,300)=59, zoneWidthDots=mmToDots(30,300)=354 -> x=413.
+    expect(barcodeFieldOrigin({ x: 5, width: 30, align: "right" }, 300, 6)).toEqual({
+      x: 413, rightJustified: true, estimatedWidthDots: 202,
+    });
+  });
+
+  it("right align honors an explicit width (not just the 30mm default)", () => {
+    // zoneWidthDots=mmToDots(50,300)=591 -> x=59+591=650.
+    expect(barcodeFieldOrigin({ x: 5, width: 50, align: "right" }, 300, 6)).toEqual({
+      x: 650, rightJustified: true, estimatedWidthDots: 202,
+    });
+  });
+
+  it("falls back to the 30mm default zone width when width is omitted", () => {
+    expect(barcodeFieldOrigin({ x: 5, align: "right" }, 300, 6)).toEqual({
+      x: 413, rightJustified: true, estimatedWidthDots: 202,
+    });
+  });
+
+  it("treats an explicit width: 0 the same as omitted width (falls back to the 30mm default zone), matching the Go generator's <= 0 check", () => {
+    expect(barcodeFieldOrigin({ x: 5, width: 0, align: "right" }, 300, 6)).toEqual({
+      x: 413, rightJustified: true, estimatedWidthDots: 202,
+    });
+  });
+
+  it("center align: x is offset by half the zone's slack over the estimated barcode width", () => {
+    // slack = zoneWidthDots(354) - estimatedWidthDots(202) = 152; offset = round(152/2) = 76 -> x=59+76=135.
+    expect(barcodeFieldOrigin({ x: 5, width: 30, align: "center" }, 300, 6)).toEqual({
+      x: 135, rightJustified: false, estimatedWidthDots: 202,
+    });
+  });
+
+  it("center align clamps to zero offset (never moves backward past the zone's left edge) when the estimate exceeds the zone width", () => {
+    // zoneWidthDots=mmToDots(10,300)=118, estimatedWidthDots=202 -> negative slack clamps to 0.
+    expect(barcodeFieldOrigin({ x: 5, width: 10, align: "center" }, 300, 6)).toEqual({
+      x: 59, rightJustified: false, estimatedWidthDots: 202,
+    });
+  });
+});
+
+describe("generateZpl -- barcode alignment", () => {
+  it("left/absent align is byte-identical to today's output (no ^FO third argument)", async () => {
+    const element: RawBadgeElement = { id: "e1", type: "barcode", x: 5, y: 5, text: "ABC123" };
+    const zpl = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [element],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    expect(zpl).toContain("^FO59,59^BCN,118,Y,N,N^FDABC123^FS\n");
+  });
+
+  it("right align appends ^FO's z=1 justification argument, x at the zone's right edge (default 30mm width)", async () => {
+    const element: RawBadgeElement = { id: "e1", type: "barcode", x: 5, y: 5, text: "ABC123", align: "right" };
+    const zpl = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [element],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    expect(zpl).toContain("^FO413,59,1^BCN,118,Y,N,N^FDABC123^FS\n");
+  });
+
+  it("right align honors an explicit width zone, not just the 30mm default", async () => {
+    const element: RawBadgeElement = {
+      id: "e1", type: "barcode", x: 5, y: 5, width: 50, text: "ABC123", align: "right",
+    };
+    const zpl = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [element],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    expect(zpl).toContain("^FO650,59,1^BCN,118,Y,N,N^FDABC123^FS\n");
+  });
+
+  it("center align computes an x offset with no ^FO third argument", async () => {
+    const element: RawBadgeElement = { id: "e1", type: "barcode", x: 5, y: 5, text: "ABC123", align: "center" };
+    const zpl = await generateZpl(
+      { width_mm: 90, height_mm: 55, dpi: 300 },
+      [element],
+      {},
+      makeDeps({ hex: "", totalBytes: 0, bytesPerRow: 0 }),
+    );
+    expect(zpl).toContain("^FO135,59^BCN,118,Y,N,N^FDABC123^FS\n");
   });
 });
 

@@ -127,3 +127,76 @@ func TestParseBadgeTemplateStructRawPathAlsoHonorsShowCaption(t *testing.T) {
 		t.Fatalf("expected %q in struct-path output, got: %q", want, zplAbsent)
 	}
 }
+
+// TestGenerateBarcodeAlignment pins the backend half of barcode alignment
+// (panel/src/features/badge/zpl/generateZpl.ts's barcodeFieldOrigin has the
+// TypeScript twin of every case here, using the SAME numeric fixtures for
+// cross-stack parity) -- the real check-in print path only ever calls this
+// Go generator, never the panel's own TypeScript port, so alignment must
+// work here too, not just in the panel's preview.
+func TestGenerateBarcodeAlignment(t *testing.T) {
+	cfg := Config{WidthMM: 90, HeightMM: 55, DPI: 300}
+
+	t.Run("left/absent align is byte-identical to today's output (no ^FO third argument)", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Text: "ABC123"}}
+		zpl := Generate(cfg, els, nil)
+		if want := "^FO59,59^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("right align appends ^FO's z=1 justification argument, x at the zone's right edge (default 30mm width)", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Text: "ABC123", Align: "right"}}
+		zpl := Generate(cfg, els, nil)
+		// x = zoneLeftDots(59) + zoneWidthDots(354) = 413.
+		if want := "^FO413,59,1^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("treats an explicit width: 0 the same as omitted width (falls back to the 30mm default zone)", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Width: 0, Text: "ABC123", Align: "right"}}
+		zpl := Generate(cfg, els, nil)
+		if want := "^FO413,59,1^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("right align honors an explicit width zone, not just the 30mm default", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Width: 50, Text: "ABC123", Align: "right"}}
+		zpl := Generate(cfg, els, nil)
+		// x = zoneLeftDots(59) + zoneWidthDots(591) = 650.
+		if want := "^FO650,59,1^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("center align computes an x offset with no ^FO third argument", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Text: "ABC123", Align: "center"}}
+		zpl := Generate(cfg, els, nil)
+		// estimatedWidthDots = ((6+2)*11+13)*2 = 202; slack = 354-202 = 152; offset = round(152/2) = 76; x = 59+76 = 135.
+		if want := "^FO135,59^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("center align clamps to zero offset when the estimate exceeds a narrow explicit width zone", func(t *testing.T) {
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Width: 10, Text: "ABC123", Align: "center"}}
+		zpl := Generate(cfg, els, nil)
+		// zoneWidthDots=mmToDots(10,300)=118, estimatedWidthDots=202 -> negative slack clamps to 0 -> x=59.
+		if want := "^FO59,59^BCN,118,Y,N,N^FH^FDABC123^FS"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q in output, got: %q", want, zpl)
+		}
+	})
+
+	t.Run("uses rune count, not byte count, for Cyrillic barcode data", func(t *testing.T) {
+		// "Привет" is 6 Cyrillic runes but 12 UTF-8 bytes -- byte-counting
+		// would inflate the estimated width and shift the computed x.
+		els := []BadgeElement{{ID: "e1", Type: "barcode", X: 5, Y: 5, Text: "Привет", Align: "center"}}
+		zpl := Generate(cfg, els, nil)
+		// estimatedWidthDots = ((6+2)*11+13)*2 = 202 (same as "ABC123", 6 runes); offset = 76; x = 135.
+		if want := "^FO135,59"; !strings.Contains(zpl, want) {
+			t.Fatalf("expected %q (rune-counted x) in output, got: %q", want, zpl)
+		}
+	})
+}
