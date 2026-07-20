@@ -29,7 +29,8 @@ export function QrLoginScreen() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-sm">
-        <CardHeader>
+        <CardHeader className="flex flex-col items-center">
+          <img src="/logo-mark.svg" alt="Idento" className="mb-2 h-10 w-auto self-center" />
           <CardTitle>{t("qrLoginTitle")}</CardTitle>
         </CardHeader>
         <CardContent>

@@ -17,6 +17,16 @@ describe("QrLoginScreen", () => {
     window.__ENV__ = { API_URL: "http://api.test" };
   });
 
+  it("shows the Idento brand mark", () => {
+    global.fetch = vi.fn().mockImplementation(() =>
+      new Response(JSON.stringify({ mode: "saas", version: "test", license: null }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    renderWithQuery(<QrLoginScreen />);
+    expect(screen.getByRole("img", { name: "Idento" })).toBeInTheDocument();
+  });
+
   it("submits the manually entered code and saves the session on success", async () => {
     // openapi-fetch (Task 10) reads `.headers`/`.clone()` off the fetch
     // Response, so the mock needs a real Response instance, and it calls the

@@ -16,7 +16,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <ImpersonationBanner />
       <header className="flex items-center gap-4 border-b border-border px-4 py-3">
         <NavDrawer />
-        <span className="text-section-title">{t("appName")}</span>
+        <span className="flex items-center gap-2">
+          <img src="/logo-mark.svg" alt="" aria-hidden="true" className="h-6 w-auto" />
+          <span className="text-section-title">{t("appName")}</span>
+        </span>
         <OrgSwitcher />
         {instance.data?.mode === "onprem" ? (
           <span className="text-caption text-muted-foreground">{t("onPremVersionTag", { version: instance.data.version })}</span>

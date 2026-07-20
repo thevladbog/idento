@@ -62,6 +62,16 @@ describe("LoginScreen", () => {
     await waitFor(() => expect(getCurrentUser()?.email).toBe("a@b.com"));
   });
 
+  it("shows the Idento brand mark", () => {
+    global.fetch = vi.fn().mockImplementation(() =>
+      new Response(JSON.stringify({ mode: "saas", version: "test", license: null }), {
+        status: 200, headers: { "Content-Type": "application/json" },
+      }),
+    );
+    renderWithQuery(<LoginScreen />);
+    expect(screen.getByRole("img", { name: "Idento" })).toBeInTheDocument();
+  });
+
   it("shows an error message when the backend rejects the credentials", async () => {
     // Same URL-routing reasoning as above: /api/instance must keep
     // succeeding on mount, only /auth/login should 401.

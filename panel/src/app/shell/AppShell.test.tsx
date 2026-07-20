@@ -62,6 +62,21 @@ describe("AppShell", () => {
     expect(screen.queryByText(/impersonat/i)).not.toBeInTheDocument();
   });
 
+  it("renders the Idento brand mark in the header", () => {
+    global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "saas", version: "1.0", license: null }));
+    const queryClient = new QueryClient();
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <RouterContextProvider router={testRouter}>
+            <AppShell><div>page content</div></AppShell>
+          </RouterContextProvider>
+        </ThemeProvider>
+      </QueryClientProvider>,
+    );
+    expect(container.querySelector('img[src="/logo-mark.svg"]')).not.toBeNull();
+  });
+
   it("shows the ON-PREM version tag when the instance is on-prem", async () => {
     global.fetch = vi.fn().mockImplementation(() => jsonResponse(200, { mode: "onprem", version: "2.4.1", license: null }));
     const queryClient = new QueryClient();
