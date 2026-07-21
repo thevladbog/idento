@@ -49,7 +49,7 @@ When using Idento:
 ## Known Security Considerations
 
 - This is a proprietary project - ensure you have proper licensing before deployment
-- The default credentials (`admin@test.com` / `password123`) are for development only
+- The default credentials (`admin@test.com` / `password`) are for development only
 - Change all default passwords in production
 - Ensure proper network segmentation for printer communications
 
