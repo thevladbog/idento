@@ -24,6 +24,8 @@ import { useConnectionState } from "@/features/checkin/useConnectionState";
 import { useHeartbeat } from "@/features/checkin/useHeartbeat";
 import { useScanInput } from "@/features/checkin/useScanInput";
 import { DEFAULT_CHECKIN_SETTINGS } from "@/features/checkin/settingsTypes";
+import type { Attendee } from "@/features/checkin/types";
+import { api } from "@/lib/api";
 import { loadRunLayout } from "@/pages/Mode";
 
 export default function RunPage() {
@@ -51,7 +53,25 @@ export default function RunPage() {
   });
 
   const [searchValue, setSearchValue] = useState("");
+  const [searchResults, setSearchResults] = useState<Attendee[]>([]);
   const scanEnabled = flow.state.status === "idle" && connection.online && !printerGateActive;
+
+  const runSearch = async () => {
+    const query = searchValue.trim();
+    if (!query) return;
+    try {
+      const { data } = await api.get<Attendee[]>(`/api/events/${eventId}/attendees`, { params: { search: query } });
+      setSearchResults(Array.isArray(data) ? data : []);
+    } catch {
+      setSearchResults([]);
+    }
+  };
+
+  const pickAttendee = (attendee: Attendee) => {
+    setSearchResults([]);
+    setSearchValue("");
+    void flow.submitAttendee(attendee).catch(() => {});
+  };
 
   const { wedgeInputProps, degraded: scannerDegraded } = useScanInput({
     mode: settings.scan_input,
@@ -102,7 +122,7 @@ export default function RunPage() {
         actions: settings.print_on_checkin
           ? undefined
           : [{ label: t("print"), kind: "solid" as const, onClick: () => void flow.printCurrent() }],
-        autoReturn: { label: t("checking"), progress: 0.5 },
+        autoReturn: { label: t("runAutoReturning"), progress: 0.5 },
       };
     }
     if (v === "already_checked_in") {
@@ -121,6 +141,7 @@ export default function RunPage() {
         name,
         meta: flow.state.attendee?.block_reason ? [{ label: t("runBlockReason"), value: flow.state.attendee.block_reason }] : undefined,
         actions: [{ label: t("done"), kind: "outline" as const, onClick: () => flow.clear() }],
+        autoReturn: { label: t("runAutoReturning"), progress: 0.5 },
       };
     }
     return {
@@ -128,6 +149,7 @@ export default function RunPage() {
       title: t("runNotFoundTitle"),
       message: t("runNotFoundMessage"),
       actions: [{ label: t("done"), kind: "outline" as const, onClick: () => flow.clear() }],
+      autoReturn: { label: t("runAutoReturning"), progress: 0.5 },
     };
   })();
 
@@ -162,13 +184,33 @@ export default function RunPage() {
               </div>
               <input aria-hidden {...wedgeInputProps} className="sr-only" />
               {settings.manual_search_enabled && (
-                <KioskInput
-                  className="w-[480px]"
-                  placeholder={t("runManualSearchPlaceholder")}
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  disabled={!scanEnabled}
-                />
+                <div className="flex w-[480px] flex-col gap-3">
+                  <KioskInput
+                    placeholder={t("runManualSearchPlaceholder")}
+                    value={searchValue}
+                    onChange={(e) => setSearchValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void runSearch();
+                    }}
+                    disabled={!scanEnabled}
+                  />
+                  {searchResults.length > 0 && (
+                    <div className="max-h-[320px] divide-y divide-kiosk-border overflow-y-auto rounded-xl border border-kiosk-border-2">
+                      {searchResults.map((attendee) => (
+                        <button
+                          key={attendee.id}
+                          type="button"
+                          disabled={!scanEnabled}
+                          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-kiosk-surface-2 disabled:pointer-events-none disabled:opacity-40"
+                          onClick={() => pickAttendee(attendee)}
+                        >
+                          <span className="text-kiosk-text">{attendee.first_name} {attendee.last_name}</span>
+                          <span className="text-kiosk-text-3">{attendee.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}

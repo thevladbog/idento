@@ -7,7 +7,6 @@ import { useCheckinSettings, useSaveCheckinSettings } from "@/features/checkin/h
 import { usePreflightSteps } from "@/features/preflight/steps";
 import { DEFAULT_CHECKIN_SETTINGS, type CheckinSettings } from "@/features/checkin/settingsTypes";
 
-// eslint-disable-next-line react-refresh/only-export-components
 export type RunLayout = "bar" | "panel";
 
 const RUN_LAYOUT_KEY = "idento_run_layout";

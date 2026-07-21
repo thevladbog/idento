@@ -137,6 +137,27 @@ describe("useCheckinFlow.submitCode", () => {
   });
 });
 
+describe("useCheckinFlow.submitAttendee", () => {
+  it("checks in a manually-picked attendee and auto-prints on checked_in", async () => {
+    vi.spyOn(api, "post").mockImplementation((url: string) => {
+      if (url.endsWith("/checkin")) return Promise.resolve({ data: { outcome: "checked_in", attendee, checkin: { at: "t", by_email: "x", point_name: null } } });
+      if (url.endsWith("/badge-zpl")) return Promise.resolve({ data: { zpl: "^XA^XZ" } });
+      if (url.endsWith("/printed")) return Promise.resolve({ data: { printed_count: 1 } });
+      return Promise.reject(new Error("unexpected POST " + url));
+    });
+    const agentPostSpy = vi.spyOn(agentLib, "agentPost").mockResolvedValue("{}");
+    const getSpy = vi.spyOn(api, "get");
+
+    const { result } = setup();
+    await act(() => result.current.submitAttendee(attendee));
+
+    expect(result.current.state.verdict).toBe("allowed");
+    expect(getSpy).not.toHaveBeenCalled(); // submitAttendee skips the code lookup
+    expect(agentPostSpy).toHaveBeenCalledWith("/print", JSON.stringify({ printer_name: "Zebra_Gate", zpl: "^XA^XZ" }));
+    expect(api.post).toHaveBeenCalledWith("/api/attendees/a1/printed", undefined); // auto-print: no reprint audit
+  });
+});
+
 describe("useCheckinFlow.printCurrent", () => {
   it("no-ops when the current verdict is not allowed", async () => {
     vi.spyOn(api, "get").mockResolvedValue({ data: [attendee] });

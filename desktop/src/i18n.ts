@@ -154,7 +154,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeSaveAndStart: "Save and start",
         // Run screen
         runReadyToScan: "Ready to scan",
-        runScanHint: "Scan the ticket QR code with the scanner or camera",
+        runScanHint: "Scan the ticket QR code with the scanner",
         runManualSearchPlaceholder: "Search by name, email, or code…",
         runNoServer: "No connection to the server",
         runNoServerDesc: "Check-ins are not being recorded",
@@ -172,6 +172,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         runBlockReason: "Reason",
         runAllowedTitle: "CHECKED IN",
         runAlreadyTitle: "ALREADY CHECKED IN",
+        runAutoReturning: "Returning to scan…",
       },
     },
     ru: {
@@ -323,7 +324,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeSaveAndStart: "Сохранить и начать",
         // Run screen
         runReadyToScan: "Готов к сканированию",
-        runScanHint: "Поднесите QR-код билета к сканеру или камере",
+        runScanHint: "Поднесите QR-код билета к сканеру",
         runManualSearchPlaceholder: "Поиск по имени, email или коду…",
         runNoServer: "Нет связи с сервером",
         runNoServerDesc: "Отметки не записываются",
@@ -341,6 +342,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         runBlockReason: "Причина",
         runAllowedTitle: "ОТМЕЧЕНА",
         runAlreadyTitle: "УЖЕ ОТМЕЧЕН",
+        runAutoReturning: "Возврат к сканированию…",
       },
     },
   },
