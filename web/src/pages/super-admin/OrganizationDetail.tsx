@@ -353,12 +353,12 @@ export default function OrganizationDetail() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">{t('website')}</p>
-                    <p className="font-medium">{tenant.tenant?.website || 'N/A'}</p>
+                    <p className="text-muted-foreground">{t('organizationWebsite')}</p>
+                    <p className="font-medium">{tenant.tenant?.website || t('notAvailable')}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">{t('contactEmail')}</p>
-                    <p className="font-medium">{tenant.tenant?.contact_email || 'N/A'}</p>
+                    <p className="text-muted-foreground">{t('organizationContact')}</p>
+                    <p className="font-medium">{tenant.tenant?.contact_email || t('notAvailable')}</p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">{t('tenantId')}</p>
@@ -387,7 +387,7 @@ export default function OrganizationDetail() {
                       <SelectContent>
                         {plans.map((plan) => (
                           <SelectItem key={plan.id} value={plan.id}>
-                            {plan.name} - ${plan.price_monthly ?? 0}/mo
+                            {plan.name} - ${plan.price_monthly ?? 0}{t('perMonth')}
                           </SelectItem>
                         ))}
                       </SelectContent>

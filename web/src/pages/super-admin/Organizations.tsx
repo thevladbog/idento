@@ -255,7 +255,7 @@ export default function Organizations() {
                   <TableCell className="font-medium">{tenant.tenant?.name}</TableCell>
                   <TableCell>
                     <Badge variant={getPlanBadgeVariant(tenant.subscription?.plan?.tier ?? '')}>
-                      {tenant.subscription?.plan?.name || 'N/A'}
+                      {tenant.subscription?.plan?.name || t('notAvailable')}
                     </Badge>
                     {onCustomLimitTenants([tenant]).length > 0 && (
                       <span className="ml-2 rounded border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -279,7 +279,7 @@ export default function Organizations() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={getStatusBadgeVariant(tenant.subscription?.status ?? '')}>
-                      {tenant.subscription?.status || 'N/A'}
+                      {tenant.subscription?.status || t('notAvailable')}
                     </Badge>
                   </TableCell>
                   <TableCell>
