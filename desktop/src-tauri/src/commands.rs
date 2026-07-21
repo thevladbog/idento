@@ -2,6 +2,11 @@
 
 use std::time::Duration;
 
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
+
 pub const AGENT_PORT: u16 = 12345;
 pub const AGENT_PORT_STR: &str = "12345";
 
@@ -162,6 +167,73 @@ pub async fn agent_request(
 #[tauri::command]
 pub fn get_agent_port() -> u16 {
     AGENT_PORT
+}
+
+/// Tracks the embedded agent's child process, if one is currently running.
+/// Managed as Tauri app state (see `lib.rs`'s `.manage(...)`). `None` means
+/// "not running" -- either never spawned, running in external mode, or
+/// already stopped.
+///
+/// `tauri-plugin-shell`'s own internal `Shell.children` map (which it kills
+/// automatically on `RunEvent::Exit`) only tracks processes spawned through
+/// its JS-invoked `plugin:shell|spawn` IPC command -- NOT processes spawned
+/// by calling `Command::spawn()` directly from Rust, as `spawn_agent` does
+/// below. So this state, and `lib.rs`'s own `RunEvent::Exit` handler, are
+/// both required; the plugin's built-in cleanup does not cover this case.
+#[derive(Default)]
+pub struct AgentProcess(pub Mutex<Option<CommandChild>>);
+
+/// Kills the tracked child process, if any. Shared by `stop_agent` and
+/// `lib.rs`'s exit-cleanup handler.
+pub fn kill_agent_process(state: &AgentProcess) {
+    if let Ok(mut guard) = state.0.lock() {
+        if let Some(child) = guard.take() {
+            if let Err(e) = child.kill() {
+                log::error!("failed to kill idento-agent sidecar: {}", e);
+            }
+        }
+    }
+}
+
+/// Spawns the bundled agent sidecar on AGENT_PORT, unless one is already
+/// tracked as running. Idempotent: safe to call again (e.g. when switching
+/// from external mode back to embedded) without risking a duplicate spawn.
+/// A no-op error (never panics) when the sidecar binary isn't bundled --
+/// e.g. a dev build that hasn't set `externalBin` locally (see
+/// `desktop/README.md`).
+#[tauri::command]
+pub fn spawn_agent(app: AppHandle, state: State<'_, AgentProcess>) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    if guard.is_some() {
+        return Ok(());
+    }
+    let sidecar = app
+        .shell()
+        .sidecar("idento-agent")
+        .map_err(|e| e.to_string())?;
+    let (_rx, child) = sidecar
+        .args(["--port", AGENT_PORT_STR])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    *guard = Some(child);
+    Ok(())
+}
+
+/// Stops the tracked embedded agent process, if any. A no-op if nothing is
+/// currently running (already stopped, or running in external mode).
+#[tauri::command]
+pub fn stop_agent(state: State<'_, AgentProcess>) -> Result<(), String> {
+    kill_agent_process(&state);
+    Ok(())
+}
+
+/// Stops the tracked process (if any) and immediately spawns a fresh one.
+/// Used by the restart-after-health-check-failure supervisor (TS side,
+/// `useAgentSupervisor`).
+#[tauri::command]
+pub fn restart_agent(app: AppHandle, state: State<'_, AgentProcess>) -> Result<(), String> {
+    kill_agent_process(&state);
+    spawn_agent(app, state)
 }
 
 #[cfg(test)]
