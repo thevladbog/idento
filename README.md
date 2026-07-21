@@ -85,11 +85,13 @@ The command automatically:
 - ✅ Loads test data
 - ✅ Starts Backend (Go)
 - ✅ Starts Web Frontend (React)
+- ✅ Starts Panel Frontend (React)
 - ✅ Starts Printing Agent (Go)
 
 ### System Access
 
-🌐 **Web Admin**: <http://localhost:5173>  
+🧭 **Panel** (primary app — events, attendees, check-in): <http://localhost:5174>  
+🌐 **Console** (super-admin, local dev only): <http://localhost:5173>  
 🔑 **Login**: `admin@test.com` / `password`
 
 🔧 **Backend API**: <http://localhost:8008>  
@@ -140,28 +142,28 @@ If CSV didn't have a "code" column:
 
 ### 4️⃣ Check-in
 
-**Web**: `/checkin` - search, scan, one button  
+**Panel**: open an event → Check-in station - search, scan, one-button verdict  
 **Mobile**: Offline mode, built-in scanner, sync
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Web Admin     │     │  Mobile Check-in │     │  Desktop Agent  │
-│  (React + TS)   │────▶│    (Kotlin)      │────▶│  (Go + Serial)  │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-         │                       │                        │
-         │                       │                        │
-         └───────────────────────┴────────────────────────┘
-                                 │
-                                 ▼
-                    ┌─────────────────────────┐
-                    │   Backend (Go + Echo)    │
-                    │  ┌─────────────────────┐ │
-                    │  │   PostgreSQL        │ │
-                    │  │   Redis Cache       │ │
-                    │  └─────────────────────┘ │
-                    └─────────────────────────┘
+┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐
+│       Panel        │     │      Console       │     │  Mobile Check-in   │     │   Desktop Agent    │
+│ (Events, Check-in) │     │   (Super-Admin)    │────▶│      (Kotlin)      │────▶│   (Go + Serial)    │
+└────────────────────┘     └────────────────────┘     └────────────────────┘     └────────────────────┘
+           │                          │                          │                          │
+           │                          │                          │                          │
+           └──────────────────────────┴──────────────────────────┴──────────────────────────┘
+                                                    │
+                                                    ▼
+                                       ┌─────────────────────────┐
+                                       │   Backend (Go + Echo)    │
+                                       │  ┌─────────────────────┐ │
+                                       │  │   PostgreSQL        │ │
+                                       │  │   Redis Cache       │ │
+                                       │  └─────────────────────┘ │
+                                       └─────────────────────────┘
 ```
 
 ## 📦 Project Structure
@@ -169,8 +171,9 @@ If CSV didn't have a "code" column:
 ```
 idento/
 ├── backend/          # Go API (Echo, PostgreSQL, Redis)
-├── web/             # React Admin (Vite, TailwindCSS, shadcn/ui)
-├── mobile/          # Kotlin Android App (offline-first)
+├── panel/            # React Panel — events, attendees, check-in (Vite, TanStack Router/Query, @idento/ui)
+├── web/              # React Super-Admin Console (Vite, TailwindCSS, shadcn/ui)
+├── mobile/           # Kotlin Android App (offline-first)
 ├── agent/           # Printing Agent (Go, serial ports)
 ├── docs/            # Documentation (guides, migrations, status)
 ├── scripts/         # Utilities (start-all.sh, stop-all.sh, seed.sh)
@@ -183,7 +186,8 @@ idento/
 | Component | Technologies |
 |-----------|-------------|
 | **Backend** | Go 1.25, Echo, PostgreSQL, Redis, JWT |
-| **Web** | React 18, TypeScript, Vite, TailwindCSS v4, shadcn/ui, React Konva |
+| **Panel** | React 19, TypeScript, Vite, TanStack Router + Query, TailwindCSS v4, @idento/ui |
+| **Web (Console)** | React 18, TypeScript, Vite, TailwindCSS v4, shadcn/ui, React Konva |
 | **Mobile** | Kotlin, Jetpack Compose, Room Database (SQLite) |
 | **Agent** | Go, Serial port (`go.bug.st/serial`) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions |
