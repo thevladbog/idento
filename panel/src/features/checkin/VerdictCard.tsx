@@ -141,16 +141,23 @@ export function VerdictCard({ state }: VerdictCardProps) {
           but checked first here purely for a stable branch order -- distinct
           copy from `checkinPrintFailedWarning` since NO print was attempted
           at all, unlike a genuine failure. */}
+      {/* No role="status" here -- these paragraphs render inside the
+          root's own role="status" region above. WAI-ARIA advises against
+          nesting live regions (behavior is undefined across AT); the root
+          region's default aria-relevant ("additions text") already
+          announces this text the moment it's added to the DOM, so a
+          second, nested status role would only risk a double or
+          inconsistent announcement without adding anything. */}
       {state.printMarkFailed ? (
-        <p className="text-caption text-warning" role="status" data-testid="checkin-print-mark-warning">
+        <p className="text-caption text-warning" data-testid="checkin-print-mark-warning">
           {t("checkinReprintMarkPrintedWarning", { printer: state.printMarkFailed.printer })}
         </p>
       ) : state.printFontsPending ? (
-        <p className="text-caption text-warning" role="status" data-testid="checkin-print-fonts-pending">
+        <p className="text-caption text-warning" data-testid="checkin-print-fonts-pending">
           {t("checkinPrintFontsPendingWarning")}
         </p>
       ) : state.printError ? (
-        <p className="text-caption text-warning" role="status">
+        <p className="text-caption text-warning">
           {t("checkinPrintFailedWarning")}
         </p>
       ) : null}

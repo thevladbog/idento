@@ -55,6 +55,25 @@ const PAIRS: Array<[string, string]> = [
 
 const AA_NORMAL_TEXT = 4.5;
 
+// Completeness guard: PAIRS above is a manually maintained list, so a new
+// semantic token (e.g. a future `--info-2`/`--info-2-foreground`) could be
+// added to theme.css without anyone remembering to add it here too --
+// exactly the "token exists but has zero contrast coverage" gap that let
+// the self-tint failures below go unnoticed for as long as they did.
+// Every `--X-foreground` declared in :root implies a `["--X", "--X-foreground"]`
+// pair belongs in PAIRS (--background/--foreground is the one exception --
+// --foreground has no "-foreground"-suffixed sibling of its own, so it's
+// asserted separately); this test fails loudly if PAIRS ever drifts from
+// that derived set in either direction.
+it("PAIRS covers every --X/--X-foreground pair declared in theme.css (no silently-uncovered token)", () => {
+  const root = block(":root");
+  const derivedBases = Array.from(root.matchAll(/--([a-z0-9-]+)-foreground:/g)).map((m) => `--${m[1]}`);
+  const derivedPairs = new Set(derivedBases.map((base) => `${base}/${base}-foreground`));
+  derivedPairs.add("--background/--foreground");
+  const actualPairs = new Set(PAIRS.map(([bg, fg]) => `${bg}/${fg}`));
+  expect([...actualPairs].sort()).toEqual([...derivedPairs].sort());
+});
+
 describe("theme.css contrast (WCAG 1.4.3, AA normal text)", () => {
   for (const themeName of ["light", "dark"] as const) {
     describe(themeName, () => {
