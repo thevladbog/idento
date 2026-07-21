@@ -33,8 +33,8 @@ describe("theme.css tokens", () => {
 
   it("uses the board-1a palette values", () => {
     const root = block(":root");
-    expect(root).toContain("--success: #00935e");
-    expect(root).toContain("--warning: #d97706");
+    expect(root).toContain("--success: #007d4e");
+    expect(root).toContain("--warning: #a15505");
     expect(root).toContain("--info: #2563eb");
     expect(root).toContain("--destructive: #dc2626");
     expect(root).toContain("--primary-hover: #00714a");
