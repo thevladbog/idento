@@ -134,6 +134,13 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         badgePrinted: "Badge printed",
         // API errors
         tenantSuspended: "This organization is suspended. Contact support to restore access.",
+        // Station registration
+        stationName: "Station name",
+        stationNamePlaceholder: "e.g. Front Desk 1",
+        stationRegister: "Register station",
+        stationRegistered: "Station registered",
+        stationRegisterFailed: "Failed to register station",
+        continueButton: "Continue",
       },
     },
     ru: {
@@ -265,6 +272,13 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         badgePrinted: "Бейдж напечатан",
         // API errors
         tenantSuspended: "Организация приостановлена. Обратитесь в поддержку для восстановления доступа.",
+        // Station registration
+        stationName: "Имя станции",
+        stationNamePlaceholder: "напр. Стойка 1",
+        stationRegister: "Зарегистрировать станцию",
+        stationRegistered: "Станция зарегистрирована",
+        stationRegisterFailed: "Не удалось зарегистрировать станцию",
+        continueButton: "Продолжить",
       },
     },
   },
