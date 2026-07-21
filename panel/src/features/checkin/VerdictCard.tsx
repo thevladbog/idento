@@ -90,6 +90,7 @@ export function VerdictCard({ state }: VerdictCardProps) {
 
   return (
     <div
+      role="status"
       className={`flex flex-1 flex-col items-center justify-center gap-4 rounded-lg p-12 text-center ${classes.bg}`}
       data-testid="checkin-verdict-card"
       data-verdict={verdict}
