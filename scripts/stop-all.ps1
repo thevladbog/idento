@@ -38,7 +38,7 @@ else {
 }
 
 # Fallback: stop processes by known dev ports if still running
-$PortsToStop = @(8008, 5173, 3000)
+$PortsToStop = @(8008, 5173, 5174, 3000)
 foreach ($Port in $PortsToStop) {
     $pattern = ":{0}\s+" -f $Port
     $netstatLines = netstat -ano | Select-String -Pattern $pattern | Where-Object { $_.Line -match "LISTENING" }
