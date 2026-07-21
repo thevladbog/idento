@@ -151,12 +151,17 @@ function blendOverBackground(fgHex: string, alpha: number, bgHex: string): strin
 // and --info hit the identical arithmetic (StatusPill's `error` variant,
 // ImportWizard's info badge) but weren't rendered live by that sweep's 7
 // seeded screens, so they're pinned here from the same self-tint formula
-// rather than a second live catch. This test pins the darkened replacements
-// (see theme.css's comments for each value) so none of them can silently
+// rather than a second live catch. --warning uses the identical idiom too
+// (StatusPill's `in_progress` variant, WorkspaceRail, ImportWizard,
+// FontsCard, StationPage) and already clears 4.5:1 as-is (4.61:1, found
+// during the P5.3.3 final whole-branch review) — included here so that
+// margin can't silently regress unnoticed, the same reason the other three
+// tokens are pinned. This test pins the darkened replacements (see
+// theme.css's comments for each value) so none of them can silently
 // regress back below 4.5:1.
 describe("theme.css self-tint contrast (WCAG 1.4.3, text-X on bg-X/10 over page background)", () => {
   for (const themeName of ["light", "dark"] as const) {
-    for (const token of ["--success", "--destructive", "--info"]) {
+    for (const token of ["--success", "--destructive", "--info", "--warning"]) {
       it(`${themeName}: ${token} on bg-${token.slice(2)}/10 clears 4.5:1`, () => {
         const blockText = themeName === "light" ? block(":root") : block(".dark");
         const value = tokenValue(blockText, token);
