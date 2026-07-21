@@ -1067,8 +1067,14 @@ export function useAgentSupervisor(): void {
       cooldownActiveRef.current = false;
       backoffMsRef.current = Math.min(backoffMsRef.current * 2, MAX_BACKOFF_MS);
     }, backoffMsRef.current);
+    // health.dataUpdatedAt (not just health.data) is a required dependency:
+    // checkAgentHealth resolves the same boolean on every consecutive failed
+    // poll, so health.data alone never changes value between polls and the
+    // effect would never re-run after the first failure -- dataUpdatedAt is
+    // a fresh timestamp on every settled poll regardless of whether the
+    // value repeats, which is what actually drives this effect forward.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [health.data, health.isLoading]);
+  }, [health.data, health.isLoading, health.dataUpdatedAt]);
 }
 ```
 
@@ -1272,6 +1278,12 @@ Add new state right after the existing `stationId`/`registerStation` block (afte
 Add new handlers right after `registerStationAction`'s closing brace:
 
 ```tsx
+  // Deliberately NOT shared with the mount effect above (which guards its
+  // setState calls with a `cancelled` flag for a fast unmount mid-fetch):
+  // this function only ever runs from a direct user action (toggling the
+  // mode, clicking Save), where an unmount-mid-flight is a much rarer race
+  // than during the initial page-load effect, so the extra guard isn't
+  // worth threading through a shared helper here.
   const reconnectAgent = async () => {
     setLoading(true);
     const ok = await checkAgentHealth();
