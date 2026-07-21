@@ -106,3 +106,38 @@ describe("theme.css non-text contrast (WCAG 1.4.11, UI components vs page backgr
     });
   }
 });
+
+// Simple (non-premultiplied) alpha compositing in sRGB space — matches how
+// browsers paint a translucent `bg-*/10` fill over a solid page background,
+// and is what axe-core measures live via getComputedStyle.
+function blendOverBackground(fgHex: string, alpha: number, bgHex: string): string {
+  const fg = hexToRgb(fgHex);
+  const bg = hexToRgb(bgHex);
+  const out = fg.map((c, i) => Math.round(alpha * c + (1 - alpha) * bg[i])) as [number, number, number];
+  return `#${out.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+// WCAG 1.4.3, "self-tint" badges: WorkspaceRail's active-nav-item highlight
+// (and StatusPill's `ready` variant) render `text-success` on `bg-success/10`
+// — a background that is ITSELF success-tinted, not plain --background. That
+// composited background sits closer in luminance to the text color than
+// plain --background does, quietly eating into the margin the plain
+// --success/--success-foreground pair (above) already clears. Found live by
+// the P5.3.3 axe-core/playwright sweep on WorkspaceRail's "active" link
+// (the original board-1a --success value measured only 4.32:1 there, short
+// of the 4.5:1 the plain-pair test already verifies) — this test pins the
+// darkened replacement (see theme.css's --success comment for the value) so
+// it can't silently regress back below 4.5:1 without a live browser
+// catching it again.
+describe("theme.css self-tint contrast (WCAG 1.4.3, text-X on bg-X/10 over page background)", () => {
+  for (const themeName of ["light", "dark"] as const) {
+    it(`${themeName}: --success on bg-success/10 clears 4.5:1`, () => {
+      const blockText = themeName === "light" ? block(":root") : block(".dark");
+      const success = tokenValue(blockText, "--success");
+      const background = tokenValue(blockText, "--background");
+      const tint = blendOverBackground(success, 0.1, background);
+      const ratio = contrastRatio(success, tint);
+      expect(ratio, `${themeName} --success vs bg-success/10 over --background`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+    });
+  }
+});

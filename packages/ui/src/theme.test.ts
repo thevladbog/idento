@@ -33,7 +33,13 @@ describe("theme.css tokens", () => {
 
   it("uses the board-1a palette values", () => {
     const root = block(":root");
-    expect(root).toContain("--success: #007d4e");
+    // --success diverges from the original board-1a spec value (#007d4e,
+    // same as --primary) — darkened to #00714a by the P5.3.3
+    // axe-core/playwright sweep, which found `text-success` on a
+    // `bg-success/10` self-tint background (WorkspaceRail's active-nav
+    // highlight) only cleared 4.32:1, short of WCAG 1.4.3's 4.5:1
+    // (contrast.test.ts's "self-tint" describe block pins the fix).
+    expect(root).toContain("--success: #00714a");
     expect(root).toContain("--warning: #a15505");
     expect(root).toContain("--info: #2563eb");
     expect(root).toContain("--destructive: #dc2626");

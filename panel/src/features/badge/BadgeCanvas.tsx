@@ -37,13 +37,23 @@ export interface BadgeCanvasProps {
 // plan text's drafting error) inverts in dark mode (--foreground flips
 // #18181b -> #f4f4f5, packages/ui/src/theme.css:7,40), leaving a white
 // artboard floating on a near-white wrapper. The two caption colors are the
-// board's own footer-text neutrals (#c8c8cd spec line, #8e8e96 muted link)
+// board's own footer-text neutrals (#c8c8cd spec line, #b3b3ba muted link)
 // -- fixed for the same reason: they sit ON the fixed-dark surface, so a
 // theme-flipping text token (`text-background` is #101012 in dark mode)
 // would go dark-on-dark.
+//
+// WORK_SURFACE_CAPTION_MUTED was originally #8e8e96 (board spec's literal
+// value), but that only clears 3.21:1 against WORK_SURFACE_BG -- short of
+// WCAG 1.4.3's 4.5:1 for this 11.5px caption text, found live by the P5.3.3
+// axe-core/playwright sweep on the badge editor. Being outside theme.css
+// (a deliberate physical-media literal, same exception as the artboard
+// face below), it's invisible to contrast.test.ts's token sweep, so
+// Task 1's earlier pass never saw it. Lightened to #b3b3ba (5.01:1) --
+// still visibly muted relative to WORK_SURFACE_CAPTION's 6.27:1, just no
+// longer failing on its own.
 const WORK_SURFACE_BG = "#3f3f46";
 const WORK_SURFACE_CAPTION = "#c8c8cd";
-const WORK_SURFACE_CAPTION_MUTED = "#8e8e96";
+const WORK_SURFACE_CAPTION_MUTED = "#b3b3ba";
 
 // Same exception, artboard CONTENTS: everything drawn on the white badge
 // face represents physical thermal print, which is always black-on-white
