@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
+import { AgentLifecycle } from "./components/AgentLifecycle";
 import LoginPage from "./pages/Login";
 import QRLoginPage from "./pages/QRLogin";
 import ConnectionPage from "./pages/Connection";
@@ -19,6 +20,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <BrowserRouter>
+      <AgentLifecycle />
       <Toaster position="top-right" richColors />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
