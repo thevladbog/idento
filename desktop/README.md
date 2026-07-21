@@ -10,10 +10,12 @@ Desktop/kiosk app for Idento: check-in and equipment settings. Runs on Windows, 
 
 ## Development
 
+Install from the **repo root** (desktop is part of the npm workspace and depends on `@idento/ui`):
+
 ```bash
-# From repo root or desktop/
 npm install
-npm run tauri dev
+npm run tauri dev -w idento-desktop
+# or: cd desktop && npm run tauri dev
 ```
 
 Backend and agent must be running separately (e.g. `make dev` from repo root). Set the backend URL in the app (Connection / Server URL) if not using `http://localhost:8008`.
