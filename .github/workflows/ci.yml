@@ -247,6 +247,12 @@ jobs:
           DATABASE_URL: "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
           JWT_SECRET: "ci-e2e-secret"
           CORS_ALLOWED_ORIGINS: "http://localhost:5174"
+          # Onprem mode (the default) bootstraps its own admin from these on
+          # first run against an empty DB (bootstrap.OnPremAdmin) — without
+          # them main.go fatals before the server ever starts. Same
+          # email/password the e2e seed helper logs in as.
+          IDENTO_ADMIN_EMAIL: "admin@test.com"
+          IDENTO_ADMIN_PASSWORD: "password"
         run: |
           cd backend
           nohup go run main.go > /tmp/backend.log 2>&1 &
