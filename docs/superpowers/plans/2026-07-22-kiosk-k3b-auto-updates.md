@@ -886,12 +886,15 @@ to:
       "pubkey": "REPLACE_WITH_MINISIGN_PUBLIC_KEY_FROM_tauri_signer_generate",
       "endpoints": [
         "https://github.com/thevladbog/idento/releases/latest/download/latest.json"
-      ]
+      ],
+      "dangerousInsecureTransportProtocol": true
     }
   }
 ```
 
 The `pubkey` value is a deliberate placeholder — it MUST be replaced with the real public key printed by Step 2's `tauri signer generate` command before the first `desktop-v*` tag is pushed. An update check against this placeholder value will simply fail signature verification (safe failure mode: no update ever installs), not silently succeed with an unverified binary.
+
+`dangerousInsecureTransportProtocol: true` is required for the manifest-URL-override feature (Task 4's Mode-screen field) to actually work: verified against the vendored `tauri-plugin-updater` 2.10.1 source (`src/config.rs`'s `validate_endpoints`) that in release builds (`not(debug_assertions)`, i.e. every real `tauri build` output), `check_for_update`'s `.endpoints(...)` call hard-fails with `Error::InsecureTransportProtocol` for ANY non-`https` endpoint unless this flag is set — it's silently allowed (with just a stderr warning) in dev builds only, which is exactly the kind of gap that would pass local testing and then silently break the promised closed-network/local-mirror use case (an internal HTTP mirror with no real TLS cert) in every real release. This does not weaken the default GitHub endpoint above (already `https`) — it only matters when an operator configures a non-`https` override, which is the deliberate escape hatch this flag exists for. The minisign signature check on the downloaded update binary itself is independent of transport and still applies regardless of this flag — an insecure transport can at most let a MITM lie about whether an update exists or tamper with the human-readable release notes, never get an unsigned/mismatched binary installed.
 
 - [ ] **Step 2: Add the minisign/secrets setup section to `desktop/README.md`**
 
