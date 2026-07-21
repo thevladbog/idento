@@ -49,14 +49,14 @@ echo "To connect the kiosk app to this agent, use its 'External agent' setting"
 echo "(Equipment step) with:"
 echo ""
 
-HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 echo "  Base URL: http://${HOST_IP:-<this-machine-ip>}:12345"
 
 CONFIG_FILE="${INSTALL_HOME}/.idento/agent_config.json"
 TOKEN=""
 for _ in 1 2 3 4 5; do
   if [ -f "${CONFIG_FILE}" ]; then
-    TOKEN="$(grep -o '"auth_token"[[:space:]]*:[[:space:]]*"[^"]*"' "${CONFIG_FILE}" | sed 's/.*"\([^"]*\)"$/\1/')"
+    TOKEN="$(grep -o '"auth_token"[[:space:]]*:[[:space:]]*"[^"]*"' "${CONFIG_FILE}" | sed 's/.*"\([^"]*\)"$/\1/' || true)"
     [ -n "${TOKEN}" ] && break
   fi
   sleep 1
