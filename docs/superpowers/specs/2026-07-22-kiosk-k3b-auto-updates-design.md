@@ -1,0 +1,55 @@
+# Kiosk K3b — Автообновления desktop-приложения — Design
+
+**Дата:** 2026-07-22
+**Статус:** утверждён
+**Родитель:** `docs/superpowers/specs/2026-07-21-kiosk-desktop-v2-design.md` (§5 — обновления ПО). `docs/superpowers/specs/2026-07-21-kiosk-k3a-agent-distribution-design.md` (K3a — sidecar-механика + external-режим, уже смержен; K3b — вторая половина исходного K3, авто-обновления самого desktop-приложения).
+
+## 1. Цель и объём
+
+Закрыть вторую половину исходного запроса «обновления ПО»: `tauri-plugin-updater` + minisign-подпись артефактов, новый `desktop-v*` релизный workflow, собирающий подписанные Tauri-бандлы по полной платформенной матрице (macOS arm64+x64, Windows x64, Linux x64+arm64), и автоматическая укладка sidecar-бинаря агента в эти официальные бандлы (K3a оставил это на потом — sidecar тестировался вручную положенным бинарём).
+
+**Вне объёма K3b:** ОС-уровневая подпись кода (Windows Authenticode / macOS notarization — платные сертификаты/аккаунты) — minisign подписывает только updater-артефакты для проверки подлинности апдейта апдейтером, не даёт ОС доверять исполняемый файл; без неё Windows покажет SmartScreen, а macOS — Gatekeeper-предупреждение при первом ручном запуске установщика (тот же принятый риск, что и в K1-родителе). Standalone-агент как служба Windows/macOS (K3a уже зафиксировал: только Linux/systemd). Светлая тема, офлайн-очередь отметок.
+
+## 2. Текущее состояние
+
+После K3a: `tauri.conf.json`'s `bundle.externalBin` — `[]` (закоммичено, специально не автоматизировано), `plugins: {}` (пусто — ни `updater`, ни `process`, ни `single-instance`). `Cargo.toml`/`package.json` не содержат ни `tauri-plugin-updater`/`@tauri-apps/plugin-updater`, ни `tauri-plugin-process`/`@tauri-apps/plugin-process`, ни `tauri-plugin-single-instance` (последний упоминался в K1-родительском спеке §3.3 как часть общего списка плагинов, но так и не был добавлен ни в одной из фаз K1/K2a/K3a). `release.yml` (тег `v*`) уже умеет собирать backend/agent Go-бинари поматрично и `onprem`-бандл, но никогда не собирал ни один Tauri-бандл — `.github/workflows/ci.yml`'s `build-desktop` (PR-триггер) собирает Tauri **только для `ubuntu-latest`** (Linux x64); ни macOS, ни Windows раннеры этот репозиторий для Tauri ещё ни разу не использовал. Никакой signing-инфраструктуры (minisign, GPG, сертификаты) в репозитории нет вообще.
+
+Проверено (не предположено) против установленного окружения:
+- `tauri-plugin-updater` 2.10.1 / `@tauri-apps/plugin-updater` 2.10.1, `tauri-plugin-process` 2.3.1 — актуальные версии на crates.io/npm, совместимые с уже используемым `tauri` 2.11.5.
+- JS-функция `check()` из `@tauri-apps/plugin-updater` **не поддерживает runtime-переопределение endpoint** (только `proxy`/`timeout`/`headers`/`target`) — только Rust-сторона (`app.updater_builder().endpoints(vec![...])`) умеет это. Это определяет архитектуру §4 ниже.
+- Установленный Tauri CLI (`npx tauri build --help`) поддерживает `-c, --config <CONFIG>` — JSON-строку или путь к файлу, мёржится поверх `tauri.conf.json` **без изменения закоммиченного файла** — прямой механизм для §5's per-target `externalBin`.
+- `createUpdaterArtifacts: true` в `bundle`-конфиге — стандартный флаг Tauri, генерирующий `.sig`-файлы рядом с бандлами (macOS/Linux — `.tar.gz`, Windows — нативный инсталлятор) для minisign-проверки апдейтером.
+- Репозиторий публичный — GitHub Actions minutes бесплатны без ограничений (включая macOS/Windows/ARM-раннеры), так что раздутие платформенной матрицы не упирается в стоимость; риск — только в том, что это первая в истории репозитория сборка Tauri для macOS/Windows (осознанно принято пользователем, не разбито на под-циклы).
+
+## 3. Rust/Tauri: плагины и лайфцикл апдейта
+
+- `Cargo.toml`: `tauri-plugin-updater = "2"`, `tauri-plugin-process = "2"`, `tauri-plugin-single-instance = "2"`. `package.json`: `@tauri-apps/plugin-updater`, `@tauri-apps/plugin-process` (версии выше).
+- `lib.rs`: `tauri_plugin_single_instance::init(...)` регистрируется **первым** в цепочке `Builder` (конвенция Tauri — перехватывает повторный запуск раньше остальных плагинов), фокусирует существующее окно вместо запуска второго процесса. `tauri_plugin_updater::Builder::new().build()` и `tauri_plugin_process::init()` регистрируются рядом с уже существующими `tauri_plugin_shell::init()`.
+- **Собственные Rust-команды вместо прямого вызова JS-плагина** (см. §2's находку про `check()`): `check_for_update(endpoint_override: Option<String>) -> Result<UpdateInfo, String>` строит `app.updater_builder()`, при наличии `endpoint_override` зовёт `.endpoints(vec![parsed_url])`, иначе — дефолтные из `tauri.conf.json`; результат `.check().await` (объект `Update`) кладётся в Tauri-managed state (`UpdateHandle(Mutex<Option<Update>>)`, тот же паттерн, что `AgentProcess` из K3a), в JS возвращается только сериализуемое `{available: bool, version: String, notes: Option<String>}`. `install_update() -> Result<(), String>` берёт сохранённый `Update` из state, зовёт `download_and_install().await`, затем безусловно `app.restart()` (через `tauri-plugin-process`) — на Windows инсталлятор уже сам завершает процесс на этом шаге (авто-exit), так что `restart()` там no-op; на macOS/Linux — обязателен.
+- `endpoint_override`, если задан, парсится и валидируется как `http`/`https` URL (тот же charset/scheme-паттерн, что K3a's `build_agent_url` для внешнего агента — переиспользуем ту же дисциплину, не тот же код: апдейтер и агент — разные trust-домены, но одинаковая осторожность к операторски введённому URL).
+
+## 4. UX обновлений
+
+- Проверка: при старте приложения (верхнеуровневый эффект, как `AgentLifecycle`) + раз в 24 часа (таймстемп последней проверки — в localStorage, как остальные station-level настройки).
+- **Run-режим никогда не прерывается.** Чип «Доступно обновление X.Y.Z» рендерится только внутри `PreflightShell` (значит виден на всех 5 шагах pre-flight бесплатно, без правки каждого экрана по отдельности) и на экране Mode/настроек. Тап по чипу → подтверждение (версия, notes из релиза) → download → install → relaunch.
+- Новое поле в Mode-экране (там же, где остальные настройки станции): «URL манифеста обновлений (расширенно)», по умолчанию пусто (используется закоммиченный GitHub-эндпоинт из `tauri.conf.json`). Непустое значение уходит как `endpoint_override` в `check_for_update`. Это закрывает закрытые-сети/зеркало сценарий парентского спека — «зеркало или файловый шар» на практике означает HTTP(S)-сервер, отдающий тот же формат `latest.json` + артефакты, что и GitHub Releases (апдейтер не умеет читать `file://`).
+
+## 5. Подпись и релизный workflow
+
+- **Minisign-ключ генерируется и хранится пользователем самостоятельно** (не мной): `tauri signer generate`, затем `gh secret set TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — публичный ключ идёт в закоммиченный `tauri.conf.json`'s `plugins.updater.pubkey`. Это обязательный ручной шаг перед первым тегом `desktop-v*` — план явно распишет команды, но не выполнит их.
+- Новый workflow, триггер — тег `desktop-v*` (отдельная версийная линия от `v*`, который уже занят backend/web/onprem/agent-standalone). Матрица из 5 джобов: macOS arm64 (`macos-14`), macOS x64 (`macos-13` — последний Intel-раннер GitHub-хостинга; **не** universal-бандл — тот потребовал бы `lipo`-склейки Go-агента под оба macOS-архитектуры, лишняя сборочная машинерия ради экономии одного джоба, тогда как отдельные per-arch джобы прямо продолжают уже устоявшийся в репозитории паттерн `goarch: [amd64, arm64]` из `binaries`/`agent-standalone-bundle`), Windows x64 (`windows-latest`), Linux x64 (`ubuntu-latest`), Linux arm64 (`ubuntu-24.04-arm`, best-effort — если раннер недоступен для этого аккаунта, джоб помечается `continue-on-error` и не блокирует остальную матрицу).
+- Каждый джоб: кросс-компилирует Go-агент под свой target-triple → кладёт в `desktop/src-tauri/sidecars/idento-agent-<target-triple>` (с `.exe` на Windows) → `npm run tauri build -- --config '{"bundle":{"externalBin":["sidecars/idento-agent"]}}'` (inline JSON-мёрж, закоммиченный `tauri.conf.json` не трогается, тот же приём, что описан в §2) → `createUpdaterArtifacts: true` производит бандл + `.sig`. Финальный публикующий джоб — по структуре аналогичен существующему `release`-джобу из `v*`-workflow (`download-artifact` + `softprops/action-gh-release`), но это **новый, отдельный** джоб внутри `desktop-v*`-workflow (не может переиспользовать сам существующий `release`-джоб — тот привязан к триггеру `v*`, а `desktop-v*` — независимый тег/workflow). Собирает installers + генерирует/сливает `latest.json`, публикует GitHub Release.
+- `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` пробрасываются в каждый джоб матрицы как secrets (env), нигде не логируются.
+
+## 6. Тестирование
+
+- Новый React-хук `useUpdateCheck` — Vitest, мокает `invoke("check_for_update"/"install_update")`, тот же паттерн `vi.mock("@tauri-apps/api/core", ...)`, что уже установлен в `useAgentSupervisor.test.tsx`/`hooks.test.tsx` (K3a). Валидация `endpoint_override` — юнит-тест на чистую функцию (по аналогии с `build_agent_url`'s тестами).
+- Rust: `cargo test` для validation-функции; сам вызов `updater_builder()`/`Update`-лайфцикл не тестируется автоматически (требует реального релиза/сервера) — та же честная граница, что у K3a's sidecar lifecycle.
+- Релизный workflow: `python3 -c "import yaml; ..."` синтаксическая проверка, как у K3a — реальная сборка на 5 платформах проверяется только первым настоящим тегом `desktop-v*`, это явно фиксируется как открытый пункт, а не скрывается.
+
+## 7. Риски и допущения
+
+- Первая в истории репозитория сборка Tauri для macOS/Windows в CI — реальный риск скрытых проблем (специфичные для платформы зависимости, code-signing warnings, таймауты), явно принят пользователем при выборе «сразу полная матрица» вместо поэтапного (Linux-first) раскатывания.
+- `endpoint_override`, ведущий на недоверенный/скомпрометированный зеркало-сервер, всё ещё защищён minisign-подписью (апдейтер отклонит артефакт с неверной подписью независимо от того, откуда он скачан) — сценарий «оператор ввёл вредоносный URL» не даёт установить неподписанный/поддельный апдейт, только потенциальный DoS (сервер не отвечает / отвечает мусором) — не хуже, чем сегодняшний ручной npm/git-подобный риск.
+- ARM Linux-раннер (`ubuntu-24.04-arm`) — доступность для аккаунта не подтверждена заранее (то же допущение, что уже было принято и не подтверждено в K3a's `agent-standalone-bundle`); best-effort джоб, не блокирующий остальную матрицу.
+- `tauri-plugin-single-instance`'s поведение при повторном запуске (фокус существующего окна вместо второго процесса) — общая гигиена для киоска, не специфична для апдейтов, но естественно ложится в этот же цикл, т.к. защищает именно `relaunch()`-момент от гонки с ручным повторным запуском оператором.
