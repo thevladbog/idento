@@ -4,7 +4,7 @@
 
 - A Linux host with [Docker Engine](https://docs.docker.com/engine/install/) and the Compose v2 plugin installed (`docker compose version` should work — the legacy standalone `docker-compose` v1 binary is not supported).
 - Recommended: 2 vCPUs, 2 GB RAM, 10 GB free disk. This is a starting estimate for small-to-medium event volumes, not a hard minimum — `install.sh` warns (does not block) if disk space looks tight.
-- Ports 80 and 8008 free on the host (the web UI and the backend API, respectively).
+- Ports 80 and 8008 free on the host (the panel/console combined image and the backend API, respectively).
 
 ## Install
 
@@ -31,16 +31,16 @@
    curl http://localhost:8008/api/instance
    ```
    should return `{"mode":"onprem",...}`.
-7. Open the web UI at whatever URL you set `PUBLIC_API_URL`'s host to (port 80), and log in with the `IDENTO_ADMIN_EMAIL`/`IDENTO_ADMIN_PASSWORD` you set in step 4. This account is created automatically on first start against an empty database — it is not created again on later restarts, so the credentials you chose in `.env` are the ones that matter.
+7. Open the deployment's root URL (the host you set `PUBLIC_API_URL`'s host to, port 80) — this is the **panel**, the day-to-day operator app (events, attendees, check-in). Log in with the `IDENTO_ADMIN_EMAIL`/`IDENTO_ADMIN_PASSWORD` you set in step 4. This account is created automatically on first start against an empty database — it is not created again on later restarts, so the credentials you chose in `.env` are the ones that matter. The tenant-admin **console** (organizations, plans, cross-tenant analytics) lives at the same host under `/super-admin/`.
 
 ## Setting up mobile check-in stations
 
 The account created in step 7 has the **admin** role, which by design cannot be used to sign in on the mobile app's "Sign in as manager" self-provisioning flow — provisioning a station requires a **manager** or **staff** account. Before setting up your first mobile check-in station:
 
-1. In the web UI, go to the **Users** page and create a user with the **manager** or **staff** role.
+1. In the panel, go to the **Users** page and create a user with the **manager** or **staff** role.
 2. On the mobile device, use that account's credentials in the "Sign in as manager" setup wizard to provision the station.
 
-The admin account remains for managing events, users, and settings in the web UI.
+The admin account remains for managing events, users, and settings in the panel.
 
 ## Upgrade
 

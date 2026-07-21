@@ -53,6 +53,13 @@ npm run dev > "$PROJECT_ROOT/logs/web.log" 2>&1 &
 WEB_PID=$!
 echo -e "${BLUE}Web PID: $WEB_PID${NC}"
 
+# Start Panel Frontend
+echo -e "${GREEN}🧭 Starting Panel Frontend...${NC}"
+cd "$PROJECT_ROOT/panel"
+npm run dev > "$PROJECT_ROOT/logs/panel.log" 2>&1 &
+PANEL_PID=$!
+echo -e "${BLUE}Panel PID: $PANEL_PID${NC}"
+
 # Start Agent (optional)
 echo -e "${GREEN}🖨️  Starting Printing Agent...${NC}"
 cd "$PROJECT_ROOT/agent"
@@ -63,6 +70,7 @@ echo -e "${BLUE}Agent PID: $AGENT_PID${NC}"
 # Save PIDs to file for easy stopping
 echo "$BACKEND_PID" > "$PROJECT_ROOT/logs/pids.txt"
 echo "$WEB_PID" >> "$PROJECT_ROOT/logs/pids.txt"
+echo "$PANEL_PID" >> "$PROJECT_ROOT/logs/pids.txt"
 echo "$AGENT_PID" >> "$PROJECT_ROOT/logs/pids.txt"
 
 echo ""
@@ -71,6 +79,7 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo -e "${GREEN}📊 Services:${NC}"
 echo -e "   🌐 Web:        http://localhost:5173"
+echo -e "   🧭 Panel:      http://localhost:5174"
 echo -e "   🔧 Backend:    http://localhost:8008"
 echo -e "   🖨️  Agent:      http://localhost:3000"
 echo -e "   🗄️  PgAdmin:    http://localhost:50050"
@@ -84,10 +93,10 @@ echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
 echo ""
 echo -e "${YELLOW}📋 To stop all services, run: bash scripts/stop-all.sh${NC}"
-echo -e "${YELLOW}📝 Logs are available in: logs/backend.log, logs/web.log, logs/agent.log${NC}"
+echo -e "${YELLOW}📝 Logs are available in: logs/backend.log, logs/web.log, logs/panel.log, logs/agent.log${NC}"
 echo ""
 
 # Keep script running to show logs
 echo -e "${GREEN}Press Ctrl+C to stop monitoring logs...${NC}"
-tail -f "$PROJECT_ROOT/logs/backend.log" "$PROJECT_ROOT/logs/web.log" "$PROJECT_ROOT/logs/agent.log"
+tail -f "$PROJECT_ROOT/logs/backend.log" "$PROJECT_ROOT/logs/web.log" "$PROJECT_ROOT/logs/panel.log" "$PROJECT_ROOT/logs/agent.log"
 

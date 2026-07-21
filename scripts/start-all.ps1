@@ -109,6 +109,35 @@ if (-not $WebProcess) {
     exit 1
 }
 
+# Start Panel Frontend
+Write-Success "Starting Panel Frontend..."
+$PanelPath = Join-Path $ProjectRoot "panel"
+$PanelLog = Join-Path $LogsDir "panel.log"
+$PanelErrLog = Join-Path $LogsDir "panel.error.log"
+
+# Install panel dependencies if missing
+$PanelNodeModules = Join-Path $PanelPath "node_modules"
+if (-not (Test-Path $PanelNodeModules)) {
+    Write-Warning "Panel dependencies not found. Installing..."
+    Set-Location $PanelPath
+    npm ci
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to install panel dependencies"
+        exit 1
+    }
+}
+
+$PanelJob = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "chcp 65001 > nul & set NO_COLOR=1 & set FORCE_COLOR=0 & npm run dev" -WorkingDirectory $PanelPath -WindowStyle Hidden -RedirectStandardOutput $PanelLog -RedirectStandardError $PanelErrLog -PassThru
+
+Write-Info "Panel PID: $($PanelJob.Id)"
+
+Start-Sleep -Seconds 2
+$PanelProcess = Get-Process -Id $PanelJob.Id -ErrorAction SilentlyContinue
+if (-not $PanelProcess) {
+    Write-Error "Panel frontend failed to start. Check logs\panel.error.log"
+    exit 1
+}
+
 # Start Printing Agent
 Write-Success "Starting Printing Agent..."
 $AgentPath = Join-Path $ProjectRoot "agent"
@@ -128,13 +157,14 @@ if (-not $AgentProcess) {
 
 # Save PIDs to file for easy stopping
 $PidsFile = Join-Path $LogsDir "pids.txt"
-"$($BackendJob.Id)`n$($WebJob.Id)`n$($AgentJob.Id)" | Out-File -FilePath $PidsFile -Encoding ASCII
+"$($BackendJob.Id)`n$($WebJob.Id)`n$($PanelJob.Id)`n$($AgentJob.Id)" | Out-File -FilePath $PidsFile -Encoding ASCII
 
 Write-Success "`nAll services started successfully!"
 Write-Info ""
 Write-Info "==============================================="
 Write-Success "Services:"
 Write-Host "   Web:        http://localhost:5173"
+Write-Host "   Panel:      http://localhost:5174"
 Write-Host "   Backend:    http://localhost:8008"
 Write-Host "   Agent:      http://localhost:3000"
 Write-Host "   PgAdmin:    http://localhost:50050"
@@ -150,6 +180,8 @@ Write-Host "   Backend:  logs\backend.log"
 Write-Host "   Backend:  logs\backend.error.log"
 Write-Host "   Web:      logs\web.log"
 Write-Host "   Web:      logs\web.error.log"
+Write-Host "   Panel:    logs\panel.log"
+Write-Host "   Panel:    logs\panel.error.log"
 Write-Host "   Agent:    logs\agent.log"
 Write-Host "   Agent:    logs\agent.error.log"
 Write-Host ""
