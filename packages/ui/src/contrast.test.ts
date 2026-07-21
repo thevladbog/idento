@@ -118,26 +118,31 @@ function blendOverBackground(fgHex: string, alpha: number, bgHex: string): strin
 }
 
 // WCAG 1.4.3, "self-tint" badges: WorkspaceRail's active-nav-item highlight
-// (and StatusPill's `ready` variant) render `text-success` on `bg-success/10`
-// — a background that is ITSELF success-tinted, not plain --background. That
-// composited background sits closer in luminance to the text color than
-// plain --background does, quietly eating into the margin the plain
-// --success/--success-foreground pair (above) already clears. Found live by
-// the P5.3.3 axe-core/playwright sweep on WorkspaceRail's "active" link
-// (the original board-1a --success value measured only 4.32:1 there, short
-// of the 4.5:1 the plain-pair test already verifies) — this test pins the
-// darkened replacement (see theme.css's --success comment for the value) so
-// it can't silently regress back below 4.5:1 without a live browser
-// catching it again.
+// (StatusPill's `ready`/`error` variants, ImportWizard's info badge, etc.)
+// render `text-X` on `bg-X/10` — a background that is ITSELF X-tinted, not
+// plain --background. That composited background sits closer in luminance
+// to the text color than plain --background does, quietly eating into the
+// margin the plain --X/--X-foreground pair (above) already clears. Found
+// live by the P5.3.3 axe-core/playwright sweep on WorkspaceRail's "active"
+// link (the original board-1a --success value measured only 4.32:1 there,
+// short of the 4.5:1 the plain-pair test already verifies) — --destructive
+// and --info hit the identical arithmetic (StatusPill's `error` variant,
+// ImportWizard's info badge) but weren't rendered live by that sweep's 7
+// seeded screens, so they're pinned here from the same self-tint formula
+// rather than a second live catch. This test pins the darkened replacements
+// (see theme.css's comments for each value) so none of them can silently
+// regress back below 4.5:1.
 describe("theme.css self-tint contrast (WCAG 1.4.3, text-X on bg-X/10 over page background)", () => {
   for (const themeName of ["light", "dark"] as const) {
-    it(`${themeName}: --success on bg-success/10 clears 4.5:1`, () => {
-      const blockText = themeName === "light" ? block(":root") : block(".dark");
-      const success = tokenValue(blockText, "--success");
-      const background = tokenValue(blockText, "--background");
-      const tint = blendOverBackground(success, 0.1, background);
-      const ratio = contrastRatio(success, tint);
-      expect(ratio, `${themeName} --success vs bg-success/10 over --background`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
-    });
+    for (const token of ["--success", "--destructive", "--info"]) {
+      it(`${themeName}: ${token} on bg-${token.slice(2)}/10 clears 4.5:1`, () => {
+        const blockText = themeName === "light" ? block(":root") : block(".dark");
+        const value = tokenValue(blockText, token);
+        const background = tokenValue(blockText, "--background");
+        const tint = blendOverBackground(value, 0.1, background);
+        const ratio = contrastRatio(value, tint);
+        expect(ratio, `${themeName} ${token} vs bg-${token.slice(2)}/10 over --background`).toBeGreaterThanOrEqual(AA_NORMAL_TEXT);
+      });
+    }
   }
 });

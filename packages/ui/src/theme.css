@@ -18,7 +18,16 @@
   --muted-foreground: #65656d;
   --accent: #f0faf5;
   --accent-foreground: #00714a;
-  --destructive: #dc2626;
+  /* Darker than the "obvious" red on purpose — same self-tint issue as
+     --success below: StatusPill's `error` variant and other
+     bg-destructive/10 text-destructive badges put this text on a
+     destructive-tinted background, not plain --background, which ate
+     margin the plain --destructive/--destructive-foreground pair test
+     never modeled (#dc2626 measured 3.98:1 there, below 4.5:1 — found by
+     computing the same self-tint arithmetic the P5.3.3 axe-core sweep
+     used to catch --success live, not rendered by that sweep's own 7
+     seeded screens). */
+  --destructive: #c22121;
   --destructive-foreground: #ffffff;
   /* Darker than --primary's #007d4e on purpose (contrast.test.ts's
      "self-tint" pair below): every `bg-success/10 text-success` badge/nav
@@ -37,7 +46,10 @@
   --success-foreground: #ffffff;
   --warning: #a15505;
   --warning-foreground: #ffffff;
-  --info: #2563eb;
+  /* Same self-tint issue as --destructive/--success above: ImportWizard's
+     info badge (bg-info/10 text-info) measured 4.33:1 against its own
+     tinted background, below 4.5:1. */
+  --info: #225cdb;
   --info-foreground: #ffffff;
   --border: #e4e4e7;
   --input: #e4e4e7;
