@@ -49,6 +49,8 @@ export default function ModePage() {
     <PreflightShell steps={steps} activeIndex={4}>
       {settingsQuery.isLoading ? (
         <p className="text-kiosk-text-3">{t("loading")}</p>
+      ) : settingsQuery.isError ? (
+        <p className="text-kiosk-danger-soft">{t("checkinFailed")}</p>
       ) : (
         <div className="flex flex-col gap-7">
           <div>
