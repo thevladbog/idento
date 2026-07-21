@@ -6,6 +6,8 @@ import { createWrapper } from "../../test/queryWrapper";
 import {
   useAgentDefaultPrinter,
   useAgentHealth,
+  useAgentInfo,
+  useAgentPort,
   useCheckinActions,
   useCheckinSettings,
   useCheckinStations,
@@ -16,6 +18,15 @@ import {
   useStationCheckin,
   useStationHeartbeat,
 } from "./hooks";
+
+// @tauri-apps/api/core ships real ESM named exports; its module namespace
+// object isn't configurable, so vi.spyOn can't patch it directly (unlike
+// in-project source, which Vite transforms into a mutable object). Mock the
+// whole module instead -- same pattern as useAgentSupervisor.test.tsx.
+const invokeMock = vi.fn();
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: (...args: unknown[]) => invokeMock(...args),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -142,5 +153,25 @@ describe("useEvent", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.name).toBe("Технопром-2026");
     expect(api.get).toHaveBeenCalledWith("/api/events/evt-1");
+  });
+});
+
+describe("useAgentInfo", () => {
+  it("parses the agent's /info response", async () => {
+    vi.spyOn(agentLib, "agentGet").mockResolvedValue(
+      JSON.stringify({ machine_id: "m1", hostname: "kiosk-1", version: "1.4.0", uptime_seconds: 120 }),
+    );
+    const { result } = renderHook(() => useAgentInfo(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.version).toBe("1.4.0");
+  });
+});
+
+describe("useAgentPort", () => {
+  it("resolves the Tauri get_agent_port command's value", async () => {
+    invokeMock.mockResolvedValue(12345);
+    const { result } = renderHook(() => useAgentPort(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toBe(12345);
   });
 });

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { consumeLastScan } from "./agent";
+import { setAgentExternalConfig, setAgentMode } from "./agentConfig";
+import { agentGet, agentPost, consumeLastScan } from "./agent";
 
 describe("consumeLastScan", () => {
   afterEach(() => {
@@ -28,5 +29,60 @@ describe("consumeLastScan", () => {
     } as Response);
 
     expect(await consumeLastScan()).toEqual({ code: "" });
+  });
+});
+
+describe("agentGet / agentPost with an external target configured", () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it("agentGet sends the external base URL and bearer token", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://192.168.1.50:12345", "tok-123");
+    vi.spyOn(global, "fetch").mockResolvedValue({ ok: true, text: () => Promise.resolve("ok") } as Response);
+
+    await agentGet("/health");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.50:12345/health",
+      expect.objectContaining({ headers: { Authorization: "Bearer tok-123" } }),
+    );
+  });
+
+  it("agentPost sends the external base URL, bearer token, and JSON content-type", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://192.168.1.50:12345", "tok-123");
+    vi.spyOn(global, "fetch").mockResolvedValue({ ok: true, text: () => Promise.resolve("{}") } as Response);
+
+    await agentPost("/print", "{}");
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.50:12345/print",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer tok-123" },
+        body: "{}",
+      }),
+    );
+  });
+
+  it("agentGet rejects a base URL containing userinfo instead of silently sending the request", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://attacker@evil.example", "tok-123");
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    await expect(agentGet("/health")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("agentPost rejects a base URL containing userinfo instead of silently sending the request", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://attacker@evil.example", "tok-123");
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    await expect(agentPost("/print", "{}")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

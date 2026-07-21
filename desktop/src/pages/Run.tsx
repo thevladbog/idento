@@ -15,10 +15,14 @@ import {
 import {
   useAgentDefaultPrinter,
   useAgentHealth,
+  useAgentInfo,
+  useAgentPort,
   useCheckinActions,
   useCheckinSettings,
   useEvent,
 } from "@/features/checkin/hooks";
+import { formatAgentDetail } from "@/features/checkin/agentDetail";
+import { getAgentMode } from "@/lib/agentConfig";
 import { useCheckinFlow } from "@/features/checkin/useCheckinFlow";
 import { useConnectionState } from "@/features/checkin/useConnectionState";
 import { useHeartbeat } from "@/features/checkin/useHeartbeat";
@@ -41,6 +45,8 @@ export default function RunPage() {
   const settings = settingsQuery.data ?? DEFAULT_CHECKIN_SETTINGS;
   const printer = useAgentDefaultPrinter();
   const agentHealth = useAgentHealth();
+  const agentInfo = useAgentInfo();
+  const agentPort = useAgentPort();
   const actionsQuery = useCheckinActions(eventId!);
 
   const printerGateActive = settings.print_on_checkin && !printer.data;
@@ -82,7 +88,12 @@ export default function RunPage() {
   const nodes: KioskNode[] = useMemo(
     () => [
       { id: "server", label: t("runNodeServer"), level: connection.online ? "ok" : "error" },
-      { id: "agent", label: t("runNodeAgent"), level: agentHealth.data ? "ok" : "error" },
+      {
+        id: "agent",
+        label: t("runNodeAgent"),
+        level: agentHealth.data ? "ok" : "error",
+        detail: agentHealth.data ? formatAgentDetail(getAgentMode(), agentInfo.data?.version, agentPort.data) : undefined,
+      },
       {
         id: "printer",
         label: t("runNodePrinter"),
@@ -96,7 +107,17 @@ export default function RunPage() {
         live: settings.scan_input === "scanner",
       },
     ],
-    [t, connection.online, agentHealth.data, settings.print_on_checkin, settings.scan_input, printer.data, scannerDegraded],
+    [
+      t,
+      connection.online,
+      agentHealth.data,
+      settings.print_on_checkin,
+      settings.scan_input,
+      printer.data,
+      scannerDegraded,
+      agentInfo.data?.version,
+      agentPort.data,
+    ],
   );
 
   const level = stationLevel(nodes);
