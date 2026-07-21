@@ -103,7 +103,7 @@ export default function AllUsers() {
                 <TableHead>{t('email')}</TableHead>
                 <TableHead>{t('role')}</TableHead>
                 <TableHead>{t('status')}</TableHead>
-                <TableHead>{t('createdAt')}</TableHead>
+                <TableHead>{t('created_at')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
