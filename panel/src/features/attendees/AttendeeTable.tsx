@@ -44,85 +44,112 @@ export function AttendeeTable({ rows, selected, onToggle, onToggleAll, onRowClic
           const fullName = `${row.first_name} ${row.last_name}`.trim();
           const isSelected = selected.has(row.id);
           return (
-            <li
-              key={row.id}
-              onClick={() => onRowClick(row.id)}
-              onKeyDown={(e) => {
-                // Only react when the row itself (not a nested focusable
-                // child — the checkbox or the row-menu button, each
-                // independently focusable/activatable) is what received the
-                // key: without this guard, Space/Enter on the checkbox would
-                // bubble up and ALSO trigger the row's own activation on top
-                // of the checkbox's native toggle.
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  // Space's default is page-scroll; Enter has no default
-                  // here, but preventDefault on both is harmless.
-                  e.preventDefault();
-                  onRowClick(row.id);
-                }
-              }}
-              tabIndex={0}
-              role="button"
-              aria-label={t("attendeesRowOpenLabel", { name: fullName })}
-              className={`${ROW_GRID} cursor-pointer px-3.5 py-2 text-caption hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset ${isSelected ? "bg-success/5" : ""}`}
-            >
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={() => onToggle(row.id)}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={t("attendeesSelectAttendeeLabel", { name: fullName })}
-              />
-              <div className="flex flex-col">
-                <span className="font-medium text-body text-foreground">{fullName}</span>
-                <span className="font-mono text-caption text-muted-foreground">{row.code}</span>
+            // The row-open affordance lives on a real <button> (below), not
+            // on this wrapping <div>/<li>: a11y audit
+            // (jsx-a11y/no-noninteractive-element-to-interactive-role) —
+            // <li>'s implicit role is `listitem`, and AT list-navigation
+            // (e.g. "list of N items") relies on that; role="button" on
+            // either the <li> or a <div> wrapping the WHOLE row (checkbox
+            // included) used to pull every row out of list semantics AND
+            // (found live by the P5.3.3 axe-core/playwright sweep) nest a
+            // genuinely interactive Checkbox inside a role="button"
+            // ancestor — axe's `nested-interactive` (WCAG 4.1.2): "Element
+            // has focusable descendants". Restructured so the open action is
+            // a real, independent <button> sibling of the Checkbox — not an
+            // ancestor of it — while this outer <div> keeps only a plain
+            // (non-role, non-focusable) onClick so "click anywhere on the
+            // row" still works for mouse users exactly as before.
+            <li key={row.id}>
+              {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions --
+                  This div's onClick is a pure MOUSE-convenience affordance
+                  (bubble target for "click anywhere on the row"), not the
+                  row's accessible interaction surface — that's the real
+                  <Checkbox> and <button> children below, each independently
+                  focusable/keyboard-operable on their own. Both jsx-a11y
+                  rules assume a clickable non-interactive element must ALSO
+                  be the keyboard entry point, which doesn't apply here since
+                  keyboard/AT users already have full equivalent access via
+                  those two real controls. */}
+              <div
+                onClick={() => onRowClick(row.id)}
+                className={`${ROW_GRID} cursor-pointer px-3.5 py-2 text-caption hover:bg-muted/30 ${isSelected ? "bg-success/5" : ""}`}
+              >
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggle(row.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={t("attendeesSelectAttendeeLabel", { name: fullName })}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    // Without this, the click would ALSO bubble to the row
+                    // div's own onClick above and call onRowClick a second
+                    // time (harmless in practice — same id, same handler —
+                    // but wasteful and easy to trip up on later).
+                    e.stopPropagation();
+                    onRowClick(row.id);
+                  }}
+                  aria-label={t("attendeesRowOpenLabel", { name: fullName })}
+                  className="flex flex-col items-start rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="font-medium text-body text-foreground">{fullName}</span>
+                  <span className="font-mono text-caption text-muted-foreground">{row.code}</span>
+                </button>
+                <span className="text-muted-foreground">{row.company}</span>
+                {/* Zone access is a separate per-attendee resource (not present
+                    on the Attendee row itself) — fetching it here would mean
+                    firing up to `per_page` (50) parallel zone-access queries on
+                    every page load. Deliberate v1 scope cut: this column is a
+                    static placeholder in the table; the real per-attendee zone
+                    list is fetched on demand in the drawer (Task 8), which only
+                    ever needs one attendee's zones at a time. */}
+                <span className="text-muted-foreground">—</span>
+                <span>
+                  {row.printed_count > 0 ? (
+                    <StatusPill status="ready" label={t("attendeesBadgePrinted")} />
+                  ) : (
+                    <StatusPill status="empty" label={t("attendeesBadgeNotPrinted")} />
+                  )}
+                </span>
+                <span>
+                  {row.checkin_status ? (
+                    // WCAG 1.4.1: status is icon + text + color together, never
+                    // color alone — mirrors WorkspaceRail/ReadinessCell's
+                    // status vocabulary.
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 aria-hidden className="size-3.5" />
+                      {t("attendeesStatusCheckedIn")}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{t("attendeesStatusNotCheckedIn")}</span>
+                  )}
+                </span>
+                {/* Fix (Codex, PR #65): previously exposed role=button (native
+                    <button> default) plus an aria-label announcing "row menu"
+                    — but with no handler of its own and no stopPropagation, a
+                    keyboard/screen-reader user who activated the ADVERTISED
+                    menu control landed on the drawer instead (via bubbling to
+                    the row's onClick), a different, unexpected action.
+                    Follow-up fix (P5.3.3 axe-core/playwright sweep):
+                    tabIndex={-1} + aria-hidden on a real <button> still
+                    tripped axe's `nested-interactive` (WCAG 4.1.2) — a
+                    genuine interactive element nested inside the row's own
+                    role="button" isn't reliably hidden from every assistive
+                    technology by aria-hidden alone (axe's own message: a
+                    negative tabindex "does not prevent assistive
+                    technologies from focusing the element"). Since this is
+                    still pure decoration with no handler of its own, a plain
+                    <span> removes the illegal nesting outright — a native
+                    MOUSE click on it still bubbles to the row's onClick
+                    unchanged, preserving "click anywhere on the row,
+                    including this cell, opens the drawer". Revisit once a
+                    real per-row menu exists (attendeesRowMenuLabel is kept in
+                    en.json/ru.json for that). */}
+                <span aria-hidden="true" className="text-muted-foreground">
+                  ⋯
+                </span>
               </div>
-              <span className="text-muted-foreground">{row.company}</span>
-              {/* Zone access is a separate per-attendee resource (not present
-                  on the Attendee row itself) — fetching it here would mean
-                  firing up to `per_page` (50) parallel zone-access queries on
-                  every page load. Deliberate v1 scope cut: this column is a
-                  static placeholder in the table; the real per-attendee zone
-                  list is fetched on demand in the drawer (Task 8), which only
-                  ever needs one attendee's zones at a time. */}
-              <span className="text-muted-foreground">—</span>
-              <span>
-                {row.printed_count > 0 ? (
-                  <StatusPill status="ready" label={t("attendeesBadgePrinted")} />
-                ) : (
-                  <StatusPill status="empty" label={t("attendeesBadgeNotPrinted")} />
-                )}
-              </span>
-              <span>
-                {row.checkin_status ? (
-                  // WCAG 1.4.1: status is icon + text + color together, never
-                  // color alone — mirrors WorkspaceRail/ReadinessCell's
-                  // status vocabulary.
-                  <span className="inline-flex items-center gap-1 text-success">
-                    <CheckCircle2 aria-hidden className="size-3.5" />
-                    {t("attendeesStatusCheckedIn")}
-                  </span>
-                ) : (
-                  <span className="text-muted-foreground">{t("attendeesStatusNotCheckedIn")}</span>
-                )}
-              </span>
-              {/* Fix (Codex, PR #65): previously exposed role=button (native
-                  <button> default) plus an aria-label announcing "row menu"
-                  — but with no handler of its own and no stopPropagation, a
-                  keyboard/screen-reader user who activated the ADVERTISED
-                  menu control landed on the drawer instead (via bubbling to
-                  the <li>'s onClick), a different, unexpected action.
-                  tabIndex={-1} + aria-hidden pull it out of the tab order
-                  and accessibility tree entirely — pure decoration, not a
-                  working control — while a native MOUSE click on it still
-                  bubbles to the <li>'s onClick unchanged, preserving "click
-                  anywhere on the row, including this cell, opens the
-                  drawer". Revisit both once a real per-row menu exists
-                  (attendeesRowMenuLabel is kept in en.json/ru.json for
-                  that). */}
-              <button type="button" tabIndex={-1} aria-hidden="true" className="text-muted-foreground">
-                ⋯
-              </button>
             </li>
           );
         })}

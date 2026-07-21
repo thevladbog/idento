@@ -1,5 +1,21 @@
 import "@testing-library/jest-dom/vitest";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
+// NOT `from "vitest-axe"` -- verified empirically (node -e against the
+// installed 0.1.0 package): the package root only re-exports `axe` /
+// `configureAxe`; `toHaveNoViolations` lives in the `vitest-axe/matchers`
+// subpath (its `extend-expect` subpath, which would auto-extend `expect`
+// as a side effect the same way `@testing-library/jest-dom/vitest` does
+// above, ships as a literal empty file in this version -- unusable), so
+// the matcher is imported explicitly and extended by hand instead.
+// NOT `from "vitest-axe/matchers"` either -- that package-root subpath's
+// own .d.ts (node_modules/vitest-axe/matchers.d.ts) is
+// `export type * from "./dist/matchers"`, a packaging bug that makes
+// TypeScript (verbatimModuleSyntax) treat the real runtime function as
+// type-only. `vitest-axe/dist/matchers` re-exports the identical runtime
+// value with a correct (non-type-only) .d.ts one directory deeper.
+import { toHaveNoViolations } from "vitest-axe/dist/matchers";
+
+expect.extend({ toHaveNoViolations });
 
 if (!window.matchMedia) {
   window.matchMedia = vi.fn().mockReturnValue({
