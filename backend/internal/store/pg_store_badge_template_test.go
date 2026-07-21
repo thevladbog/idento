@@ -22,19 +22,11 @@ const getBadgeTemplateSQL = `SELECT badge_template, badge_template_version FROM 
 // It must also exclude soft-deleted rows (final-review Minor 6) — every
 // other events UPDATE in this file already does, and a guarded write with
 // no expectedVersion match left is otherwise the one UPDATE that could
-// "resurrect" a soft-deleted event's badge template. Codex round (Fix 1):
-// the same statement also mirrors the verbatim template bytes into the
-// legacy custom_fields["badgeTemplate"] key via jsonb_set, using the exact
-// same $1 the column gets, so the still-live legacy web editor never reads a
-// stale value after a panel save.
-const updateBadgeTemplateSQL = `UPDATE events\s+SET badge_template = \$1, badge_template_version = badge_template_version \+ 1, custom_fields = jsonb_set\(coalesce\(custom_fields, '\{\}'::jsonb\), '\{badgeTemplate\}', \$1::jsonb\), updated_at = NOW\(\)\s+WHERE id = \$2 AND badge_template_version = \$3 AND deleted_at IS NULL\s+RETURNING badge_template_version`
-
-// syncBadgeTemplateFromLegacySQL matches SyncBadgeTemplateFromLegacy's
-// UPDATE: unlike updateBadgeTemplateSQL above, this write is UNCONDITIONAL
-// on the current version (the legacy web PUT /api/events/{id} path has no
-// version concept to compare against) — it only scopes on id and
-// deleted_at, and always bumps the version by one.
-const syncBadgeTemplateFromLegacySQL = `UPDATE events\s+SET badge_template = \$1, badge_template_version = badge_template_version \+ 1, updated_at = now\(\)\s+WHERE id = \$2 AND deleted_at IS NULL\s+RETURNING badge_template_version`
+// "resurrect" a soft-deleted event's badge template. P5.2 removed the
+// transitional jsonb_set mirror into custom_fields["badgeTemplate"] — this
+// statement now touches ONLY the badge_template/badge_template_version
+// columns.
+const updateBadgeTemplateSQL = `UPDATE events\s+SET badge_template = \$1, badge_template_version = badge_template_version \+ 1, updated_at = NOW\(\)\s+WHERE id = \$2 AND badge_template_version = \$3 AND deleted_at IS NULL\s+RETURNING badge_template_version`
 
 func TestGetEventBadgeTemplateReturnsTemplateAndVersion(t *testing.T) {
 	mock, err := pgxmock.NewPool()
@@ -125,15 +117,14 @@ func TestUpdateEventBadgeTemplateReturnsBumpedVersion(t *testing.T) {
 	}
 }
 
-// TestUpdateEventBadgeTemplateMirrorsSameBytesIntoLegacyKey is the Codex
-// round's Fix 1: proves the guarded UPDATE's SQL text includes the
-// jsonb_set(...) mirror into custom_fields["badgeTemplate"] (updateBadgeTemplateSQL
-// requires that fragment to be present, or ExpectQuery below won't match at
-// all), and that it is fed the exact same $1 argument as the column write —
-// WithArgs only lists the argument slice once, so a passing match proves the
-// query references $1 for both destinations (verbatim bytes, no separate
-// re-encoded copy for the legacy key).
-func TestUpdateEventBadgeTemplateMirrorsSameBytesIntoLegacyKey(t *testing.T) {
+// TestUpdateEventBadgeTemplateDoesNotTouchCustomFields pins P5.2's removal
+// of the transitional jsonb_set mirror: the guarded UPDATE's SQL text must
+// no longer reference jsonb_set(...) or custom_fields at all —
+// updateBadgeTemplateSQL (now column-only) is the ExpectQuery match target,
+// so a pre-P5.2 query containing the mirror fragment would fail to match
+// and this test would fail with an unmet-expectations error, not silently
+// pass.
+func TestUpdateEventBadgeTemplateDoesNotTouchCustomFields(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
 		t.Fatalf("pgxmock.NewPool: %v", err)
@@ -155,7 +146,7 @@ func TestUpdateEventBadgeTemplateMirrorsSameBytesIntoLegacyKey(t *testing.T) {
 		t.Errorf("newVersion = %d, want 8", newVersion)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unmet expectations (query text must contain the jsonb_set mirror fragment): %v", err)
+		t.Errorf("unmet expectations (query text must be column-only, no jsonb_set/custom_fields mirror): %v", err)
 	}
 }
 
@@ -283,67 +274,6 @@ func TestUpdateEventBadgeTemplateVersionMismatchReturnsConflict(t *testing.T) {
 	}
 	if newVersion != 0 {
 		t.Errorf("newVersion = %d, want 0", newVersion)
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unmet expectations: %v", err)
-	}
-}
-
-// TestSyncBadgeTemplateFromLegacyBumpsVersionUnconditionally covers the
-// final-review Critical 1 fix: the legacy web editor's PUT /api/events/{id}
-// (handler/events.go's UpdateEvent) writes an object-typed
-// custom_fields["badgeTemplate"] and must mirror it into the dedicated
-// column so it isn't silently shadowed by effectiveBadgeTemplate's
-// column-first rule. Unlike UpdateEventBadgeTemplate, this write carries NO
-// expected-version guard — the legacy PUT has no version concept — so it
-// always matches by id alone and always bumps the version.
-func TestSyncBadgeTemplateFromLegacyBumpsVersionUnconditionally(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	eventID := uuid.New()
-	template := json.RawMessage(`{"width_mm":50,"height_mm":30,"dpi":203,"elements":[]}`)
-	mock.ExpectQuery(syncBadgeTemplateFromLegacySQL).
-		WithArgs([]byte(template), eventID).
-		WillReturnRows(pgxmock.NewRows([]string{"badge_template_version"}).AddRow(5))
-
-	s := &PGStore{db: mock}
-	newVersion, err := s.SyncBadgeTemplateFromLegacy(context.Background(), eventID, template)
-	if err != nil {
-		t.Fatalf("SyncBadgeTemplateFromLegacy: %v", err)
-	}
-	if newVersion != 5 {
-		t.Errorf("newVersion = %d, want 5", newVersion)
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Errorf("unmet expectations: %v", err)
-	}
-}
-
-// TestSyncBadgeTemplateFromLegacyNoMatchingRowReturnsError covers a
-// deleted/nonexistent event: the UPDATE affects 0 rows, RETURNING yields
-// pgx.ErrNoRows, and the method must surface a non-nil error rather than
-// silently reporting a fabricated version — callers (UpdateEvent) log this
-// case and continue rather than failing the legacy PUT itself.
-func TestSyncBadgeTemplateFromLegacyNoMatchingRowReturnsError(t *testing.T) {
-	mock, err := pgxmock.NewPool()
-	if err != nil {
-		t.Fatalf("pgxmock.NewPool: %v", err)
-	}
-	defer mock.Close()
-
-	eventID := uuid.New()
-	template := json.RawMessage(`{"elements":[]}`)
-	mock.ExpectQuery(syncBadgeTemplateFromLegacySQL).
-		WithArgs([]byte(template), eventID).
-		WillReturnRows(pgxmock.NewRows([]string{"badge_template_version"}))
-
-	s := &PGStore{db: mock}
-	if _, err := s.SyncBadgeTemplateFromLegacy(context.Background(), eventID, template); err == nil {
-		t.Fatal("want a non-nil error when no row matches, got nil")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet expectations: %v", err)
