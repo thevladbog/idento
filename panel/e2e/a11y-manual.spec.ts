@@ -29,7 +29,7 @@ test.describe("WCAG 2.5.8 target size (24x24 minimum) — icon-only affordances"
     expect(closeBox!.height).toBeGreaterThanOrEqual(24);
   });
 
-  test("attendees: AttendeeDrawer sheet close button", async ({ page }) => {
+  test("attendees: AttendeeDrawer sheet close button, zone chip, and footer links", async ({ page }) => {
     const seed = await seedWorkspaceEvent();
     await page.addInitScript((token) => {
       window.localStorage.setItem("token", token);
@@ -42,6 +42,22 @@ test.describe("WCAG 2.5.8 target size (24x24 minimum) — icon-only affordances"
     expect(closeBox, "SheetContent close button should be mounted once the drawer is open").not.toBeNull();
     expect(closeBox!.width).toBeGreaterThanOrEqual(24);
     expect(closeBox!.height).toBeGreaterThanOrEqual(24);
+
+    // 3 more sub-24px targets found incidentally while investigating the
+    // Sheet close button above (Task 5 report) — same drawer, same
+    // text-caption-with-thin-padding root cause, fixed at the source
+    // (AttendeeDrawer.tsx's own py-0.5->py-1 / added py-1).
+    const zoneChipBox = await page.getByRole("button", { name: "+ Zone" }).boundingBox();
+    expect(zoneChipBox, "'+ Zone' chip should be mounted").not.toBeNull();
+    expect(zoneChipBox!.height).toBeGreaterThanOrEqual(24);
+
+    const regenerateBox = await page.getByRole("button", { name: "Regenerate code…" }).boundingBox();
+    expect(regenerateBox, "'Regenerate code…' footer link should be mounted").not.toBeNull();
+    expect(regenerateBox!.height).toBeGreaterThanOrEqual(24);
+
+    const deleteBox = await page.getByRole("button", { name: "Delete…" }).boundingBox();
+    expect(deleteBox, "'Delete…' footer link should be mounted").not.toBeNull();
+    expect(deleteBox!.height).toBeGreaterThanOrEqual(24);
   });
 });
 
