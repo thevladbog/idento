@@ -85,11 +85,13 @@ make dev
 - ✅ Загрузит тестовые данные
 - ✅ Запустит Backend (Go)
 - ✅ Запустит Web Frontend (React)
+- ✅ Запустит Panel Frontend (React)
 - ✅ Запустит Printing Agent (Go)
 
 ### Доступ к системе
 
-🌐 **Web Admin**: <http://localhost:5173>  
+🧭 **Panel** (основное приложение — мероприятия, участники, чек-ин): <http://localhost:5174>  
+🌐 **Консоль** (супер-админ, только локальная разработка): <http://localhost:5173>  
 🔑 **Login**: `admin@test.com` / `password`
 
 🔧 **Backend API**: <http://localhost:8008>  
@@ -140,28 +142,28 @@ make docker-down
 
 ### 4️⃣ Чекин
 
-**Web**: `/checkin` - поиск, сканирование, одна кнопка  
+**Panel**: откройте мероприятие → станция чек-ина - поиск, сканирование, вердикт в одну кнопку  
 **Mobile**: Оффлайн-режим, встроенный сканер, синхронизация
 
 ## 🏗️ Архитектура
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Web Admin     │     │  Mobile Check-in │     │  Desktop Agent  │
-│  (React + TS)   │────▶│    (Kotlin)      │────▶│  (Go + Serial)  │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-         │                       │                        │
-         │                       │                        │
-         └───────────────────────┴────────────────────────┘
-                                 │
-                                 ▼
-                    ┌─────────────────────────┐
-                    │   Backend (Go + Echo)    │
-                    │  ┌─────────────────────┐ │
-                    │  │   PostgreSQL        │ │
-                    │  │   Redis Cache       │ │
-                    │  └─────────────────────┘ │
-                    └─────────────────────────┘
+┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐     ┌────────────────────┐
+│       Panel        │     │      Console       │     │  Mobile Check-in   │     │   Desktop Agent    │
+│ (Events, Check-in) │     │   (Super-Admin)    │────▶│      (Kotlin)      │────▶│   (Go + Serial)    │
+└────────────────────┘     └────────────────────┘     └────────────────────┘     └────────────────────┘
+           │                          │                          │                          │
+           │                          │                          │                          │
+           └──────────────────────────┴──────────────────────────┴──────────────────────────┘
+                                                    │
+                                                    ▼
+                                       ┌─────────────────────────┐
+                                       │   Backend (Go + Echo)    │
+                                       │  ┌─────────────────────┐ │
+                                       │  │   PostgreSQL        │ │
+                                       │  │   Redis Cache       │ │
+                                       │  └─────────────────────┘ │
+                                       └─────────────────────────┘
 ```
 
 ## 📦 Структура проекта
@@ -169,8 +171,9 @@ make docker-down
 ```
 idento/
 ├── backend/          # Go API (Echo, PostgreSQL, Redis)
-├── web/             # React Admin (Vite, TailwindCSS, shadcn/ui)
-├── mobile/          # Kotlin Android приложение (offline-first)
+├── panel/            # React Panel — мероприятия, участники, чек-ин (Vite, TanStack Router/Query, @idento/ui)
+├── web/              # React консоль супер-админа (Vite, TailwindCSS, shadcn/ui)
+├── mobile/           # Kotlin Android приложение (offline-first)
 ├── agent/           # Printing Agent (Go, serial ports)
 ├── docs/            # Документация (руководства, миграции, статусы)
 ├── scripts/         # Утилиты (start-all.sh, stop-all.sh, seed.sh)
@@ -183,7 +186,8 @@ idento/
 | Компонент | Технологии |
 |-----------|-------------|
 | **Backend** | Go 1.25, Echo, PostgreSQL, Redis, JWT |
-| **Web** | React 18, TypeScript, Vite, TailwindCSS v4, shadcn/ui, React Konva |
+| **Panel** | React 19, TypeScript, Vite, TanStack Router + Query, TailwindCSS v4, @idento/ui |
+| **Web (Консоль)** | React 18, TypeScript, Vite, TailwindCSS v4, shadcn/ui, React Konva |
 | **Mobile** | Kotlin, Jetpack Compose, Room Database (SQLite) |
 | **Agent** | Go, Serial port (`go.bug.st/serial`) |
 | **DevOps** | Docker, Docker Compose, GitHub Actions |
