@@ -119,7 +119,7 @@ export default function RunPage() {
         verdict: v,
         title: t("runBlockedTitle"),
         name,
-        meta: flow.state.attendee?.block_reason ? [{ label: t("stationRegisterFailed"), value: flow.state.attendee.block_reason }] : undefined,
+        meta: flow.state.attendee?.block_reason ? [{ label: t("runBlockReason"), value: flow.state.attendee.block_reason }] : undefined,
         actions: [{ label: t("done"), kind: "outline" as const, onClick: () => flow.clear() }],
       };
     }
