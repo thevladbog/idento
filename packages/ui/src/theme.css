@@ -42,6 +42,12 @@
   --card-foreground: #f4f4f5;
   --popover: #18181b;
   --popover-foreground: #f4f4f5;
+  /* This pair sits at the intersection of 4 simultaneous WCAG constraints
+     (contrast.test.ts): 1.4.3 text >=4.5:1 for both against white, 1.4.11
+     non-text >=3:1 for both against --background, and hover meaningfully
+     (>10% relative luminance) darker than primary -- the hover-gap margin
+     here is real but thin (~11.5%). Re-run contrast.test.ts after any
+     hand-edit here rather than eyeballing a replacement value. */
   --primary: #2a7e57;
   --primary-hover: #287752;
   --primary-foreground: #ffffff;
