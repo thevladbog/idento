@@ -148,4 +148,35 @@ describe("VerdictCard", () => {
     expect(card).toHaveAttribute("data-verdict", "allowed");
     expect(card.className).toContain(verdictClasses.allowed.bg);
   });
+
+  // P5.3.3 Task 2 -- the settled verdict is the single most important thing
+  // a screen-reader-using door-staff operator needs announced the instant a
+  // scan resolves (WCAG 4.1.3, Status Messages); without role="status" a
+  // screen reader stays silent until the operator manually navigates to
+  // the card. Mirrors packages/ui/src/kiosk/verdict-screen.tsx's own
+  // `role="status"` on its settled-verdict <section>. Scoped to ONLY the
+  // settled-verdict root -- idle/resolving are transient in-progress states,
+  // not the content that needs announcing.
+  describe("live region (WCAG 4.1.3)", () => {
+    it("announces the settled verdict via role=status", () => {
+      const state: CheckinFlowState = { status: "verdict", verdict: "allowed", attendee: ADA };
+      render(<VerdictCard state={state} />);
+
+      expect(screen.getByRole("status")).toHaveAttribute("data-verdict", "allowed");
+    });
+
+    it("does not mark the idle state as a status live region", () => {
+      const state: CheckinFlowState = { status: "idle" };
+      render(<VerdictCard state={state} />);
+
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    it("does not mark the resolving state as a status live region", () => {
+      const state: CheckinFlowState = { status: "resolving" };
+      render(<VerdictCard state={state} />);
+
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+  });
 });

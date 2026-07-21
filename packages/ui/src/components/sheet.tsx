@@ -32,7 +32,11 @@ export const SheetContent = React.forwardRef<
       {children}
       <DialogPrimitive.Close
         aria-label={closeLabel}
-        className="absolute right-4 top-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // WCAG 2.5.8 target size — same fix/rationale as dialog.tsx's
+        // DialogContent close button (icon-only size-4 alone is 16px,
+        // under the 24px floor; size-6 + flex-centering is this codebase's
+        // established icon-button hit-target convention).
+        className="absolute right-4 top-4 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <X className="size-4" />
       </DialogPrimitive.Close>

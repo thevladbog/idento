@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { axe } from "vitest-axe";
 import { PropertiesPane, type PropertiesPaneProps } from "./PropertiesPane";
 import type { BadgeConfig, BadgeElement } from "./templateTypes";
 import type { components } from "../../shared/api/schema";
@@ -53,6 +54,16 @@ function renderPane(overrides: Partial<PropertiesPaneProps> = {}) {
 // option now goes through userEvent.click(combobox) ->
 // findByRole("option", {name}) rather than fireEvent.change.
 describe("PropertiesPane", () => {
+  // P5.3.3 Task 3 (static a11y tooling): one representative vitest-axe
+  // assertion for this Select consumer, demonstrating the pattern other
+  // tests should copy -- the DPI Select is closed/collapsed here (default
+  // render, same as the "empty state" describe block's own baseline), same
+  // as every other test in this file that doesn't explicitly open it.
+  it("has no axe violations", async () => {
+    const { container } = renderPane({ element: null });
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
   describe("empty state (document settings)", () => {
     it("shows the document-settings section with the config's current values, plus the element-selection hint", () => {
       renderPane({ element: null });

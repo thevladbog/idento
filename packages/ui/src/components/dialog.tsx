@@ -41,7 +41,13 @@ export const DialogContent = React.forwardRef<
       {!hideClose ? (
         <DialogPrimitive.Close
           aria-label={closeLabel}
-          className="absolute right-4 top-4 rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // WCAG 2.5.8 target size: the icon alone (size-4, 16px) is under
+          // the 24px floor. `inline-flex size-6 items-center justify-center`
+          // is this codebase's established icon-button hit-target convention
+          // (see date-picker.tsx's clear button, Checkbox's own size-6 box)
+          // — grows the clickable/hoverable box to the exact 24px floor
+          // while the visible X glyph itself stays size-4.
+          className="absolute right-4 top-4 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="size-4" />
         </DialogPrimitive.Close>

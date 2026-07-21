@@ -536,7 +536,15 @@ export function BadgeEditorPage() {
   }
 
   return (
-    <div className="flex h-full min-h-[420px] flex-col gap-4" onKeyDown={handlePageKeyDown}>
+    // role="presentation": this div itself carries no semantics of its own
+    // -- it's a pure layout/event-delegation wrapper (onKeyDown here only
+    // ever fires from a KEY EVENT BUBBLING UP from an already-focusable
+    // descendant, e.g. the artboard/ElementsPane -- see handlePageKeyDown's
+    // own comments; this div is never itself a focus/interaction target).
+    // Its children (h2, buttons, etc. below) keep their own normal
+    // semantics -- role="presentation" only suppresses THIS element's
+    // implicit role, which a bare <div> never had to begin with.
+    <div className="flex h-full min-h-[420px] flex-col gap-4" onKeyDown={handlePageKeyDown} role="presentation">
       <div className="flex items-center gap-3 border-b border-border pb-4">
         <h2 className="text-page-title">{t("badgeTitle")}</h2>
         <PreviewPicker

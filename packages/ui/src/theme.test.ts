@@ -33,10 +33,18 @@ describe("theme.css tokens", () => {
 
   it("uses the board-1a palette values", () => {
     const root = block(":root");
-    expect(root).toContain("--success: #00935e");
-    expect(root).toContain("--warning: #d97706");
-    expect(root).toContain("--info: #2563eb");
-    expect(root).toContain("--destructive: #dc2626");
+    // --success/--destructive/--info all diverge from the original board-1a
+    // spec values — darkened by the P5.3.3 axe-core/playwright sweep (and,
+    // for --destructive/--info, the same self-tint arithmetic applied
+    // proactively after the sweep caught --success live), which found
+    // `text-X` on a `bg-X/10` self-tint background (WorkspaceRail's
+    // active-nav highlight, StatusPill's `error` variant, ImportWizard's
+    // info badge) fell short of WCAG 1.4.3's 4.5:1 (contrast.test.ts's
+    // "self-tint" describe block pins the fix for all three).
+    expect(root).toContain("--success: #00714a");
+    expect(root).toContain("--warning: #a15505");
+    expect(root).toContain("--info: #225cdb");
+    expect(root).toContain("--destructive: #c22121");
     expect(root).toContain("--primary-hover: #00714a");
     const dark = block(".dark");
     expect(dark).toContain("--success: #2fd598");

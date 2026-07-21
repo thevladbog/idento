@@ -32,6 +32,16 @@ const ADA = makeAttendee({ id: "a1" });
 // also be reachable and activatable via keyboard, and keyboard activation of
 // the row must not interfere with the checkbox/row-menu's own independent
 // focus and activation.
+//
+// Follow-up (P5.3.3 axe-core/playwright sweep): the row's own click/keyboard
+// affordance used to live on a role="button" <div> that WRAPPED the
+// Checkbox — a genuinely interactive descendant nested inside another
+// interactive-role ancestor, which axe's `nested-interactive` check (WCAG
+// 4.1.2) flags live in a real browser regardless of aria-hidden/tabindex
+// tricks. It's now a real <button> that's a SIBLING of the Checkbox, not an
+// ancestor, so the row's own checkbox is tab-stop #1 within a row (matching
+// its leftmost visual position) and the "open" button is tab-stop #2 — one
+// more tab than before, since the row itself is no longer a focus stop.
 describe("AttendeeTable row keyboard accessibility", () => {
   it("tabs to a row and activates it with Enter", async () => {
     const user = userEvent.setup();
@@ -47,9 +57,10 @@ describe("AttendeeTable row keyboard accessibility", () => {
     );
 
     await user.tab(); // header "select all" checkbox
-    await user.tab(); // the row itself (it precedes its own checkbox child in source/tab order)
-    const row = screen.getByRole("button", { name: "Open Ada Lovelace" });
-    expect(row).toHaveFocus();
+    await user.tab(); // the row's own checkbox
+    await user.tab(); // the row's "open" button
+    const openButton = screen.getByRole("button", { name: "Open Ada Lovelace" });
+    expect(openButton).toHaveFocus();
 
     await user.keyboard("{Enter}");
     expect(onRowClick).toHaveBeenCalledWith("a1");
@@ -68,8 +79,8 @@ describe("AttendeeTable row keyboard accessibility", () => {
       />,
     );
 
-    const row = screen.getByRole("button", { name: "Open Ada Lovelace" });
-    row.focus();
+    const openButton = screen.getByRole("button", { name: "Open Ada Lovelace" });
+    openButton.focus();
     await user.keyboard(" ");
     expect(onRowClick).toHaveBeenCalledWith("a1");
   });
@@ -102,6 +113,12 @@ describe("AttendeeTable row keyboard accessibility", () => {
   // must be pure decoration: excluded from the tab order and the
   // accessibility tree, while a plain mouse click on it still opens the
   // drawer via the same bubble-to-row behavior as clicking any other cell.
+  // Follow-up (P5.3.3 axe-core/playwright sweep): a real <button
+  // tabIndex={-1} aria-hidden> still tripped axe's `nested-interactive`
+  // check (a genuinely interactive element nested inside the row's own
+  // role="button" isn't reliably hidden from every assistive technology by
+  // aria-hidden alone) — it's now a plain, natively non-focusable <span>,
+  // so there's no tabindex attribute to assert on any more.
   it("renders the trailing ellipsis as non-interactive decoration, not an independently focusable row-menu control", async () => {
     const user = userEvent.setup();
     const onRowClick = vi.fn();
@@ -118,8 +135,8 @@ describe("AttendeeTable row keyboard accessibility", () => {
     expect(screen.queryByRole("button", { name: "More actions for Ada Lovelace" })).not.toBeInTheDocument();
 
     const ellipsis = screen.getByText("⋯");
+    expect(ellipsis.tagName).toBe("SPAN");
     expect(ellipsis).toHaveAttribute("aria-hidden", "true");
-    expect(ellipsis).toHaveAttribute("tabindex", "-1");
 
     // A plain mouse click still opens the drawer, same as clicking anywhere
     // else on the row.

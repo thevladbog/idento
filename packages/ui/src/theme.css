@@ -9,22 +9,47 @@
   --card-foreground: #18181b;
   --popover: #ffffff;
   --popover-foreground: #18181b;
-  --primary: #00935e;
+  --primary: #007d4e;
   --primary-hover: #00714a;
   --primary-foreground: #ffffff;
   --secondary: #f4f4f5;
   --secondary-foreground: #18181b;
   --muted: #f4f4f5;
-  --muted-foreground: #71717a;
+  --muted-foreground: #65656d;
   --accent: #f0faf5;
   --accent-foreground: #00714a;
-  --destructive: #dc2626;
+  /* Darker than the "obvious" red on purpose — same self-tint issue as
+     --success below: StatusPill's `error` variant and other
+     bg-destructive/10 text-destructive badges put this text on a
+     destructive-tinted background, not plain --background, which ate
+     margin the plain --destructive/--destructive-foreground pair test
+     never modeled (#dc2626 measured 3.98:1 there, below 4.5:1 — found by
+     computing the same self-tint arithmetic the P5.3.3 axe-core sweep
+     used to catch --success live, not rendered by that sweep's own 7
+     seeded screens). */
+  --destructive: #c22121;
   --destructive-foreground: #ffffff;
-  --success: #00935e;
+  /* Darker than --primary's #007d4e on purpose (contrast.test.ts's
+     "self-tint" pair below): every `bg-success/10 text-success` badge/nav
+     idiom (WorkspaceRail's active-step highlight, StatusPill's `ready`
+     variant, etc.) sets text-success on a background that is ITSELF
+     success-tinted, not on plain --background — so the effective bg is a
+     touch greener/darker than --background alone, which silently ate ~0.2
+     of the WCAG 1.4.3 margin (#007d4e measured 4.32:1 there, found live by
+     the P5.3.3 axe-core/playwright sweep on WorkspaceRail's "active" nav
+     link, not by the plain-pair check above). #00714a happens to equal
+     --primary-hover's value — reused because it's already vetted by every
+     test in this file, not because the two tokens are meant to move
+     together; feel free to diverge it later if success ever needs its own
+     hue. */
+  --success: #00714a;
   --success-foreground: #ffffff;
-  --warning: #d97706;
+  --warning: #a15505;
   --warning-foreground: #ffffff;
-  --info: #2563eb;
+  /* Same self-tint issue as --destructive/--success above: ImportWizard's
+     info badge (bg-info/10 text-info) measured 4.33:1 against its own
+     tinted background, below 4.5:1. */
+  --info: #225cdb;
   --info-foreground: #ffffff;
   --border: #e4e4e7;
   --input: #e4e4e7;
@@ -42,8 +67,14 @@
   --card-foreground: #f4f4f5;
   --popover: #18181b;
   --popover-foreground: #f4f4f5;
-  --primary: #36a16f;
-  --primary-hover: #2c8a5e;
+  /* This pair sits at the intersection of 4 simultaneous WCAG constraints
+     (contrast.test.ts): 1.4.3 text >=4.5:1 for both against white, 1.4.11
+     non-text >=3:1 for both against --background, and hover meaningfully
+     (>10% relative luminance) darker than primary -- the hover-gap margin
+     here is real but thin (~11.5%). Re-run contrast.test.ts after any
+     hand-edit here rather than eyeballing a replacement value. */
+  --primary: #2a7e57;
+  --primary-hover: #287752;
   --primary-foreground: #ffffff;
   --secondary: #27272a;
   --secondary-foreground: #f4f4f5;
@@ -148,4 +179,29 @@
   font-family: var(--font-mono);
   font-size: 0.65625rem;
   line-height: 1.4;
+}
+
+/* WCAG 2.3.3 (Animation from Interactions, AAA — applied here as a
+   reasonable AA-adjacent baseline) / 2.2.2 (Pause, Stop, Hide) spot-check:
+   nothing in this file or its consumers (Skeleton's animate-pulse,
+   status-pill.tsx's in_progress animate-spin, Loader2 animate-spin usages,
+   Dialog/Sheet's tw-animate-css slide-in/fade-in transitions) previously
+   respected prefers-reduced-motion at all. This global override collapses
+   every CSS animation/transition to effectively instant once the OS-level
+   "reduce motion" preference is set, without having to special-case each
+   animated component individually. Verified inert for this repo's existing
+   test suites: jsdom (packages/ui + panel's vitest unit tests) doesn't load
+   external stylesheets or evaluate @media queries at all, so no unit test's
+   waitFor()/timer assertions are affected; Playwright's e2e browser context
+   also defaults to prefers-reduced-motion: no-preference (no test in
+   panel/e2e sets page.emulateMedia({ reducedMotion: "reduce" })), so this
+   rule is dormant there too unless a future test explicitly opts in. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

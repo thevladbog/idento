@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
+import { axe } from "vitest-axe";
 import { BulkBar } from "./BulkBar";
 import { ATTENDEES_LIST_KEY, useAttendeesPage } from "./hooks";
 import { agentClient, AgentPrintTimeoutError } from "../../shared/agent/agentClient";
@@ -823,6 +824,24 @@ describe("BulkBar", () => {
   });
 
   describe("Delete…", () => {
+    // P5.3.3 Task 3 (static a11y tooling): one representative vitest-axe
+    // assertion for this ConfirmDialog/Dialog consumer, demonstrating the
+    // pattern other tests should copy -- the delete-confirmation dialog
+    // open, same click-to-open setup as the test right below. `document.body`
+    // (not `container`, which this file's own renderWithProviders doesn't
+    // return) because the dialog is portaled outside the render root, same
+    // as every other assertion in this describe block reaching it via
+    // `screen`, not `container`.
+    it("has no axe violations", async () => {
+      const user = userEvent.setup();
+      renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);
+
+      await user.click(screen.getByRole("button", { name: "Delete…" }));
+      await screen.findByRole("dialog");
+
+      expect(await axe(document.body)).toHaveNoViolations();
+    });
+
     it("disables the confirm button until the exact selected count is typed", async () => {
       const user = userEvent.setup();
       renderWithProviders(<BulkBar selected={[ADA, BOB]} eventId="evt-1" onClear={vi.fn()} />);

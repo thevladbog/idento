@@ -226,7 +226,11 @@ function DrawerBody({
       type="button"
       disabled
       aria-disabled="true"
-      className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed"
+      // WCAG 2.5.8 target size: text-caption's own line-height (16.68px)
+      // plus the old py-0.5 (4px total) landed at ~22.7px, under the 24px
+      // floor — bumped to py-1 (8px total) to clear it (spot-checked with a
+      // real boundingBox() measurement, not just arithmetic).
+      className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-1 text-caption text-muted-foreground disabled:cursor-not-allowed"
     >
       {t("drawerAddZone")}
     </button>
@@ -774,7 +778,10 @@ function DrawerBody({
                 <button
                   type="button"
                   disabled={addZoneAccess.isPending}
-                  className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-0.5 text-caption text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  // Same WCAG 2.5.8 target-size fix as addZonePlaceholder
+                  // above (py-0.5 -> py-1) — kept in sync since this is the
+                  // enabled twin of that disabled placeholder.
+                  className="inline-flex items-center rounded-full border border-dashed border-input px-2.5 py-1 text-caption text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t("drawerAddZone")}
                 </button>
@@ -843,7 +850,10 @@ function DrawerBody({
       <div className="mt-auto flex items-center justify-between border-t border-border pt-3">
         <button
           type="button"
-          className="text-caption text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+          // WCAG 2.5.8 target size: text-caption's line-height alone (~16.7px)
+          // was under the 24px floor with no padding at all — py-1 clears it
+          // (spot-checked with a real boundingBox() measurement).
+          className="py-1 text-caption text-destructive disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             setRegenerateError(false);
             setRegenerateOpen(true);
@@ -853,7 +863,7 @@ function DrawerBody({
         </button>
         <button
           type="button"
-          className="text-caption text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+          className="py-1 text-caption text-destructive disabled:cursor-not-allowed disabled:opacity-50"
           onClick={() => {
             setDeleteError(false);
             setDeleteOpen(true);
