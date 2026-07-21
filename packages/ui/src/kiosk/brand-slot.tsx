@@ -1,14 +1,11 @@
 import { cn } from "../lib/cn";
 
-export interface BrandSlotProps {
-  src?: string;
-  alt?: string;
-  placeholderLabel?: string;
-  className?: string;
-}
+export type BrandSlotProps =
+  | { src: string; alt: string; placeholderLabel?: string; className?: string }
+  | { src?: undefined; alt?: never; placeholderLabel?: string; className?: string };
 
 /** Слот брендинга attract-экрана: ограниченная зона 380×130, дальше бренд не расползается. */
-export function BrandSlot({ src, alt = "", placeholderLabel, className }: BrandSlotProps) {
+export function BrandSlot({ src, alt, placeholderLabel, className }: BrandSlotProps) {
   if (src) {
     return (
       <div className={cn("grid h-[130px] w-[380px] place-items-center", className)}>

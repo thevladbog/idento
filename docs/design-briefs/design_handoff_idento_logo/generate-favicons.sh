@@ -69,5 +69,6 @@ cp "$WORK/macos-icons/icon.icns" "$ROOT/desktop/src-tauri/icons/icon.icns"
 # tray/menu-bar template (black glyph + alpha; macOS recolors via iconAsTemplate)
 rsvg-convert -w 32 -h 32 --stylesheet <(echo '*{color:#000}') "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon.png" 2>/dev/null \
   || rsvg-convert -w 32 -h 32 "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon.png"
-rsvg-convert -w 64 -h 64 "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon@2x.png"
+rsvg-convert -w 64 -h 64 --stylesheet <(echo '*{color:#000}') "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon@2x.png" 2>/dev/null \
+  || rsvg-convert -w 64 -h 64 "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon@2x.png"
 echo "Desktop icons regenerated in desktop/src-tauri/icons/."
