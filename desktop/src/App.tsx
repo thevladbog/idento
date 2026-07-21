@@ -5,7 +5,8 @@ import QRLoginPage from "./pages/QRLogin";
 import ConnectionPage from "./pages/Connection";
 import EquipmentPage from "./pages/Equipment";
 import CheckinPage from "./pages/Checkin";
-import CheckinEventPage from "./pages/CheckinEvent";
+import ModePage from "./pages/Mode";
+import RunPage from "./pages/Run";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("token");
@@ -24,14 +25,6 @@ function App() {
         <Route path="/qr-login" element={<QRLoginPage />} />
         <Route path="/connection" element={<ConnectionPage />} />
         <Route
-          path="/equipment"
-          element={
-            <ProtectedRoute>
-              <EquipmentPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route
           path="/checkin"
           element={
             <ProtectedRoute>
@@ -40,10 +33,26 @@ function App() {
           }
         />
         <Route
+          path="/checkin/:eventId/equipment"
+          element={
+            <ProtectedRoute>
+              <EquipmentPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/checkin/:eventId/mode"
+          element={
+            <ProtectedRoute>
+              <ModePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/checkin/:eventId"
           element={
             <ProtectedRoute>
-              <CheckinEventPage />
+              <RunPage />
             </ProtectedRoute>
           }
         />
