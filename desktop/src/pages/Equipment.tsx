@@ -48,6 +48,7 @@ export default function EquipmentPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const steps = usePreflightSteps();
   const [agentConnected, setAgentConnected] = useState(false);
+  const [agentUnauthorized, setAgentUnauthorized] = useState(false);
   const [printers, setPrinters] = useState<PrinterEntry[]>([]);
   const [scanners, setScanners] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -93,6 +94,7 @@ export default function EquipmentPage() {
   // worth threading through a shared helper here.
   const reconnectAgent = async () => {
     setLoading(true);
+    setAgentUnauthorized(false);
     const ok = await checkAgentHealth();
     setAgentConnected(ok);
     if (!ok) {
@@ -109,7 +111,13 @@ export default function EquipmentPage() {
       setScanners(data.scanners);
       setAvailablePorts(data.availablePorts);
       setDefaultPrinter(data.defaultPrinter);
-    } catch {
+    } catch (e) {
+      // /health ignores the token, so a mistyped external token still shows
+      // "connected" here -- but the very first real endpoint call (this one)
+      // 401s. Surface that distinctly instead of silently emptying the lists.
+      if (e instanceof Error && e.message.includes("401")) {
+        setAgentUnauthorized(true);
+      }
       setPrinters([]);
       setScanners([]);
       setAvailablePorts([]);
@@ -201,8 +209,11 @@ export default function EquipmentPage() {
           setAvailablePorts(data.availablePorts);
           setDefaultPrinter(data.defaultPrinter);
         }
-      } catch {
+      } catch (e) {
         if (!cancelled) {
+          if (e instanceof Error && e.message.includes("401")) {
+            setAgentUnauthorized(true);
+          }
           setPrinters([]);
           setScanners([]);
           setAvailablePorts([]);
@@ -393,6 +404,7 @@ export default function EquipmentPage() {
               </KioskButton>
             </div>
           )}
+          {agentUnauthorized && <p className="mt-3 text-kiosk-danger-soft">{t("agentUnauthorized")}</p>}
         </section>
 
         {loading ? (

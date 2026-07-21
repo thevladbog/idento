@@ -28,4 +28,8 @@ describe("formatAgentDetail", () => {
     setAgentExternalConfig("not-a-url", "tok");
     expect(formatAgentDetail("external", "1.4.0", undefined)).toBe("v1.4.0");
   });
+
+  it("does not double up the 'v' prefix when version already has one (release tag)", () => {
+    expect(formatAgentDetail("embedded", "v1.2.3", 12345)).toBe("v1.2.3 · :12345");
+  });
 });

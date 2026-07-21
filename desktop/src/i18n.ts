@@ -55,6 +55,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         agentModeExternal: "External",
         agentExternalUrlPlaceholder: "http://192.168.1.50:12345",
         agentExternalTokenPlaceholder: "Token",
+        agentUnauthorized:
+          "Agent connected, but the token was rejected — check the token in External agent settings.",
         loading: "Loading...",
         printersCount: "{{count}} printer(s) available",
         printers: "Printers",
@@ -231,6 +233,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         agentModeExternal: "Внешний",
         agentExternalUrlPlaceholder: "http://192.168.1.50:12345",
         agentExternalTokenPlaceholder: "Токен",
+        agentUnauthorized:
+          "Агент подключён, но токен отклонён — проверьте токен в настройках внешнего агента.",
         loading: "Загрузка...",
         printersCount: "{{count}} принтер(ов)",
         printers: "Принтеры",

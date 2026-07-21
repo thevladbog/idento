@@ -8,7 +8,12 @@ export function formatAgentDetail(
   version: string | undefined,
   embeddedPort: number | undefined,
 ): string | undefined {
-  const versionPart = version ? `v${version}` : undefined;
+  // Release builds bake the version from the CI-supplied release tag
+  // (`v1.2.3`-shaped, see build_agent_url's doc comment / CI workflow), while
+  // dev/mock builds pass an unprefixed version like "1.4.0" -- strip any
+  // existing leading "v"/"V" before re-adding exactly one so we never show
+  // "vv1.2.3".
+  const versionPart = version ? `v${version.replace(/^v/i, "")}` : undefined;
 
   let addressPart: string | undefined;
   if (mode === "external") {
