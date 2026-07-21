@@ -107,6 +107,28 @@ describe("theme.css non-text contrast (WCAG 1.4.11, UI components vs page backgr
   }
 });
 
+// P5.3.3 Task 5 (manual checklist item, WCAG 2.4.7 Focus Visible / 1.4.11
+// Non-text Contrast applied to the focus indicator itself): every
+// interactive @idento/ui component shares one global `focus-visible:ring-2
+// focus-visible:ring-ring` treatment (button.tsx, checkbox.tsx, select.tsx,
+// etc. — components that compose Button/inherit it are intentionally not
+// re-listed). --ring itself was never in the PAIRS sweep above (it isn't a
+// foreground/background text pair), so it had no regression guard at all
+// until this block. Checked against both --background and --card since
+// focus rings render over either surface throughout the app.
+describe("theme.css focus-ring contrast (WCAG 2.4.7 / 1.4.11, --ring vs surfaces)", () => {
+  for (const themeName of ["light", "dark"] as const) {
+    it(`${themeName}: --ring clears 3:1 against --background and --card`, () => {
+      const blockText = themeName === "light" ? block(":root") : block(".dark");
+      const ring = tokenValue(blockText, "--ring");
+      for (const surface of ["--background", "--card"]) {
+        const ratio = contrastRatio(ring, tokenValue(blockText, surface));
+        expect(ratio, `${themeName} --ring vs ${surface}`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      }
+    });
+  }
+});
+
 // Simple (non-premultiplied) alpha compositing in sRGB space — matches how
 // browsers paint a translucent `bg-*/10` fill over a solid page background,
 // and is what axe-core measures live via getComputedStyle.

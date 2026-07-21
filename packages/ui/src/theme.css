@@ -180,3 +180,28 @@
   font-size: 0.65625rem;
   line-height: 1.4;
 }
+
+/* WCAG 2.3.3 (Animation from Interactions, AAA — applied here as a
+   reasonable AA-adjacent baseline) / 2.2.2 (Pause, Stop, Hide) spot-check:
+   nothing in this file or its consumers (Skeleton's animate-pulse,
+   status-pill.tsx's in_progress animate-spin, Loader2 animate-spin usages,
+   Dialog/Sheet's tw-animate-css slide-in/fade-in transitions) previously
+   respected prefers-reduced-motion at all. This global override collapses
+   every CSS animation/transition to effectively instant once the OS-level
+   "reduce motion" preference is set, without having to special-case each
+   animated component individually. Verified inert for this repo's existing
+   test suites: jsdom (packages/ui + panel's vitest unit tests) doesn't load
+   external stylesheets or evaluate @media queries at all, so no unit test's
+   waitFor()/timer assertions are affected; Playwright's e2e browser context
+   also defaults to prefers-reduced-motion: no-preference (no test in
+   panel/e2e sets page.emulateMedia({ reducedMotion: "reduce" })), so this
+   rule is dormant there too unless a future test explicitly opts in. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
