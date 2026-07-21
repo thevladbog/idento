@@ -7,21 +7,21 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { usePreflightSteps } from "@/features/preflight/steps";
 import { toast } from "sonner";
 
-type Event = { id: string; name: string };
+type CheckinEvent = { id: string; name: string };
 
 export default function CheckinPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const steps = usePreflightSteps();
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<CheckinEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     setFetchError(false);
     api
-      .get<Event[]>("/api/events")
-      .then((res: { data: Event[] }) => setEvents(Array.isArray(res.data) ? res.data : []))
+      .get<CheckinEvent[]>("/api/events")
+      .then((res: { data: CheckinEvent[] }) => setEvents(Array.isArray(res.data) ? res.data : []))
       .catch(() => {
         setFetchError(true);
         setEvents([]);
@@ -33,7 +33,7 @@ export default function CheckinPage() {
   return (
     <PreflightShell
       steps={steps}
-      activeIndex={3}
+      activeIndex={2}
       footer={
         <div className="flex items-center gap-3">
           {t("language")}: <LanguageSwitcher />

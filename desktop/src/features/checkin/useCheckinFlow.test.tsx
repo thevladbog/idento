@@ -190,4 +190,31 @@ describe("useCheckinFlow.printCurrent", () => {
     await act(() => result.current.printCurrent());
     expect(postSpy).toHaveBeenCalledWith("/api/attendees/a1/printed", { event_id: "evt-1", station_id: "s1" });
   });
+
+  it("ignores a second printCurrent while one is already in flight (re-entrancy guard)", async () => {
+    vi.spyOn(api, "get").mockResolvedValue({ data: [attendee] });
+    let resolveZpl: (value: { data: { zpl: string } }) => void = () => {};
+    const postSpy = vi.spyOn(api, "post").mockImplementation((url: string) => {
+      if (url.endsWith("/checkin")) return Promise.resolve({ data: { outcome: "checked_in", attendee, checkin: null } });
+      if (url.endsWith("/badge-zpl")) return new Promise((resolve) => { resolveZpl = resolve; });
+      if (url.endsWith("/printed")) return Promise.resolve({ data: { printed_count: 2 } });
+      return Promise.reject(new Error("unexpected POST " + url));
+    });
+    vi.spyOn(agentLib, "agentPost").mockResolvedValue("{}");
+
+    const { result } = setup({ print_on_checkin: false });
+    await act(() => result.current.submitCode("EVT-1"));
+    postSpy.mockClear();
+
+    const first = act(() => result.current.printCurrent());
+    await act(() => result.current.printCurrent()); // dropped, printBusyRef is set
+
+    expect(postSpy.mock.calls.filter(([url]) => url.endsWith("/badge-zpl"))).toHaveLength(1);
+
+    resolveZpl({ data: { zpl: "^XA^XZ" } });
+    await first;
+
+    expect(postSpy.mock.calls.filter(([url]) => url.endsWith("/printed"))).toHaveLength(1);
+    expect(result.current.state.printPending).toBe(false);
+  });
 });

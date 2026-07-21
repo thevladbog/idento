@@ -152,6 +152,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeManualSearchTitle: "Manual search fallback",
         modeDismissTitle: "Verdict auto-dismiss (seconds)",
         modeSaveAndStart: "Save and start",
+        checkinSettingsSaveFailed: "Failed to save check-in settings",
         // Run screen
         runReadyToScan: "Ready to scan",
         runScanHint: "Scan the ticket QR code with the scanner",
@@ -322,6 +323,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeManualSearchTitle: "Резервный поиск вручную",
         modeDismissTitle: "Автовозврат вердикта (секунды)",
         modeSaveAndStart: "Сохранить и начать",
+        checkinSettingsSaveFailed: "Не удалось сохранить настройки чекина",
         // Run screen
         runReadyToScan: "Готов к сканированию",
         runScanHint: "Поднесите QR-код билета к сканеру",

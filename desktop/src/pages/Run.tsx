@@ -31,7 +31,7 @@ import { loadRunLayout } from "@/pages/Mode";
 export default function RunPage() {
   const { t } = useTranslation();
   const { eventId } = useParams<{ eventId: string }>();
-  const stationId = localStorage.getItem("idento_station_id");
+  const stationId = localStorage.getItem(`idento_station_id:${eventId}`);
   const layout = loadRunLayout();
 
   useHeartbeat(eventId!, stationId);
@@ -119,9 +119,10 @@ export default function RunPage() {
         verdict: v,
         title: t("runAllowedTitle"),
         name,
-        actions: settings.print_on_checkin
-          ? undefined
-          : [{ label: t("print"), kind: "solid" as const, onClick: () => void flow.printCurrent() }],
+        actions:
+          settings.print_on_checkin || flow.state.printPending
+            ? undefined
+            : [{ label: t("print"), kind: "solid" as const, onClick: () => void flow.printCurrent() }],
         autoReturn: { label: t("runAutoReturning"), progress: 0.5 },
       };
     }

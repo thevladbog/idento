@@ -37,7 +37,7 @@ export default function ModePage() {
       localStorage.setItem(RUN_LAYOUT_KEY, layout);
       navigate(`/checkin/${eventId}`);
     } catch {
-      toast.error(t("checkinFailed"));
+      toast.error(t("checkinSettingsSaveFailed"));
     }
   };
 
@@ -59,6 +59,7 @@ export default function ModePage() {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={layout === value}
                   className={`flex-1 rounded-xl border-2 p-4 text-left ${optionButtonClass(layout === value)}`}
                   onClick={() => setLayout(value)}
                 >
@@ -75,6 +76,7 @@ export default function ModePage() {
                 <button
                   key={value}
                   type="button"
+                  aria-pressed={settings.scan_input === value}
                   className={`flex-1 rounded-xl border-2 p-4 text-left ${optionButtonClass(settings.scan_input === value)}`}
                   onClick={() => setSettings((prev) => ({ ...prev, scan_input: value }))}
                 >

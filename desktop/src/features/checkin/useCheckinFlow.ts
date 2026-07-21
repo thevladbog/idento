@@ -29,6 +29,7 @@ export interface CheckinFlowState {
   attendee?: Attendee;
   checkin?: CheckinInfo | null;
   printError?: unknown;
+  printPending?: boolean;
   requestError?: unknown;
 }
 
@@ -54,6 +55,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
 
   const dismissTimerRef = useRef<number | undefined>(undefined);
   const busyRef = useRef(false);
+  const printBusyRef = useRef(false);
 
   const clearDismissTimer = () => {
     window.clearTimeout(dismissTimerRef.current);
@@ -78,6 +80,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
 
   useEffect(() => {
     busyRef.current = false;
+    printBusyRef.current = false;
     clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId, stationId]);
@@ -145,13 +148,18 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
 
   async function printCurrent(): Promise<void> {
     if (state.status !== "verdict" || state.verdict !== "allowed" || !state.attendee) return;
+    if (printBusyRef.current) return;
+    printBusyRef.current = true;
     const currentAttendee = state.attendee;
+    setState((prev) => (prev.status === "verdict" ? { ...prev, printPending: true } : prev));
     try {
       await printAttendeeBadge(eventId, currentAttendee, printerName);
       await markPrinted.mutateAsync({ attendeeId: currentAttendee.id, eventId, stationId });
-      setState((prev) => (prev.status === "verdict" ? { ...prev, printError: undefined } : prev));
+      setState((prev) => (prev.status === "verdict" ? { ...prev, printError: undefined, printPending: false } : prev));
     } catch (error) {
-      setState((prev) => (prev.status === "verdict" ? { ...prev, printError: error } : prev));
+      setState((prev) => (prev.status === "verdict" ? { ...prev, printError: error, printPending: false } : prev));
+    } finally {
+      printBusyRef.current = false;
     }
   }
 

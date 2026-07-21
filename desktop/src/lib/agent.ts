@@ -49,6 +49,6 @@ export async function checkAgentHealth(): Promise<boolean> {
 // pair, a scan arriving between a separate read and clear can never be lost.
 export async function consumeLastScan(): Promise<{ code: string }> {
   const text = await agentPost("/scan/consume");
-  const data = JSON.parse(text) as { code?: string };
-  return { code: data.code ?? "" };
+  const data = JSON.parse(text) as { code?: string } | null;
+  return { code: data?.code ?? "" };
 }

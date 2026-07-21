@@ -58,15 +58,16 @@ export default function EquipmentPage() {
   const [testPolling, setTestPolling] = useState(false);
   const scannerTestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const stationIdKey = `idento_station_id:${eventId}`;
   const [stationName, setStationName] = useState("");
-  const [stationId, setStationId] = useState<string | null>(() => localStorage.getItem("idento_station_id"));
+  const [stationId, setStationId] = useState<string | null>(() => localStorage.getItem(stationIdKey));
   const registerStation = useRegisterStation(eventId!);
 
   const registerStationAction = async () => {
     if (!stationName.trim()) return;
     try {
       const station = await registerStation.mutateAsync({ name: stationName.trim() });
-      localStorage.setItem("idento_station_id", station.id);
+      localStorage.setItem(stationIdKey, station.id);
       setStationId(station.id);
       toast.success(t("stationRegistered"));
     } catch {
@@ -279,7 +280,7 @@ export default function EquipmentPage() {
   return (
     <PreflightShell
       steps={steps}
-      activeIndex={2}
+      activeIndex={3}
       footer={
         <div className="flex items-center gap-3">
           {t("language")}: <LanguageSwitcher />
