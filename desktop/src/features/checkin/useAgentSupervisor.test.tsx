@@ -40,8 +40,19 @@ describe("useAgentSupervisor", () => {
     expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(invokeMock).toHaveBeenCalledWith("restart_agent");
 
-    await vi.advanceTimersByTimeAsync(20_000); // next unhealthy poll -- 1s cooldown long since elapsed -> restart #2
+    // The backoff cooldown itself now drives the retry: once the initial 1s
+    // cooldown elapses it force-refetches the health query directly, rather
+    // than waiting for the next up-to-20s-away scheduled poll. Still
+    // unhealthy -> restart #2, well under the 20s poll interval away from
+    // restart #1 -- this is the assertion that proves backoff (not the poll
+    // interval) now drives the cadence.
+    await vi.advanceTimersByTimeAsync(1_000);
     expect(invokeMock).toHaveBeenCalledTimes(2);
+
+    // Backoff has now doubled to 2s -- a restart #3 should follow ~2s after
+    // restart #2, again well before the next 20s poll would fire.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(invokeMock).toHaveBeenCalledTimes(3);
   });
 
   it("resets the failure count and backoff after a healthy poll", async () => {

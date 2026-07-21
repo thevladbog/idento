@@ -67,4 +67,22 @@ describe("agentGet / agentPost with an external target configured", () => {
       }),
     );
   });
+
+  it("agentGet rejects a base URL containing userinfo instead of silently sending the request", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://attacker@evil.example", "tok-123");
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    await expect(agentGet("/health")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("agentPost rejects a base URL containing userinfo instead of silently sending the request", async () => {
+    setAgentMode("external");
+    setAgentExternalConfig("http://attacker@evil.example", "tok-123");
+    const fetchSpy = vi.spyOn(global, "fetch");
+
+    await expect(agentPost("/print", "{}")).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

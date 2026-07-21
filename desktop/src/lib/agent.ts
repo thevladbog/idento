@@ -16,15 +16,33 @@ function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI__" in window;
 }
 
+// Browser-dev-only fallback path helper (never used in the shipped kiosk app,
+// which always runs under Tauri and validates external targets on the Rust
+// side -- see agent_request/build_agent_url). Rejects anything that isn't a
+// plain http(s) origin with no embedded credentials, then resolves `path`
+// against it, so a malformed/malicious base_url (e.g. one carrying userinfo)
+// can't silently redirect the request -- and the Bearer token with it -- to
+// an unintended host.
+function resolveAgentBaseUrl(baseUrl: string, path: string): string {
+  const parsed = new URL(baseUrl);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Unsupported agent base URL scheme: ${parsed.protocol}`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Agent base URL must not contain userinfo");
+  }
+  return new URL(path, parsed).toString();
+}
+
 export async function agentGet(path: string): Promise<string> {
   const target = getAgentTarget();
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<string>("agent_request", { method: "GET", path, body: null, target });
   }
-  const base = target?.base_url ?? FALLBACK_AGENT_URL;
+  const url = resolveAgentBaseUrl(target?.base_url ?? FALLBACK_AGENT_URL, path);
   const headers = target ? { Authorization: `Bearer ${target.token}` } : undefined;
-  const res = await fetch(`${base}${path}`, { headers });
+  const res = await fetch(url, { headers });
   if (!res.ok) throw new Error(`Agent error: ${res.status}`);
   return res.text();
 }
@@ -39,7 +57,8 @@ export async function agentPost(path: string, body?: string): Promise<string> {
   // so set it unconditionally (even for body-less POSTs).
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (target) headers.Authorization = `Bearer ${target.token}`;
-  const res = await fetch(`${target?.base_url ?? FALLBACK_AGENT_URL}${path}`, {
+  const url = resolveAgentBaseUrl(target?.base_url ?? FALLBACK_AGENT_URL, path);
+  const res = await fetch(url, {
     method: "POST",
     headers,
     body,

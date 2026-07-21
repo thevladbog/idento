@@ -144,10 +144,17 @@ jobs:
           CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          case "$RELEASE_TAG" in
+            *[!A-Za-z0-9._-]*) echo "Unsupported release tag: $RELEASE_TAG" >&2; exit 1 ;;
+          esac
           go build -trimpath \
-            -ldflags "-s -w -X main.agentVersion=${{ github.ref_name }}" \
+            -ldflags "-s -w -X main.agentVersion=${RELEASE_TAG}" \
             -o "idento-agent" .
+      - name: Test
+        working-directory: agent
+        run: go test ./...
       - name: Package bundle
         working-directory: agent
         run: |

@@ -97,6 +97,15 @@ export function useAgentSupervisor(): void {
       cooldownTimerRef.current = window.setTimeout(() => {
         cooldownActiveRef.current = false;
         backoffMsRef.current = Math.min(backoffMsRef.current * 2, MAX_BACKOFF_MS);
+        // Force a fresh health check now instead of waiting for the next
+        // scheduled ~20s poll -- this is what makes the exponential backoff
+        // actually drive the retry cadence. The result flows back through
+        // the queryCache subscription below exactly like a normal poll
+        // would (fresh dataUpdatedAt -> cache notifies -> evaluate() reruns),
+        // and since recoveringRef.current is still true, evaluate() will
+        // either restart again (if still unhealthy) or fully reset (if
+        // recovered) -- never blindly restarting off stale data.
+        void queryClient.refetchQueries({ queryKey: HEALTH_QUERY_KEY });
       }, backoffMsRef.current);
     };
 
