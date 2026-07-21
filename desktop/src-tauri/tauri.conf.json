@@ -62,5 +62,13 @@
       "timestampUrl": null
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_MINISIGN_PUBLIC_KEY_FROM_tauri_signer_generate",
+      "endpoints": [
+        "https://github.com/thevladbog/idento/releases/latest/download/latest.json"
+      ],
+      "dangerousInsecureTransportProtocol": true
+    }
+  }
 }

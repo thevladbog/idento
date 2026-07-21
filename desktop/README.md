@@ -64,6 +64,42 @@ standalone agent's base URL (e.g. `http://192.168.1.50:12345`) and its auth
 token (printed by `agent/dist/install.sh` on install, or found in
 `~/.idento/agent_config.json` on that machine).
 
+## Auto-updates (one-time setup, before the first release)
+
+The desktop app checks for updates against signed release manifests. Before
+tagging the first `desktop-v*` release, generate a minisign keypair and wire
+it into this repo (**run these yourself** -- not automated):
+
+```bash
+# From the repo root, with the Tauri CLI already installed (npm ci first):
+npx tauri signer generate -w ~/.tauri/idento-kiosk.key
+```
+
+This prints a public key and writes the private key to
+`~/.tauri/idento-kiosk.key` (you'll be prompted for a password -- remember
+it). Then:
+
+1. Replace `REPLACE_WITH_MINISIGN_PUBLIC_KEY_FROM_tauri_signer_generate` in
+   `src-tauri/tauri.conf.json`'s `plugins.updater.pubkey` with the printed
+   public key, and commit that change.
+2. Set the two GitHub secrets the release workflow reads:
+   ```bash
+   gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/idento-kiosk.key
+   gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+   # (paste the password you chose above when prompted)
+   ```
+
+Keep `~/.tauri/idento-kiosk.key` somewhere safe outside the repo -- it's
+never committed, and losing it means future releases can't be verified as
+continuations of past ones (operators would need to manually reinstall).
+
+Update checks happen at app boot and once every 24 hours; the run screen is
+never interrupted. An "Update manifest URL (advanced)" field in the Mode
+pre-flight step lets a station point at a self-hosted mirror instead of
+GitHub Releases, for closed networks -- it must serve the same `latest.json`
+format Tauri's updater expects (`file://` paths are not supported; the
+mirror needs to be a plain HTTP(S) server).
+
 ## Raspberry Pi
 
 - Use a 64-bit OS (e.g. Raspberry Pi OS 64-bit).
