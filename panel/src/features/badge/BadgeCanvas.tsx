@@ -317,6 +317,14 @@ export function BadgeCanvas({
       style={{ backgroundColor: WORK_SURFACE_BG }}
       data-testid="badge-canvas"
     >
+      {/* eslint-disable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex --
+          Arrow-key nudge here is a pointer-workflow SHORTCUT, not the only
+          path: the same move is fully keyboard-operable via
+          PropertiesPane.tsx's x/y NumberInput fields once an element is
+          selected (itself reachable via ElementsPane.tsx's real <button>
+          list below, not through this artboard) -- so WCAG 2.1.1 keyboard
+          operability holds without this "group"-role region also needing to
+          present as an ARIA-interactive widget. */}
       <div
         ref={artboardRef}
         role="group"
@@ -339,6 +347,7 @@ export function BadgeCanvas({
           backgroundColor: "#ffffff",
         }}
       >
+        {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
         {doc.elements.map((el) => (
           <CanvasElement
             key={el.id}
@@ -426,6 +435,13 @@ function CanvasElement({
   }
 
   return (
+    // Click-to-select here is a pointer-workflow shortcut, not the only
+    // path: the same selection is fully keyboard-operable via
+    // ElementsPane.tsx's real <button> list (identical onSelect callback).
+    // Making every one of these absolutely-positioned, often-overlapping
+    // boxes its own tab stop would double the tab sequence (canvas +
+    // ElementsPane) without adding any reachable functionality.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div
       data-testid={`badge-canvas-element-${element.id}`}
       title={missingBindingHint}

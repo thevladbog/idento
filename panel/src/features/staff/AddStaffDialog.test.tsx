@@ -5,6 +5,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
+import { axe } from "vitest-axe";
 import { AddStaffDialog } from "./AddStaffDialog";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
@@ -122,6 +123,19 @@ describe("AddStaffDialog", () => {
     createResponseBody = null;
     limitBody = null;
     readinessHitCount = 0;
+  });
+
+  // P5.3.3 Task 3 (static a11y tooling): one representative vitest-axe
+  // assertion for this RadioGroup consumer, demonstrating the pattern other
+  // tests should copy -- the default "existing" tab/mode, once the
+  // candidate list (an @idento/ui RadioGroup) has actually loaded, same
+  // wait-for-candidates setup the other existing-mode tests below use.
+  it("has no axe violations", async () => {
+    const { container } = renderWithProviders(
+      <AddStaffDialog eventId="evt-1" open onOpenChange={vi.fn()} isAdmin />,
+    );
+    await screen.findByText("bob@example.com");
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   describe("existing-mode candidate list", () => {

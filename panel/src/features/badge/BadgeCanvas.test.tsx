@@ -446,7 +446,10 @@ describe("BadgeCanvas", () => {
       const parentKeyDown = vi.fn();
       const onSelect = vi.fn();
       render(
-        <div onKeyDown={parentKeyDown}>
+        // role="presentation": a pure test-only bubble-catching wrapper (not
+        // a real UI control the app renders), same rationale as
+        // BadgeEditorPage.tsx's own page-level onKeyDown wrapper.
+        <div onKeyDown={parentKeyDown} role="presentation">
           <BadgeCanvas
             doc={docWith([{ id: "e1", type: "box", x: 5, y: 5, width: 20, height: 10 }])}
             selectedId="e1"
@@ -468,7 +471,8 @@ describe("BadgeCanvas", () => {
       const parentKeyDown = vi.fn();
       const onSelect = vi.fn();
       render(
-        <div onKeyDown={parentKeyDown}>
+        // role="presentation": same rationale as the test above.
+        <div onKeyDown={parentKeyDown} role="presentation">
           <BadgeCanvas
             doc={docWith([{ id: "e1", type: "box", x: 5, y: 5, width: 20, height: 10 }])}
             selectedId={null}

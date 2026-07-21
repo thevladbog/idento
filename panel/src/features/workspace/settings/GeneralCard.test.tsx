@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
+import { axe } from "vitest-axe";
 import { GeneralCard } from "./GeneralCard";
 import { startMswServer } from "../../../test/msw";
 import "../../../shared/i18n";
@@ -59,6 +60,16 @@ describe("GeneralCard", () => {
     lastPatchBody = undefined;
     patchResponseOverride = null;
     window.__ENV__ = { API_URL: "http://api.test" };
+  });
+
+  // P5.3.3 Task 3 (static a11y tooling): one representative vitest-axe
+  // assertion for this DatePicker consumer, demonstrating the pattern
+  // other tests should copy -- default render, both DatePickers (Starts/
+  // Ends) closed, same baseline as the "loads the event's current values"
+  // test right below.
+  it("has no axe violations", async () => {
+    const { container } = renderWithProviders(<GeneralCard event={BASE_EVENT} />);
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   it("loads the event's current values into the fields", () => {
