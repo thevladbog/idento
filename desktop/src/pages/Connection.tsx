@@ -84,6 +84,9 @@ export default function ConnectionPage() {
             {t("connect")}
           </KioskButton>
           <KioskButton onClick={save}>{t("saveAndGoToLoginShort")}</KioskButton>
+          <KioskButton variant="ghost" onClick={() => navigate("/login")}>
+            {t("cancel")}
+          </KioskButton>
         </div>
       </div>
     </PreflightShell>
