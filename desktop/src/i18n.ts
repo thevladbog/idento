@@ -8,6 +8,11 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
     en: {
       translation: {
         appName: "Idento Kiosk",
+        preflightStepConnection: "Connection",
+        preflightStepLogin: "Login",
+        preflightStepEquipment: "Equipment",
+        preflightStepEvent: "Event",
+        preflightStepMode: "Mode",
         login: "Login",
         qrLogin: "QR Login",
         serverUrl: "Server URL",
@@ -134,6 +139,11 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
     ru: {
       translation: {
         appName: "Idento Киоск",
+        preflightStepConnection: "Подключение",
+        preflightStepLogin: "Вход",
+        preflightStepEquipment: "Оборудование",
+        preflightStepEvent: "Событие",
+        preflightStepMode: "Режим",
         login: "Вход",
         qrLogin: "Вход по QR",
         serverUrl: "URL сервера",

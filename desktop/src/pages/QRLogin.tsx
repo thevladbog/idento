@@ -1,23 +1,15 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { PreflightShell, KioskButton, KioskInput } from "@idento/ui/kiosk";
 import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { usePreflightSteps } from "@/features/preflight/steps";
 
 export default function QRLoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const steps = usePreflightSteps();
   const [qrToken, setQrToken] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,42 +35,39 @@ export default function QRLoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <div className="absolute right-4 top-4">
-        <LanguageSwitcher />
-      </div>
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl">{t("qrLogin")}</CardTitle>
-          <CardDescription>{t("enterQRToken")}</CardDescription>
-        </CardHeader>
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="qr-token">{t("qrToken")}</Label>
-              <Input
-                id="qr-token"
-                type="text"
-                placeholder={t("enterQRToken")}
-                value={qrToken}
-                onChange={(e) => setQrToken(e.target.value)}
-              />
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-          </CardContent>
-          <CardFooter className="flex flex-col gap-2">
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "..." : t("qrLogin")}
-            </Button>
-            <Link to="/login" className="text-sm text-primary underline hover:no-underline">
-              {t("login")}
-            </Link>
-            <Link to="/connection" className="text-sm text-muted-foreground hover:text-foreground">
-              {t("serverUrl")}
-            </Link>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
+    <PreflightShell
+      steps={steps}
+      activeIndex={1}
+      footer={
+        <div className="flex items-center gap-3">
+          {t("language")}: <LanguageSwitcher />
+        </div>
+      }
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-7">
+        <div className="kiosk-type-verdict-title" style={{ fontSize: "calc(var(--kiosk-fs-verdict-title) * 0.96)" }}>
+          {t("qrLogin")}
+        </div>
+        <KioskInput
+          mono
+          type="text"
+          placeholder={t("enterQRToken")}
+          value={qrToken}
+          onChange={(e) => setQrToken(e.target.value)}
+        />
+        {error && <p className="text-kiosk-danger-soft">{error}</p>}
+        <KioskButton type="submit" disabled={loading}>
+          {loading ? "…" : t("qrLogin")}
+        </KioskButton>
+        <div className="flex justify-center gap-6 text-kiosk-text-3" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+          <Link to="/login" className="text-kiosk-brand hover:underline">
+            {t("login")}
+          </Link>
+          <Link to="/connection" className="hover:text-kiosk-text">
+            {t("serverUrl")}
+          </Link>
+        </div>
+      </form>
+    </PreflightShell>
   );
 }
