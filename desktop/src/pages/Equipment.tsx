@@ -5,6 +5,13 @@ import QRCode from "qrcode";
 import { Printer, ScanLine, PlusCircle, CheckCircle, Trash2, Star } from "lucide-react";
 import { PreflightShell, KioskButton, KioskInput } from "@idento/ui/kiosk";
 import { checkAgentHealth, agentGet, agentPost } from "@/lib/agent";
+import {
+  type AgentMode,
+  getAgentExternalConfig,
+  getAgentMode,
+  setAgentExternalConfig,
+  setAgentMode,
+} from "@/lib/agentConfig";
 import { useRegisterStation } from "@/features/checkin/hooks";
 import { usePreflightSteps } from "@/features/preflight/steps";
 import { toast } from "sonner";
@@ -41,6 +48,7 @@ export default function EquipmentPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const steps = usePreflightSteps();
   const [agentConnected, setAgentConnected] = useState(false);
+  const [agentUnauthorized, setAgentUnauthorized] = useState(false);
   const [printers, setPrinters] = useState<PrinterEntry[]>([]);
   const [scanners, setScanners] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,6 +70,9 @@ export default function EquipmentPage() {
   const [stationName, setStationName] = useState("");
   const [stationId, setStationId] = useState<string | null>(() => localStorage.getItem(stationIdKey));
   const registerStation = useRegisterStation(eventId!);
+  const [agentMode, setAgentModeState] = useState<AgentMode>(getAgentMode);
+  const [externalUrl, setExternalUrl] = useState(() => getAgentExternalConfig().baseUrl);
+  const [externalToken, setExternalToken] = useState(() => getAgentExternalConfig().token);
 
   const registerStationAction = async () => {
     if (!stationName.trim()) return;
@@ -73,6 +84,66 @@ export default function EquipmentPage() {
     } catch {
       toast.error(t("stationRegisterFailed"));
     }
+  };
+
+  // Deliberately NOT shared with the mount effect above (which guards its
+  // setState calls with a `cancelled` flag for a fast unmount mid-fetch):
+  // this function only ever runs from a direct user action (toggling the
+  // mode, clicking Save), where an unmount-mid-flight is a much rarer race
+  // than during the initial page-load effect, so the extra guard isn't
+  // worth threading through a shared helper here.
+  const reconnectAgent = async () => {
+    setLoading(true);
+    setAgentUnauthorized(false);
+    const ok = await checkAgentHealth();
+    setAgentConnected(ok);
+    if (!ok) {
+      setPrinters([]);
+      setScanners([]);
+      setAvailablePorts([]);
+      setDefaultPrinter(null);
+      setLoading(false);
+      return;
+    }
+    try {
+      const data = await fetchEquipmentData();
+      setPrinters(data.printers);
+      setScanners(data.scanners);
+      setAvailablePorts(data.availablePorts);
+      setDefaultPrinter(data.defaultPrinter);
+    } catch (e) {
+      // /health ignores the token, so a mistyped external token still shows
+      // "connected" here -- but the very first real endpoint call (this one)
+      // 401s. Surface that distinctly instead of silently emptying the lists.
+      if (e instanceof Error && e.message.includes("401")) {
+        setAgentUnauthorized(true);
+      }
+      setPrinters([]);
+      setScanners([]);
+      setAvailablePorts([]);
+      setDefaultPrinter(null);
+    }
+    setLoading(false);
+  };
+
+  const switchAgentMode = async (mode: AgentMode) => {
+    if (mode === agentMode) return;
+    setAgentMode(mode);
+    setAgentModeState(mode);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke(mode === "embedded" ? "spawn_agent" : "stop_agent");
+    } catch {
+      // Not running under Tauri (browser dev) -- nothing to spawn/stop.
+    }
+    await reconnectAgent();
+  };
+
+  const saveExternalConfig = async () => {
+    if (!externalUrl.trim() || !externalToken.trim()) return;
+    setAgentExternalConfig(externalUrl, externalToken);
+    toast.success(t("save"));
+    await reconnectAgent();
   };
 
   const fetchEquipmentData = useCallback(async () => {
@@ -138,8 +209,11 @@ export default function EquipmentPage() {
           setAvailablePorts(data.availablePorts);
           setDefaultPrinter(data.defaultPrinter);
         }
-      } catch {
+      } catch (e) {
         if (!cancelled) {
+          if (e instanceof Error && e.message.includes("401")) {
+            setAgentUnauthorized(true);
+          }
           setPrinters([]);
           setScanners([]);
           setAvailablePorts([]);
@@ -287,17 +361,63 @@ export default function EquipmentPage() {
         </div>
       }
     >
-      {loading ? (
-        <p className="text-kiosk-text-3">{t("loading")}</p>
-      ) : !agentConnected ? (
-        <div className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-8">
-          <div className="kiosk-type-verdict-title" style={{ fontSize: "calc(var(--kiosk-fs-verdict-title) * 0.7)" }}>
-            {t("agentNotConnected")}
+      <div className="flex flex-col gap-6">
+        {/* NEW: agent connection mode (embedded/external) */}
+        <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
+          <div className="font-bold text-kiosk-text">{t("agentConnectionTitle")}</div>
+          <div className="mt-3 flex gap-3">
+            {(["embedded", "external"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={agentMode === value}
+                className={`flex-1 rounded-xl border-2 p-4 text-left ${
+                  agentMode === value
+                    ? "border-kiosk-brand bg-kiosk-brand/10 text-kiosk-text"
+                    : "border-kiosk-border-2 text-kiosk-text-3"
+                }`}
+                onClick={() => switchAgentMode(value)}
+              >
+                {value === "embedded" ? t("agentModeEmbedded") : t("agentModeExternal")}
+              </button>
+            ))}
           </div>
-          <p className="mt-2 text-kiosk-text-3">{t("agentNotConnectedDesc")}</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-6">
+          {agentMode === "external" && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <KioskInput
+                placeholder={t("agentExternalUrlPlaceholder")}
+                value={externalUrl}
+                onChange={(e) => setExternalUrl(e.target.value)}
+              />
+              <KioskInput
+                type="password"
+                placeholder={t("agentExternalTokenPlaceholder")}
+                value={externalToken}
+                onChange={(e) => setExternalToken(e.target.value)}
+              />
+              <KioskButton
+                size="md"
+                onClick={saveExternalConfig}
+                disabled={!externalUrl.trim() || !externalToken.trim()}
+              >
+                {t("save")}
+              </KioskButton>
+            </div>
+          )}
+          {agentUnauthorized && <p className="mt-3 text-kiosk-danger-soft">{t("agentUnauthorized")}</p>}
+        </section>
+
+        {loading ? (
+          <p className="text-kiosk-text-3">{t("loading")}</p>
+        ) : !agentConnected ? (
+          <div className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-8">
+            <div className="kiosk-type-verdict-title" style={{ fontSize: "calc(var(--kiosk-fs-verdict-title) * 0.7)" }}>
+              {t("agentNotConnected")}
+            </div>
+            <p className="mt-2 text-kiosk-text-3">{t("agentNotConnectedDesc")}</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-6">
           {/* Printers card -- unchanged content, restyled container */}
           <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
             <div className="flex items-center gap-2 font-bold text-kiosk-text">
@@ -456,6 +576,7 @@ export default function EquipmentPage() {
           </KioskButton>
         </div>
       )}
+      </div>
     </PreflightShell>
   );
 }

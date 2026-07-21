@@ -183,3 +183,37 @@ export function useAgentHealth() {
     retry: false,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Agent info -- GET /info (agent, not backend): version + machine_id.
+// ---------------------------------------------------------------------------
+
+export function useAgentInfo() {
+  return useQuery({
+    queryKey: ["agent", "info"],
+    queryFn: async () => {
+      const text = await agentGet("/info");
+      return JSON.parse(text) as { machine_id: string; hostname: string; version: string; uptime_seconds: number };
+    },
+    refetchInterval: 20_000,
+    retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Agent port -- Tauri's get_agent_port command (the embedded sidecar's
+// fixed port; meaningless outside Tauri, where the query simply errors and
+// callers see no port detail).
+// ---------------------------------------------------------------------------
+
+export function useAgentPort() {
+  return useQuery({
+    queryKey: ["agent", "port"],
+    queryFn: async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      return invoke<number>("get_agent_port");
+    },
+    retry: false,
+    staleTime: Infinity,
+  });
+}

@@ -1,0 +1,16 @@
+# Installed by install.sh, which substitutes __IDENTO_AGENT_USER__ with the
+# invoking (non-root) user before copying this file to
+# /etc/systemd/system/idento-agent.service.
+[Unit]
+Description=Idento hardware agent (printers/scanners)
+After=network.target
+
+[Service]
+Type=simple
+User=__IDENTO_AGENT_USER__
+ExecStart=/usr/local/bin/idento-agent --host 0.0.0.0 --port 12345
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
