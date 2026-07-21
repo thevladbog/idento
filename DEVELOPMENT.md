@@ -281,7 +281,8 @@ make dev
 # Manual (all platforms)
 make docker-up             # Start Docker services
 cd backend && go run main.go &
-cd web && npm run dev &
+cd web && npm run dev &     # super-admin console — http://localhost:5173
+cd panel && npm run dev &   # panel — http://localhost:5174
 cd agent && go run main.go &
 ```
 
@@ -323,6 +324,7 @@ make lint
 
 # Lint web code
 cd web && npm run lint
+cd panel && npm run lint
 
 # Lint Android (if you have mobile dev setup)
 cd mobile && ./gradlew :androidApp:lintDebug    # Unix
@@ -348,7 +350,8 @@ docker logs idento_db
 **Using scripts:**
 - Logs are stored in `logs/` directory
 - `logs/backend.log` - Backend logs
-- `logs/web.log` - Web frontend logs
+- `logs/web.log` - Web (Console) frontend logs
+- `logs/panel.log` - Panel frontend logs
 - `logs/agent.log` - Agent logs
 
 **Docker logs:**
@@ -379,8 +382,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 **Ports already in use:**
 ```powershell
-# Find process using port (e.g., 5173)
+# Find process using a port (5173 = console, 5174 = panel)
 netstat -ano | findstr :5173
+netstat -ano | findstr :5174
 # Kill process by PID
 taskkill /PID <pid> /F
 ```
@@ -413,8 +417,9 @@ export PATH=/opt/homebrew/bin:$PATH
 
 **Ports already in use:**
 ```bash
-# Find process using port
+# Find process using a port (5173 = console, 5174 = panel)
 lsof -i :5173
+lsof -i :5174
 
 # Kill process
 kill -9 <PID>
@@ -462,7 +467,8 @@ docker logs idento_db
 
 **Port conflicts:**
 - Backend: 8008
-- Web: 5173
+- Web (Console): 5173
+- Panel: 5174
 - Agent: 3000
 - PostgreSQL: 5438
 - Redis: 6379
