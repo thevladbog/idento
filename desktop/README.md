@@ -54,6 +54,16 @@ cd agent && go build -o "../desktop/src-tauri/sidecars/idento-agent-$TARGET" . &
 # Then set externalBin in tauri.conf and run tauri build
 ```
 
+## Connecting to a standalone agent (external mode)
+
+Instead of bundling the agent, a station can connect to one already running
+on another machine (e.g. a headless Raspberry Pi wired to a printer/scanner
+-- see `agent/dist/`'s systemd install). In the Equipment step of the
+pre-flight wizard, switch "Agent connection" to **External** and enter the
+standalone agent's base URL (e.g. `http://192.168.1.50:12345`) and its auth
+token (printed by `agent/dist/install.sh` on install, or found in
+`~/.idento/agent_config.json` on that machine).
+
 ## Raspberry Pi
 
 - Use a 64-bit OS (e.g. Raspberry Pi OS 64-bit).
