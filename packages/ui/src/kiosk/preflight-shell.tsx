@@ -7,13 +7,15 @@ export interface PreflightShellProps {
   activeIndex: number;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  banner?: React.ReactNode;
   className?: string;
 }
 
 /** Хребет pre-flight (1r): рейка из 5 шагов, один активный, карточка 820px по центру. */
-export function PreflightShell({ steps, activeIndex, children, footer, className }: PreflightShellProps) {
+export function PreflightShell({ steps, activeIndex, children, footer, banner, className }: PreflightShellProps) {
   return (
-    <div className={cn("flex h-full flex-col items-center bg-kiosk-bg text-kiosk-text", className)} style={{ fontFamily: "var(--kiosk-font)" }}>
+    <div className={cn("relative flex h-full flex-col items-center bg-kiosk-bg text-kiosk-text", className)} style={{ fontFamily: "var(--kiosk-font)" }}>
+      {banner && <div className="absolute right-8 top-8">{banner}</div>}
       <ol className="mt-[7vh] flex items-center gap-9 text-kiosk-text-4" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
         {steps.map((step, i) => {
           const state = i < activeIndex ? "done" : i === activeIndex ? "active" : "pending";
