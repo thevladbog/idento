@@ -38,6 +38,12 @@ web/dist-ssr
 panel/dist
 *.tsbuildinfo
 
+# Playwright (panel/e2e)
+panel/test-results/
+panel/playwright-report/
+panel/playwright/.cache/
+panel/blob-report/
+
 # Desktop (Tauri / Vite)
 desktop/dist/
 desktop/src-tauri/target/

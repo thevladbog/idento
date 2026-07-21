@@ -22,7 +22,7 @@ if [ $? -eq 0 ]; then
   echo ""
   echo "Test credentials:"
   echo "  Email: admin@test.com"
-  echo "  Password: password123"
+  echo "  Password: password"
 else
   echo "❌ Failed to load seed data"
   exit 1
