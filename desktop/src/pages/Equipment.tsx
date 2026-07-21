@@ -1,25 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import QRCode from "qrcode";
-import { Printer, ScanLine, PlusCircle, CheckCircle, Trash2, Star, Camera } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Printer, ScanLine, PlusCircle, CheckCircle, Trash2, Star } from "lucide-react";
+import { PreflightShell, KioskButton, KioskInput } from "@idento/ui/kiosk";
 import { checkAgentHealth, agentGet, agentPost } from "@/lib/agent";
-import { clearSession } from "@/lib/api";
-import {
-  loadCheckinSettings,
-  saveCheckinSettings,
-  type KioskCheckinSettings,
-} from "@/lib/checkinSettings";
+import { useRegisterStation } from "@/features/checkin/hooks";
+import { usePreflightSteps } from "@/features/preflight/steps";
 import { toast } from "sonner";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 
@@ -51,6 +38,8 @@ function parseScanners(text: string): string[] {
 export default function EquipmentPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { eventId } = useParams<{ eventId: string }>();
+  const steps = usePreflightSteps();
   const [agentConnected, setAgentConnected] = useState(false);
   const [printers, setPrinters] = useState<PrinterEntry[]>([]);
   const [scanners, setScanners] = useState<string[]>([]);
@@ -69,10 +58,21 @@ export default function EquipmentPage() {
   const [testPolling, setTestPolling] = useState(false);
   const scannerTestTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [checkinSettings, setCheckinSettings] = useState<KioskCheckinSettings>(() => loadCheckinSettings());
-  const persistCheckinSettings = (next: KioskCheckinSettings) => {
-    setCheckinSettings(next);
-    saveCheckinSettings(next);
+  const stationIdKey = `idento_station_id:${eventId}`;
+  const [stationName, setStationName] = useState("");
+  const [stationId, setStationId] = useState<string | null>(() => localStorage.getItem(stationIdKey));
+  const registerStation = useRegisterStation(eventId!);
+
+  const registerStationAction = async () => {
+    if (!stationName.trim()) return;
+    try {
+      const station = await registerStation.mutateAsync({ name: stationName.trim() });
+      localStorage.setItem(stationIdKey, station.id);
+      setStationId(station.id);
+      toast.success(t("stationRegistered"));
+    } catch {
+      toast.error(t("stationRegisterFailed"));
+    }
   };
 
   const fetchEquipmentData = useCallback(async () => {
@@ -278,299 +278,184 @@ export default function EquipmentPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <header className="mb-6 flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-semibold">{t("equipmentSettings")}</h1>
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher />
-          <Button variant="outline" size="sm" onClick={() => navigate("/connection")}>
-            {t("serverUrl")}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate("/checkin")}>
-            {t("checkin")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              clearSession();
-              navigate("/login");
-            }}
-          >
-            {t("logout")}
-          </Button>
+    <PreflightShell
+      steps={steps}
+      activeIndex={3}
+      footer={
+        <div className="flex items-center gap-3">
+          {t("language")}: <LanguageSwitcher />
         </div>
-      </header>
-
+      }
+    >
       {loading ? (
-        <p className="text-muted-foreground">{t("loading")}</p>
+        <p className="text-kiosk-text-3">{t("loading")}</p>
       ) : !agentConnected ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("agentNotConnected")}</CardTitle>
-            <CardDescription>{t("agentNotConnectedDesc")}</CardDescription>
-          </CardHeader>
-        </Card>
+        <div className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-8">
+          <div className="kiosk-type-verdict-title" style={{ fontSize: "calc(var(--kiosk-fs-verdict-title) * 0.7)" }}>
+            {t("agentNotConnected")}
+          </div>
+          <p className="mt-2 text-kiosk-text-3">{t("agentNotConnectedDesc")}</p>
+        </div>
       ) : (
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Printer className="h-5 w-5" />
-                {t("printers")}
-              </CardTitle>
-              <CardDescription>{t("printersCount", { count: printers.length })}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ul className="space-y-1 text-sm">
-                {printers.length === 0 ? (
-                  <li className="text-muted-foreground">{t("noPrintersFound")}</li>
-                ) : (
-                  printers.map((p) => (
-                    <li key={p.name} className="flex items-center justify-between gap-2 rounded px-2 py-1">
-                      <span className="flex items-center gap-2">
-                        {p.name}{p.type === "network" ? ` (${t("network")})` : ""}
-                        {defaultPrinter === p.name && (
-                          <span title={t("defaultPrinter")}>
-                          <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+        <div className="flex flex-col gap-6">
+          {/* Printers card -- unchanged content, restyled container */}
+          <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
+            <div className="flex items-center gap-2 font-bold text-kiosk-text">
+              <Printer className="size-5" />
+              {t("printers")}
+            </div>
+            <p className="mt-1 text-kiosk-text-3" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+              {t("printersCount", { count: printers.length })}
+            </p>
+            <ul className="mt-4 space-y-1" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+              {printers.length === 0 ? (
+                <li className="text-kiosk-text-3">{t("noPrintersFound")}</li>
+              ) : (
+                printers.map((p) => (
+                  <li key={p.name} className="flex items-center justify-between gap-2 rounded px-2 py-1 text-kiosk-text-2">
+                    <span className="flex items-center gap-2">
+                      {p.name}
+                      {p.type === "network" ? ` (${t("network")})` : ""}
+                      {defaultPrinter === p.name && (
+                        <span title={t("defaultPrinter")}>
+                          <Star className="size-4 fill-kiosk-warn text-kiosk-warn" />
                         </span>
-                        )}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        {defaultPrinter !== p.name && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 shrink-0 px-2 text-muted-foreground hover:text-foreground"
-                            onClick={() => setDefaultPrinterAction(p.name)}
-                            title={t("setAsDefault")}
-                          >
-                            {t("setAsDefault")}
-                          </Button>
-                        )}
-                        {p.type === "network" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 shrink-0 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                            onClick={() => removeNetworkPrinter(p.name)}
-                            title={t("removePrinter")}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </li>
-                  ))
-                )}
-              </ul>
-              <div className="grid gap-2 rounded border p-3 sm:grid-cols-4">
-                <div className="space-y-1">
-                  <Label>{t("name")}</Label>
-                  <Input
-                    placeholder={t("printerNamePlaceholder")}
-                    value={networkName}
-                    onChange={(e) => setNetworkName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>{t("ip")}</Label>
-                  <Input
-                    placeholder={t("printerIpPlaceholder")}
-                    value={networkIP}
-                    onChange={(e) => setNetworkIP(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label>{t("port")}</Label>
-                  <Input
-                    placeholder={t("printerPortPlaceholder")}
-                    value={networkPort}
-                    onChange={(e) => setNetworkPort(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-end">
-                  <Button onClick={addNetworkPrinter} className="w-full">
-                    <PlusCircle className="mr-1 h-4 w-4" />
-                    {t("addNetworkPrinter")}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ScanLine className="h-5 w-5" />
-                {t("scanners")}
-              </CardTitle>
-              <CardDescription>{t("scannersCount", { count: scanners.length })}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <ul className="list-inside list-disc space-y-1 text-sm">
-                {scanners.length === 0 ? (
-                  <li className="text-muted-foreground">{t("noScannersConfigured")}</li>
-                ) : (
-                  scanners.map((s) => <li key={s}>{s}</li>)
-                )}
-              </ul>
-              <div className="space-y-3">
-                {availablePorts.length > 0 && (
-                  <div className="space-y-1">
-                    <Label>{t("availableComPorts")}</Label>
-                    <select
-                      className="flex h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      value={scannerPort}
-                      onChange={(e) => setScannerPort(e.target.value)}
-                    >
-                      <option value="">— {t("orEnterPort")} —</option>
-                      {availablePorts.map((p) => (
-                        <option key={p.port_name} value={p.port_name}>
-                          {p.port_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="min-w-[200px] space-y-1">
-                    <Label>{availablePorts.length > 0 ? t("orEnterPort") : t("portPlaceholder")}</Label>
-                    <Input
-                      placeholder="COM3"
-                      value={scannerPort}
-                      onChange={(e) => setScannerPort(e.target.value)}
-                      list="scanner-ports"
-                    />
-                    {availablePorts.length > 0 && (
-                      <datalist id="scanner-ports">
-                        {availablePorts.map((p) => (
-                          <option key={p.port_name} value={p.port_name} />
-                        ))}
-                      </datalist>
-                    )}
-                  </div>
-                  <Button onClick={addScanner}>
-                    <PlusCircle className="mr-1 h-4 w-4" />
-                    {t("addScanner")}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">{t("checkinSettings")}</CardTitle>
-              <CardDescription>{t("checkinSettingsDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t("checkinMode")}</Label>
-                <div className="flex gap-2">
-                  <Button
-                    variant={checkinSettings.checkinMode === "camera" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => persistCheckinSettings({ ...checkinSettings, checkinMode: "camera" })}
-                  >
-                    <Camera className="mr-1 h-4 w-4" />
-                    {t("checkinModeCamera")}
-                  </Button>
-                  <Button
-                    variant={checkinSettings.checkinMode === "scanner" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => persistCheckinSettings({ ...checkinSettings, checkinMode: "scanner" })}
-                  >
-                    <ScanLine className="mr-1 h-4 w-4" />
-                    {t("checkinModeScanner")}
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>{t("printLabels")}</Label>
-                <div className="flex gap-2">
-                  <Button
-                    variant={!checkinSettings.printEnabled ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => persistCheckinSettings({ ...checkinSettings, printEnabled: false })}
-                  >
-                    {t("off")}
-                  </Button>
-                  <Button
-                    variant={checkinSettings.printEnabled ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => persistCheckinSettings({ ...checkinSettings, printEnabled: true })}
-                  >
-                    {t("on")}
-                  </Button>
-                </div>
-                {checkinSettings.printEnabled && (
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      variant={!checkinSettings.manualPrint ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => persistCheckinSettings({ ...checkinSettings, manualPrint: false })}
-                    >
-                      {t("printLabelsAuto")}
-                    </Button>
-                    <Button
-                      variant={checkinSettings.manualPrint ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => persistCheckinSettings({ ...checkinSettings, manualPrint: true })}
-                    >
-                      {t("printLabelsManual")}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{t("testScanner")}</CardTitle>
-              <CardDescription>{t("testScannerDesc")}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {testResult === "idle" && (
-                <Button onClick={startScannerTest}>{t("startScannerTest")}</Button>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {defaultPrinter !== p.name && (
+                        <button
+                          type="button"
+                          className="rounded px-2 py-1 text-kiosk-text-3 hover:text-kiosk-text"
+                          onClick={() => setDefaultPrinterAction(p.name)}
+                        >
+                          {t("setAsDefault")}
+                        </button>
+                      )}
+                      {p.type === "network" && (
+                        <button
+                          type="button"
+                          className="rounded p-1 text-kiosk-danger-soft hover:opacity-80"
+                          onClick={() => removeNetworkPrinter(p.name)}
+                          title={t("removePrinter")}
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                ))
               )}
+            </ul>
+            <div className="mt-4 grid gap-2 rounded-xl border border-kiosk-border-2 p-3 sm:grid-cols-4">
+              <KioskInput placeholder={t("printerNamePlaceholder")} value={networkName} onChange={(e) => setNetworkName(e.target.value)} />
+              <KioskInput placeholder={t("printerIpPlaceholder")} value={networkIP} onChange={(e) => setNetworkIP(e.target.value)} />
+              <KioskInput placeholder={t("printerPortPlaceholder")} value={networkPort} onChange={(e) => setNetworkPort(e.target.value)} />
+              <KioskButton size="md" onClick={addNetworkPrinter}>
+                <PlusCircle className="mr-1 size-4" />
+                {t("addNetworkPrinter")}
+              </KioskButton>
+            </div>
+          </section>
+
+          {/* Scanners card -- unchanged content, restyled container */}
+          <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
+            <div className="flex items-center gap-2 font-bold text-kiosk-text">
+              <ScanLine className="size-5" />
+              {t("scanners")}
+            </div>
+            <p className="mt-1 text-kiosk-text-3" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+              {t("scannersCount", { count: scanners.length })}
+            </p>
+            <ul className="mt-4 list-inside list-disc space-y-1 text-kiosk-text-2" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+              {scanners.length === 0 ? <li className="text-kiosk-text-3">{t("noScannersConfigured")}</li> : scanners.map((s) => <li key={s}>{s}</li>)}
+            </ul>
+            <div className="mt-4 flex flex-wrap items-end gap-2">
+              <KioskInput
+                placeholder="COM3"
+                value={scannerPort}
+                onChange={(e) => setScannerPort(e.target.value)}
+                list="scanner-ports"
+              />
+              {availablePorts.length > 0 && (
+                <datalist id="scanner-ports">
+                  {availablePorts.map((p) => (
+                    <option key={p.port_name} value={p.port_name} />
+                  ))}
+                </datalist>
+              )}
+              <KioskButton size="md" onClick={addScanner}>
+                <PlusCircle className="mr-1 size-4" />
+                {t("addScanner")}
+              </KioskButton>
+            </div>
+          </section>
+
+          {/* NEW: station registration */}
+          <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
+            <div className="font-bold text-kiosk-text">{t("stationName")}</div>
+            {stationId ? (
+              <p className="mt-3 flex items-center gap-2 text-kiosk-ok">
+                <span aria-hidden className="size-3 rounded-full bg-kiosk-ok" />
+                {t("stationRegistered")}
+              </p>
+            ) : (
+              <div className="mt-3 flex gap-3">
+                <KioskInput
+                  placeholder={t("stationNamePlaceholder")}
+                  value={stationName}
+                  onChange={(e) => setStationName(e.target.value)}
+                />
+                <KioskButton size="md" onClick={registerStationAction} disabled={!stationName.trim()}>
+                  {t("stationRegister")}
+                </KioskButton>
+              </div>
+            )}
+          </section>
+
+          {/* Scanner test card -- unchanged content, restyled container */}
+          <section className="rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6">
+            <div className="font-bold text-kiosk-text">{t("testScanner")}</div>
+            <p className="mt-1 text-kiosk-text-3" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>
+              {t("testScannerDesc")}
+            </p>
+            <div className="mt-4">
+              {testResult === "idle" && <KioskButton size="md" onClick={startScannerTest}>{t("startScannerTest")}</KioskButton>}
               {testResult === "waiting" && (
                 <div className="flex flex-wrap items-start gap-4">
                   {testQRImage && (
                     <div>
-                      <img src={testQRImage} alt="Test QR" className="rounded border" width={200} height={200} />
-                      <p className="mt-2 text-sm text-muted-foreground">{t("scanThisCode")}</p>
+                      <img src={testQRImage} alt="Test QR" className="rounded-xl border border-kiosk-border-2" width={200} height={200} />
+                      <p className="mt-2 text-kiosk-text-3" style={{ fontSize: "var(--kiosk-fs-chrome)" }}>{t("scanThisCode")}</p>
                     </div>
                   )}
-                  <div>
-                    <Button variant="outline" onClick={endScannerTest}>
-                      {t("cancel")}
-                    </Button>
-                  </div>
+                  <KioskButton size="md" variant="outline" onClick={endScannerTest}>{t("cancel")}</KioskButton>
                 </div>
               )}
               {testResult === "success" && (
-                <div className="flex items-center gap-2 text-green-600">
-                  <CheckCircle className="h-5 w-5" />
+                <div className="flex items-center gap-2 text-kiosk-ok">
+                  <CheckCircle className="size-5" />
                   <span>{t("scannerTestPassed")}</span>
-                  <Button variant="outline" size="sm" onClick={endScannerTest}>
-                    {t("done")}
-                  </Button>
+                  <KioskButton size="md" variant="outline" onClick={endScannerTest}>{t("done")}</KioskButton>
                 </div>
               )}
               {testResult === "timeout" && (
-                <div className="flex items-center gap-2 text-amber-600">
+                <div className="flex items-center gap-2 text-kiosk-warn">
                   <span>{t("scannerTestTimedOut")}</span>
-                  <Button variant="outline" size="sm" onClick={endScannerTest}>
-                    {t("done")}
-                  </Button>
+                  <KioskButton size="md" variant="outline" onClick={endScannerTest}>{t("done")}</KioskButton>
                 </div>
               )}
-            </CardContent>
-          </Card>
+            </div>
+          </section>
+
+          <KioskButton
+            disabled={!stationId}
+            onClick={() => navigate(`/checkin/${eventId}/mode`)}
+          >
+            {t("continueButton")}
+          </KioskButton>
         </div>
       )}
-    </div>
+    </PreflightShell>
   );
 }

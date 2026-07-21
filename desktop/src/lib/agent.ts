@@ -43,3 +43,12 @@ export async function checkAgentHealth(): Promise<boolean> {
     return false;
   }
 }
+
+// Atomic read+clear of the agent's scan buffer (agent/openapi.yaml's
+// POST /scan/consume) -- unlike the older GET /scan/last + POST /scan/clear
+// pair, a scan arriving between a separate read and clear can never be lost.
+export async function consumeLastScan(): Promise<{ code: string }> {
+  const text = await agentPost("/scan/consume");
+  const data = JSON.parse(text) as { code?: string } | null;
+  return { code: data?.code ?? "" };
+}

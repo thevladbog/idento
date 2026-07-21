@@ -1,33 +1,27 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { QrCode, Settings } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { PreflightShell } from "@idento/ui/kiosk";
 import { api, clearSession } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { usePreflightSteps } from "@/features/preflight/steps";
 import { toast } from "sonner";
 
-type Event = { id: string; name: string };
+type CheckinEvent = { id: string; name: string };
 
 export default function CheckinPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [events, setEvents] = useState<Event[]>([]);
+  const steps = usePreflightSteps();
+  const [events, setEvents] = useState<CheckinEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     setFetchError(false);
     api
-      .get<Event[]>("/api/events")
-      .then((res: { data: Event[] }) => setEvents(Array.isArray(res.data) ? res.data : []))
+      .get<CheckinEvent[]>("/api/events")
+      .then((res: { data: CheckinEvent[] }) => setEvents(Array.isArray(res.data) ? res.data : []))
       .catch(() => {
         setFetchError(true);
         setEvents([]);
@@ -37,57 +31,38 @@ export default function CheckinPage() {
   }, [t]);
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <header className="mb-6 flex items-center justify-between border-b pb-4">
-        <h1 className="text-2xl font-semibold">{t("checkinInterface")}</h1>
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher />
-          <Button variant="outline" size="sm" onClick={() => navigate("/equipment")}>
-            <Settings className="mr-1 h-4 w-4" />
-            {t("equipment")}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => { clearSession(); navigate("/login"); }}>
+    <PreflightShell
+      steps={steps}
+      activeIndex={2}
+      footer={
+        <div className="flex items-center gap-3">
+          {t("language")}: <LanguageSwitcher />
+          <button type="button" className="text-kiosk-text-3 hover:text-kiosk-text" onClick={() => { clearSession(); navigate("/login"); }}>
             {t("logout")}
-          </Button>
+          </button>
         </div>
-      </header>
-
+      }
+    >
       {loading ? (
-        <p className="text-muted-foreground">{t("loadingEvents")}</p>
+        <p className="text-kiosk-text-3">{t("loadingEvents")}</p>
       ) : fetchError ? (
-        <Card className="border-destructive/50">
-          <CardHeader>
-            <CardTitle className="text-destructive">{t("eventsFetchFailed")}</CardTitle>
-            <CardDescription>{t("eventsFetchFailedDesc")}</CardDescription>
-          </CardHeader>
-        </Card>
+        <p className="text-kiosk-danger-soft">{t("eventsFetchFailedDesc")}</p>
       ) : events.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("noEvents")}</CardTitle>
-            <CardDescription>{t("noEventsDesc")}</CardDescription>
-          </CardHeader>
-        </Card>
+        <p className="text-kiosk-text-3">{t("noEventsDesc")}</p>
       ) : (
-        <div className="space-y-3">
-          <p className="text-muted-foreground">{t("checkinInterfaceDesc")}</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {events.map((ev) => (
-              <Card key={ev.id} className="cursor-pointer transition-colors hover:bg-accent/50" onClick={() => navigate(`/checkin/${ev.id}`)}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">{ev.name}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Button size="sm">
-                    <QrCode className="mr-2 h-4 w-4" />
-                    {t("startCheckin")}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <div className="grid grid-cols-2 gap-4">
+          {events.map((ev) => (
+            <button
+              key={ev.id}
+              type="button"
+              className="h-[320px] w-[500px] rounded-2xl border border-kiosk-border-2 bg-kiosk-surface-2 p-6 text-left hover:border-kiosk-brand"
+              onClick={() => navigate(`/checkin/${ev.id}/equipment`)}
+            >
+              <div className="font-bold text-kiosk-text" style={{ fontSize: "var(--kiosk-fs-chrome-lg)" }}>{ev.name}</div>
+            </button>
+          ))}
         </div>
       )}
-    </div>
+    </PreflightShell>
   );
 }
