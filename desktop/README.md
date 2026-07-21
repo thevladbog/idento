@@ -69,6 +69,11 @@ token (printed by `agent/dist/install.sh` on install, or found in
 The desktop app checks for updates against signed release manifests. Before
 tagging the first `desktop-v*` release, generate a minisign keypair and wire
 it into this repo (**run these yourself** -- not automated):
+`bundle.createUpdaterArtifacts` (required for Tauri to emit `.sig` files and
+updater metadata) is injected by `.github/workflows/release-desktop.yml`'s
+`--config` patch at build time, not set in the committed
+`src-tauri/tauri.conf.json` -- PR-time CI builds have no signing secrets, so
+baking it into the committed config would break every desktop-touching PR.
 
 ```bash
 # From the repo root, with the Tauri CLI already installed (npm ci first):

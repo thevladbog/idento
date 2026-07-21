@@ -99,7 +99,7 @@ jobs:
         # all of it; Tauri's --config flag accepts either form (verified
         # via `tauri build --help`).
         shell: bash
-        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"]}}' > "${{ github.workspace }}/sidecar-config.json"
+        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
 
       - uses: tauri-apps/tauri-action@v0
         env:
