@@ -342,6 +342,11 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeManualSearchTitle: "Резервный поиск вручную",
         modeDismissTitle: "Автовозврат вердикта (секунды)",
         modeSaveAndStart: "Сохранить и начать",
+        updateAvailable: "Доступно обновление: {{version}}",
+        updateReview: "Подробнее",
+        updateInstall: "Установить и перезапустить",
+        modeUpdateManifestUrlTitle: "URL манифеста обновлений (расширенно)",
+        modeUpdateManifestUrlPlaceholder: "https://mirror.example.internal/latest.json",
         checkinSettingsSaveFailed: "Не удалось сохранить настройки чекина",
         // Run screen
         runReadyToScan: "Готов к сканированию",
