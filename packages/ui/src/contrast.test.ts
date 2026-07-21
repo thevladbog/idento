@@ -81,3 +81,28 @@ describe("theme.css contrast (WCAG 1.4.3, AA normal text)", () => {
     }
   });
 });
+
+const AA_NON_TEXT = 3.0;
+
+// WCAG 1.4.11 (Non-text Contrast, AA): a UI component's visual boundary
+// against its background must clear 3:1. Button's `default` variant
+// (button.tsx) has no border/shadow — bg-primary/bg-primary-hover alone
+// delineate the control, so both must individually clear 3:1 against the
+// page background they're expected to sit on. Caught during Task 1 review:
+// darkening --primary/--primary-hover enough to satisfy 1.4.3 (text-on-fill,
+// above) pulls the fill TOWARD the dark theme's very dark --background,
+// which can silently fail this DIFFERENT criterion even while 1.4.3 passes —
+// dark-mode --primary-hover regressed from 4.44:1 to 2.57:1 vs --background
+// in an earlier draft of this fix, caught only by adding this test.
+describe("theme.css non-text contrast (WCAG 1.4.11, UI components vs page background)", () => {
+  for (const themeName of ["light", "dark"] as const) {
+    it(`${themeName}: --primary and --primary-hover clear 3:1 against --background`, () => {
+      const blockText = themeName === "light" ? block(":root") : block(".dark");
+      const background = tokenValue(blockText, "--background");
+      for (const token of ["--primary", "--primary-hover"]) {
+        const ratio = contrastRatio(tokenValue(blockText, token), background);
+        expect(ratio, `${themeName} ${token} vs --background`).toBeGreaterThanOrEqual(AA_NON_TEXT);
+      }
+    });
+  }
+});
