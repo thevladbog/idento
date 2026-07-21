@@ -4,7 +4,7 @@
 
 - A Linux host with [Docker Engine](https://docs.docker.com/engine/install/) and the Compose v2 plugin installed (`docker compose version` should work — the legacy standalone `docker-compose` v1 binary is not supported).
 - Recommended: 2 vCPUs, 2 GB RAM, 10 GB free disk. This is a starting estimate for small-to-medium event volumes, not a hard minimum — `install.sh` warns (does not block) if disk space looks tight.
-- Ports 80 and 8008 free on the host (the panel and the backend API, respectively).
+- Ports 80 and 8008 free on the host (the panel/console combined image and the backend API, respectively).
 
 ## Install
 
