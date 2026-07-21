@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
-import { PreflightShell, KioskButton } from "@idento/ui/kiosk";
+import { PreflightShell, KioskButton, KioskInput } from "@idento/ui/kiosk";
 import { useCheckinSettings, useSaveCheckinSettings } from "@/features/checkin/hooks";
 import { usePreflightSteps } from "@/features/preflight/steps";
 import { DEFAULT_CHECKIN_SETTINGS, type CheckinSettings } from "@/features/checkin/settingsTypes";
+import { UpdateChip } from "@/components/UpdateChip";
+import { getManifestUrlOverride, setManifestUrlOverride } from "@/lib/updateConfig";
 
 export type RunLayout = "bar" | "panel";
 
@@ -26,6 +28,7 @@ export default function ModePage() {
 
   const [layout, setLayout] = useState<RunLayout>(loadRunLayout);
   const [settings, setSettings] = useState<CheckinSettings>(DEFAULT_CHECKIN_SETTINGS);
+  const [updateManifestUrl, setUpdateManifestUrl] = useState(() => getManifestUrlOverride());
 
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
@@ -35,6 +38,7 @@ export default function ModePage() {
     try {
       await saveSettings.mutateAsync(settings);
       localStorage.setItem(RUN_LAYOUT_KEY, layout);
+      setManifestUrlOverride(updateManifestUrl);
       navigate(`/checkin/${eventId}`);
     } catch {
       toast.error(t("checkinSettingsSaveFailed"));
@@ -45,7 +49,7 @@ export default function ModePage() {
     active ? "border-kiosk-brand bg-kiosk-brand/10 text-kiosk-text" : "border-kiosk-border-2 text-kiosk-text-3";
 
   return (
-    <PreflightShell steps={steps} activeIndex={4}>
+    <PreflightShell steps={steps} activeIndex={4} banner={<UpdateChip />}>
       {settingsQuery.isLoading ? (
         <p className="text-kiosk-text-3">{t("loading")}</p>
       ) : settingsQuery.isError ? (
@@ -123,6 +127,19 @@ export default function ModePage() {
               value={settings.verdict_auto_dismiss_sec}
               onChange={(e) => setSettings((prev) => ({ ...prev, verdict_auto_dismiss_sec: Number(e.target.value) }))}
               className="mt-2 w-full"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="update-manifest-url" className="text-kiosk-text">
+              {t("modeUpdateManifestUrlTitle")}
+            </label>
+            <KioskInput
+              id="update-manifest-url"
+              placeholder={t("modeUpdateManifestUrlPlaceholder")}
+              value={updateManifestUrl}
+              onChange={(e) => setUpdateManifestUrl(e.target.value)}
+              className="mt-2"
             />
           </div>
 

@@ -159,6 +159,11 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         modeManualSearchTitle: "Manual search fallback",
         modeDismissTitle: "Verdict auto-dismiss (seconds)",
         modeSaveAndStart: "Save and start",
+        updateAvailable: "Update available: {{version}}",
+        updateReview: "Review",
+        updateInstall: "Install and restart",
+        modeUpdateManifestUrlTitle: "Update manifest URL (advanced)",
+        modeUpdateManifestUrlPlaceholder: "https://mirror.example.internal/latest.json",
         checkinSettingsSaveFailed: "Failed to save check-in settings",
         // Run screen
         runReadyToScan: "Ready to scan",

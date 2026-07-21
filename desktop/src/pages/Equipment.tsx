@@ -16,6 +16,7 @@ import { useRegisterStation } from "@/features/checkin/hooks";
 import { usePreflightSteps } from "@/features/preflight/steps";
 import { toast } from "sonner";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { UpdateChip } from "@/components/UpdateChip";
 
 type PrinterEntry = { name: string; type?: string };
 type ScannerEntry = string | { name: string; port_name?: string };
@@ -355,6 +356,7 @@ export default function EquipmentPage() {
     <PreflightShell
       steps={steps}
       activeIndex={3}
+      banner={<UpdateChip />}
       footer={
         <div className="flex items-center gap-3">
           {t("language")}: <LanguageSwitcher />
