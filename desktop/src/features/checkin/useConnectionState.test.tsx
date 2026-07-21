@@ -27,5 +27,20 @@ describe("useConnectionState", () => {
     Object.defineProperty(navigator, "onLine", { value: false, writable: true, configurable: true });
     window.dispatchEvent(new Event("offline"));
     await waitFor(() => expect(result.current.online).toBe(false), { timeout: 2000 });
+
+    // TanStack Query's onlineManager singleton (@tanstack/query-core) listens
+    // for native window online/offline events independently of any
+    // per-test QueryClient. Without this compensating "online" dispatch, it
+    // stays stuck offline for the rest of the file and (since queries default
+    // to networkMode: "online") silently pauses every later test's queries.
+    Object.defineProperty(navigator, "onLine", { value: true, writable: true, configurable: true });
+    window.dispatchEvent(new Event("online"));
+  });
+
+  it("reports offline when the feed query errors, even though navigator.onLine is true", async () => {
+    vi.spyOn(api, "get").mockRejectedValue(new Error("network down"));
+    const { result } = renderHook(() => useConnectionState("evt-1"), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.online).toBe(false), { timeout: 2000 });
+    expect(navigator.onLine).toBe(true);
   });
 });
