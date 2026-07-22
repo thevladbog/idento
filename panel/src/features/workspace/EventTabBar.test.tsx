@@ -1,7 +1,7 @@
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EventTabBar } from "./EventTabBar";
 import "../../shared/i18n";
@@ -70,5 +70,15 @@ describe("EventTabBar", () => {
     expect(within(sheet).getByRole("link", { name: /Zones & access rules/ })).toHaveAttribute("href", "/events/evt-1/zones");
     expect(within(sheet).getByRole("link", { name: /Event settings/ })).toHaveAttribute("href", "/events/evt-1/settings");
     expect(within(sheet).getByRole("link", { name: /Equipment/ })).toHaveAttribute("href", "/equipment");
+  });
+
+  it("closes the More sheet when a row is clicked", async () => {
+    const user = userEvent.setup();
+    renderAt("/events/evt-1");
+    const bar = await screen.findByRole("navigation", { name: "Event sections" });
+    await user.click(within(bar).getByRole("button", { name: "More" }));
+    const sheet = await screen.findByRole("dialog");
+    await user.click(within(sheet).getByRole("link", { name: /Badge editor/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 });

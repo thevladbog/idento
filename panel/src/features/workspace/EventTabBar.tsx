@@ -41,9 +41,13 @@ export function EventTabBar({ eventId }: { eventId: string }) {
         >
           <TabBarItem icon={LayoutGrid} label={t("tabBarOverview")} active={active === "overview"} />
         </Link>
+        {/* exact on every tab link: TanStack Link's own prefix-matching would
+            re-inject aria-current="page" on nested child paths (P6.3) where
+            useActiveEventTab() reports "other" — keep both sources agreeing. */}
         <Link
           to="/events/$eventId/monitor"
           params={{ eventId }}
+          activeOptions={{ exact: true }}
           aria-current={active === "monitor" ? "page" : undefined}
           className="flex flex-1"
         >
@@ -52,6 +56,7 @@ export function EventTabBar({ eventId }: { eventId: string }) {
         <Link
           to="/events/$eventId/attendees"
           params={{ eventId }}
+          activeOptions={{ exact: true }}
           aria-current={active === "attendees" ? "page" : undefined}
           className="flex flex-1"
         >
@@ -60,6 +65,7 @@ export function EventTabBar({ eventId }: { eventId: string }) {
         <Link
           to="/events/$eventId/staff"
           params={{ eventId }}
+          activeOptions={{ exact: true }}
           aria-current={active === "staff" ? "page" : undefined}
           className="flex flex-1"
         >
