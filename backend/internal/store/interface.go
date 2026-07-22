@@ -315,6 +315,15 @@ type Store interface {
 	GetMonitorStations(ctx context.Context, eventID uuid.UUID) ([]MonitorStation, error)
 
 	CreateAttendee(ctx context.Context, attendee *models.Attendee) error
+	// AnalyzeAttendeesTable runs ANALYZE on the attendees table. A bulk
+	// insert (e.g. a large CSV import) doesn't trigger a synchronous
+	// ANALYZE, and autovacuum's own analyze may not run before the next
+	// query -- confirmed empirically during P5.3.5 planning to cause the
+	// planner to pick a badly misestimated join plan (~100x slower) for a
+	// zone-filtered attendee list query immediately after a 5,000-row
+	// bulk insert. Called once per bulk-import request (not per row) from
+	// BulkCreateAttendees.
+	AnalyzeAttendeesTable(ctx context.Context) error
 	// GetAttendeesByEventID lists attendees for an event; code/search are
 	// optional filters ("" skips the filter) — code does an exact match,
 	// search does a case-insensitive substring match across

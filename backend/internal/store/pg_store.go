@@ -1255,6 +1255,15 @@ func (s *PGStore) CreateAttendee(ctx context.Context, attendee *models.Attendee)
 	).Scan(&attendee.ID, &attendee.CreatedAt, &attendee.UpdatedAt)
 }
 
+// AnalyzeAttendeesTable runs ANALYZE on the attendees table -- see the
+// Store interface doc comment for why this exists. ANALYZE has no
+// per-event scoping (it updates table-wide planner statistics), so this
+// takes no eventID parameter.
+func (s *PGStore) AnalyzeAttendeesTable(ctx context.Context) error {
+	_, err := s.db.Exec(ctx, "ANALYZE attendees")
+	return err
+}
+
 // escapeILikeSearch escapes ILIKE's own wildcard characters (% and _) and the
 // escape character itself (\) in user-supplied search text before it is
 // wrapped in % for substring matching -- otherwise "jane_doe" would also
