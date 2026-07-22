@@ -771,5 +771,19 @@
   "gateEquipmentTitle": "Оборудование",
   "gateEquipmentReason": "Принтеры и сканеры работают через агент Idento на рабочем компьютере — с телефона он недоступен.",
   "gateCheckinTitle": "Станция регистрации",
-  "gateCheckinReason": "Станция работает на компьютере с подключённым принтером — с телефона сканируют через приложение станции Idento."
+  "gateCheckinReason": "Станция работает на компьютере с подключённым принтером — с телефона сканируют через приложение станции Idento.",
+  "tabBarLabel": "Разделы мероприятия",
+  "tabBarOverview": "Обзор",
+  "tabBarMonitor": "Монитор",
+  "tabBarAttendees": "Участники",
+  "tabBarStaff": "Персонал",
+  "tabBarMore": "Ещё",
+  "moreSheetTitle": "Ещё",
+  "moreSheetCloseLabel": "Закрыть",
+  "moreSheetDesktopGroup": "На вашем десктопе",
+  "moreSheetDesktopChip": "Десктоп",
+  "moreSheetBadge": "Редактор бейджей",
+  "moreSheetZones": "Зоны и правила доступа",
+  "moreSheetSettings": "Настройки мероприятия",
+  "moreSheetEquipment": "Оборудование"
 }

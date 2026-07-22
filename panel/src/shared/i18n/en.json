@@ -769,5 +769,19 @@
   "gateEquipmentTitle": "Equipment",
   "gateEquipmentReason": "Printers and scanners talk to the Idento agent on your desk computer — this phone can't reach it.",
   "gateCheckinTitle": "Check-in station",
-  "gateCheckinReason": "The station runs on a desk computer with a printer attached — phones scan with the Idento station app instead."
+  "gateCheckinReason": "The station runs on a desk computer with a printer attached — phones scan with the Idento station app instead.",
+  "tabBarLabel": "Event sections",
+  "tabBarOverview": "Overview",
+  "tabBarMonitor": "Monitor",
+  "tabBarAttendees": "Attendees",
+  "tabBarStaff": "Staff",
+  "tabBarMore": "More",
+  "moreSheetTitle": "More",
+  "moreSheetCloseLabel": "Close",
+  "moreSheetDesktopGroup": "On your desktop",
+  "moreSheetDesktopChip": "Desktop",
+  "moreSheetBadge": "Badge editor",
+  "moreSheetZones": "Zones & access rules",
+  "moreSheetSettings": "Event settings",
+  "moreSheetEquipment": "Equipment"
 }
