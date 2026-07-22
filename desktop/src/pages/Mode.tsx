@@ -53,6 +53,12 @@ export default function ModePage() {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
+  useEffect(() => {
+    if (stationType === "self" && settings.scan_input === "manual") {
+      setSettings((prev) => (prev.scan_input === "manual" ? { ...prev, scan_input: "wedge" } : prev));
+    }
+  }, [stationType, settings.scan_input]);
+
   const saveAndStart = async () => {
     try {
       await saveSettings.mutateAsync(settings);
