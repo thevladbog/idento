@@ -12,6 +12,7 @@ import { VerdictScreen, BlockingBanner } from "@idento/ui/kiosk";
 import {
   useAgentDefaultPrinter,
   useAgentHealth,
+  useCheckinActions,
   useCheckinSettings,
 } from "@/features/checkin/hooks";
 import { useCheckinFlow } from "@/features/checkin/useCheckinFlow";
@@ -28,6 +29,11 @@ export default function SelfServicePage() {
 
   useHeartbeat(eventId!, stationId);
   const connection = useConnectionState(eventId!);
+  // Held only for its .refetch() -- shares the "checkin-actions" cache key
+  // with useConnectionState's internal query (same eventId, same default
+  // limit), so refetching here is what actually clears the banner below.
+  // Self-service shows no operator-facing log, so .data is never rendered.
+  const actionsQuery = useCheckinActions(eventId!);
   const settingsQuery = useCheckinSettings(eventId!);
   const settings = settingsQuery.data ?? DEFAULT_CHECKIN_SETTINGS;
   const printer = useAgentDefaultPrinter();
@@ -81,7 +87,7 @@ export default function SelfServicePage() {
           title={t("runNoServer")}
           subtitle={t("runNoServerDesc")}
           retryLabel={t("runRetryNow")}
-          onRetry={() => void settingsQuery.refetch()}
+          onRetry={() => void actionsQuery.refetch()}
         />
       )}
       {connection.online && !agentHealth.data && (
