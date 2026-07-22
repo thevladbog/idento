@@ -19,6 +19,7 @@ import { LaunchCeremony } from "../features/checkin/LaunchCeremony";
 import { MonitorPage } from "../features/monitor/MonitorPage";
 import { EquipmentPage } from "../features/equipment/EquipmentPage";
 import { PlaceholderPage } from "../shared/ui/PlaceholderPage";
+import { DesktopOnly } from "../shared/ui/DesktopOnly";
 import { getInstance } from "../shared/api/client";
 import { queryClient } from "./queryClient";
 
@@ -91,7 +92,11 @@ const teamRoute = createRoute({
 const equipmentRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/equipment",
-  component: EquipmentPage,
+  component: () => (
+    <DesktopOnly flavor="agent-bound" titleKey="gateEquipmentTitle" reasonKey="gateEquipmentReason">
+      <EquipmentPage />
+    </DesktopOnly>
+  ),
 });
 
 const organizationRoute = createRoute({
@@ -115,20 +120,35 @@ const eventOverviewRoute = createRoute({
 const eventSettingsRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/settings",
-  component: EventSettingsPage,
+  component: () => (
+    <DesktopOnly flavor="bulk-data" titleKey="gateSettingsTitle" reasonKey="gateSettingsReason">
+      <EventSettingsPage />
+    </DesktopOnly>
+  ),
 });
 
 const eventAttendeesRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/attendees",
   validateSearch: validateAttendeesSearch,
-  component: AttendeesPage,
+  // TEMPORARY gate (P6.1): the attendees table cannot reflow at 390px.
+  // P6.3 replaces this gate with the phone search-first list (board 8g) —
+  // remove the DesktopOnly wrapper there, don't extend it.
+  component: () => (
+    <DesktopOnly flavor="bulk-data" titleKey="gateAttendeesTitle" reasonKey="gateAttendeesReason">
+      <AttendeesPage />
+    </DesktopOnly>
+  ),
 });
 
 const eventZonesRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/zones",
-  component: ZonesPage,
+  component: () => (
+    <DesktopOnly flavor="canvas-tool" titleKey="gateZonesTitle" reasonKey="gateZonesReason">
+      <ZonesPage />
+    </DesktopOnly>
+  ),
 });
 
 const eventStaffRoute = createRoute({
@@ -140,7 +160,11 @@ const eventStaffRoute = createRoute({
 const eventBadgeRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/badge",
-  component: BadgeEditorPage,
+  component: () => (
+    <DesktopOnly flavor="canvas-tool" titleKey="gateBadgeTitle" reasonKey="gateBadgeReason">
+      <BadgeEditorPage />
+    </DesktopOnly>
+  ),
 });
 
 // P4.1 Task 8 -- the check-in station. A TOP-LEVEL protected route, a
@@ -157,7 +181,11 @@ const eventCheckinRoute = createRoute({
   path: "/events/$eventId/checkin",
   validateSearch: validateCheckinStationSearch,
   beforeLoad: checkinStationBeforeLoad,
-  component: StationPage,
+  component: () => (
+    <DesktopOnly flavor="agent-bound" titleKey="gateCheckinTitle" reasonKey="gateCheckinReason">
+      <StationPage />
+    </DesktopOnly>
+  ),
 });
 
 // P4.1 Task 11 -- the launch ceremony. Same TOP-LEVEL, sibling-of-
@@ -172,7 +200,11 @@ const eventCheckinRoute = createRoute({
 const eventCheckinLaunchRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/events/$eventId/checkin/launch",
-  component: LaunchCeremony,
+  component: () => (
+    <DesktopOnly flavor="agent-bound" titleKey="gateCheckinTitle" reasonKey="gateCheckinReason">
+      <LaunchCeremony />
+    </DesktopOnly>
+  ),
 });
 
 // P4.2 Task 7 -- the live monitor (board 7e). Same TOP-LEVEL, sibling-of-
