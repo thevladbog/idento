@@ -753,5 +753,21 @@
   "equipmentWizardAgentChecking": "Checking for the local agent…",
   "equipmentWizardAgentUnreachable": "Can't reach the local agent — plug it in and try again.",
   "equipmentWizardComAddError": "Couldn't add the scanner.",
-  "equipmentWizardScanTestWarn": "Scan confirmed — but the server didn't record the test. It will sync on the next visit."
+  "equipmentWizardScanTestWarn": "Scan confirmed — but the server didn't record the test. It will sync on the next visit.",
+  "gateCopyLink": "Copy link for desktop",
+  "gateLinkCopied": "Link copied",
+  "gateBackOverview": "Back to Overview",
+  "gateBackHome": "Back to Home",
+  "gateBadgeTitle": "Badge editor",
+  "gateBadgeReason": "Designing a badge needs a large canvas and precise dragging — it lives on your desktop.",
+  "gateZonesTitle": "Zones & access rules",
+  "gateZonesReason": "Building access rules is precision work for a big screen.",
+  "gateSettingsTitle": "Event settings",
+  "gateSettingsReason": "Fonts, API keys and attendee fields are desk work — bring it to a bigger screen.",
+  "gateAttendeesTitle": "Attendees",
+  "gateAttendeesReason": "Bulk actions and CSV import across thousands of rows are desk work — bring it to a bigger screen.",
+  "gateEquipmentTitle": "Equipment",
+  "gateEquipmentReason": "Printers and scanners talk to the Idento agent on your desk computer — this phone can't reach it.",
+  "gateCheckinTitle": "Check-in station",
+  "gateCheckinReason": "The station runs on a desk computer with a printer attached — phones scan with the Idento station app instead."
 }
