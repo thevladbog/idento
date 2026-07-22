@@ -105,9 +105,25 @@ jobs:
             backend/go.sum
             agent/go.sum
 
+      - name: Start Postgres
+        run: docker compose up -d db
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec idento_db pg_isready -U idento -d idento_db > /dev/null 2>&1; then
+              echo "Postgres is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Postgres did not become ready in time" >&2
+          exit 1
+
       - name: Test backend with coverage
         env:
           OPENAPI_COVERAGE: "1"
+          TEST_DATABASE_URL: "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
         run: |
           cd backend
           go test -race -coverprofile=coverage.out -covermode=atomic ./...
