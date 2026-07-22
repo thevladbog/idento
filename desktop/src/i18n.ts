@@ -190,6 +190,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         runAllowedTitle: "CHECKED IN",
         runAlreadyTitle: "ALREADY CHECKED IN",
         runAutoReturning: "Returning to scan…",
+        selfAttractTitle: "Scan your ticket to check in",
       },
     },
     ru: {
@@ -377,6 +378,7 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         runAllowedTitle: "ОТМЕЧЕНА",
         runAlreadyTitle: "УЖЕ ОТМЕЧЕН",
         runAutoReturning: "Возврат к сканированию…",
+        selfAttractTitle: "Отсканируйте билет для регистрации",
       },
     },
   },
