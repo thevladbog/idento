@@ -161,6 +161,26 @@ func TestSeeded5kAttendees_ScaleExitCriterion(t *testing.T) {
 		t.Fatalf("CopyFrom inserted %d zone-access rows, want %d", zoneCopyCount, zoneAccessCount)
 	}
 
+	// A bulk CopyFrom does not trigger a synchronous ANALYZE, and
+	// autovacuum's own analyze may not have run yet within this test's
+	// tight window -- confirmed empirically during P5.3.5 planning: without
+	// this, the planner drastically underestimates the zone-filtered
+	// query's selectivity (rows=1 estimated vs 500 actual) and picks a
+	// Nested Loop that probes attendee_zone_access once per attendee
+	// (5,000 iterations) instead of a Hash Join starting from the ~500
+	// actually-matching rows -- ~300ms instead of ~2-3ms, using only
+	// indexes that already exist. Explicitly analyzing after a bulk
+	// write is exactly what a real bulk import should do too (see
+	// PGStore.AnalyzeAttendeesTable, called from BulkCreateAttendees) --
+	// this keeps the test's baseline representative of that same,
+	// now-fixed, steady state rather than a worst-case transient one.
+	if _, err := pool.Exec(ctx, `ANALYZE attendees`); err != nil {
+		t.Fatalf("ANALYZE attendees: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `ANALYZE attendee_zone_access`); err != nil {
+		t.Fatalf("ANALYZE attendee_zone_access: %v", err)
+	}
+
 	// expectedOrder mirrors GetAttendeesPage's ORDER BY last_name, first_name,
 	// id — every seeded attendee shares last_name "Attendee", so this reduces
 	// to an ascending sort on first_name (ids only break ties, and every
@@ -280,6 +300,43 @@ func TestSeeded5kAttendees_ScaleExitCriterion(t *testing.T) {
 		}
 		if attendees[0].ID != seeded[uniqueMarkerIndex].id {
 			t.Fatalf("got attendee %s, want the uniquely-named one %s", attendees[0].ID, seeded[uniqueMarkerIndex].id)
+		}
+	})
+
+	t.Run("all 4 query shapes complete within 100ms once statistics are fresh", func(t *testing.T) {
+		checkedIn := true
+		shapes := []struct {
+			name   string
+			filter AttendeeFilter
+		}{
+			{"unfiltered page", AttendeeFilter{Page: 100, PerPage: 50}},
+			{"status filter", AttendeeFilter{Status: &checkedIn, Page: 1, PerPage: 50}},
+			{"zone filter", AttendeeFilter{ZoneID: &zoneID, Page: 1, PerPage: 50}},
+			{"search", AttendeeFilter{Search: uniqueSearchToken, Page: 1, PerPage: 50}},
+		}
+		// A generous, evidence-derived bound (P5.3.5 planning measured
+		// steady-state times of ~2-18ms across these 4 shapes once
+		// statistics are fresh) -- not a tight SLA. It exists to catch a
+		// genuine regression (e.g. the ~300ms stale-statistics class of
+		// bug this task's own ANALYZE fix resolves), not to enforce a
+		// specific latency target.
+		const bound = 100 * time.Millisecond
+		for _, shape := range shapes {
+			// One warm-up call (plan caching / connection warmup) before
+			// the measured call, so the assertion reflects steady-state
+			// query cost, not one-time first-call overhead.
+			if _, _, err := s.GetAttendeesPage(ctx, eventID, shape.filter); err != nil {
+				t.Fatalf("%s warm-up: %v", shape.name, err)
+			}
+			start := time.Now()
+			_, _, err := s.GetAttendeesPage(ctx, eventID, shape.filter)
+			elapsed := time.Since(start)
+			if err != nil {
+				t.Fatalf("%s: %v", shape.name, err)
+			}
+			if elapsed > bound {
+				t.Errorf("%s took %v, want <= %v", shape.name, elapsed, bound)
+			}
 		}
 	})
 }

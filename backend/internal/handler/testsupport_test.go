@@ -55,6 +55,7 @@ type fakeStore struct {
 	getAPIKeysByEventID           func(eventID uuid.UUID) ([]*models.APIKey, error)
 	revokeAPIKey                  func(id uuid.UUID) error
 	createAttendee                func(attendee *models.Attendee) error
+	analyzeAttendeesTable         func() error
 	updateAttendee                func(attendee *models.Attendee) error
 	incrementAttendeePrintedCount func(attendeeID uuid.UUID) (int, error)
 	getAttendeesByEventID         func(eventID uuid.UUID, code, search string) ([]*models.Attendee, error)
@@ -270,6 +271,21 @@ func (f *fakeStore) RevokeAPIKey(_ context.Context, id uuid.UUID) error {
 }
 func (f *fakeStore) CreateAttendee(_ context.Context, attendee *models.Attendee) error {
 	return f.createAttendee(attendee)
+}
+
+// AnalyzeAttendeesTable is deliberately nil-safe, unlike every other
+// fakeStore method above (which panics on an unset field so a test must
+// explicitly opt into any Store call it exercises). ANALYZE is a
+// best-effort performance optimization, not a correctness-critical
+// operation -- none of the existing tests that exercise BulkCreateAttendees
+// (attendee_crud_publish_test.go, openapi_contract_attendees_test.go,
+// openapi_contract_attendees_p2_test.go, tenant_isolation_test.go) should
+// need to change just to keep compiling.
+func (f *fakeStore) AnalyzeAttendeesTable(context.Context) error {
+	if f.analyzeAttendeesTable == nil {
+		return nil
+	}
+	return f.analyzeAttendeesTable()
 }
 func (f *fakeStore) UpdateAttendee(_ context.Context, attendee *models.Attendee) error {
 	return f.updateAttendee(attendee)
