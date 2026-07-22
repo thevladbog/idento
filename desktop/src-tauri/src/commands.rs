@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use std::sync::Mutex;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -342,6 +342,44 @@ pub async fn install_update(app: AppHandle, state: State<'_, UpdateHandleState>)
     Ok(())
 }
 
+/// Whether the main window is currently in self-service lockdown (K2b):
+/// fullscreen, undecorated, always-on-top, hidden from the taskbar/dock,
+/// and window-close is blocked at the OS-event level (see `lib.rs`'s
+/// `on_window_event` registration) -- not just via `set_closable`, which
+/// has a documented Linux caveat ("GTK+ will do its best", not a hard
+/// guarantee). Read by that same window-event handler to decide whether to
+/// call `prevent_close()`.
+#[derive(Default)]
+pub struct LockdownState(pub Mutex<bool>);
+
+/// Engages self-service lockdown on the main window. Idempotent -- calling
+/// this while already locked down just re-applies the same state.
+#[tauri::command]
+pub fn enter_lockdown(app: AppHandle, state: State<'_, LockdownState>) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "No main window".to_string())?;
+    window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    window.set_decorations(false).map_err(|e| e.to_string())?;
+    window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    window.set_skip_taskbar(true).map_err(|e| e.to_string())?;
+    *state.0.lock().map_err(|e| e.to_string())? = true;
+    Ok(())
+}
+
+/// Reverses `enter_lockdown`. Called only after a successful staff-QR check
+/// (see the desktop `StaffExitOverlay` component, Task 5) -- never
+/// reachable from window-close or keyboard shortcuts, since those are
+/// blocked outright while locked down.
+#[tauri::command]
+pub fn exit_lockdown(app: AppHandle, state: State<'_, LockdownState>) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or_else(|| "No main window".to_string())?;
+    *state.0.lock().map_err(|e| e.to_string())? = false;
+    window.set_skip_taskbar(false).map_err(|e| e.to_string())?;
+    window.set_always_on_top(false).map_err(|e| e.to_string())?;
+    window.set_decorations(true).map_err(|e| e.to_string())?;
+    window.set_fullscreen(false).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,5 +554,16 @@ mod update_tests {
     #[test]
     fn rejects_malformed_url() {
         assert!(validate_endpoint_url("not a url").is_err());
+    }
+}
+
+#[cfg(test)]
+mod lockdown_tests {
+    use super::*;
+
+    #[test]
+    fn starts_unlocked() {
+        let state = LockdownState::default();
+        assert!(!*state.0.lock().unwrap());
     }
 }

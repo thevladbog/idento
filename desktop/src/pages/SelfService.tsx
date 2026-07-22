@@ -28,6 +28,31 @@ export default function SelfServicePage() {
   const stationId = localStorage.getItem(`idento_station_id:${eventId}`);
 
   useHeartbeat(eventId!, stationId);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        if (active) await invoke("enter_lockdown");
+      } catch {
+        // Not running under Tauri (e.g. plain browser dev) -- no window to
+        // lock down; the rest of the page still functions for local dev.
+      }
+    })();
+    return () => {
+      active = false;
+      void (async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("exit_lockdown");
+        } catch {
+          // Same non-Tauri dev fallback as above.
+        }
+      })();
+    };
+  }, []);
+
   const connection = useConnectionState(eventId!);
   // Held only for its .refetch() -- shares the "checkin-actions" cache key
   // with useConnectionState's internal query (same eventId, same default

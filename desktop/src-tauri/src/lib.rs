@@ -2,7 +2,7 @@
 
 mod commands;
 
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(commands::AgentProcess::default())
         .manage(commands::UpdateHandleState::default())
+        .manage(commands::LockdownState::default())
         .invoke_handler(tauri::generate_handler![
             commands::agent_request,
             commands::get_agent_port,
@@ -25,7 +26,27 @@ pub fn run() {
             commands::restart_agent,
             commands::check_for_update,
             commands::install_update,
+            commands::enter_lockdown,
+            commands::exit_lockdown,
         ])
+        .on_window_event(|window, event| {
+            // Self-service lockdown (K2b): while LockdownState is true,
+            // block window-close outright at the event level rather than
+            // relying on set_closable alone (documented Linux caveat: GTK+
+            // "will do its best", not a guarantee). Fails open (does NOT
+            // prevent_close) if the state can't be read at all, since a
+            // poisoned lockdown flag should never be able to trap the app
+            // closed.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                let locked = window
+                    .try_state::<commands::LockdownState>()
+                    .map(|state| state.0.lock().map(|guard| *guard).unwrap_or(false))
+                    .unwrap_or(false);
+                if locked {
+                    api.prevent_close();
+                }
+            }
+        })
         .build(tauri::generate_context!())
         .expect("error while building Idento Kiosk")
         .run(|app_handle, event| {
