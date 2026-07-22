@@ -95,3 +95,29 @@ validate every documented operation (coverage-gated in CI), and the panel's
 - Never hand-edit `schema.d.ts` — regenerate it; on merge conflict, regenerate.
 - All requests go through the `api` client so the auth middleware and
   `ApiError` normalization (tenant_suspended, global 401) apply.
+
+## Adaptive layout (P6 mobile companion)
+
+- **One cutover:** phone layouts live below Tailwind `md` (768px); the design
+  reference frame is 390×844. Never introduce another breakpoint for
+  desktop-vs-phone decisions, and never add `/m/*` routes or user-agent
+  sniffing — the URL space is shared and adaptation happens at render time.
+- **Tailwind reflow FIRST.** If a layout can stack/reflow with responsive
+  classes, do that — no JS. Component swaps are the exception, not the rule.
+- **Exactly one sanctioned JS viewport check:** `useIsMobile()`
+  (`src/shared/hooks/useIsMobile.ts`), called once per swap pair at the swap
+  point (a route gate, a table↔list chooser) — never sprinkled through leaf
+  components.
+- **Tier-3 surfaces gate, never break.** Desktop-only routes (badge editor,
+  event settings, zones, equipment, station/launch, CSV import) render the
+  `DesktopOnly` wrapper (`src/shared/ui/DesktopOnly.tsx`) below `md` — a
+  render swap on the SAME url via `@idento/ui`'s `DesktopOnlyGate`, never a
+  redirect: deep links land on the gate, rotating a tablet past `md` shows
+  the real page. Zero horizontal scrolling at 390px is the bar — every route
+  is adapted or gated, nothing in between.
+- **Touch targets:** interactive controls on phone-only chrome are ≥44×44px
+  (`min-h-11`); keep the inflation inside `md:hidden` chrome or
+  coarse-pointer scopes so desktop density is untouched.
+- **Safe area:** fixed bottom chrome pads with
+  `pb-[max(…,env(safe-area-inset-bottom))]`; `panel/index.html` sets
+  `viewport-fit=cover` to make those insets real on iOS.
