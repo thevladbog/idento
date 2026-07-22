@@ -5,6 +5,7 @@ import { PreflightShell } from "@idento/ui/kiosk";
 import { api, clearSession } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { usePreflightSteps } from "@/features/preflight/steps";
+import { UpdateChip } from "@/components/UpdateChip";
 import { toast } from "sonner";
 
 type CheckinEvent = { id: string; name: string };
@@ -34,6 +35,7 @@ export default function CheckinPage() {
     <PreflightShell
       steps={steps}
       activeIndex={2}
+      banner={<UpdateChip />}
       footer={
         <div className="flex items-center gap-3">
           {t("language")}: <LanguageSwitcher />

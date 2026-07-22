@@ -1,110 +1,111 @@
-## Kiosk K3a — final whole-branch review fix report
+## Kiosk K3b — final whole-branch review fix report
 
-Branch: `claude/idento-kiosk-desktop-app-k3`. Base for this fix pass: `323bfc2` (Task 9, "ALL 9 TASKS COMPLETE").
+Branch: `claude/idento-kiosk-desktop-app-k3b`. Base for this fix pass: `cab822b`
+(K3b Task 6, "ALL 6 TASKS COMPLETE").
 
-Three findings from the final whole-branch review were fixed in one commit.
+Note: this file previously held the K3a final-review fix report (three findings on the
+`k3` branch, commit `b4c7c48`). That content is superseded here — see git history on
+this branch (or the `k3` branch) for the K3a report if needed.
 
-### Fix 1 (Important) — external-mode wrong token produces a false-green health check
+One Critical finding from the final whole-branch review was fixed in one commit.
 
-`desktop/src/pages/Equipment.tsx`: the agent's `/health` endpoint is auth-exempt, so a
-mistyped external token still shows "connected" — the first real endpoint call
-(`/printers` etc., inside `fetchEquipmentData()`) then 401s.
+### Fix (Critical) — `bundle.createUpdaterArtifacts` never set anywhere
 
-Changes:
-- Added `const [agentUnauthorized, setAgentUnauthorized] = useState(false);` next to the
-  other `agentConnected`/`printers`/etc. state.
-- `reconnectAgent`: reset `setAgentUnauthorized(false)` right after `setLoading(true)`;
-  in the `catch` around `fetchEquipmentData()`, detect `e instanceof Error &&
-  e.message.includes("401")` and call `setAgentUnauthorized(true)`.
-- Mount `useEffect`'s `fetchEquipmentData()` catch block: identical 401 detection,
-  guarded by the existing `cancelled` flag (matching the other `setPrinters`/etc. calls
-  in that block).
-- Render: inside the "Agent connection" `<section>`, right after the
-  `{agentMode === "external" && (...)}` block, added
-  `{agentUnauthorized && <p className="mt-3 text-kiosk-danger-soft">{t("agentUnauthorized")}</p>}`.
-- `desktop/src/i18n.ts`: added `agentUnauthorized` key to both `en` and `ru` blocks,
-  next to `agentExternalTokenPlaceholder`.
+`createUpdaterArtifacts` is a Tauri config flag that defaults to `false`. Without it,
+`tauri build` produces ordinary app bundles but no `.sig` signature files and no updater
+metadata, so `tauri-action`'s `includeUpdaterJson: true` step has nothing to assemble
+`latest.json` from. Confirmed via `grep -rn createUpdaterArtifacts desktop/ .github/`
+returning zero matches before the fix. Left unfixed, the entire auto-update feature this
+K3b plan built would have shipped silently non-functional on the first real release: no
+build error, just the app's compiled-in update endpoint 404ing forever.
 
-No changes to `checkAgentHealth()`, `agent.ts`, `agentConfig.ts`, or Rust code — this is
-a UI-layer detection of an existing 401 error message string; the auth mechanism itself
-is untouched.
+Fix: added the flag to the release workflow's existing build-time `--config` patch
+mechanism, `.github/workflows/release-desktop.yml`'s "Write externalBin config patch"
+step, which already exists specifically so build-time-only values never need to be baked
+into the committed `tauri.conf.json`:
 
-### Fix 2 (Minor) — double-`v` version prefix
+```diff
+-        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"]}}' > "${{ github.workspace }}/sidecar-config.json"
++        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
+```
 
-`desktop/src/features/checkin/agentDetail.ts`'s `formatAgentDetail` did `` `v${version}` ``.
-A released standalone agent's `/info` returns a CI-baked version like `"v1.2.3"` (release
-tags are `v`-prefixed), so the old code displayed `"vv1.2.3"`.
+This is deliberately **not** in the committed `desktop/src-tauri/tauri.conf.json`.
+`.github/workflows/ci.yml`'s `build-desktop` job (PR-time, `cd desktop && npm run tauri
+build`) has no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` secrets in its environment at all
+(confirmed via `grep -n "TAURI_SIGNING" .github/workflows/ci.yml`, zero matches). If the
+flag were committed directly into `tauri.conf.json`, every desktop-touching PR's build
+would attempt to sign updater artifacts with no private key present and fail CI.
+Confining the flag to the release workflow's build-time config patch — which does have
+the signing secrets, injected into `tauri-action`'s own `env:` block — keeps PR CI
+unaffected and only enables signing where the secrets actually exist.
 
-Fix: `versionPart` now strips any existing leading `v`/`V` (case-insensitive) before
-re-adding exactly one: `` `v${version.replace(/^v/i, "")}` ``. This is a no-op on
-unprefixed dev/mock values like `"1.4.0"`, so all 5 pre-existing tests in
-`agentDetail.test.ts` are unaffected. Added one new test case asserting a `"v1.2.3"`
-input produces `"v1.2.3 · :12345"` (not `"vv1.2.3 · :12345"`).
+Also added, per the reviewer's Minor recommendation, one short note to
+`desktop/README.md`'s "Auto-updates (one-time setup, before the first release)" section
+(right after its intro paragraph, before the `npx tauri signer generate` code block)
+explaining that `createUpdaterArtifacts` is injected by the release workflow at build
+time and is not something to add to the committed config — so a future reader doesn't
+get confused and add it to `tauri.conf.json` themselves:
 
-### Fix 3 (Minor) — unused `Manager` import
-
-`desktop/src-tauri/src/commands.rs` imported `tauri::{AppHandle, Manager, State}` but
-never used `Manager` (only `AppHandle` and `State` are used in that file; `Manager` is
-used in `lib.rs` for `.try_state()`). Removed `Manager` from the import in
-`commands.rs`. `lib.rs`'s own `use tauri::{Manager, RunEvent};` was left untouched.
+> `bundle.createUpdaterArtifacts` (required for Tauri to emit `.sig` files and updater
+> metadata) is injected by `.github/workflows/release-desktop.yml`'s `--config` patch at
+> build time, not set in the committed `src-tauri/tauri.conf.json` -- PR-time CI builds
+> have no signing secrets, so baking it into the committed config would break every
+> desktop-touching PR.
 
 ### Verification (all run from repo root)
 
+```shell
+grep -n "createUpdaterArtifacts" .github/workflows/release-desktop.yml
 ```
-npm test -w idento-desktop -- src/features/checkin/agentDetail.test.ts
+Result: exactly one match —
+```text
+102:        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
 ```
-Result: `Test Files 1 passed (1)`, `Tests 6 passed (6)` (5 pre-existing + 1 new).
 
+```shell
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-desktop.yml'))" && echo "YAML OK"
 ```
-npm test -w idento-desktop
-```
-Result: `Test Files 11 passed (11)`, `Tests 70 passed (70)`.
+Result: `YAML OK`.
 
+```shell
+python3 -c "import json; json.load(open('desktop/src-tauri/tauri.conf.json'))" && echo "JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)"
 ```
-npm run typecheck -w idento-desktop
-```
-Result: `tsc -b` — no output, exit clean.
+Result: `JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)`.
 
+```shell
+git diff --stat
 ```
-npm run build -w idento-desktop
+Result (before this commit, working tree):
+```text
+.github/workflows/release-desktop.yml |  2 +-
+ .superpowers/sdd/progress.md          | 11 +++++++++++
+ desktop/README.md                     |  5 +++++
+ 3 files changed, 17 insertions(+), 1 deletion(-)
 ```
-Result: `vite build` succeeded (`✓ built in 403ms`); only a pre-existing, unrelated
-"chunk larger than 500 kB" advisory, no errors.
+`desktop/src-tauri/tauri.conf.json` is confirmed absent from the diff — the fix only
+touched the release workflow's build-time config patch and the README doc note.
+`.superpowers/sdd/progress.md` was already modified in the working tree before this fix
+pass started (K3b task-completion notes, uncommitted SDD process documentation for this
+same branch) — included in the same commit as pre-existing process notes, not new work
+from this pass, matching the convention used in this branch's earlier K3a final-fix
+commit.
 
-```
-cd desktop/src-tauri && cargo build 2>&1 | grep -i warning
-```
-Environment hazard note: this repo has an RTK shell-wrapper hook (`PreToolUse: rtk hook
-claude` in `~/.claude/settings.json`) that rewrites/condenses bash command output. The
-first `cargo build` came back pre-condensed ("cargo build (1 crates compiled)"), which
-could have hidden a warning. Re-verified with `rtk proxy cargo build` (raw/unfiltered
-per `RTK.md`) after `touch`-ing `commands.rs`/`lib.rs` to force a real recompile:
-```
-   Compiling idento-desktop v0.1.0 (.../desktop/src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.78s
-```
-No warning lines at all. `grep -i warning` on the raw proxied output also matched
-nothing (exit code 1 / no matches) — the `unused import: Manager` warning is confirmed
-gone.
-
-```
-cd desktop/src-tauri && cargo test --lib
-```
-Result (via `rtk proxy`, raw): `test result: ok. 15 passed; 0 failed; 0 ignored; 0
-measured; 0 filtered out`.
+Environment hazard check: this repo has an RTK shell-wrapper hook that can rewrite/
+condense bash output. All commands above were also cross-checked by direct file reads
+(`Read` tool on both edited files, showing the exact diff hunks) rather than relying on
+`grep`/`git diff` output alone — the RTK proxy was not needed here since `grep -n` on a
+2-line-changed file and `python3 -c` one-liners produce output too short to plausibly be
+mis-condensed, and the file reads independently confirm the same content.
 
 ### Commit
 
-Single new commit on top of `323bfc2`, titled
-`fix(desktop): K3a final-review fixes — external-agent 401 signal, double-v version, unused import`.
-(This report is written as part of that same commit, so its own resulting SHA can't be
-self-referenced here without a later amend, which this fix pass was told not to do —
-see `git log -1` on this branch for the exact hash.)
+Single new commit on top of `cab822b`, titled
+`fix(desktop): K3b final-review fix — inject createUpdaterArtifacts at release build time`.
+(This report is written as part of that same commit, so see `git log -1` on this branch
+for the exact resulting SHA.)
 
-Files changed: `desktop/src/pages/Equipment.tsx`, `desktop/src/i18n.ts`,
-`desktop/src/features/checkin/agentDetail.ts`,
-`desktop/src/features/checkin/agentDetail.test.ts`, `desktop/src-tauri/src/commands.rs`,
-plus this report file. `.superpowers/sdd/progress.md` (K3a task-completion notes, already
-modified in the working tree before this fix pass started) was included in the same
-commit since it was uncommitted SDD process documentation for this same branch, not new
-work from this pass.
+Files changed: `.github/workflows/release-desktop.yml`, `desktop/README.md`, plus this
+report file. `.superpowers/sdd/progress.md` (K3b task-completion notes, already modified
+in the working tree before this fix pass started) was included in the same commit since
+it was uncommitted SDD process documentation for this same branch, not new work from
+this pass.

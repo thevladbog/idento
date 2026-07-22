@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, State};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_updater::UpdaterExt;
 
 pub const AGENT_PORT: u16 = 12345;
 pub const AGENT_PORT_STR: &str = "12345";
@@ -236,6 +237,111 @@ pub fn restart_agent(app: AppHandle, state: State<'_, AgentProcess>) -> Result<(
     spawn_agent(app, state)
 }
 
+/// Information about a checked update, sent back to JS. Deliberately does
+/// NOT include the raw `tauri_plugin_updater::Update` handle itself (not
+/// meaningfully serializable, and would leak internal signing/URL details
+/// to the webview) -- the handle stays server-side in `UpdateHandleState`,
+/// referenced only by `install_update`.
+#[derive(serde::Serialize)]
+pub struct UpdateInfo {
+    pub available: bool,
+    pub version: String,
+    pub notes: Option<String>,
+}
+
+/// Tracks the most recently checked `Update`, if one is available and not
+/// yet installed. Managed as Tauri app state (see `lib.rs`'s `.manage(...)`),
+/// the same pattern as K3a's `AgentProcess`.
+#[derive(Default)]
+pub struct UpdateHandleState(pub Mutex<Option<tauri_plugin_updater::Update>>);
+
+/// Validates an operator-supplied update-manifest URL override (Equipment's
+/// "closed network / mirror" setting) before it's ever used to build an
+/// updater endpoint. Mirrors the same discipline as K3a's external-agent
+/// URL validation: restrict to http/https, reject embedded userinfo -- an
+/// operator-entered URL is a different trust domain than the app's own
+/// compiled-in default, so it gets the same scrutiny before use.
+fn validate_endpoint_url(url: &str) -> Result<reqwest::Url, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|e| format!("Invalid update endpoint URL: {}", e))?;
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err(format!("Invalid update endpoint URL scheme: {}", parsed.scheme()));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Invalid update endpoint URL: userinfo not allowed".to_string());
+    }
+    Ok(parsed)
+}
+
+/// Checks for an available update, optionally against a caller-supplied
+/// endpoint override instead of the compiled-in default (see
+/// `validate_endpoint_url`). On success, stashes the checked `Update`
+/// handle in `UpdateHandleState` so a later `install_update` call can
+/// install it without re-checking; returns only serializable info to JS.
+#[tauri::command]
+pub async fn check_for_update(
+    app: AppHandle,
+    state: State<'_, UpdateHandleState>,
+    endpoint_override: Option<String>,
+) -> Result<UpdateInfo, String> {
+    let mut builder = app.updater_builder();
+    if let Some(url) = endpoint_override {
+        let parsed = validate_endpoint_url(&url)?;
+        builder = builder.endpoints(vec![parsed]).map_err(|e| e.to_string())?;
+    }
+    let updater = builder.build().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+
+    let info = match &update {
+        Some(u) => UpdateInfo {
+            available: true,
+            version: u.version.clone(),
+            notes: u.body.clone(),
+        },
+        None => UpdateInfo {
+            available: false,
+            version: String::new(),
+            notes: None,
+        },
+    };
+
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    *guard = update;
+    Ok(info)
+}
+
+/// Downloads and installs the `Update` handle stashed by the most recent
+/// `check_for_update` call, then restarts the app. `request_restart()` is a
+/// core `tauri::AppHandle` method (no `tauri-plugin-process` dependency
+/// needed) -- it triggers `RunEvent::Exit`, which already runs the K3a
+/// sidecar-cleanup handler in `lib.rs` unmodified. On Windows the installer
+/// itself already exits the process during `download_and_install`, so the
+/// `request_restart()` call there is effectively a no-op by the time it
+/// runs; on macOS/Linux it's what actually triggers the relaunch.
+///
+/// `Update::download_and_install` takes `&self`, so the handle taken out of
+/// `UpdateHandleState` isn't consumed by the call -- on failure (e.g. a
+/// dropped connection or a signature mismatch) it's restored so the next
+/// `install_update` call can retry without forcing a fresh `check_for_update`
+/// round-trip first.
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, UpdateHandleState>) -> Result<(), String> {
+    let update = {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        guard.take()
+    };
+    let update = update.ok_or_else(|| "No update available to install".to_string())?;
+    if let Err(e) = update
+        .download_and_install(|_chunk_length, _content_length| {}, || {})
+        .await
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = Some(update);
+        return Err(e.to_string());
+    }
+    app.request_restart();
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,5 +486,35 @@ mod tests {
         // isn't the hardcoded embedded constant.
         let target = external_target();
         assert!(build_agent_url("@evil.example.com/x", Some(&target)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_https_endpoint() {
+        assert!(validate_endpoint_url("https://example.com/latest.json").is_ok());
+    }
+
+    #[test]
+    fn accepts_http_endpoint_for_a_local_mirror() {
+        assert!(validate_endpoint_url("http://192.168.1.50:8080/latest.json").is_ok());
+    }
+
+    #[test]
+    fn rejects_non_http_scheme() {
+        assert!(validate_endpoint_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn rejects_userinfo() {
+        assert!(validate_endpoint_url("https://user:pass@evil.example/latest.json").is_err());
+    }
+
+    #[test]
+    fn rejects_malformed_url() {
+        assert!(validate_endpoint_url("not a url").is_err());
     }
 }

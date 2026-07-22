@@ -6,6 +6,7 @@ import { getBackendUrl, setBackendUrl } from "@/lib/config";
 import { api } from "@/lib/api";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { usePreflightSteps } from "@/features/preflight/steps";
+import { UpdateChip } from "@/components/UpdateChip";
 
 export default function ConnectionPage() {
   const { t } = useTranslation();
@@ -49,6 +50,7 @@ export default function ConnectionPage() {
     <PreflightShell
       steps={steps}
       activeIndex={0}
+      banner={<UpdateChip />}
       footer={
         <div className="flex items-center gap-3">
           {t("language")}: <LanguageSwitcher />

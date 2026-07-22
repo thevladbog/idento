@@ -24,4 +24,22 @@ describe("PreflightShell", () => {
     expect(items[2]).toHaveAttribute("aria-current", "step");
     expect(screen.getByText("Тело шага")).toBeInTheDocument();
   });
+
+  it("renders the banner when provided", () => {
+    render(
+      <PreflightShell steps={steps} activeIndex={2} banner={<div>Update available</div>}>
+        <div>Тело шага</div>
+      </PreflightShell>,
+    );
+    expect(screen.getByText("Update available")).toBeInTheDocument();
+  });
+
+  it("renders nothing extra when banner is omitted", () => {
+    render(
+      <PreflightShell steps={steps} activeIndex={2}>
+        <div>Тело шага</div>
+      </PreflightShell>,
+    );
+    expect(screen.queryByText("Update available")).not.toBeInTheDocument();
+  });
 });
