@@ -18,16 +18,20 @@ export interface UpdateInfo {
   notes: string | null;
 }
 
-async function invokeCheckForUpdate(): Promise<UpdateInfo> {
+async function invokeCheckForUpdate(override: string | null): Promise<UpdateInfo> {
   const { invoke } = await import("@tauri-apps/api/core");
-  const override = getManifestUrlOverride();
   return invoke<UpdateInfo>("check_for_update", { endpointOverride: override || null });
 }
 
 export function useUpdateCheck() {
+  const override = getManifestUrlOverride();
   return useQuery({
-    queryKey: ["update", "check"],
-    queryFn: invokeCheckForUpdate,
+    // The override is part of the cache key, not just an input to queryFn:
+    // otherwise a stale ["update", "check"] result from the old endpoint
+    // could keep serving for up to CHECK_INTERVAL_MS after the operator
+    // changes the manifest mirror URL on the Mode pre-flight step.
+    queryKey: ["update", "check", override],
+    queryFn: () => invokeCheckForUpdate(override),
     staleTime: CHECK_INTERVAL_MS,
     refetchInterval: CHECK_INTERVAL_MS,
     retry: false,

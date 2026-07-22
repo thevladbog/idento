@@ -21,6 +21,7 @@ export function UpdateChip() {
       <span>{t("updateAvailable", { version: data.version })}</span>
       {confirming ? (
         <>
+          {install.isError ? <span className="text-kiosk-danger">{t("updateInstallFailed")}</span> : null}
           <KioskButton size="md" onClick={() => install.mutate()} disabled={install.isPending}>
             {t("updateInstall")}
           </KioskButton>

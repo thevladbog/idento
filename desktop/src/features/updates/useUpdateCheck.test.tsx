@@ -34,6 +34,22 @@ describe("useUpdateCheck", () => {
     });
     expect(result.current.data?.version).toBe("1.4.0");
   });
+
+  it("re-checks against the new endpoint once the manifest override changes", async () => {
+    invokeMock.mockResolvedValue({ available: false, version: "", notes: null });
+    const { result, rerender } = renderHook(() => useUpdateCheck(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenLastCalledWith("check_for_update", { endpointOverride: null });
+
+    setManifestUrlOverride("https://mirror.example.internal/latest.json");
+    rerender();
+
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(2));
+    expect(invokeMock).toHaveBeenLastCalledWith("check_for_update", {
+      endpointOverride: "https://mirror.example.internal/latest.json",
+    });
+  });
 });
 
 describe("useInstallUpdate", () => {

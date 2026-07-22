@@ -54,29 +54,29 @@ get confused and add it to `tauri.conf.json` themselves:
 
 ### Verification (all run from repo root)
 
-```
+```shell
 grep -n "createUpdaterArtifacts" .github/workflows/release-desktop.yml
 ```
 Result: exactly one match —
-```
+```text
 102:        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
 ```
 
-```
+```shell
 python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-desktop.yml'))" && echo "YAML OK"
 ```
 Result: `YAML OK`.
 
-```
+```shell
 python3 -c "import json; json.load(open('desktop/src-tauri/tauri.conf.json'))" && echo "JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)"
 ```
 Result: `JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)`.
 
-```
+```shell
 git diff --stat
 ```
 Result (before this commit, working tree):
-```
+```text
 .github/workflows/release-desktop.yml |  2 +-
  .superpowers/sdd/progress.md          | 11 +++++++++++
  desktop/README.md                     |  5 +++++

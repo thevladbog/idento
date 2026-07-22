@@ -9,7 +9,50 @@ on:
 permissions: {}
 
 jobs:
+  validate-desktop:
+    # Gate: release-desktop must not reach tauri-action (which signs and
+    # publishes a public release) until desktop's own lint/typecheck/test
+    # suites and the Rust crate's own test suite pass. Runs once, not once
+    # per matrix leg -- the desktop test suite is platform-agnostic.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (desktop)
+        run: npm run lint -w idento-desktop
+
+      - name: Typecheck (desktop)
+        run: npm run typecheck -w idento-desktop
+
+      - name: Test (desktop)
+        run: npm test -w idento-desktop
+
+      - name: Install Tauri system deps (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Test (desktop Rust crate)
+        working-directory: desktop/src-tauri
+        run: cargo test
+
   release-desktop:
+    needs: validate-desktop
     permissions:
       contents: write
     strategy:
@@ -19,7 +62,7 @@ jobs:
           - platform: macos-14
             goos: darwin
             goarch: arm64
-          - platform: macos-13
+          - platform: macos-15-intel
             goos: darwin
             goarch: amd64
           - platform: windows-latest

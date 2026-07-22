@@ -317,6 +317,12 @@ pub async fn check_for_update(
 /// itself already exits the process during `download_and_install`, so the
 /// `request_restart()` call there is effectively a no-op by the time it
 /// runs; on macOS/Linux it's what actually triggers the relaunch.
+///
+/// `Update::download_and_install` takes `&self`, so the handle taken out of
+/// `UpdateHandleState` isn't consumed by the call -- on failure (e.g. a
+/// dropped connection or a signature mismatch) it's restored so the next
+/// `install_update` call can retry without forcing a fresh `check_for_update`
+/// round-trip first.
 #[tauri::command]
 pub async fn install_update(app: AppHandle, state: State<'_, UpdateHandleState>) -> Result<(), String> {
     let update = {
@@ -324,10 +330,14 @@ pub async fn install_update(app: AppHandle, state: State<'_, UpdateHandleState>)
         guard.take()
     };
     let update = update.ok_or_else(|| "No update available to install".to_string())?;
-    update
+    if let Err(e) = update
         .download_and_install(|_chunk_length, _content_length| {}, || {})
         .await
-        .map_err(|e| e.to_string())?;
+    {
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        *guard = Some(update);
+        return Err(e.to_string());
+    }
     app.request_restart();
     Ok(())
 }
