@@ -170,7 +170,7 @@ export default function SubscriptionPlans() {
       loadPlans();
     } catch (error) {
       console.error('Failed to save plan:', error);
-      toast.error(t('failedToSave'));
+      toast.error(t('failedToSavePlan'));
     }
   };
 
@@ -216,10 +216,10 @@ export default function SubscriptionPlans() {
               <div>
                 <div className="text-3xl font-bold">
                   ${plan.price_monthly}
-                  <span className="text-sm text-muted-foreground font-normal">/mo</span>
+                  <span className="text-sm text-muted-foreground font-normal">{t('perMonth')}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  ${plan.price_yearly}/year
+                  ${plan.price_yearly}{t('perYear')}
                 </div>
               </div>
 
