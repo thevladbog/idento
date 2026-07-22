@@ -251,6 +251,15 @@ func (h *Handler) BulkCreateAttendees(c echo.Context) error {
 	// nothing monitor-visible).
 	if createdCount > 0 {
 		h.publishCheckinEvent(c.Request().Context(), eventID)
+		// P5.3.5: keep planner statistics fresh after a bulk write so the
+		// very next attendee-list query (e.g. an organizer immediately
+		// filtering by zone) doesn't hit the stale-statistics ~100x-slower
+		// join-plan bug found during P5.3.5 planning. Logged, not fatal --
+		// this is a performance optimization, never worth failing an
+		// otherwise-successful import over.
+		if err := h.Store.AnalyzeAttendeesTable(c.Request().Context()); err != nil {
+			c.Logger().Warnf("bulk import: ANALYZE attendees failed (non-fatal): %v", err)
+		}
 	}
 
 	response := BulkImportResponse{
