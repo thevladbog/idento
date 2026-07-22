@@ -85,6 +85,7 @@
   "workspaceOptionalSuffix": "optional",
   "workspaceCheckin": "Check-in",
   "workspaceCheckinLocked": "locked",
+  "workspaceRailLabel": "Readiness pipeline",
   "workspaceSettings": "Settings",
   "workspaceOverview": "Overview",
   "workspaceOverviewTitle": "Overview",

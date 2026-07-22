@@ -2,6 +2,7 @@ import { Button, Skeleton } from "@idento/ui";
 import { Link, Outlet, getRouteApi, useRouterState } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { EventTabBar } from "./EventTabBar";
 import { WorkspaceRail } from "./WorkspaceRail";
 import { formatDateRange } from "../events/eventDates";
 import { useEventReadiness } from "../events/hooks";
@@ -71,7 +72,7 @@ export function EventWorkspaceLayout() {
         {dateRange ? (
           <span className="rounded-full bg-muted px-2.5 py-0.5 text-caption text-muted-foreground">{dateRange}</span>
         ) : null}
-        <div className="ml-auto">
+        <div className="ml-auto hidden md:block">
           {ready ? (
             // P4.1 Task 11: this header CTA is the "Launch check-in" gate
             // WorkspaceOverview.tsx's own `workspaceAllReady` copy already
@@ -97,11 +98,14 @@ export function EventWorkspaceLayout() {
         </div>
       </div>
       <div className="flex flex-1">
-        <WorkspaceRail eventId={eventId} readiness={readiness.data} active={active} />
-        <div className="flex-1 p-6">
+        <div className="hidden md:flex">
+          <WorkspaceRail eventId={eventId} readiness={readiness.data} active={active} />
+        </div>
+        <div className="flex-1 p-4 pb-24 md:p-6">
           <Outlet />
         </div>
       </div>
+      <EventTabBar eventId={eventId} />
     </div>
   );
 }

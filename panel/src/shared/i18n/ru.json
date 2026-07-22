@@ -85,6 +85,7 @@
   "workspaceOptionalSuffix": "необязательно",
   "workspaceCheckin": "Регистрация",
   "workspaceCheckinLocked": "заблокировано",
+  "workspaceRailLabel": "Пайплайн готовности",
   "workspaceSettings": "Настройки",
   "workspaceOverview": "Обзор",
   "workspaceOverviewTitle": "Обзор",
