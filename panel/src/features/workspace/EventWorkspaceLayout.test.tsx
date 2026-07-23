@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { EventWorkspaceLayout } from "./EventWorkspaceLayout";
 import { startMswServer } from "../../test/msw";
@@ -76,6 +76,10 @@ function renderAt(path: string) {
   );
 }
 
+function getRail() {
+  return screen.getByRole("navigation", { name: "Readiness pipeline" });
+}
+
 const READY_TRUE = { ready: true, steps: [{ key: "attendees", status: "done", count: 340 }] };
 const READY_FALSE = { ready: false, steps: [{ key: "attendees", status: "not_done" }] };
 
@@ -112,8 +116,8 @@ describe("EventWorkspaceLayout", () => {
     expect(screen.getByText("overview content")).toBeInTheDocument();
     // Rail is mounted (Task 1 component) — its static Settings nav item is
     // present, and Overview is marked active for the index route.
-    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Settings" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks Settings active in the rail and renders the settings child route's outlet content", async () => {
@@ -121,8 +125,8 @@ describe("EventWorkspaceLayout", () => {
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("settings content")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: "Settings" })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the rail's Attendees row active and renders the attendees child route's outlet content", async () => {
@@ -130,8 +134,8 @@ describe("EventWorkspaceLayout", () => {
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("attendees content")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Attendees/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: /Attendees/ })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the rail's Zones row active and renders the zones child route's outlet content", async () => {
@@ -142,8 +146,8 @@ describe("EventWorkspaceLayout", () => {
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("zones content")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Zones/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: /Zones/ })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the rail's Staff row active and renders the staff child route's outlet content", async () => {
@@ -154,8 +158,8 @@ describe("EventWorkspaceLayout", () => {
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("staff content")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Staff/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: /Staff/ })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
   it("marks the rail's Badge row active and renders the badge child route's outlet content", async () => {
@@ -166,8 +170,8 @@ describe("EventWorkspaceLayout", () => {
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("badge content")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Badge/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(getRail()).getByRole("link", { name: /Badge/ })).toHaveAttribute("aria-current", "page");
+    expect(within(getRail()).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
   it("disables the launch-check-in button with a discoverable locked reason when the event isn't ready", async () => {
@@ -198,5 +202,12 @@ describe("EventWorkspaceLayout", () => {
     const link = screen.getByRole("link", { name: /Back to Home/ });
     expect(link).toHaveAttribute("href", "/");
     await waitFor(() => expect(screen.queryByRole("heading")).not.toBeInTheDocument());
+  });
+
+  it("mounts the phone tab bar alongside the rail (CSS decides which shows)", async () => {
+    renderAt("/events/evt-1");
+    await screen.findByRole("heading", { name: "Partner Day — Autumn" });
+    const bar = screen.getByRole("navigation", { name: "Event sections" });
+    expect(within(bar).getByRole("link", { name: "Monitor" })).toHaveAttribute("href", "/events/evt-1/monitor");
   });
 });

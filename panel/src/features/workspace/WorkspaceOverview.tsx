@@ -6,6 +6,7 @@ import { Circle, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
+import { ReadinessStrip } from "./ReadinessStrip";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
@@ -66,6 +67,8 @@ export function WorkspaceOverview() {
         <p className="text-caption text-muted-foreground">{t("workspaceOverviewSubtitle")}</p>
       </div>
 
+      <ReadinessStrip steps={steps} />
+
       <Card>
         <CardHeader>
           <CardTitle>{t("workspaceWhatsNext")}</CardTitle>
@@ -76,7 +79,8 @@ export function WorkspaceOverview() {
               <Skeleton className="h-14 w-full" />
               <Skeleton className="h-14 w-full" />
             </>
-          ) : readiness.isError ? (
+          ) : /* retain-last-known-good: only surface the error when there is no cached data */
+          readiness.isError && !readiness.data ? (
             <p className="text-body text-destructive">{t("workspaceLoadError")}</p>
           ) : ready ? (
             <p className="text-body text-muted-foreground">{t("workspaceAllReady")}</p>

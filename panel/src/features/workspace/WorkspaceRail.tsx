@@ -25,7 +25,7 @@ export function WorkspaceRail({ eventId, readiness, active }: WorkspaceRailProps
   const total = steps?.filter((step) => step.status !== "skipped").length ?? 0;
 
   return (
-    <nav className="flex h-full w-[236px] flex-none flex-col gap-3 border-r border-border bg-background p-3 pb-4.5">
+    <nav aria-label={t("workspaceRailLabel")} className="flex h-full w-[236px] flex-none flex-col gap-3 border-r border-border bg-background p-3 pb-4.5">
       <div className="flex flex-col gap-1.5">
         {steps ? (
           <>

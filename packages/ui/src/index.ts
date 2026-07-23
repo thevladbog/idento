@@ -31,3 +31,5 @@ export { ConfirmDialog, type ConfirmDialogProps } from "./components/confirm-dia
 export { AGENT_STATES, AgentStatus, type AgentState, type AgentStatusProps } from "./components/agent-status";
 export { Calendar, type CalendarProps } from "./components/calendar";
 export { DatePicker, type DatePickerProps } from "./components/date-picker";
+export { TabBar, TabBarItem, type TabBarItemProps, type TabBarProps } from "./components/tab-bar";
+export { DesktopOnlyGate, type DesktopOnlyGateFlavor, type DesktopOnlyGateProps } from "./components/desktop-only-gate";

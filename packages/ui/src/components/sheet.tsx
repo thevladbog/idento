@@ -15,6 +15,8 @@ const sheetVariants = cva(
       side: {
         left: "inset-y-0 left-0 h-full w-3/4 max-w-xs border-r border-border data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left",
         right: "inset-y-0 right-0 h-full w-3/4 max-w-xs border-l border-border data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right",
+        bottom:
+          "inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t border-border pb-[max(1.5rem,env(safe-area-inset-bottom))] data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom",
       },
     },
     defaultVariants: { side: "left" },
@@ -36,7 +38,11 @@ export const SheetContent = React.forwardRef<
         // DialogContent close button (icon-only size-4 alone is 16px,
         // under the 24px floor; size-6 + flex-centering is this codebase's
         // established icon-button hit-target convention).
-        className="absolute right-4 top-4 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // Bottom sheets are phone-only chrome — 44px per the P6 adaptive rules (WCAG 2.5.5 level).
+        className={cn(
+          "absolute right-4 top-4 inline-flex items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          side === "bottom" ? "size-11" : "size-6",
+        )}
       >
         <X className="size-4" />
       </DialogPrimitive.Close>
