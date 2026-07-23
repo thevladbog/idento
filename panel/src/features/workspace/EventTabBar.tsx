@@ -4,6 +4,8 @@ import { Activity, LayoutGrid, MoreHorizontal, Search, Users } from "lucide-reac
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { MoreSheet } from "./MoreSheet";
+import { $api } from "../../shared/api/query";
+import { stationStaleness } from "../monitor/liveness";
 
 type EventTab = "overview" | "monitor" | "attendees" | "staff" | "other";
 
@@ -29,6 +31,25 @@ export function EventTabBar({ eventId }: { eventId: string }) {
   const active = useActiveEventTab();
   const [moreOpen, setMoreOpen] = React.useState(false);
 
+  // Board 8a — the Monitor tab's attention dot ("needs a look", never a
+  // count): lights when the monitor snapshot ALREADY IN CACHE reports a
+  // stale station. Cache-only by design (`enabled: false`): the tab bar
+  // renders on every workspace page and must never generate monitor
+  // traffic itself — the dot updates whenever the monitor page or Home's
+  // LiveStrip refreshes the shared snapshot. `Date.now()` per render (no
+  // ticker): a passive indicator that re-evaluates on cache updates is
+  // enough; MonitorPage owns the live-ticking presentation.
+  const snapshot = $api.useQuery(
+    "get",
+    "/api/events/{event_id}/monitor",
+    { params: { path: { event_id: eventId } } },
+    { enabled: false },
+  );
+  const now = Date.now();
+  const hasStaleStation = (snapshot.data?.stations ?? []).some(
+    (station) => station.last_seen_at && stationStaleness(station.last_seen_at, now).stale,
+  );
+
   return (
     <>
       <TabBar label={t("tabBarLabel")} className="fixed inset-x-0 bottom-0 z-40 md:hidden">
@@ -51,7 +72,12 @@ export function EventTabBar({ eventId }: { eventId: string }) {
           aria-current={active === "monitor" ? "page" : undefined}
           className="flex flex-1"
         >
-          <TabBarItem icon={Activity} label={t("tabBarMonitor")} active={active === "monitor"} />
+          <TabBarItem
+            icon={Activity}
+            label={t("tabBarMonitor")}
+            active={active === "monitor"}
+            badge={hasStaleStation ? t("tabBarMonitorAttention") : undefined}
+          />
         </Link>
         <Link
           to="/events/$eventId/attendees"

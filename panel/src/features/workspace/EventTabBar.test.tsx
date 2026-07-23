@@ -1,12 +1,29 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EventTabBar } from "./EventTabBar";
+import { MONITOR_SNAPSHOT_KEY } from "../monitor/hooks";
+import type { components } from "../../shared/api/schema";
 import "../../shared/i18n";
 
-function renderAt(path: string) {
+// Real generated MonitorSnapshot shape (components["schemas"]["MonitorSnapshot"],
+// schema.d.ts) — note MonitorStationRow keys its station by `id`, not
+// `station_id`, and `zone_id` is a required (nullable) field.
+const STALE_SNAPSHOT: components["schemas"]["MonitorSnapshot"] = {
+  totals: { checked_in: 10, total: 20, rate_per_min: 0, peak: null, est_done_at: null },
+  zones: [],
+  unattributed: 0,
+  stations: [
+    // last_seen_at far past STATION_STALE_MS (45s) relative to any test run.
+    { id: "st-1", name: "Kiosk A", zone_id: null, checkin_count: 10, last_seen_at: "2020-01-01T00:00:00Z" },
+  ],
+  recent: [],
+};
+
+function renderAt(path: string, seedSnapshot?: (queryClient: QueryClient) => void) {
   const rootRoute = createRootRoute();
   const appLayoutRoute = createRoute({ getParentRoute: () => rootRoute, id: "_app", component: () => <Outlet /> });
   const workspaceRoute = createRoute({
@@ -39,7 +56,13 @@ function renderAt(path: string) {
     ]),
   ]);
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
-  render(<RouterProvider router={router as never} />);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  seedSnapshot?.(queryClient);
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router as never} />
+    </QueryClientProvider>,
+  );
 }
 
 describe("EventTabBar", () => {
@@ -81,5 +104,20 @@ describe("EventTabBar", () => {
     const sheet = await screen.findByRole("dialog");
     await user.click(within(sheet).getByRole("link", { name: /Badge editor/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("shows the attention dot with an sr-only label when the cached snapshot has a stale station", async () => {
+    renderAt("/events/evt-1", (queryClient) => {
+      queryClient.setQueryData(MONITOR_SNAPSHOT_KEY("evt-1"), STALE_SNAPSHOT);
+    });
+    const bar = await screen.findByRole("navigation", { name: "Event sections" });
+    expect(within(bar).getByTestId("tab-bar-badge")).toBeInTheDocument();
+    expect(within(bar).getByText("A station needs attention")).toHaveClass("sr-only");
+  });
+
+  it("shows no dot when nothing is cached (and never fetches on its own)", async () => {
+    renderAt("/events/evt-1");
+    const bar = await screen.findByRole("navigation", { name: "Event sections" });
+    expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
   });
 });
