@@ -7,10 +7,12 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
 import { AttendeeDrawer } from "./AttendeeDrawer";
+import { AttendeeSearchList } from "./AttendeeSearchList";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
 import { ImportWizard } from "./import/ImportWizard";
+import { useIsMobile } from "../../shared/hooks/useIsMobile";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 import type { AttendeesSearch } from "./searchParams";
 
@@ -42,6 +44,7 @@ export function AttendeesPage() {
   const { eventId } = routeApi.useParams();
   const search = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
+  const isMobile = useIsMobile();
 
   const page = search.page ?? 1;
 
@@ -223,10 +226,13 @@ export function AttendeesPage() {
           </SelectContent>
         </Select>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto hidden items-center gap-2 md:flex">
           {/* Import CSV opens the wizard to step 1 (Task 11); the wizard's
               own steps 2-3 (column mapping, chunked import) land in Tasks
-              12-13. + Add attendee is wired by Task 7. */}
+              12-13. + Add attendee is wired by Task 7. CSV import and bulk
+              add stay desktop-only per board 8g's own hint text (P6.3 T3) —
+              the zone/status filters above stay visible on phone since
+              they're useful for narrowing search there too. */}
           <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
             {t("attendeesImportCsv")}
           </Button>
@@ -236,7 +242,15 @@ export function AttendeesPage() {
         </div>
       </div>
 
-      {attendeesQuery.isLoading ? (
+      {isMobile ? (
+        <AttendeeSearchList
+          eventId={eventId}
+          search={search.search}
+          zone={search.zone}
+          status={search.status}
+          onRowClick={openAttendee}
+        />
+      ) : attendeesQuery.isLoading ? (
         <AttendeesTableSkeleton />
       ) : attendeesQuery.isError ? (
         <div className="flex flex-col items-start gap-2 rounded-lg border border-border p-6">

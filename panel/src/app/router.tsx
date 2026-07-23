@@ -131,14 +131,7 @@ const eventAttendeesRoute = createRoute({
   getParentRoute: () => eventWorkspaceRoute,
   path: "/attendees",
   validateSearch: validateAttendeesSearch,
-  // TEMPORARY gate (P6.1): the attendees table cannot reflow at 390px.
-  // P6.3 replaces this gate with the phone search-first list (board 8g) —
-  // remove the DesktopOnly wrapper there, don't extend it.
-  component: () => (
-    <DesktopOnly flavor="bulk-data" titleKey="gateAttendeesTitle" reasonKey="gateAttendeesReason">
-      <AttendeesPage />
-    </DesktopOnly>
-  ),
+  component: AttendeesPage,
 });
 
 const eventZonesRoute = createRoute({
