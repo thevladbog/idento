@@ -101,4 +101,19 @@ describe("AttendeeSearchList", () => {
     expect(await screen.findByText("No matches")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /import/i })).not.toBeInTheDocument();
   });
+
+  // A real venue's flaky Wi-Fi during check-in is exactly when staff would
+  // hit this: an errored query must not be indistinguishable from a
+  // genuinely empty search result -- same error/retry pattern
+  // AttendeesPage.tsx's desktop AttendeeTable branch already uses for this
+  // exact query (attendeesLoadError + retry, not a new key pair).
+  it("shows an error state with a retry affordance instead of a misleading no-matches message when the query fails", async () => {
+    server.use(
+      http.get("http://api.test/api/events/:eventId/attendees", () => HttpResponse.json({ error: "boom" }, { status: 500 })),
+    );
+    renderList();
+    expect(await screen.findByText("Couldn't load attendees.")).toBeInTheDocument();
+    expect(screen.queryByText("No matches")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
 });

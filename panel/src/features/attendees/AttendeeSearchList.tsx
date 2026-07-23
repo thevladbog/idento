@@ -1,4 +1,4 @@
-import { StatusPill } from "@idento/ui";
+import { Button, StatusPill } from "@idento/ui";
 import { useTranslation } from "react-i18next";
 import { useAttendeesPage } from "./hooks";
 import type { components } from "../../shared/api/schema";
@@ -37,6 +37,22 @@ export function AttendeeSearchList({ eventId, search, zone, status, onRowClick }
         {Array.from({ length: 4 }, (_, i) => (
           <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />
         ))}
+      </div>
+    );
+  }
+
+  // Same distinction AttendeesPage.tsx's desktop AttendeeTable branch already
+  // makes for this exact query -- without it, a flaky-network error falls
+  // straight into the `rows.length === 0` branch below and renders "No
+  // matches", indistinguishable from a genuinely empty search result (no
+  // retry affordance, misleading on a real venue's Wi-Fi).
+  if (query.isError) {
+    return (
+      <div className="flex flex-col items-start gap-2 rounded-lg border border-border p-4">
+        <p className="text-body text-destructive">{t("attendeesLoadError")}</p>
+        <Button type="button" variant="outline" onClick={() => query.refetch()}>
+          {t("retry")}
+        </Button>
       </div>
     );
   }
