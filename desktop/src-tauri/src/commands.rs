@@ -369,15 +369,38 @@ pub fn enter_lockdown(app: AppHandle, state: State<'_, LockdownState>) -> Result
 /// (see the desktop `StaffExitOverlay` component, Task 5) -- never
 /// reachable from window-close or keyboard shortcuts, since those are
 /// blocked outright while locked down.
+///
+/// Attempts all four window-property restorations regardless of whether an
+/// earlier one failed (a `?`-chain would abandon the rest after the first
+/// error, leaving the window partially locked-looking) and clears
+/// `LockdownState` unconditionally afterward, even if some restorations
+/// failed. The flag is deliberately NOT held true pending full success: it
+/// exists only to gate the close-guard (see `lib.rs`), and the one failure
+/// mode that must never happen is a user trapped unable to close the
+/// window. Any per-property errors are still surfaced in the returned
+/// `Err` for diagnostics (see the TS caller's `console.error` logging).
 #[tauri::command]
 pub fn exit_lockdown(app: AppHandle, state: State<'_, LockdownState>) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or_else(|| "No main window".to_string())?;
+    let mut errors = Vec::new();
+    if let Err(e) = window.set_skip_taskbar(false) {
+        errors.push(e.to_string());
+    }
+    if let Err(e) = window.set_always_on_top(false) {
+        errors.push(e.to_string());
+    }
+    if let Err(e) = window.set_decorations(true) {
+        errors.push(e.to_string());
+    }
+    if let Err(e) = window.set_fullscreen(false) {
+        errors.push(e.to_string());
+    }
     *state.0.lock().map_err(|e| e.to_string())? = false;
-    window.set_skip_taskbar(false).map_err(|e| e.to_string())?;
-    window.set_always_on_top(false).map_err(|e| e.to_string())?;
-    window.set_decorations(true).map_err(|e| e.to_string())?;
-    window.set_fullscreen(false).map_err(|e| e.to_string())?;
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }
 
 #[cfg(test)]

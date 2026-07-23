@@ -85,7 +85,12 @@ export default function SelfServicePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flow.state.status, flow.state.verdict, settings.verdict_auto_dismiss_sec]);
 
-  const scanEnabled = flow.state.status === "idle" && connection.online && !printerGateActive;
+  // Unlike staffed Run.tsx (where an operator can see the agent-down status
+  // and intervene), self-service has nobody watching -- so it must actually
+  // stop accepting scans when the "Station temporarily unavailable" banner
+  // (below) is showing, not just display the banner alongside a still-live
+  // scanner.
+  const scanEnabled = flow.state.status === "idle" && connection.online && Boolean(agentHealth.data) && !printerGateActive;
 
   // checkin-settings is event-wide (shared with any staffed station on the
   // same event) -- a "manual" value could be inherited mid-session from a

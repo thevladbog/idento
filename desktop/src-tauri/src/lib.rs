@@ -49,7 +49,7 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Idento Kiosk")
-        .run(|app_handle, event| {
+        .run(|app_handle, event| match &event {
             // tauri-plugin-shell's own on_event hook kills children it
             // spawned via its JS-invoked IPC command on RunEvent::Exit --
             // it does not cover commands::spawn_agent, which calls
@@ -61,10 +61,31 @@ pub fn run() {
             // also triggers this same Exit event, so the sidecar is
             // cleanly stopped before the app relaunches post-update, with
             // no special-casing needed here.
-            if let RunEvent::Exit = event {
+            RunEvent::Exit => {
                 if let Some(state) = app_handle.try_state::<commands::AgentProcess>() {
                     commands::kill_agent_process(&state);
                 }
             }
+            // Self-service lockdown (K2b), the app-level counterpart to
+            // on_window_event's CloseRequested guard above: macOS Cmd+Q
+            // and other "quit the whole app" paths raise ExitRequested
+            // directly, never routing through a window's CloseRequested
+            // event at all -- on_window_event alone does not cover them.
+            // Same fail-open semantics as the close guard. Safe against
+            // K3b's auto-update restart: AppHandle::request_restart()
+            // raises ExitRequested with code Some(RESTART_EXIT_CODE), and
+            // ExitRequestApi::prevent_exit() is a documented no-op for
+            // that code (verified in the vendored tauri-2.11.5 source) --
+            // calling it here unconditionally can never block a restart.
+            RunEvent::ExitRequested { api, .. } => {
+                let locked = app_handle
+                    .try_state::<commands::LockdownState>()
+                    .map(|state| state.0.lock().map(|guard| *guard).unwrap_or(false))
+                    .unwrap_or(false);
+                if locked {
+                    api.prevent_exit();
+                }
+            }
+            _ => {}
         });
 }
