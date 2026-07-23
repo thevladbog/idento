@@ -757,6 +757,7 @@
   "equipmentWizardScanTestWarn": "Scan confirmed — but the server didn't record the test. It will sync on the next visit.",
   "equipmentDownloadPairingQr": "Download pairing QR",
   "equipmentExportPrinters": "Export printers (CSV)",
+  "equipmentDownloadError": "Couldn't download the file. Please try again.",
   "gateCopyLink": "Copy link for desktop",
   "gateLinkCopied": "Link copied",
   "gateCopyFailed": "Couldn't copy link",

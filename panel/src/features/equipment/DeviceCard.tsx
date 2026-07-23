@@ -237,6 +237,9 @@ export function DeviceCard({
                       </span>
                     )}
                   </div>
+                  {/* Agent-dependent inline actions -- hidden entirely while
+                      the agent is down (the card's intentional "unreachable"
+                      degraded state). */}
                   {!agentDown ? (
                     <>
                       {liveness === "not_seen" ? (
@@ -254,47 +257,62 @@ export function DeviceCard({
                           {t("equipmentTestScan")}
                         </Button>
                       ) : null}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          {/* PR #83 bot-review round 1, Finding 10: was a
-                              hand-rolled styled <button> -- panel/AGENTS.md
-                              mandates @idento/ui primitives. Same
-                              ghost/icon trigger composition as
-                              ThemeSwitcher.tsx/LanguageSwitcher.tsx's own
-                              DropdownMenuTrigger asChild + Button. */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t("equipmentRowMenuLabel", { name: device.display_name })}
-                            className="size-auto shrink-0 p-1.5 text-muted-foreground"
-                          >
-                            ⋯
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => onRename(device)}>{t("equipmentRename")}</DropdownMenuItem>
-                          {onEditAddress && device.kind === "network" ? (
-                            <DropdownMenuItem onSelect={() => onEditAddress(device)}>
-                              {t("equipmentEditAddress")}
-                            </DropdownMenuItem>
-                          ) : null}
-                          {onDownloadPairingQr && device.kind === "network" ? (
-                            <DropdownMenuItem onSelect={() => onDownloadPairingQr(device)}>
-                              {t("equipmentDownloadPairingQr")}
-                            </DropdownMenuItem>
-                          ) : null}
-                          {showDefaultControls ? (
-                            <DropdownMenuItem
-                              onSelect={() => (device.is_default ? onClearDefault(device) : onSetDefault(device))}
-                            >
-                              {t(device.is_default ? "equipmentClearDefault" : "equipmentSetDefault")}
-                            </DropdownMenuItem>
-                          ) : null}
-                          <DropdownMenuItem onSelect={() => onDelete(device)}>{t("equipmentDelete")}</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </>
+                  ) : null}
+                  {/* Row menu. Every item EXCEPT "Download pairing QR" is
+                      agent-dependent and hidden while the agent is down; the
+                      pairing QR is generated server-side from the
+                      tenant-scoped stored config and needs no live agent, so
+                      it stays reachable in the degraded state (CodeRabbit
+                      PR #109 finding 1). The trigger renders only when it
+                      would hold at least one item -- so an agent-down device
+                      with no server-side action (e.g. a system printer, or
+                      any scanner) still shows no menu, exactly as before. */}
+                  {!agentDown || (onDownloadPairingQr && device.kind === "network") ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        {/* PR #83 bot-review round 1, Finding 10: was a
+                            hand-rolled styled <button> -- panel/AGENTS.md
+                            mandates @idento/ui primitives. Same
+                            ghost/icon trigger composition as
+                            ThemeSwitcher.tsx/LanguageSwitcher.tsx's own
+                            DropdownMenuTrigger asChild + Button. */}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("equipmentRowMenuLabel", { name: device.display_name })}
+                          className="size-auto shrink-0 p-1.5 text-muted-foreground"
+                        >
+                          ⋯
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {!agentDown ? (
+                          <DropdownMenuItem onSelect={() => onRename(device)}>{t("equipmentRename")}</DropdownMenuItem>
+                        ) : null}
+                        {!agentDown && onEditAddress && device.kind === "network" ? (
+                          <DropdownMenuItem onSelect={() => onEditAddress(device)}>
+                            {t("equipmentEditAddress")}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {onDownloadPairingQr && device.kind === "network" ? (
+                          <DropdownMenuItem onSelect={() => onDownloadPairingQr(device)}>
+                            {t("equipmentDownloadPairingQr")}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {!agentDown && showDefaultControls ? (
+                          <DropdownMenuItem
+                            onSelect={() => (device.is_default ? onClearDefault(device) : onSetDefault(device))}
+                          >
+                            {t(device.is_default ? "equipmentClearDefault" : "equipmentSetDefault")}
+                          </DropdownMenuItem>
+                        ) : null}
+                        {!agentDown ? (
+                          <DropdownMenuItem onSelect={() => onDelete(device)}>{t("equipmentDelete")}</DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : null}
                 </div>
               );

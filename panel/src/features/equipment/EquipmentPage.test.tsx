@@ -19,9 +19,13 @@ import "../../shared/i18n";
 // (button/menu item calls the right function with the right args) rather
 // than re-proving Task 5's own fetch/blob/filename mechanics (already
 // covered by pairingExport.test.ts).
+// Both stubs resolve by default (the real helpers return Promise<void>): the
+// call sites now attach `.catch(...)` to surface download failures, so a
+// non-thenable return would throw. Individual tests override with
+// `mockRejectedValueOnce` to exercise the failure path.
 vi.mock("./pairingExport", () => ({
-  downloadPrinterPairingQr: vi.fn(),
-  downloadPrinterPairingCsv: vi.fn(),
+  downloadPrinterPairingQr: vi.fn().mockResolvedValue(undefined),
+  downloadPrinterPairingCsv: vi.fn().mockResolvedValue(undefined),
 }));
 
 const AGENT_INFO = {
@@ -1331,6 +1335,81 @@ describe("EquipmentPage", () => {
       await userEvent.click(await screen.findByText("Download pairing QR"));
 
       expect(downloadPrinterPairingQr).toHaveBeenCalledWith(printer.id, printer.display_name);
+    });
+
+    // CodeRabbit PR #109 finding 1: the pairing QR is built server-side from
+    // the tenant-scoped stored config, so it needs no live agent -- it must
+    // stay reachable on a network printer's row menu even in the board-5d
+    // agent-down degraded state, while the genuinely agent-dependent items
+    // (Edit address / Make default / Delete) stay hidden as before.
+    it("keeps 'Download pairing QR' reachable while the agent is down, with agent-dependent actions still hidden", async () => {
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      agentHealthOk = false;
+      const printer = printerNotSeen(); // kind: "network"
+      machineDevices = [printer];
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByTestId(`equipment-device-row-${printer.id}`);
+      await user.click(within(row).getByRole("button", { name: `More actions for ${printer.display_name}` }));
+
+      // The degraded state hides every agent-dependent action.
+      expect(screen.queryByRole("menuitem", { name: "Edit address…" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Make default" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument();
+
+      // But the server-side pairing QR download survives the outage.
+      await user.click(await screen.findByRole("menuitem", { name: "Download pairing QR" }));
+      expect(downloadPrinterPairingQr).toHaveBeenCalledWith(printer.id, printer.display_name);
+    });
+
+    // A non-network row (system printer) has no pairing QR, so it still shows
+    // no row menu at all while the agent is down -- the degraded state is
+    // untouched for devices without a server-side action.
+    it("shows no row menu for a system printer while the agent is down", async () => {
+      localStorage.setItem("idento.agent-info.http://agent.test", JSON.stringify(AGENT_INFO));
+      agentHealthOk = false;
+      const systemPrinter = printerLive(); // kind: "system"
+      machineDevices = [systemPrinter];
+      renderPage();
+
+      const row = await screen.findByTestId(`equipment-device-row-${systemPrinter.id}`);
+      expect(within(row).queryByRole("button")).not.toBeInTheDocument();
+    });
+
+    // CodeRabbit PR #109 finding 2: a failed pairing-QR download used to be
+    // swallowed by `void` -- the operator saw nothing. It now surfaces a
+    // dismissible destructive banner (same shape as the mirror-warning
+    // banners this page already renders).
+    it("surfaces a dismissible error when a pairing QR download fails", async () => {
+      const printer = printerNotSeen();
+      machineDevices = [printer];
+      vi.mocked(downloadPrinterPairingQr).mockRejectedValueOnce(new Error("network"));
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(await screen.findByRole("button", { name: `More actions for ${printer.display_name}` }));
+      await user.click(await screen.findByRole("menuitem", { name: "Download pairing QR" }));
+
+      const err = await screen.findByTestId("equipment-download-error");
+      expect(err).toHaveTextContent("Couldn't download the file");
+
+      await user.click(within(err).getByRole("button", { name: "Close" }));
+      expect(screen.queryByTestId("equipment-download-error")).not.toBeInTheDocument();
+    });
+
+    // The CSV export shares the same download-error surface.
+    it("surfaces an error when the CSV export fails", async () => {
+      const printer = printerNotSeen();
+      machineDevices = [printer];
+      vi.mocked(downloadPrinterPairingCsv).mockRejectedValueOnce(new Error("network"));
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByTestId(`equipment-device-row-${printer.id}`);
+      await user.click(await screen.findByRole("button", { name: "Export printers (CSV)" }));
+
+      expect(await screen.findByTestId("equipment-download-error")).toHaveTextContent("Couldn't download the file");
     });
   });
 
