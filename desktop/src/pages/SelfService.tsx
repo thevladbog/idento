@@ -36,9 +36,12 @@ export default function SelfServicePage() {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         if (active) await invoke("enter_lockdown");
-      } catch {
+      } catch (error) {
         // Not running under Tauri (e.g. plain browser dev) -- no window to
         // lock down; the rest of the page still functions for local dev.
+        // Still logged: in production this would mean lockdown silently
+        // failed to engage.
+        console.error("enter_lockdown failed (SelfServicePage mount):", error);
       }
     })();
     return () => {
@@ -47,8 +50,9 @@ export default function SelfServicePage() {
         try {
           const { invoke } = await import("@tauri-apps/api/core");
           await invoke("exit_lockdown");
-        } catch {
+        } catch (error) {
           // Same non-Tauri dev fallback as above.
+          console.error("exit_lockdown failed (SelfServicePage unmount):", error);
         }
       })();
     };

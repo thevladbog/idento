@@ -39,9 +39,11 @@ export function StaffExitOverlay() {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
         await invoke("exit_lockdown");
-      } catch {
+      } catch (error) {
         // Not running under Tauri (e.g. plain browser dev) -- nothing to
-        // reverse; the Mode navigation below still happens.
+        // reverse; the Mode navigation below still happens. Still logged:
+        // in production this would mean lockdown silently failed to release.
+        console.error("exit_lockdown failed (StaffExitOverlay):", error);
       }
       navigate(`/checkin/${eventId}/mode`);
     } catch (err: unknown) {
