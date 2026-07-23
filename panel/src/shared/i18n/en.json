@@ -755,6 +755,8 @@
   "equipmentWizardAgentUnreachable": "Can't reach the local agent — plug it in and try again.",
   "equipmentWizardComAddError": "Couldn't add the scanner.",
   "equipmentWizardScanTestWarn": "Scan confirmed — but the server didn't record the test. It will sync on the next visit.",
+  "equipmentDownloadPairingQr": "Download pairing QR",
+  "equipmentExportPrinters": "Export printers (CSV)",
   "gateCopyLink": "Copy link for desktop",
   "gateLinkCopied": "Link copied",
   "gateCopyFailed": "Couldn't copy link",

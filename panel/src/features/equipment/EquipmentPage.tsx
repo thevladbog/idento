@@ -30,6 +30,7 @@ import {
   isEmptyRegistry, useDeleteDevice, useEquipmentMachine, usePatchDevice, useSetDefaultPrinter, useUpsertMachine,
   type EquipmentDevice,
 } from "./hooks";
+import { downloadPrinterPairingCsv, downloadPrinterPairingQr } from "./pairingExport";
 import { PrinterWizard, type PrinterWizardPrefill, type PrinterWizardRetest } from "./PrinterWizard";
 import { computeSeenDeviceIds, deviceLiveness, unsavedLivePrinters } from "./reconcile";
 import { ScannerWizard } from "./ScannerWizard";
@@ -360,6 +361,12 @@ export function EquipmentPage() {
     .filter((device) => device.class === "scanner")
     .map((device) => ({ device, liveness: deviceLiveness(device, printers.printers, scanners.scanners) }));
   const unsavedPrinters = unsavedLivePrinters(devices, printers.printers);
+  // P4.3 Task 6 (printer pairing QR export) -- the hub's "Export printers
+  // (CSV)" button gate: enabled iff at least one registry printer row is a
+  // network printer (the only kind the backend's pairing-export endpoints
+  // (Tasks 3/4) serve; a tenant with system printers only has nothing to
+  // export).
+  const hasNetworkPrinter = printerRows.some((row) => row.device.kind === "network");
 
   const agentDown = agentInfo.state === "disconnected";
   // PR #83 bot-review round 2, Finding 8: whether the agent can actually
@@ -453,7 +460,21 @@ export function EquipmentPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-page-title">{t("equipmentTitle")}</h1>
         <span className="text-caption text-muted-foreground">{t("equipmentCaption")}</span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {/* P4.3 Task 6 (printer pairing QR export) -- tenant-wide CSV of
+              every saved network printer (Task 4's export endpoint), gated
+              on at least one existing network-printer row -- nothing honest
+              to export otherwise. */}
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={!hasNetworkPrinter}
+            onClick={() => {
+              void downloadPrinterPairingCsv();
+            }}
+          >
+            {t("equipmentExportPrinters")}
+          </Button>
           {/* Task 8 wired the Printer option to the real wizard; Task 9
               wires Scanner the same way -- the last `wizard-todo`
               placeholder on this page is gone. */}
@@ -534,6 +555,9 @@ export function EquipmentPage() {
               }
               onDelete={(device) => setDialog({ kind: "delete", device })}
               onEditAddress={(device) => setDialog({ kind: "edit-address", device })}
+              onDownloadPairingQr={(device) => {
+                void downloadPrinterPairingQr(device.id, device.display_name);
+              }}
               onRetryLive={() => void printers.refetch()}
               onSetUp={() => openCreateWizard()}
               onSaveUnsaved={(printer: AgentPrinter) => openCreateWizard({ agentName: printer.name, type: printer.type })}

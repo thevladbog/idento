@@ -9,8 +9,20 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { delay, http, HttpResponse } from "msw";
 import { EquipmentPage } from "./EquipmentPage";
+import { downloadPrinterPairingCsv, downloadPrinterPairingQr } from "./pairingExport";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
+
+// Task 6 -- the hub's own "Export printers (CSV)" button and a network
+// printer row's "Download pairing QR" menu item are thin wiring around
+// Task 5's pairingExport module; mocked here so these tests assert the WHAT
+// (button/menu item calls the right function with the right args) rather
+// than re-proving Task 5's own fetch/blob/filename mechanics (already
+// covered by pairingExport.test.ts).
+vi.mock("./pairingExport", () => ({
+  downloadPrinterPairingQr: vi.fn(),
+  downloadPrinterPairingCsv: vi.fn(),
+}));
 
 const AGENT_INFO = {
   machine_id: "mach-1",
@@ -1261,6 +1273,51 @@ describe("EquipmentPage", () => {
         ]),
       );
       await waitFor(() => expect(agentPrintersFetchCount).toBeGreaterThan(fetchesBeforeSave));
+    });
+  });
+
+  // Task 6 -- the hub's "Export printers (CSV)" header button and a network
+  // printer row's "Download pairing QR" menu item, both thin wiring onto
+  // Task 5's pairingExport module (mocked above). printerNotSeen() is this
+  // file's own `kind: "network"` fixture (printerLive() is `kind: "system"`
+  // -- see its own definition above), and scannerWedge() is a non-network
+  // device for the "no network printer" gate.
+  describe("printer pairing export (Task 6)", () => {
+    it("enables Export printers and downloads the CSV when a network printer exists", async () => {
+      const printer = printerNotSeen();
+      machineDevices = [printer];
+      renderPage();
+
+      // Wait for the registry fetch to resolve and the network printer row
+      // to actually render before checking the header button's gated state
+      // -- otherwise the assertion below can observe the pre-load render,
+      // where devices is still [] and the button is disabled by default.
+      await screen.findByTestId(`equipment-device-row-${printer.id}`);
+      const exportBtn = await screen.findByRole("button", { name: "Export printers (CSV)" });
+      expect(exportBtn).toBeEnabled();
+
+      await userEvent.click(exportBtn);
+      expect(downloadPrinterPairingCsv).toHaveBeenCalledTimes(1);
+    });
+
+    it("disables Export printers when there is no network printer", async () => {
+      machineDevices = [scannerWedge()];
+      renderPage();
+      const exportBtn = await screen.findByRole("button", { name: "Export printers (CSV)" });
+      expect(exportBtn).toBeDisabled();
+    });
+
+    it("downloads a pairing QR from a network printer's row menu", async () => {
+      const printer = printerNotSeen();
+      machineDevices = [printer];
+      renderPage();
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: `More actions for ${printer.display_name}` }),
+      );
+      await userEvent.click(await screen.findByText("Download pairing QR"));
+
+      expect(downloadPrinterPairingQr).toHaveBeenCalledWith(printer.id, printer.display_name);
     });
   });
 

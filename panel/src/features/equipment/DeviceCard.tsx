@@ -68,6 +68,12 @@ export interface DeviceCardProps {
   // column has this concept" shape) -- undefined for the scanner column,
   // same "no affordance, not a disabled one" convention as onTestPrint.
   onEditAddress?: (device: EquipmentDevice) => void;
+  // P4.3 Task 6 (printer pairing QR export) -- row-menu "Download pairing
+  // QR" action, same "network printer row only" gate as onEditAddress above
+  // (only a network printer's registry row carries the ip/port that
+  // PrinterQRData needs). Printer-column only -- undefined for the scanner
+  // column, same "no affordance, not a disabled one" convention.
+  onDownloadPairingQr?: (device: EquipmentDevice) => void;
   onRetryLive: () => void;
   // P4.3 Task 8 -- when provided, the header + empty-state "+ Set up …"
   // buttons become the REAL enabled affordance (opens the class's wizard)
@@ -121,8 +127,8 @@ function formatNotSeenDate(iso: string, locale: string): string {
 
 export function DeviceCard({
   testId, icon: Icon, titleText, emptyTitle, footerText, setUpLabel, rows, unsavedPrinters = [], agentDown,
-  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onEditAddress, onRetryLive, onSetUp,
-  onSaveUnsaved, onTestPrint, onTestScan, disableActions = false,
+  showDefaultControls, onRename, onSetDefault, onClearDefault, onDelete, onEditAddress, onDownloadPairingQr,
+  onRetryLive, onSetUp, onSaveUnsaved, onTestPrint, onTestScan, disableActions = false,
 }: DeviceCardProps) {
   const { t, i18n } = useTranslation();
   const isEmpty = rows.length === 0 && unsavedPrinters.length === 0;
@@ -271,6 +277,11 @@ export function DeviceCard({
                           {onEditAddress && device.kind === "network" ? (
                             <DropdownMenuItem onSelect={() => onEditAddress(device)}>
                               {t("equipmentEditAddress")}
+                            </DropdownMenuItem>
+                          ) : null}
+                          {onDownloadPairingQr && device.kind === "network" ? (
+                            <DropdownMenuItem onSelect={() => onDownloadPairingQr(device)}>
+                              {t("equipmentDownloadPairingQr")}
                             </DropdownMenuItem>
                           ) : null}
                           {showDefaultControls ? (
