@@ -1,7 +1,7 @@
 import { cn } from "@idento/ui";
 import { Check, Circle, MinusCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
+import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
 import type { components } from "../../shared/api/schema";
 
 type ReadinessStep = components["schemas"]["ReadinessStep"];

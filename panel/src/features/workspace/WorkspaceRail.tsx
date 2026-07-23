@@ -2,7 +2,7 @@ import { cn, Separator, Skeleton } from "@idento/ui";
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, Circle, Lock, MinusCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
+import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
 import type { components } from "../../shared/api/schema";
 
 type EventReadinessResponse = components["schemas"]["EventReadinessResponse"];

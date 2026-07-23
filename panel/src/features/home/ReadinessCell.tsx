@@ -2,18 +2,10 @@ import { cn, Skeleton, StatusPill, Tooltip, TooltipContent, TooltipProvider, Too
 import { CheckCircle2, Circle, MinusCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { components } from "../../shared/api/schema";
+import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
 
 type EventReadinessResponse = components["schemas"]["EventReadinessResponse"];
 type ReadinessStep = components["schemas"]["ReadinessStep"];
-
-// eslint-disable-next-line react-refresh/only-export-components -- Shared step-label lookup belongs with the readiness pipeline it describes; not a real Fast Refresh issue for this pattern.
-export const STEP_LABEL_KEYS: Record<ReadinessStep["key"], string> = {
-  attendees: "readinessStepAttendees",
-  badge: "readinessStepBadge",
-  zones: "readinessStepZones",
-  staff: "readinessStepStaff",
-  equipment: "readinessStepEquipment",
-};
 
 export interface ReadinessCellProps {
   readiness: EventReadinessResponse | undefined;
