@@ -19,6 +19,12 @@ const CHECKED_IN = {
   packet_delivered: false, created_at: "", updated_at: "",
 };
 
+const BLOCKED = {
+  id: "att-3", event_id: "evt-1", first_name: "Павел", last_name: "Иванченко", email: "p@x.com",
+  company: "Freelance", code: "QR-12064", checkin_status: false, printed_count: 0, blocked: true,
+  block_reason: "Suspicious badge sharing", packet_delivered: false, created_at: "", updated_at: "",
+};
+
 // Registered once at module scope (matches AttendeeSearchList.test.tsx's own
 // convention/comment on this exact hazard: calling `startMswServer(...)` from
 // *inside* each `it()` body registers the server's beforeAll/afterEach/
@@ -173,5 +179,45 @@ describe("AttendeeCard — checked in", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Заблокировать" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+});
+
+describe("AttendeeCard — blocked", () => {
+  // Same locale-switch convention as the other describe blocks in this file.
+  // GET /attendees/:id is overridden to the BLOCKED fixture for every test
+  // in this block (regardless of checkin_status — blocked overrides it).
+  beforeEach(async () => {
+    await i18n.changeLanguage("ru");
+    window.__ENV__ = { API_URL: "http://api.test" };
+    server.use(http.get("http://api.test/api/attendees/:id", () => HttpResponse.json(BLOCKED)));
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
+  it("renders the blocked status card with the block reason, no Check-in/Block affordances, and an Unblock control", async () => {
+    renderCard();
+    expect(await screen.findByText("Заблокирован")).toBeInTheDocument();
+    expect(screen.getByText("Suspicious badge sharing")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Зарегистрировать вручную/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Заблокировать$/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Показать QR/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Разблокировать/ })).toBeInTheDocument();
+  });
+
+  it("fires the unblock mutation when Unblock is clicked", async () => {
+    let requested = false;
+    server.use(
+      http.post("http://api.test/api/attendees/:id/unblock", ({ params }) => {
+        requested = true;
+        expect(params.id).toBe("att-2");
+        return HttpResponse.json({ id: "att-2", blocked: false });
+      }),
+    );
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole("button", { name: /Разблокировать/ }));
+    await waitFor(() => expect(requested).toBe(true));
   });
 });

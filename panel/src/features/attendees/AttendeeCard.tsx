@@ -1,10 +1,10 @@
 import { Button, ConfirmDialog, QrDisplay, Skeleton } from "@idento/ui";
-import { ArrowLeft, Check, IdCard, ShieldOff, Undo2 } from "lucide-react";
+import { ArrowLeft, Ban, Check, IdCard, ShieldOff, Undo2 } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { CheckInConfirmSheet } from "./CheckInConfirmSheet";
-import { useAttendeeDetail, useAttendeeZoneAccess, useBlockAttendee, useEventZones } from "./hooks";
+import { useAttendeeDetail, useAttendeeZoneAccess, useBlockAttendee, useEventZones, useUnblockAttendee } from "./hooks";
 import { useUndoCheckin } from "../checkin/hooks";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
@@ -36,6 +36,7 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
   // whether or not they're checked in (design intent per board 8h/8i), so
   // there's no reason for two separate implementations.
   const blockAttendee = useBlockAttendee(eventId);
+  const unblockAttendee = useUnblockAttendee(eventId);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [qrOpen, setQrOpen] = React.useState(false);
   const [undoOpen, setUndoOpen] = React.useState(false);
@@ -132,7 +133,42 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         </div>
       </div>
 
-      {!attendee.checkin_status ? (
+      {attendee.blocked ? (
+        <>
+          {/* Blocked overrides checked-in/not-checked-in entirely -- a
+              blocked attendee gets no "Check in manually" (invalid: the
+              endpoint would just come back "blocked" again per
+              CheckInConfirmSheet's own handling) and no "Block" button
+              (already blocked, so it'd be a no-op trap). Unblock is the only
+              action offered besides reading the badge QR. */}
+          <div className="flex items-center gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+            <span className="flex size-7.5 flex-none items-center justify-center rounded-full bg-destructive text-destructive-foreground">
+              <Ban aria-hidden className="size-3.5" />
+            </span>
+            <div>
+              <div className="text-body font-bold text-destructive">{t("attendeesStatusBlocked")}</div>
+              {attendee.block_reason ? (
+                <div className="text-caption text-destructive/80">{attendee.block_reason}</div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="min-h-11 flex-1 gap-1.5" onClick={() => setQrOpen(true)}>
+              <IdCard aria-hidden className="size-4" />
+              {t("attendeeCardShowQr")}
+            </Button>
+            <Button
+              variant="outline"
+              className="min-h-11 flex-1 gap-1.5"
+              onClick={() => unblockAttendee.mutate({ params: { path: { id: attendeeId } } })}
+            >
+              <ShieldOff aria-hidden className="size-4" />
+              {t("attendeeCardUnblock")}
+            </Button>
+          </div>
+        </>
+      ) : !attendee.checkin_status ? (
         <>
           <div className="flex items-center gap-2.5 rounded-lg border border-border bg-muted p-3">
             <span className="flex size-7.5 flex-none items-center justify-center rounded-full border-2 border-dashed border-muted-foreground/40 text-muted-foreground">
