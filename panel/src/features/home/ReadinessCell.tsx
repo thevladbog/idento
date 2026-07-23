@@ -5,7 +5,6 @@ import type { components } from "../../shared/api/schema";
 import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
 
 type EventReadinessResponse = components["schemas"]["EventReadinessResponse"];
-type ReadinessStep = components["schemas"]["ReadinessStep"];
 
 export interface ReadinessCellProps {
   readiness: EventReadinessResponse | undefined;
