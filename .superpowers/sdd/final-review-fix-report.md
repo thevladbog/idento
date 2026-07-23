@@ -1,111 +1,129 @@
-## Kiosk K3b — final whole-branch review fix report
+## Kiosk K2b — final whole-branch review fix report
 
-Branch: `claude/idento-kiosk-desktop-app-k3b`. Base for this fix pass: `cab822b`
-(K3b Task 6, "ALL 6 TASKS COMPLETE").
+Branch: `claude/idento-kiosk-desktop-app-k2b`.
 
-Note: this file previously held the K3a final-review fix report (three findings on the
-`k3` branch, commit `b4c7c48`). That content is superseded here — see git history on
-this branch (or the `k3` branch) for the K3a report if needed.
+Note: this file previously held the K3b final-review fix report. That content is
+superseded here — see git history on this branch (or the `k3b` branch) for the K3b
+report if needed.
 
-One Critical finding from the final whole-branch review was fixed in one commit.
+Two Important findings from the final whole-branch review were fixed in one commit.
 
-### Fix (Critical) — `bundle.createUpdaterArtifacts` never set anywhere
+### Finding 1 (more serious) — a background 401 strands the window in lockdown with no way out
 
-`createUpdaterArtifacts` is a Tauri config flag that defaults to `false`. Without it,
-`tauri build` produces ordinary app bundles but no `.sig` signature files and no updater
-metadata, so `tauri-action`'s `includeUpdaterJson: true` step has nothing to assemble
-`latest.json` from. Confirmed via `grep -rn createUpdaterArtifacts desktop/ .github/`
-returning zero matches before the fix. Left unfixed, the entire auto-update feature this
-K3b plan built would have shipped silently non-functional on the first real release: no
-build error, just the app's compiled-in update endpoint 404ing forever.
+`desktop/src/lib/api.ts`'s global axios response interceptor does a full webview
+document reload (`window.location.href = "/login?..."`) on any 401, on any authenticated
+background request. Self-service kiosks run long unattended sessions with recurring
+background requests (`useHeartbeat`'s 20s heartbeat POST, `useConnectionState`'s 20s
+self-refetch, check-in POSTs), so a 401 from an expired station JWT is an expected event,
+not an edge case. `window.location.href` tears down React's component tree without a
+guaranteed graceful unmount, so `SelfServicePage`'s unmount cleanup (which calls
+`invoke("exit_lockdown")`) is not reliably reached. `LockdownState` (Rust-side
+`Mutex<bool>`) and the window's actual OS properties (fullscreen, no decorations,
+always-on-top, close blocked) persist straight through the reload, because the reload
+only replaces the webview's document — it does not restart the Tauri process. Result: the
+app reloads to Login while still fully locked down, and neither `Login.tsx` nor staffed
+`Run.tsx` has any exit-lockdown affordance — the window can end up stuck with no in-app
+way out.
 
-Fix: added the flag to the release workflow's existing build-time `--config` patch
-mechanism, `.github/workflows/release-desktop.yml`'s "Write externalBin config patch"
-step, which already exists specifically so build-time-only values never need to be baked
-into the committed `tauri.conf.json`:
+**Fix:** added a new, independent, unconditional boot effect to
+`desktop/src/components/AgentLifecycle.tsx` (mounted once at the app root regardless of
+route, per its existing doc comment) that calls `invoke("exit_lockdown")` on every mount.
+Because `AgentLifecycle` lives inside the React tree, it re-mounts fresh whenever the
+webview's JS/DOM re-executes from scratch — including immediately after the hard
+`window.location.href` reload described above. The new effect is deliberately separate
+from the existing `spawn_agent` effect (which early-returns for external-agent mode) so
+lockdown release is never gated by agent-mode configuration. On a genuinely first-ever
+boot this is a harmless no-op, since `LockdownState` already defaults to `false` and the
+window is already unlocked; on a real "stranded" reload, it releases the stale Rust-side
+lock and the actual window properties before the user ever sees the Login page. It does
+not interfere with a later, genuine `SelfServicePage` mount in the same session, which
+calls `enter_lockdown` again as normal.
 
-```diff
--        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"]}}' > "${{ github.workspace }}/sidecar-config.json"
-+        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
-```
+### Finding 2 — silent `enter_lockdown`/`exit_lockdown` failures give no diagnostic signal
 
-This is deliberately **not** in the committed `desktop/src-tauri/tauri.conf.json`.
-`.github/workflows/ci.yml`'s `build-desktop` job (PR-time, `cd desktop && npm run tauri
-build`) has no `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` secrets in its environment at all
-(confirmed via `grep -n "TAURI_SIGNING" .github/workflows/ci.yml`, zero matches). If the
-flag were committed directly into `tauri.conf.json`, every desktop-touching PR's build
-would attempt to sign updater artifacts with no private key present and fail CI.
-Confining the flag to the release workflow's build-time config patch — which does have
-the signing secrets, injected into `tauri-action`'s own `env:` block — keeps PR CI
-unaffected and only enables signing where the secrets actually exist.
+The three call sites that invoke `enter_lockdown`/`exit_lockdown`
+(`SelfService.tsx`'s mount and unmount branches, `StaffExitOverlay.tsx`'s exit call, and
+now `AgentLifecycle.tsx`'s new boot effect) wrapped the IPC call in an empty `catch {}`,
+with no distinction between the benign "not running under Tauri" dev case and a genuine
+production IPC/window-API failure — which would mean the kiosk silently proceeded without
+the lockdown it believes it is under, a real safety-property violation for a feature that
+exists specifically to contain a physically-accessible unattended kiosk.
 
-Also added, per the reviewer's Minor recommendation, one short note to
-`desktop/README.md`'s "Auto-updates (one-time setup, before the first release)" section
-(right after its intro paragraph, before the `npx tauri signer generate` code block)
-explaining that `createUpdaterArtifacts` is injected by the release workflow at build
-time and is not something to add to the committed config — so a future reader doesn't
-get confused and add it to `tauri.conf.json` themselves:
+**Fix:** all four `catch` blocks (the three named above plus the new `AgentLifecycle`
+effect from Finding 1) now log the caught error via `console.error`, with a message
+identifying which lockdown call failed and from where, e.g.
+`console.error("enter_lockdown failed (SelfServicePage mount):", error)`. Behavior is
+unchanged — the surrounding flow still proceeds regardless (self-service still starts
+even if lockdown fails to engage; the Mode navigation in `StaffExitOverlay` still happens
+even if lockdown fails to release) — this only adds visibility. No special-casing to
+detect "not running under Tauri" was added, per the instructions: a developer running
+`vite dev` in a browser will just see an expected, harmless console error.
 
-> `bundle.createUpdaterArtifacts` (required for Tauri to emit `.sig` files and updater
-> metadata) is injected by `.github/workflows/release-desktop.yml`'s `--config` patch at
-> build time, not set in the committed `src-tauri/tauri.conf.json` -- PR-time CI builds
-> have no signing secrets, so baking it into the committed config would break every
-> desktop-touching PR.
+### Step-by-step trace of how the new `AgentLifecycle` effect breaks Finding 1's failure chain
+
+1. Self-service kiosk is running unattended on `/checkin/:eventId/self`; `SelfServicePage`
+   is mounted and `enter_lockdown` has engaged the Rust-side `LockdownState` and the real
+   OS window properties (fullscreen, no decorations, always-on-top, close blocked).
+2. The station's JWT expires. A background request fires — `useHeartbeat`'s 20s POST,
+   `useConnectionState`'s 20s self-refetch, or a check-in POST — and the server responds
+   401.
+3. `api.ts`'s global response interceptor calls `clearSession()` and, since the current
+   path does not start with `/login` or `/qr-login`, sets
+   `window.location.href = "/login?returnUrl=..."`.
+4. The webview performs a full document reload. React's component tree is torn down
+   without a guaranteed unmount pass, so `SelfServicePage`'s cleanup function (which would
+   have called `exit_lockdown`) is not reliably reached. `LockdownState` stays `true` and
+   the OS window stays locked down, because a webview document reload does not restart
+   the Tauri process or touch Rust-managed state.
+5. The reloaded webview boots React from scratch and renders the new document at
+   `/login`. `AgentLifecycle` — mounted once at the app root regardless of route — mounts
+   fresh as part of this from-scratch boot, exactly as it would on any other app start.
+6. The new, unconditional boot effect added in this fix fires immediately on that mount
+   and calls `invoke("exit_lockdown")`, independent of `getAgentMode()` or any other
+   gating condition.
+7. `exit_lockdown` releases the stale Rust-side lock (`LockdownState` back to `false`)
+   and restores the real OS window properties (exits fullscreen/always-on-top, restores
+   decorations, unblocks close) — all before the user has a chance to act.
+8. The Login page the user now sees is genuinely unlocked: a normal, exitable window,
+   not a kiosk-locked one masquerading as a login screen. If lockdown had already been
+   released by `SelfServicePage`'s own unmount cleanup in some edge case, this call is a
+   harmless idempotent no-op on an already-`false` lock.
 
 ### Verification (all run from repo root)
 
 ```shell
-grep -n "createUpdaterArtifacts" .github/workflows/release-desktop.yml
+npm run typecheck -w idento-desktop
 ```
-Result: exactly one match —
-```text
-102:        run: echo '{"bundle":{"externalBin":["sidecars/idento-agent"],"createUpdaterArtifacts":true}}' > "${{ github.workspace }}/sidecar-config.json"
-```
+Result: clean (`tsc -b`, no errors).
 
 ```shell
-python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-desktop.yml'))" && echo "YAML OK"
+npm run lint -w idento-desktop
 ```
-Result: `YAML OK`.
+Result: clean — 0 errors, 1 pre-existing unrelated warning
+(`react-refresh/only-export-components` in `desktop/src/components/ui/button.tsx`, not
+touched by this change). Note: the repo's RTK shell-wrapper hook mangled this command's
+first invocation ("ESLint output (JSON parse failed...)"); re-ran via `rtk proxy npm run
+lint -w idento-desktop` to get the real, unfiltered ESLint output, per this repo's known
+RTK wrapper lint-masking hazard.
 
 ```shell
-python3 -c "import json; json.load(open('desktop/src-tauri/tauri.conf.json'))" && echo "JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)"
+npm run build -w idento-desktop
 ```
-Result: `JSON OK (confirming tauri.conf.json itself was NOT touched by this fix)`.
+Result: clean build (`tsc -b && vite build`), only a pre-existing chunk-size advisory
+warning unrelated to this change.
 
 ```shell
-git diff --stat
+npm test -w idento-desktop
 ```
-Result (before this commit, working tree):
-```text
-.github/workflows/release-desktop.yml |  2 +-
- .superpowers/sdd/progress.md          | 11 +++++++++++
- desktop/README.md                     |  5 +++++
- 3 files changed, 17 insertions(+), 1 deletion(-)
-```
-`desktop/src-tauri/tauri.conf.json` is confirmed absent from the diff — the fix only
-touched the release workflow's build-time config patch and the README doc note.
-`.superpowers/sdd/progress.md` was already modified in the working tree before this fix
-pass started (K3b task-completion notes, uncommitted SDD process documentation for this
-same branch) — included in the same commit as pre-existing process notes, not new work
-from this pass, matching the convention used in this branch's earlier K3a final-fix
-commit.
-
-Environment hazard check: this repo has an RTK shell-wrapper hook that can rewrite/
-condense bash output. All commands above were also cross-checked by direct file reads
-(`Read` tool on both edited files, showing the exact diff hunks) rather than relying on
-`grep`/`git diff` output alone — the RTK proxy was not needed here since `grep -n` on a
-2-line-changed file and `python3 -c` one-liners produce output too short to plausibly be
-mis-condensed, and the file reads independently confirm the same content.
+Result: `Test Files 14 passed (14)`, `Tests 82 passed (82)` — no regressions. This
+feature area has no dedicated test suite of its own per this codebase's established
+convention; "clean" here means the existing suite is unaffected.
 
 ### Commit
 
-Single new commit on top of `cab822b`, titled
-`fix(desktop): K3b final-review fix — inject createUpdaterArtifacts at release build time`.
-(This report is written as part of that same commit, so see `git log -1` on this branch
-for the exact resulting SHA.)
+Single new commit on this branch, titled
+`fix(desktop): release stale lockdown on every app boot + log lockdown IPC failures`.
 
-Files changed: `.github/workflows/release-desktop.yml`, `desktop/README.md`, plus this
-report file. `.superpowers/sdd/progress.md` (K3b task-completion notes, already modified
-in the working tree before this fix pass started) was included in the same commit since
-it was uncommitted SDD process documentation for this same branch, not new work from
-this pass.
+Files changed: `desktop/src/components/AgentLifecycle.tsx`,
+`desktop/src/pages/SelfService.tsx`, `desktop/src/components/StaffExitOverlay.tsx`, plus
+this report file.
