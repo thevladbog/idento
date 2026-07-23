@@ -47,7 +47,10 @@ func buildPrinterQRPayload(device models.EquipmentDevice) (models.PrinterQRData,
 		return models.PrinterQRData{}, errors.New("config.port must be between 1 and 65535")
 	}
 
-	ip := shape.IP
+	// Normalize the IP the same way the emptiness check above trims it — a
+	// stored config value like " 10.0.0.5 " (validated non-empty, stored
+	// verbatim) must not reach the QR as an unusable padded endpoint.
+	ip := strings.TrimSpace(shape.IP)
 	port := shape.Port
 	payload := models.PrinterQRData{
 		Type:        models.PrinterTypeIdentifier,

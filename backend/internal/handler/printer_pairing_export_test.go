@@ -73,6 +73,20 @@ func TestBuildPrinterQRPayload_RejectsNonNetwork(t *testing.T) {
 	}
 }
 
+func TestBuildPrinterQRPayload_TrimsIP(t *testing.T) {
+	// A config value validated non-empty but stored with surrounding
+	// whitespace must reach the QR payload trimmed, or the mobile app gets
+	// an unusable endpoint.
+	dev := networkDevice(`{"agent_name":"zebra1","ip":"  10.0.0.5  ","port":9100}`)
+	got, err := buildPrinterQRPayload(dev)
+	if err != nil {
+		t.Fatalf("buildPrinterQRPayload: %v", err)
+	}
+	if got.IP == nil || *got.IP != "10.0.0.5" {
+		t.Errorf("ip = %v, want trimmed 10.0.0.5", got.IP)
+	}
+}
+
 func TestGetPrinterPairingQR_NetworkDeviceReturnsPNG(t *testing.T) {
 	e := echo.New()
 	tenantID, deviceID := uuid.New(), uuid.New()

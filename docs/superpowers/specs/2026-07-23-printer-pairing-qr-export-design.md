@@ -72,9 +72,9 @@ Status: approved
 ### Backend (Go)
 
 **Общий хелпер — единственный источник правды маппинга.**
-`buildPrinterQRPayload(device models.EquipmentDevice, hostname string)
-(models.PrinterQRData, error)` собирает из строки реестра готовый
-`PrinterQRData`:
+`buildPrinterQRPayload(device models.EquipmentDevice) (models.PrinterQRData,
+error)` собирает из строки реестра готовый `PrinterQRData` (`hostname` в
+payload не входит — это только CSV-колонка `machine`):
 
 - `Type = "idento_printer"`, `Version = "1.0"`, `PrinterType = "ethernet"`;
 - `Name = device.DisplayName`;
@@ -98,8 +98,9 @@ Status: approved
      `json.Marshal` → `qrcode.Encode(json, qrcode.Medium, 512)` (переиспользуем
      логику из `GeneratePrinterQR`).
    - Ответ: `image/png`, `Content-Disposition: attachment;
-     filename="<slug(name)>-pairing-qr.png"` (slug транслитерирует/чистит
-     кириллицу; фолбэк — `device_id`).
+     filename="<slug(name)>-pairing-qr.png"` (slug оставляет только ASCII —
+     кириллица **отбрасывается**, не транслитерируется; если ничего
+     печатного не осталось, фолбэк — `device_id`).
    - Не-network / чужой тенант / нет ip-port → `422`/`404` с понятным
      сообщением.
 
@@ -136,7 +137,8 @@ ORDER BY m.hostname, d.display_name;
   `blob` → скачивание (переиспользовать существующий download-хелпер, если
   есть; иначе локальный `saveBlob`). Для не-network не показываем.
 - `EquipmentPage.tsx`: кнопка **«Экспорт принтеров (CSV)»** → скачивание
-  CSV-эндпоинта. Скрыта/disabled, если сетевых принтеров нет.
+  CSV-эндпоинта. Всегда активна (экспорт tenant-wide, не зависит от текущей
+  машины); пустой тенант → CSV из одних заголовков.
 - i18n: строки RU/EN в существующие каталоги.
 - Клиент — через сгенерированный `$api` (авторизация), не через прямой
   `agentClient` (данные из бэкенда, агент не нужен).
@@ -186,8 +188,8 @@ ORDER BY m.hostname, d.display_name;
 - Устройство не сетевой принтер (system/CUPS, scanner) → `422`, текст
   «QR подключения доступен только для сетевых принтеров».
 - В `config` нет `ip`/`port` → строку пропускаем в CSV; для PNG → `422`.
-- Нет сетевых принтеров → CSV из одних заголовков; в панели кнопка
-  disabled/скрыта.
+- Нет сетевых принтеров → CSV из одних заголовков; кнопка экспорта всё
+  равно активна (tenant-wide экспорт не гейтится по текущей машине).
 - Кириллица в имени → slug для имени файла PNG транслитерирует/чистит,
   фолбэк на `device_id`.
 - `qr_payload` и PNG строятся **одним** хелпером → расхождение исключено.
