@@ -244,13 +244,21 @@ export function AttendeesPage() {
       </div>
 
       {isMobile ? (
-        <AttendeeSearchList
-          eventId={eventId}
-          search={search.search}
-          zone={search.zone}
-          status={search.status}
-          onRowClick={openAttendee}
-        />
+        // "Card replaces list" phone-screen-stack semantic (board 8g/8h/8i's
+        // design intent) -- rendering the list underneath an already-open
+        // AttendeeCard put both on screen at once with no way to tell a row
+        // click had done anything (the card renders ~1800px below the fold,
+        // far past the visible viewport). The card itself is mounted further
+        // down, keyed off this same `search.attendee`.
+        search.attendee ? null : (
+          <AttendeeSearchList
+            eventId={eventId}
+            search={search.search}
+            zone={search.zone}
+            status={search.status}
+            onRowClick={openAttendee}
+          />
+        )
       ) : attendeesQuery.isLoading ? (
         <AttendeesTableSkeleton />
       ) : attendeesQuery.isError ? (

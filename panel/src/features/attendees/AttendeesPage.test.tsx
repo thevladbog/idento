@@ -375,6 +375,28 @@ describe("AttendeesPage", () => {
     expect(screen.queryByRole("button", { name: /Reprint/i })).not.toBeInTheDocument(); // AttendeeDrawer-only affordance, absence proves the swap
   });
 
+  // Reproduces the finding: on phone, the search list used to render
+  // unconditionally alongside the card, appended far below it in the DOM —
+  // a row click opened the card with no visible viewport change. "Card
+  // replaces list" is the intended phone-screen-stack semantic: this test's
+  // default fixture (set in the outer beforeEach) is [ADA, BOB], and the
+  // opened card is for BOB (a2) — so Ada's own search-list row ("Lovelace
+  // Ada", per AttendeeSearchList's `{last_name} {first_name}` row format,
+  // distinct from the card's own "Noll Bob" heading) is a signal that's
+  // present only when the list itself is actually rendered.
+  it("hides the search list on phone while the card is open, and shows it again after closing", async () => {
+    installMatchMedia(true); // below md
+    renderAt("/events/evt-1/attendees?attendee=a2");
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.queryByText(/Lovelace Ada/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(await screen.findByText(/Lovelace Ada/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
   // Reproduces the finding: deleting the last row(s) on a non-first page
   // (via either BulkBar's bulk delete or AttendeeDrawer's single delete)
   // invalidates and refetches the list without resetting `page`, so the
