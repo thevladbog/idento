@@ -170,13 +170,23 @@ export function MonitorPage() {
 
       {/* Board 8p -- aria-live announces stream-state changes; content
           change (live -> reconnecting -> error) is what triggers the
-          announcement, so this renders the current state's label. */}
+          announcement, so this renders the current state's label. Fix round
+          1: explicit 4-branch match rather than a ternary chain whose
+          `else` silently caught BOTH "connecting" (every ordinary mount,
+          before the SSE handshake completes) and "error" -- collapsing them
+          both onto monitorStreamError falsely announced "Live updates
+          unavailable" on every normal page load. "connecting" now announces
+          nothing: there is no existing i18n copy for that transient state,
+          and the header itself shows no badge during it either (see the
+          "still connecting" test above), so silence here matches that. */}
       <span aria-live="polite" className="sr-only" data-testid="monitor-stream-announcer">
         {stream.status === "live"
           ? t("monitorLive")
           : stream.status === "reconnecting"
             ? t("monitorReconnecting")
-            : t("monitorStreamError")}
+            : stream.status === "error"
+              ? t("monitorStreamError")
+              : ""}
       </span>
 
       {/* Body -- #fafafa background (theme.css's --background token is

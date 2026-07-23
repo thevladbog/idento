@@ -771,6 +771,24 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     expect(region).toHaveTextContent("Reconnecting");
   });
 
+  // Fix round 1 (P6.2 T2 review finding): before the SSE hello frame
+  // arrives, `stream.status` is genuinely "connecting" -- reusing the exact
+  // same harness as the "shows no reconnecting badge and no live ring while
+  // still connecting" test above -- and must not be announced as a stream
+  // error. Previously the announcer's ternary chain used `error` as a
+  // catch-all `else`, so this ordinary pre-hello moment on every mount was
+  // mislabeled "Live updates unavailable".
+  it("announces nothing while the stream is still connecting (not yet live, not yet a real error)", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    expect(liveRing()).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
+
+    const announcer = await screen.findByTestId("monitor-stream-announcer");
+    expect(announcer).toHaveTextContent("");
+  });
+
   it("renders the updated-ago counter in warning tone with a clock icon while the stream is degraded", async () => {
     renderCorrectAt("/events/evt-1/monitor");
 
