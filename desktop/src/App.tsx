@@ -8,6 +8,7 @@ import EquipmentPage from "./pages/Equipment";
 import CheckinPage from "./pages/Checkin";
 import ModePage from "./pages/Mode";
 import RunPage from "./pages/Run";
+import SelfServicePage from "./pages/SelfService";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = localStorage.getItem("token");
@@ -47,6 +48,14 @@ function App() {
           element={
             <ProtectedRoute>
               <ModePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/checkin/:eventId/self"
+          element={
+            <ProtectedRoute>
+              <SelfServicePage />
             </ProtectedRoute>
           }
         />

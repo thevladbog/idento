@@ -10,12 +10,19 @@ import { UpdateChip } from "@/components/UpdateChip";
 import { getManifestUrlOverride, setManifestUrlOverride } from "@/lib/updateConfig";
 
 export type RunLayout = "bar" | "panel";
+export type StationType = "staffed" | "self";
 
 const RUN_LAYOUT_KEY = "idento_run_layout";
+const STATION_TYPE_KEY = "idento_station_type";
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function loadRunLayout(): RunLayout {
   return localStorage.getItem(RUN_LAYOUT_KEY) === "panel" ? "panel" : "bar";
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function loadStationType(): StationType {
+  return localStorage.getItem(STATION_TYPE_KEY) === "self" ? "self" : "staffed";
 }
 
 export default function ModePage() {
@@ -27,19 +34,38 @@ export default function ModePage() {
   const saveSettings = useSaveCheckinSettings(eventId!);
 
   const [layout, setLayout] = useState<RunLayout>(loadRunLayout);
+  const [stationType, setStationType] = useState<StationType>(loadStationType);
   const [settings, setSettings] = useState<CheckinSettings>(DEFAULT_CHECKIN_SETTINGS);
   const [updateManifestUrl, setUpdateManifestUrl] = useState(() => getManifestUrlOverride());
+
+  const selectStationType = (value: StationType) => {
+    setStationType(value);
+    // scan_input is an EVENT-wide setting (shared with any staffed station
+    // on the same event) -- if it's currently "manual" when switching to
+    // Self-service, sanitize it immediately rather than silently saving an
+    // invalid-for-self-service combination.
+    if (value === "self" && settings.scan_input === "manual") {
+      setSettings((prev) => ({ ...prev, scan_input: "wedge" }));
+    }
+  };
 
   useEffect(() => {
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
+  useEffect(() => {
+    if (stationType === "self" && settings.scan_input === "manual") {
+      setSettings((prev) => (prev.scan_input === "manual" ? { ...prev, scan_input: "wedge" } : prev));
+    }
+  }, [stationType, settings.scan_input]);
+
   const saveAndStart = async () => {
     try {
       await saveSettings.mutateAsync(settings);
       localStorage.setItem(RUN_LAYOUT_KEY, layout);
+      localStorage.setItem(STATION_TYPE_KEY, stationType);
       setManifestUrlOverride(updateManifestUrl);
-      navigate(`/checkin/${eventId}`);
+      navigate(stationType === "self" ? `/checkin/${eventId}/self` : `/checkin/${eventId}`);
     } catch {
       toast.error(t("checkinSettingsSaveFailed"));
     }
@@ -47,6 +73,8 @@ export default function ModePage() {
 
   const optionButtonClass = (active: boolean) =>
     active ? "border-kiosk-brand bg-kiosk-brand/10 text-kiosk-text" : "border-kiosk-border-2 text-kiosk-text-3";
+
+  const scanInputOptions = stationType === "self" ? (["wedge", "scanner"] as const) : (["wedge", "scanner", "manual"] as const);
 
   return (
     <PreflightShell steps={steps} activeIndex={4} banner={<UpdateChip />}>
@@ -57,26 +85,45 @@ export default function ModePage() {
       ) : (
         <div className="flex flex-col gap-7">
           <div>
-            <div className="font-bold text-kiosk-text" style={{ fontSize: "var(--kiosk-fs-chrome-lg)" }}>{t("modeLayoutTitle")}</div>
+            <div className="font-bold text-kiosk-text" style={{ fontSize: "var(--kiosk-fs-chrome-lg)" }}>{t("modeStationTypeTitle")}</div>
             <div className="mt-3 flex gap-3">
-              {(["bar", "panel"] as const).map((value) => (
+              {(["staffed", "self"] as const).map((value) => (
                 <button
                   key={value}
                   type="button"
-                  aria-pressed={layout === value}
-                  className={`flex-1 rounded-xl border-2 p-4 text-left ${optionButtonClass(layout === value)}`}
-                  onClick={() => setLayout(value)}
+                  aria-pressed={stationType === value}
+                  className={`flex-1 rounded-xl border-2 p-4 text-left ${optionButtonClass(stationType === value)}`}
+                  onClick={() => selectStationType(value)}
                 >
-                  {value === "bar" ? t("modeLayoutBar") : t("modeLayoutPanel")}
+                  {value === "staffed" ? t("modeStationTypeStaffed") : t("modeStationTypeSelf")}
                 </button>
               ))}
             </div>
           </div>
 
+          {stationType === "staffed" && (
+            <div>
+              <div className="font-bold text-kiosk-text" style={{ fontSize: "var(--kiosk-fs-chrome-lg)" }}>{t("modeLayoutTitle")}</div>
+              <div className="mt-3 flex gap-3">
+                {(["bar", "panel"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={layout === value}
+                    className={`flex-1 rounded-xl border-2 p-4 text-left ${optionButtonClass(layout === value)}`}
+                    onClick={() => setLayout(value)}
+                  >
+                    {value === "bar" ? t("modeLayoutBar") : t("modeLayoutPanel")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <div className="font-bold text-kiosk-text" style={{ fontSize: "var(--kiosk-fs-chrome-lg)" }}>{t("modeScanInputTitle")}</div>
             <div className="mt-3 flex gap-3">
-              {(["wedge", "scanner", "manual"] as const).map((value) => (
+              {scanInputOptions.map((value) => (
                 <button
                   key={value}
                   type="button"
