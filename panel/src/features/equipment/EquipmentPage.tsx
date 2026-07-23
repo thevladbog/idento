@@ -286,6 +286,14 @@ export function EquipmentPage() {
   // dismiss" convention as comRemoveWarning/defaultMirrorWarning above --
   // the "Edit address…" dialog's agent mirror (mirrorAddressToAgent below).
   const [addressMirrorWarning, setAddressMirrorWarning] = React.useState(false);
+  // CodeRabbit PR #109 finding 2: the pairing-QR / CSV download helpers reject
+  // (ApiError, or an "empty response" Error) on a non-2xx/empty body, but the
+  // call sites used to `void` that away so the operator saw nothing. Unlike
+  // the amber "warn, don't fail" mirror banners above, a download failure is a
+  // genuine error -- the operator got no file -- so its banner is destructive.
+  // Each fresh attempt clears any stale error first (see the two call sites),
+  // and the Close button dismisses it, same as the sibling banners.
+  const [downloadError, setDownloadError] = React.useState(false);
 
   // P4.3 Task 8 -- every printer-wizard entry point is guarded on a known
   // machineId: the wizard's create path POSTs to
@@ -466,7 +474,8 @@ export function EquipmentPage() {
             type="button"
             variant="ghost"
             onClick={() => {
-              void downloadPrinterPairingCsv();
+              setDownloadError(false);
+              downloadPrinterPairingCsv().catch(() => setDownloadError(true));
             }}
           >
             {t("equipmentExportPrinters")}
@@ -552,7 +561,8 @@ export function EquipmentPage() {
               onDelete={(device) => setDialog({ kind: "delete", device })}
               onEditAddress={(device) => setDialog({ kind: "edit-address", device })}
               onDownloadPairingQr={(device) => {
-                void downloadPrinterPairingQr(device.id, device.display_name);
+                setDownloadError(false);
+                downloadPrinterPairingQr(device.id, device.display_name).catch(() => setDownloadError(true));
               }}
               onRetryLive={() => void printers.refetch()}
               onSetUp={() => openCreateWizard()}
@@ -702,6 +712,22 @@ export function EquipmentPage() {
         >
           <p className="text-body text-warning">{t("equipmentAddressMirrorWarn")}</p>
           <Button type="button" variant="outline" size="sm" onClick={() => setAddressMirrorWarning(false)}>
+            {t("workspaceDialogClose")}
+          </Button>
+        </div>
+      ) : null}
+
+      {/* CodeRabbit PR #109 finding 2: destructive (not amber) because a
+          failed download is a hard error -- the operator got no file.
+          role="alert" so it's announced assertively when it appears. */}
+      {downloadError ? (
+        <div
+          role="alert"
+          data-testid="equipment-download-error"
+          className="flex items-center justify-between gap-3 rounded-lg border border-destructive bg-destructive/5 px-4 py-2"
+        >
+          <p className="text-body text-destructive">{t("equipmentDownloadError")}</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => setDownloadError(false)}>
             {t("workspaceDialogClose")}
           </Button>
         </div>
