@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { CheckInConfirmSheet } from "./CheckInConfirmSheet";
 import { startMswServer } from "../../test/msw";
 import i18n from "../../shared/i18n";
@@ -84,5 +84,36 @@ describe("CheckInConfirmSheet", () => {
     await user.click(screen.getByRole("button", { name: "Зарегистрировать" }));
     expect(await screen.findByText("Не удалось зарегистрировать. Попробуйте ещё раз.")).toBeInTheDocument();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it("disables Cancel and ignores Escape while the check-in request is still in flight", async () => {
+    // A genuinely in-flight (delayed) request is what makes this test prove
+    // anything -- with an instant response there's no window in which a
+    // premature dismiss could race the mutation's onSuccess (same rationale
+    // BulkBar.test.tsx's own "cannot be dismissed... while genuinely
+    // running" test documents for its printDelayMs).
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin", async () => {
+        await delay(40);
+        return HttpResponse.json({ outcome: "checked_in", attendee: { id: "att-2" }, checkin: { at: "2026-01-01T00:00:00Z", by_email: "a@b.com" } });
+      }),
+    );
+    const user = userEvent.setup();
+    const { onOpenChange, onCheckedIn } = renderSheet();
+    await user.click(screen.getByRole("button", { name: "Зарегистрировать" }));
+
+    // Cancel is disabled while pending -- guards the explicit Cancel path.
+    const cancelButton = screen.getByRole("button", { name: "Отмена" });
+    expect(cancelButton).toBeDisabled();
+
+    // Escape is a no-op while pending -- guards the sheet's own dismissal
+    // path (onEscapeKeyDown), not just the Cancel button.
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Once the mutation genuinely settles, both fire as normal.
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onCheckedIn).toHaveBeenCalledTimes(1);
   });
 });

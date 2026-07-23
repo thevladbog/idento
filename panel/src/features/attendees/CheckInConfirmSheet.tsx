@@ -39,9 +39,26 @@ export function CheckInConfirmSheet({
     );
   }
 
+  // Guards every dismiss path (Escape/outside-click) while the check-in
+  // mutation is in flight -- same convention RecentScansRail.tsx's
+  // preventUndoDialogDismiss/preventReprintDialogDismiss establish and
+  // panel/AGENTS.md's "Multi-step async dialogs" rule requires: without
+  // this, the sheet would close immediately on Escape/outside-click, but
+  // the mutation's onSuccess (wired to an undo toast) would still fire
+  // afterward for an action the user believed they'd cancelled.
+  function preventDismissWhilePending(event: Event) {
+    if (checkin.isPending) event.preventDefault();
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" closeLabel={t("moreSheetCloseLabel")}>
+      <SheetContent
+        side="bottom"
+        closeLabel={t("moreSheetCloseLabel")}
+        onEscapeKeyDown={preventDismissWhilePending}
+        onPointerDownOutside={preventDismissWhilePending}
+        onInteractOutside={preventDismissWhilePending}
+      >
         <SheetHeader>
           <SheetTitle>{t("checkinConfirmTitle", { name: attendeeName })}</SheetTitle>
         </SheetHeader>
@@ -54,7 +71,12 @@ export function CheckInConfirmSheet({
         </div>
         {checkin.isError ? <p className="text-caption text-destructive">{t("checkinConfirmError")}</p> : null}
         <div className="flex gap-2.5">
-          <Button variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            disabled={checkin.isPending}
+            onClick={() => onOpenChange(false)}
+          >
             {t("checkinConfirmCancel")}
           </Button>
           <Button className="flex-[1.4]" onClick={handleConfirm} disabled={checkin.isPending}>
