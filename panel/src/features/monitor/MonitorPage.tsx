@@ -35,6 +35,7 @@ import { Link, getRouteApi } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { $api } from "../../shared/api/query";
+import { EventTabBar } from "../workspace/EventTabBar";
 import { RecentFeedCard } from "./RecentFeedCard";
 import { StationsCard } from "./StationsCard";
 import { TotalsCard } from "./TotalsCard";
@@ -158,7 +159,10 @@ export function MonitorPage() {
       {/* Body -- #fafafa background (theme.css's --background token is
           already that exact value), 2-column grid (1.15fr 1fr) per board
           7e. */}
-      <div className="grid flex-1 gap-4 overflow-y-auto bg-background p-6" style={{ gridTemplateColumns: "1.15fr 1fr" }}>
+      {/* INTERIM phone stack (P6.1): single column below `md` so nothing
+          overflows at 390px; the real glanceable phone layout is P6.2
+          (board 8f). Desktop/tablet keeps board 7e's two-column grid. */}
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto bg-background p-4 pb-24 md:p-6 md:[grid-template-columns:1.15fr_1fr]">
         {snapshotQuery.isLoading ? (
           <>
             <div className="flex flex-col gap-4">
@@ -216,6 +220,12 @@ export function MonitorPage() {
           </>
         )}
       </div>
+
+      {/* Monitor is a rail-less top-level route (no EventWorkspaceLayout),
+          so it mounts the phone tab bar itself -- otherwise the floor loop
+          (Overview/Attendees/Staff/More) would be unreachable below `md`
+          once the Exit button scrolls out of the header. */}
+      <EventTabBar eventId={eventId} />
     </div>
   );
 }
