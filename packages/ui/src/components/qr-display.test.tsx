@@ -1,6 +1,10 @@
 import { act, render, screen } from "@testing-library/react";
 import { QrDisplay } from "./qr-display";
 
+declare global {
+  var jest: { advanceTimersByTime: (ms: number) => void } | undefined;
+}
+
 describe("QrDisplay", () => {
   // @testing-library/dom's `waitFor`/`findBy*` only recognize *Jest's* fake
   // timers (it feature-detects a global `jest` with a mocked `setTimeout`), so
@@ -13,14 +17,14 @@ describe("QrDisplay", () => {
   // https://github.com/testing-library/dom-testing-library/issues/939.
   beforeEach(() => {
     vi.useFakeTimers();
-    (globalThis as any).jest = {
+    globalThis.jest = {
       advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms),
     };
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    delete (globalThis as any).jest;
+    delete globalThis.jest;
   });
 
   function future(seconds: number): string {
