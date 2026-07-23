@@ -48,7 +48,12 @@ describe("QrDisplay", () => {
     );
     expect(screen.getByText("Anna Smirnova")).toBeInTheDocument();
     expect(screen.getByText("Staff login · Registration desk")).toBeInTheDocument();
-    expect(await screen.findByRole("img", { name: "https://example.test/token/abc" })).toBeInTheDocument();
+    // A generic, non-secret accessible name — the raw token value must never
+    // land in the DOM/a11y tree as plain text (see qr-display.tsx's own
+    // comment). `data-testid` is the test hook instead.
+    expect(await screen.findByRole("img", { name: "QR code" })).toBeInTheDocument();
+    expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
+    expect(screen.queryByText("https://example.test/token/abc")).not.toBeInTheDocument();
     expect(screen.getByText(/Have Anna scan this/)).toBeInTheDocument();
   });
 

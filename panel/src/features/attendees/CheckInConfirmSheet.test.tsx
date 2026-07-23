@@ -142,4 +142,28 @@ describe("CheckInConfirmSheet", () => {
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     expect(onCheckedIn).toHaveBeenCalledTimes(1);
   });
+
+  // Regression: SheetContent's X close button is a Radix Dialog.Close --
+  // it calls the Sheet Root's onOpenChange(false) directly, never going
+  // through onEscapeKeyDown/onPointerDownOutside/onInteractOutside above,
+  // so it needs its own guard (same race as the Cancel/Escape test above --
+  // a delayed response is what makes this prove anything).
+  it("ignores a click on the X close button while the check-in request is still in flight", async () => {
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin", async () => {
+        await delay(40);
+        return HttpResponse.json({ outcome: "checked_in", attendee: { id: "att-2" }, checkin: { at: "2026-01-01T00:00:00Z", by_email: "a@b.com" } });
+      }),
+    );
+    const user = userEvent.setup();
+    const { onOpenChange, onCheckedIn } = renderSheet();
+    await user.click(screen.getByRole("button", { name: "Зарегистрировать" }));
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(onCheckedIn).toHaveBeenCalledTimes(1);
+  });
 });

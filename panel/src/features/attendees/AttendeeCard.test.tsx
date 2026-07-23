@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { http, HttpResponse } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import { AttendeeCard } from "./AttendeeCard";
 import { startMswServer } from "../../test/msw";
 import i18n from "../../shared/i18n";
@@ -151,6 +151,26 @@ describe("AttendeeCard — checked in", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
+  it("disables the undo confirm button while the mutation is in flight, and shows an inline error if it fails", async () => {
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin/undo", async () => {
+        await delay(30);
+        return HttpResponse.json({ error: "boom" }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole("button", { name: "Отменить регистрацию" }));
+    const dialog = await screen.findByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "Отменить регистрацию" });
+    await user.click(confirmButton);
+    expect(confirmButton).toBeDisabled();
+    expect(
+      await within(dialog).findByText("Не удалось отменить регистрацию. Попробуйте ещё раз."),
+    ).toBeInTheDocument();
+    expect(confirmButton).not.toBeDisabled();
+  });
+
   it("blocks the attendee through a confirm dialog", async () => {
     server.use(
       http.post("http://api.test/api/attendees/:id/block", () => HttpResponse.json({ id: "att-1", blocked: true })),
@@ -161,6 +181,26 @@ describe("AttendeeCard — checked in", () => {
     const dialog = await screen.findByRole("dialog");
     await user.click(within(dialog).getByRole("button", { name: "Заблокировать" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("disables the block confirm button while the mutation is in flight, and shows an inline error if it fails", async () => {
+    server.use(
+      http.post("http://api.test/api/attendees/:id/block", async () => {
+        await delay(30);
+        return HttpResponse.json({ error: "boom" }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole("button", { name: /^Заблокировать$/ }));
+    const dialog = await screen.findByRole("dialog");
+    const confirmButton = within(dialog).getByRole("button", { name: "Заблокировать" });
+    await user.click(confirmButton);
+    expect(confirmButton).toBeDisabled();
+    expect(
+      await within(dialog).findByText("Не удалось заблокировать участника. Попробуйте ещё раз."),
+    ).toBeInTheDocument();
+    expect(confirmButton).not.toBeDisabled();
   });
 
   // Scope extension beyond the brief: Task 5's not-checked-in variant shipped
@@ -219,5 +259,23 @@ describe("AttendeeCard — blocked", () => {
     renderCard();
     await user.click(await screen.findByRole("button", { name: /Разблокировать/ }));
     await waitFor(() => expect(requested).toBe(true));
+  });
+
+  it("disables the Unblock button while the mutation is in flight, and shows an inline error if it fails", async () => {
+    server.use(
+      http.post("http://api.test/api/attendees/:id/unblock", async () => {
+        await delay(30);
+        return HttpResponse.json({ error: "boom" }, { status: 500 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderCard();
+    const unblockButton = await screen.findByRole("button", { name: /Разблокировать/ });
+    await user.click(unblockButton);
+    expect(unblockButton).toBeDisabled();
+    expect(
+      await screen.findByText("Не удалось разблокировать участника. Попробуйте ещё раз."),
+    ).toBeInTheDocument();
+    expect(unblockButton).not.toBeDisabled();
   });
 });

@@ -13,14 +13,33 @@ export function SelfServicePage() {
   const { t } = useTranslation();
   const user = getCurrentUser();
   const [qrOpen, setQrOpen] = React.useState(false);
+  // Cached separately from generateToken.data: calling .mutate() again (the
+  // QrDisplay's own onRegenerate) resets the mutation to pending, so
+  // generateToken.data goes briefly undefined mid-regenerate. Gating render
+  // on the raw mutation state made the whole QR screen flicker back to the
+  // base page (email/sign-out/button) for that window; the cached value
+  // stays put until the new token actually lands.
+  const [cachedToken, setCachedToken] = React.useState<string | null>(null);
   const generateToken = $api.useMutation("post", "/api/users/{id}/qr-token");
 
   if (!user) return null;
 
-  if (qrOpen && generateToken.data) {
+  function mintToken() {
+    generateToken.mutate(
+      { params: { path: { id: user!.id } } },
+      {
+        onSuccess: (data) => {
+          setCachedToken(data.qr_token);
+          setQrOpen(true);
+        },
+      },
+    );
+  }
+
+  if (qrOpen && cachedToken) {
     return (
       <QrDisplay
-        value={generateToken.data.qr_token}
+        value={cachedToken}
         title={user.email}
         subtitle={t("selfServiceStaffLabel")}
         expiresAt={null}
@@ -28,7 +47,7 @@ export function SelfServicePage() {
         regenerateLabel={t("selfServiceShowMyQr")}
         closeLabel={t("moreSheetCloseLabel")}
         onClose={() => setQrOpen(false)}
-        onRegenerate={() => generateToken.mutate({ params: { path: { id: user.id } } })}
+        onRegenerate={mintToken}
       />
     );
   }
@@ -52,15 +71,7 @@ export function SelfServicePage() {
         </button>
       </div>
 
-      <Button
-        className="gap-2"
-        onClick={() => {
-          generateToken.mutate(
-            { params: { path: { id: user.id } } },
-            { onSuccess: () => setQrOpen(true) },
-          );
-        }}
-      >
+      <Button className="gap-2" onClick={mintToken}>
         <IdCard aria-hidden className="size-4" />
         {t("selfServiceShowMyQr")}
       </Button>

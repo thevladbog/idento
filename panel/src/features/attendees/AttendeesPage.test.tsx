@@ -397,6 +397,25 @@ describe("AttendeesPage", () => {
     expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
   });
 
+  // Regression: the page's own header-total query used to request
+  // per_page=50/page=<url page> unconditionally, while AttendeeSearchList's
+  // own internal query requests per_page=30/page=1 -- different $api query
+  // keys, so two nearly-identical list requests fired on mount instead of
+  // one. On mobile there's no pager UI to ever move `page` off 1, so
+  // matching AttendeeSearchList's own params here is safe and lets both
+  // queries share one cache entry.
+  it("sends exactly one attendees-list request on phone, matching AttendeeSearchList's own page/perPage", async () => {
+    installMatchMedia(true); // below md
+    attendeesResponse = { attendees: [ADA, BOB], total: 2, page: 1, per_page: 30 };
+    renderAt("/events/evt-1/attendees");
+
+    await screen.findByText(/Lovelace Ada/);
+
+    expect(capturedRequests).toHaveLength(1);
+    expect(capturedRequests[0]?.params.get("per_page")).toBe("30");
+    expect(capturedRequests[0]?.params.get("page")).toBe("1");
+  });
+
   // Reproduces the finding: deleting the last row(s) on a non-first page
   // (via either BulkBar's bulk delete or AttendeeDrawer's single delete)
   // invalidates and refetches the list without resetting `page`, so the

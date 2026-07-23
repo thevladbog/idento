@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { SelfServicePage } from "./SelfServicePage";
@@ -72,6 +72,42 @@ describe("SelfServicePage", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
-    expect(await screen.findByRole("img", { name: "self-tok-1" })).toBeInTheDocument();
+    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+  });
+
+  // Regression: onRegenerate re-calls the same mutation, which resets it to
+  // pending -- gating render on generateToken.data directly (rather than a
+  // cached value) made the QR screen flash back to the base page for that
+  // window. A second, distinct token proves the cache actually updates too,
+  // not just that the QR stays visible.
+  it("stays on the QR screen through a regenerate, without flashing back to the base page", async () => {
+    let qrTokenCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/users/:id/qr-token", () => {
+        qrTokenCallCount += 1;
+        return HttpResponse.json({
+          qr_token: qrTokenCallCount === 1 ? "self-tok-1" : "self-tok-2",
+          user_id: "user-1",
+          email: "anna@x.com",
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+    await screen.findByTestId("qr-display-code");
+
+    // QrDisplay's own regenerate control shares the "Show my login QR" label
+    // with the base page's mint button, so the scanning note (base-page-only
+    // copy, never rendered on the QR screen) is the unambiguous signal here.
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+
+    // Never falls back to the base page's sign-out/scanning-note view
+    // mid-regenerate.
+    expect(
+      screen.queryByText("Сканирование, контроль зон и печать бейджей происходят в приложении станции Idento на вашем устройстве."),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(qrTokenCallCount).toBe(2));
+    expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
   });
 });

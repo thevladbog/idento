@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { AddStationAction } from "./AddStationAction";
@@ -69,7 +69,9 @@ describe("AddStationAction", () => {
     const user = userEvent.setup();
     renderAction();
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
-    expect(await screen.findByRole("img", { name: "prov-tok-abc" })).toBeInTheDocument();
+    // The QR image's accessible name is a generic "QR code" (never the raw
+    // token) — data-testid is QrDisplay's own test hook for the rendered code.
+    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
     expect(screen.getByText("TechConf Moscow 2026 · подключится как станция регистрации")).toBeInTheDocument();
     expect(capturedBody).toEqual({ staff_user_id: "user-1" });
   });
@@ -82,5 +84,37 @@ describe("AddStationAction", () => {
     renderAction();
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
     expect(await screen.findByText("Не удалось создать код для подключения — попробуйте снова.")).toBeInTheDocument();
+  });
+
+  // Regression: onRegenerate re-calls mint.mutate(), which resets the
+  // mutation to pending -- gating render on mint.isSuccess/mint.data
+  // directly made the QR screen flash back to the base "Add station" button
+  // for that window. A second, distinct token proves the cache actually
+  // updates too, not just that the QR stays visible.
+  it("stays on the QR screen through a regenerate, without flashing back to the base button", async () => {
+    let mintCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        return HttpResponse.json({
+          token: mintCallCount === 1 ? "prov-tok-abc" : "prov-tok-xyz",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        });
+      }),
+    );
+    const user = userEvent.setup();
+    renderAction();
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    await screen.findByTestId("qr-display-code");
+
+    // The regenerate control shares the "Добавить станцию" label with the
+    // base page's mint button, so the base page's own subtitle caption
+    // (never rendered on the QR screen) is the unambiguous signal here.
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+
+    expect(screen.queryByText("покажет QR")).not.toBeInTheDocument();
+    await waitFor(() => expect(mintCallCount).toBe(2));
+    expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
   });
 });

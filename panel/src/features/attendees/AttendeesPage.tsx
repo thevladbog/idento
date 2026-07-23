@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
 import { AttendeeCard } from "./AttendeeCard";
 import { AttendeeDrawer } from "./AttendeeDrawer";
-import { AttendeeSearchList } from "./AttendeeSearchList";
+import { AttendeeSearchList, PHONE_PER_PAGE } from "./AttendeeSearchList";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
@@ -74,9 +74,17 @@ export function AttendeesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce timer keys off searchInput only; navigate/search.search are read fresh inside the closure.
   }, [searchInput]);
 
+  // On mobile, AttendeeSearchList runs its own useAttendeesPage(page: 1,
+  // perPage: PHONE_PER_PAGE, ...) for the actual rows it renders -- this
+  // query exists there only for the header total (and the desktop
+  // table/pager, which never mounts on mobile). Matching its page/perPage
+  // here makes both calls resolve to the exact same $api query key, so
+  // TanStack Query dedupes them into one cache entry / one network request
+  // instead of firing two nearly-identical list fetches on every
+  // keystroke/filter change.
   const attendeesQuery = useAttendeesPage(eventId, {
-    page,
-    perPage: PER_PAGE,
+    page: isMobile ? 1 : page,
+    perPage: isMobile ? PHONE_PER_PAGE : PER_PAGE,
     search: search.search,
     zone: search.zone,
     status: search.status,

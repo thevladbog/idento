@@ -142,7 +142,9 @@ describe("StaffCard — QR area + print flow", () => {
 
       await user.click(await screen.findByRole("button", { name: "Show full screen" }));
 
-      const fullScreenImg = await screen.findByRole("img", { name: "QR_cached_token" });
+      // QrDisplay's img has a generic "QR code" accessible name (never the
+      // raw token) — data-testid is its own test hook for the rendered code.
+      const fullScreenImg = await screen.findByTestId("qr-display-code");
       expect(fullScreenImg).toBeInTheDocument();
       // "alice@example.com" is deliberately not asserted here — it's the
       // QrDisplay title AND already the card's own header text, so it's a
@@ -154,7 +156,7 @@ describe("StaffCard — QR area + print flow", () => {
       // full-screen view — it never re-mints a token (that stays gated
       // behind the existing "Print card" confirm flow).
       await user.click(screen.getByRole("button", { name: "Back to card" }));
-      expect(screen.queryByRole("img", { name: "QR_cached_token" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
       expect(qrTokenCallCount).toBe(0);
     });
 
@@ -177,7 +179,7 @@ describe("StaffCard — QR area + print flow", () => {
       });
 
       await user.click(await screen.findByRole("button", { name: "Show full screen" }));
-      await screen.findByRole("img", { name: "QR_cached_token" });
+      await screen.findByTestId("qr-display-code");
 
       // Accessible name comes from the sr-only DialogTitle via
       // aria-labelledby — proves Radix actually wired it up, not just that
@@ -190,7 +192,7 @@ describe("StaffCard — QR area + print flow", () => {
 
       await user.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-      expect(screen.queryByRole("img", { name: "QR_cached_token" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
     });
 
     it("has_qr_token but not cached: shows the muted 'can't be re-displayed' box with the issued date, no QrSvg", async () => {

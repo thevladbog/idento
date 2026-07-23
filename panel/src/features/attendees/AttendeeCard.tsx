@@ -161,12 +161,16 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
             <Button
               variant="outline"
               className="min-h-11 flex-1 gap-1.5"
+              disabled={unblockAttendee.isPending}
               onClick={() => unblockAttendee.mutate({ params: { path: { id: attendeeId } } })}
             >
               <ShieldOff aria-hidden className="size-4" />
               {t("attendeeCardUnblock")}
             </Button>
           </div>
+          {unblockAttendee.isError ? (
+            <p className="text-caption text-destructive">{t("attendeeCardUnblockError")}</p>
+          ) : null}
         </>
       ) : !attendee.checkin_status ? (
         <>
@@ -258,10 +262,20 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
             open={undoOpen}
             onOpenChange={setUndoOpen}
             title={t("attendeeCardUndoConfirmTitle")}
-            description={t("attendeeCardUndoConfirmBody", { name: fullName })}
+            description={
+              undoCheckin.isError ? (
+                <>
+                  {t("attendeeCardUndoConfirmBody", { name: fullName })}
+                  <span className="mt-1 block text-destructive">{t("attendeeCardUndoError")}</span>
+                </>
+              ) : (
+                t("attendeeCardUndoConfirmBody", { name: fullName })
+              )
+            }
             confirmLabel={t("attendeeCardUndoCheckin")}
             cancelLabel={t("attendeeCardConfirmCancel")}
             closeLabel={t("moreSheetCloseLabel")}
+            confirmDisabled={undoCheckin.isPending}
             onConfirm={handleUndoCheckin}
           />
         </>
@@ -276,11 +290,21 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         open={blockOpen}
         onOpenChange={setBlockOpen}
         title={t("attendeeCardBlockConfirmTitle", { name: fullName })}
-        description={t("attendeeCardBlockConfirmBody")}
+        description={
+          blockAttendee.isError ? (
+            <>
+              {t("attendeeCardBlockConfirmBody")}
+              <span className="mt-1 block text-destructive">{t("attendeeCardBlockError")}</span>
+            </>
+          ) : (
+            t("attendeeCardBlockConfirmBody")
+          )
+        }
         confirmLabel={t("attendeeCardConfirmDestructive")}
         cancelLabel={t("attendeeCardConfirmCancel")}
         closeLabel={t("moreSheetCloseLabel")}
         destructive
+        confirmDisabled={blockAttendee.isPending}
         onConfirm={handleBlock}
       />
     </div>

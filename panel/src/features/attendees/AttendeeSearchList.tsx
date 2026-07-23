@@ -20,7 +20,12 @@ export interface AttendeeSearchListProps {
   onSearchChange?: (value: string) => void;
 }
 
-const PHONE_PER_PAGE = 30;
+// Exported so AttendeesPage.tsx's own header-total query can request the
+// exact same page/perPage on mobile -- matching params means $api's query
+// key matches too, so both queries share one TanStack Query cache entry
+// (and one network request) instead of firing a duplicate list fetch on
+// every keystroke/filter change.
+export const PHONE_PER_PAGE = 30;
 
 // Board 8g — the phone sibling of AttendeeTable: search-first, no bulk
 // select, no column editing, no CSV import. Reuses the SAME

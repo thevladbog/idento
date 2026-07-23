@@ -54,9 +54,19 @@ export function QrDisplay({
 
   React.useEffect(() => {
     let cancelled = false;
-    void QRCode.toString(value, { type: "svg", errorCorrectionLevel: "M", margin: 0 }).then((markup) => {
-      if (!cancelled) setSvg(markup);
-    });
+    QRCode.toString(value, { type: "svg", errorCorrectionLevel: "M", margin: 0 })
+      .then((markup) => {
+        if (!cancelled) setSvg(markup);
+      })
+      .catch(() => {
+        // Same precedent as QrSvg.tsx (this component's sibling for the
+        // small-swatch case): no i18n'd error state exists for this — a real
+        // generation failure is effectively unreachable for the short
+        // token/code strings this ever encodes — so this only guards against
+        // an unhandled rejection, leaving the empty placeholder rather than
+        // fabricating a new failure UI.
+        if (!cancelled) setSvg(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -100,7 +110,14 @@ export function QrDisplay({
         ) : svg ? (
           <div
             role="img"
-            aria-label={value}
+            // Generic, non-secret label — `value` is a bearer credential
+            // (login token, provisioning token, attendee code), and unlike
+            // the QR code's own visual encoding (which requires a scanner to
+            // decode), an aria-label is plain text sitting in the DOM/a11y
+            // tree, readable by devtools, extensions, or any a11y-tree
+            // scrape without ever decoding the code itself.
+            aria-label="QR code"
+            data-testid="qr-display-code"
             className="size-[228px] [&_svg]:size-full"
             // Local, deterministic SVG string from the `qrcode` package —
             // never externally-sourced markup.

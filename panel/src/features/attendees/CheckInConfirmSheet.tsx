@@ -76,8 +76,20 @@ export function CheckInConfirmSheet({
     if (checkin.isPending) event.preventDefault();
   }
 
+  // SheetContent's X close button (packages/ui) is a Radix Dialog.Close --
+  // clicking it calls the Root's onOpenChange(false) directly, bypassing
+  // onEscapeKeyDown/onPointerDownOutside/onInteractOutside entirely (those
+  // only cover keyboard/pointer-outside events on Content, not an explicit
+  // Close click). Guarding here, at the single place every close request
+  // actually funnels through, closes that gap for the X button too without
+  // a packages/ui change.
+  function handleOpenChange(next: boolean) {
+    if (!next && checkin.isPending) return;
+    onOpenChange(next);
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
         closeLabel={t("moreSheetCloseLabel")}
