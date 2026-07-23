@@ -78,4 +78,17 @@ describe("AttendeeCard — not checked in", () => {
     await user.click(await screen.findByRole("button", { name: "Назад" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("gives the primary check-in button an auto height so its two-line label never gets clipped", async () => {
+    renderCard();
+    const button = await screen.findByRole("button", { name: /Зарегистрировать вручную/ });
+    expect(button.className).not.toMatch(/(^|\s)h-9(\s|$)/);
+  });
+
+  it("renders the QR view with no dead, accessible-name-less control", async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole("button", { name: /Показать QR/ }));
+    expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
+  });
 });

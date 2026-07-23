@@ -19,6 +19,16 @@ export interface QrDisplayProps {
   /** Small caption under the code (who/what it's for). */
   hint?: string;
   className?: string;
+  /**
+   * Whether to render the small regenerate text-button in the non-expired
+   * state. Defaults to `true` for the three consumers with a real
+   * "regenerate" action (staff login QR, station provisioning QR, staff
+   * self-service QR). Callers whose QR is a static, non-rotating value (e.g.
+   * an attendee's badge QR) have no real regenerate action to wire up and
+   * should pass `false` here rather than leave a focusable, accessible-name-
+   * less no-op control in the DOM (WCAG 4.1.2).
+   */
+  showRegenerate?: boolean;
 }
 
 function formatCountdown(ms: number): string {
@@ -37,6 +47,7 @@ function formatCountdown(ms: number): string {
 // API, since every value this component is handed is a bearer credential.
 export function QrDisplay({
   value, title, subtitle, expiresAt, expiredLabel, regenerateLabel, closeLabel, onClose, onRegenerate, hint, className,
+  showRegenerate = true,
 }: QrDisplayProps) {
   const [svg, setSvg] = React.useState<string | null>(null);
   const [now, setNow] = React.useState(() => Date.now());
@@ -107,14 +118,19 @@ export function QrDisplay({
       ) : null}
 
       {expired ? (
-        <Button className="mt-6 w-[228px]" onClick={onRegenerate}>
-          {regenerateLabel}
-        </Button>
-      ) : (
+        // Structurally unreachable when `expiresAt` is null (as it is for the
+        // `showRegenerate={false}` callers), but guarded for defensive
+        // correctness anyway.
+        showRegenerate ? (
+          <Button className="mt-6 w-[228px]" onClick={onRegenerate}>
+            {regenerateLabel}
+          </Button>
+        ) : null
+      ) : showRegenerate ? (
         <button type="button" onClick={onRegenerate} className="mt-5 text-caption font-semibold text-black/70 underline-offset-2 hover:underline">
           {regenerateLabel}
         </button>
-      )}
+      ) : null}
 
       {hint ? <p className="mt-auto max-w-[280px] pt-8 text-caption text-black/50">{hint}</p> : null}
     </div>

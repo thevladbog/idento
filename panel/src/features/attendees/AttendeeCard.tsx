@@ -69,7 +69,14 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         subtitle={attendee.company ?? ""}
         expiresAt={null}
         expiredLabel=""
-        regenerateLabel=""
+        // Never rendered: an attendee's QR is a static, non-rotating value,
+        // so there's no real regenerate action to wire up, and
+        // `showRegenerate={false}` below suppresses the regenerate control
+        // entirely. `regenerateLabel` stays a required string prop on
+        // QrDisplay (shared by other real-regenerate consumers), so this is
+        // an intentionally-unused placeholder rather than an empty string.
+        regenerateLabel="regenerate"
+        showRegenerate={false}
         closeLabel={t("attendeeCardBackLabel")}
         onClose={() => setQrOpen(false)}
         onRegenerate={() => {}}
@@ -109,7 +116,7 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
             </div>
           </div>
 
-          <Button className="flex-col gap-0.5 py-2.5" onClick={() => setConfirmOpen(true)}>
+          <Button className="h-auto min-h-13 flex-col gap-0.5 py-2.5" onClick={() => setConfirmOpen(true)}>
             <span className="text-body font-bold">{t("attendeeCardCheckInManually")}</span>
             <span className="text-caption font-normal text-primary-foreground/85">{t("attendeeCardNoBadgeSublabel")}</span>
           </Button>

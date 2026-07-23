@@ -98,6 +98,25 @@ describe("QrDisplay", () => {
     expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
   });
 
+  it("renders no regenerate control when showRegenerate is false, even with a non-empty regenerateLabel", () => {
+    render(
+      <QrDisplay
+        value="tok"
+        title="t"
+        subtitle="s"
+        expiresAt={null}
+        expiredLabel="Code expired"
+        regenerateLabel="regenerate"
+        showRegenerate={false}
+        closeLabel="Close"
+        onClose={() => {}}
+        onRegenerate={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
+    expect(screen.queryByText("regenerate")).not.toBeInTheDocument();
+  });
+
   it("calls onClose from the close button", () => {
     const onClose = vi.fn();
     render(
