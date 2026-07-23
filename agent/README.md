@@ -248,27 +248,41 @@ sudo chmod 666 /dev/tty.usbserial*
 
 ## Production Deployment
 
-### Запуск как служба (systemd на Linux)
+### Standalone Linux (systemd) — рекомендуемый способ
 
-```ini
-[Unit]
-Description=Idento Hardware Agent
-After=network.target
-
-[Service]
-Type=simple
-User=idento
-WorkingDirectory=/opt/idento/agent
-ExecStart=/opt/idento/agent/idento-agent --port 12345
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
+Для headless Linux-хоста (например, Raspberry Pi рядом с принтером/сканером,
+подключаемого к киоску в режиме "External agent") используйте готовый бандл
+из `agent/dist/`, а не ручную настройку ниже: он собирает бинарник, копирует
+unit-файл, добавляет пользователя в группу `dialout`, включает и запускает
+сервис одной командой и печатает готовые Base URL + токен для вставки в
+Equipment-шаг киоска.
 
 ```bash
-sudo systemctl enable idento-agent
-sudo systemctl start idento-agent
+# На CI под каждую архитектуру уже собирается готовый архив
+# idento-agent-standalone_linux_{amd64,arm64}.tar.gz (release.yml) --
+# либо соберите сами:
+cd agent && go build -o dist/idento-agent .
+cd dist && ./install.sh
+```
+
+`install.sh` устанавливает `idento-agent.service` (реальный unit-файл в этой
+директории, `--host 0.0.0.0 --port 12345`, `Restart=on-failure`) и печатает
+Base URL + auth-токен станции. Подробности подключения киоска к такому
+агенту — в `desktop/README.md`'s "Connecting to a standalone agent (external
+mode)".
+
+### Ручная настройка (без install.sh)
+
+Если готовый бандл не подходит (нестандартный путь установки, другой
+пользователь и т.д.), адаптируйте `idento-agent.service` из этой директории
+под свои нужды и установите вручную:
+
+```bash
+sudo install -m 0755 idento-agent /usr/local/bin/idento-agent
+sudo cp idento-agent.service /etc/systemd/system/idento-agent.service
+# отредактируйте User= в скопированном unit-файле под своего пользователя
+sudo systemctl daemon-reload
+sudo systemctl enable --now idento-agent.service
 ```
 
 ### Запуск как служба (macOS launchd)

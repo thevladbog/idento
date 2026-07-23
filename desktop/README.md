@@ -64,6 +64,32 @@ standalone agent's base URL (e.g. `http://192.168.1.50:12345`) and its auth
 token (printed by `agent/dist/install.sh` on install, or found in
 `~/.idento/agent_config.json` on that machine).
 
+## Self-service mode (unattended stations)
+
+A station can run unattended instead of staffed: on the Mode pre-flight step,
+switch "Station type" to **Self-service**. This restricts scan input to
+wedge/scanner (no manual code entry -- there's no operator to type a code on
+a guest's behalf), shows an idle attract screen between scans, and shows
+privacy-safe verdicts (name only, no check-in time/operator detail) that
+auto-return to the attract screen on their own, including for a duplicate
+scan (staffed mode leaves that one for an operator to dismiss; self-service
+has none).
+
+While a self-service station is running, the app window is locked down:
+fullscreen, no window decorations, always on top, hidden from the
+taskbar/dock, and cannot be closed via the OS's own window controls or quit
+shortcuts (including macOS Cmd+Q). To exit, tap the small icon in the
+screen's corner and enter a staff QR token -- the same token used for QR
+login on the Login pre-flight step. A successful check releases the lockdown
+and returns to the Mode step.
+
+**Known gap**: live lockdown behavior (fullscreen actually taking effect,
+window-close genuinely blocked on each OS including Cmd+Q, always-on-top
+under a real window manager) has been verified against the Tauri API
+surface but never exercised on real hardware. Test this on your actual
+target device(s) before relying on it for a genuinely unattended
+deployment.
+
 ## Auto-updates (one-time setup, before the first release)
 
 The desktop app checks for updates against signed release manifests. Before
