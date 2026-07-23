@@ -30,12 +30,12 @@ export function OrgSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="gap-2">
+        <Button variant="ghost" className="min-w-0 gap-2">
           <Avatar className="size-6">
             <AvatarFallback>{current.name.slice(0, 1)}</AvatarFallback>
           </Avatar>
-          {current.name}
-          <ChevronsUpDown className="size-4 text-muted-foreground" />
+          <span className="truncate">{current.name}</span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
