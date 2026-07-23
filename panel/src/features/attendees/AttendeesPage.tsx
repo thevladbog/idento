@@ -6,6 +6,7 @@ import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
+import { AttendeeCard } from "./AttendeeCard";
 import { AttendeeDrawer } from "./AttendeeDrawer";
 import { AttendeeSearchList } from "./AttendeeSearchList";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
@@ -306,9 +307,15 @@ export function AttendeesPage() {
       {/* Task 8: mounted (not just shown/hidden) whenever `attendee` is set,
           so a fresh page load with ?attendee=<id> already in the URL
           renders it too (deep-link support) — not only after a row click
-          during the current session. */}
+          during the current session. AttendeeCard (P6.3 T5-6) has the exact
+          same prop shape as AttendeeDrawer, so the phone/desktop swap below
+          is the only change needed here (P6.3 T7). */}
       {search.attendee ? (
-        <AttendeeDrawer eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        isMobile ? (
+          <AttendeeCard eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        ) : (
+          <AttendeeDrawer eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        )
       ) : null}
     </div>
   );

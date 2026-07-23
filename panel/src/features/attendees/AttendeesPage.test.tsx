@@ -50,6 +50,26 @@ function renderAt(path: string) {
   return router;
 }
 
+// Matches DesktopOnly.test.tsx's own helper (same media-query string as
+// useIsMobile.ts's MOBILE_QUERY) -- this file's other tests all render at
+// the default (desktop) matchMedia mock, so only the one phone-branch test
+// below needs this, with vi.unstubAllGlobals() restoring it afterward.
+function installMatchMedia(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches,
+      media: "(max-width: 767.98px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 interface CapturedRequest {
   params: URLSearchParams;
 }
@@ -344,6 +364,15 @@ describe("AttendeesPage", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(await within(screen.getByRole("dialog")).findByText("Bob Noll")).toBeInTheDocument();
+  });
+
+  it("renders AttendeeCard instead of AttendeeDrawer on phone when ?attendee is set", async () => {
+    installMatchMedia(true); // below md
+    renderAt("/events/evt-1/attendees?attendee=a2");
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument(); // AttendeeCard's back control
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); // AttendeeDrawer is a Dialog; AttendeeCard isn't
+    expect(screen.queryByRole("button", { name: /Reprint/i })).not.toBeInTheDocument(); // AttendeeDrawer-only affordance, absence proves the swap
   });
 
   // Reproduces the finding: deleting the last row(s) on a non-first page
