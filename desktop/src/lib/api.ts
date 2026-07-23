@@ -33,7 +33,17 @@ function createApi() {
         toast.error(i18n.t("tenantSuspended"), { id: "tenant-suspended", duration: Infinity });
       }
 
-      if (error.response?.status === 401) {
+      // A 401 from a credential-submission endpoint itself (/auth/login,
+      // /auth/login-qr) means "the credentials you just typed are wrong",
+      // not "your existing session died" -- it must never clear the
+      // caller's current session or navigate away. The page-path exclusion
+      // below (for /login, /qr-login) already handled this for those two
+      // pages, but StaffExitOverlay (K2b) calls /auth/login-qr from
+      // /checkin/:eventId/self, which isn't in that list -- without this
+      // request-URL check, a mistyped staff-exit QR token would wipe the
+      // kiosk's valid station session and hard-redirect away from lockdown.
+      const isCredentialSubmission = (error.config?.url ?? "").includes("/auth/login");
+      if (error.response?.status === 401 && !isCredentialSubmission) {
         clearSession();
         const path = window.location.pathname + window.location.search;
         if (!path.startsWith("/login") && !path.startsWith("/qr-login")) {
