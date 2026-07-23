@@ -33,3 +33,4 @@ export { Calendar, type CalendarProps } from "./components/calendar";
 export { DatePicker, type DatePickerProps } from "./components/date-picker";
 export { TabBar, TabBarItem, type TabBarItemProps, type TabBarProps } from "./components/tab-bar";
 export { DesktopOnlyGate, type DesktopOnlyGateFlavor, type DesktopOnlyGateProps } from "./components/desktop-only-gate";
+export { QrDisplay, type QrDisplayProps } from "./components/qr-display";
