@@ -712,6 +712,82 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     expect(streamConnections.length).toBe(0);
     expect(screen.getByTestId("monitor-stream-error-badge")).toBeInTheDocument();
   }, 5000);
+
+  // P6.2 Task 2 -- board 8p's staleness vocabulary: a degraded stream never
+  // lets stale numbers masquerade as live. Reuses this block's own
+  // hello/close-driven `controlledMonitorStreamHandler()` harness exactly as
+  // the reconnecting-badge test above does, so "reconnecting" here is the
+  // real derived `stream.status`, not a hand-set prop.
+  it(
+    "dims the body to 60% while the stream is reconnecting, restoring it when live",
+    async () => {
+      renderCorrectAt("/events/evt-1/monitor");
+
+      await screen.findByText("1,284 / 2,410");
+      await waitFor(() => expect(streamConnections.length).toBe(1));
+      streamConnections[0].push("event: hello\ndata: {}\n\n");
+      await waitFor(() => expect(liveRing()).toBeInTheDocument());
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+
+      streamConnections[0].close();
+      await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
+      expect(screen.getByTestId("monitor-body")).toHaveClass("opacity-60");
+
+      // Backoff is 1s base +/-25% jitter (max 1250ms) -- bounded wait for
+      // the retried connect() to land as a brand-new request, same as the
+      // reconnecting-badge test above.
+      await waitFor(() => expect(streamConnections.length).toBe(2), { timeout: 3000 });
+      streamConnections[1].push("event: hello\ndata: {}\n\n");
+      await waitFor(() => expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument());
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+    },
+    8000,
+  );
+
+  it("keeps the body at full opacity while the stream is live", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
+
+    expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+  });
+
+  it("announces stream-state changes via a polite live region", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
+    streamConnections[0].close();
+    await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
+
+    const region = screen.getByTestId("monitor-stream-announcer");
+    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(region).toHaveClass("sr-only");
+    expect(region).toHaveTextContent("Reconnecting");
+  });
+
+  it("renders the updated-ago counter in warning tone with a clock icon while the stream is degraded", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
+    streamConnections[0].close();
+    await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
+
+    const counter = await screen.findByTestId("monitor-updated-ago");
+    expect(counter).toHaveClass("text-warning");
+    expect(counter).not.toHaveClass("text-muted-foreground");
+    // WCAG 1.4.1 -- color is never the only channel: a clock icon
+    // accompanies the amber tone, alongside the counter's own numeric text.
+    expect(counter.querySelector("svg")).toBeInTheDocument();
+  });
 });
 
 // PR #81 bot round Finding C6: retain-last-known-good. A single failed
