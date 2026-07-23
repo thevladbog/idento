@@ -21,6 +21,7 @@ import { useHeartbeat } from "@/features/checkin/useHeartbeat";
 import { useScanInput } from "@/features/checkin/useScanInput";
 import { DEFAULT_CHECKIN_SETTINGS } from "@/features/checkin/settingsTypes";
 import { AttractScreen } from "@/components/AttractScreen";
+import { StaffExitOverlay } from "@/components/StaffExitOverlay";
 
 export default function SelfServicePage() {
   const { t } = useTranslation();
@@ -128,6 +129,7 @@ export default function SelfServicePage() {
         )}
       </div>
       <input aria-hidden {...wedgeInputProps} className="sr-only" />
+      <StaffExitOverlay />
     </div>
   );
 }

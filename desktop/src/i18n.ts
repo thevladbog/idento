@@ -196,6 +196,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         selfBlockedMessage: "Please see a staff member",
         selfNotFoundMessage: "Code not found — please see a staff member",
         selfAgentUnavailable: "Station temporarily unavailable",
+        selfStaffExit: "Staff exit",
+        selfStaffExitConfirm: "Exit self-service",
       },
     },
     ru: {
@@ -389,6 +391,8 @@ i18n.use(LanguageDetector).use(initReactI18next).init({
         selfBlockedMessage: "Обратитесь к сотруднику",
         selfNotFoundMessage: "Код не найден — обратитесь к сотруднику",
         selfAgentUnavailable: "Станция временно недоступна",
+        selfStaffExit: "Выход для персонала",
+        selfStaffExitConfirm: "Выйти из режима самообслуживания",
       },
     },
   },
