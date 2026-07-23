@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
-import { ATTENDEES_LIST_KEY } from "../attendees/hooks";
+import { ATTENDEE_DETAIL_KEY, ATTENDEES_LIST_KEY } from "../attendees/hooks";
 import { parseCheckinSettings, type CheckinSettings } from "./settingsTypes";
 
 // Re-exported schema types for Task 6+ consumers (mirrors staff/hooks.ts'
@@ -141,9 +141,15 @@ export function CHECKIN_ACTIONS_KEY(eventId: string) {
 export function useStationCheckin(eventId: string) {
   const queryClient = useQueryClient();
   return $api.useMutation("post", "/api/events/{event_id}/checkin", {
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: CHECKIN_ACTIONS_KEY(eventId) });
       void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      // P6.3's AttendeeCard keeps a detail view open across this mutation
+      // (attendees/hooks.ts:139/149 already invalidate this key from
+      // block/unblock for the same reason) — without it the open card goes
+      // stale indefinitely since useAttendeeDetail isn't part of the
+      // attendees-list query this hook was originally written to refresh.
+      void queryClient.invalidateQueries({ queryKey: ATTENDEE_DETAIL_KEY(variables.body.attendee_id) });
     },
   });
 }
@@ -157,9 +163,12 @@ export function useStationCheckin(eventId: string) {
 export function useUndoCheckin(eventId: string) {
   const queryClient = useQueryClient();
   return $api.useMutation("post", "/api/events/{event_id}/checkin/undo", {
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       void queryClient.invalidateQueries({ queryKey: CHECKIN_ACTIONS_KEY(eventId) });
       void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      // Same rationale as useStationCheckin above — keeps an open AttendeeCard
+      // (P6.3) in sync instead of showing a stale checked-in state forever.
+      void queryClient.invalidateQueries({ queryKey: ATTENDEE_DETAIL_KEY(variables.body.attendee_id) });
     },
   });
 }
