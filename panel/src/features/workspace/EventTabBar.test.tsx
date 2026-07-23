@@ -2,10 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter,
 } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act, render, screen, waitFor, within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { EventTabBar } from "./EventTabBar";
 import { MONITOR_SNAPSHOT_KEY } from "../monitor/hooks";
+import { STATION_STALE_MS } from "../monitor/liveness";
 import type { components } from "../../shared/api/schema";
 import "../../shared/i18n";
 
@@ -22,6 +25,16 @@ const STALE_SNAPSHOT: components["schemas"]["MonitorSnapshot"] = {
   ],
   recent: [],
 };
+
+function freshSnapshotAt(lastSeenAtIso: string): components["schemas"]["MonitorSnapshot"] {
+  return {
+    totals: { checked_in: 10, total: 20, rate_per_min: 0, peak: null, est_done_at: null },
+    zones: [],
+    unattributed: 0,
+    stations: [{ id: "st-1", name: "Kiosk A", zone_id: null, checkin_count: 10, last_seen_at: lastSeenAtIso }],
+    recent: [],
+  };
+}
 
 function renderAt(path: string, seedSnapshot?: (queryClient: QueryClient) => void) {
   const rootRoute = createRootRoute();
@@ -119,5 +132,27 @@ describe("EventTabBar", () => {
     renderAt("/events/evt-1");
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
     expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
+  });
+
+  it("lights the dot once a cached station crosses staleness purely from the clock advancing, with no cache update", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const now = Date.now();
+    // Fresh at render time (well inside STATION_STALE_MS), so the dot must
+    // start off — this asserts the fix recomputes over time, not that a
+    // stale fixture happens to always read stale.
+    const freshLastSeenAt = new Date(now - 1_000).toISOString();
+    renderAt("/events/evt-1", (queryClient) => {
+      queryClient.setQueryData(MONITOR_SNAPSHOT_KEY("evt-1"), freshSnapshotAt(freshLastSeenAt));
+    });
+    const bar = await screen.findByRole("navigation", { name: "Event sections" });
+    expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
+
+    // Advance real elapsed time past STATION_STALE_MS without touching the
+    // cache at all — only the local recheck tick should flip the dot on.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STATION_STALE_MS + 15_000);
+    });
+    expect(within(bar).getByTestId("tab-bar-badge")).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });
