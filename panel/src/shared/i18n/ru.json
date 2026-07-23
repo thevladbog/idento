@@ -667,6 +667,7 @@
   "checkinConfirmCancel": "Отмена",
   "checkinConfirmAction": "Зарегистрировать",
   "checkinConfirmError": "Не удалось зарегистрировать. Попробуйте ещё раз.",
+  "checkinConfirmBlockedError": "Этот участник заблокирован, регистрация невозможна.",
   "launchColEventTitle": "Подтвердите мероприятие и станцию",
   "launchStationNameLabel": "Название станции",
   "launchStationNameDefault": "Главный вход",

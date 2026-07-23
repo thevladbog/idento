@@ -665,6 +665,7 @@
   "checkinConfirmCancel": "Cancel",
   "checkinConfirmAction": "Check in",
   "checkinConfirmError": "Couldn't check in. Try again.",
+  "checkinConfirmBlockedError": "This attendee is blocked and cannot be checked in.",
   "launchColEventTitle": "Confirm event & station",
   "launchStationNameLabel": "Station name",
   "launchStationNameDefault": "Main entrance",

@@ -86,6 +86,32 @@ describe("CheckInConfirmSheet", () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
+  it("does not close or call onCheckedIn when the check-in verdict is blocked, and shows the inline blocked message", async () => {
+    // The check-in endpoint is verdict-style: a blocked attendee still gets
+    // an HTTP 200, just with outcome: "blocked" and checkin: null (nothing
+    // was actually recorded server-side) -- this must NOT be treated like
+    // the checked_in/already_checked_in success path above.
+    server.use(
+      http.post("http://api.test/api/events/:eventId/checkin", () =>
+        HttpResponse.json({
+          outcome: "blocked",
+          attendee: {
+            id: "att-2", event_id: "evt-1", first_name: "Мария", last_name: "Иванова", email: "m@x.com",
+            company: "ВТБ", code: "QR-11730", checkin_status: false, printed_count: 0, blocked: true,
+            block_reason: "test", packet_delivered: false, created_at: "", updated_at: "",
+          },
+          checkin: null,
+        })),
+    );
+    const user = userEvent.setup();
+    const { onOpenChange, onCheckedIn } = renderSheet();
+    await user.click(screen.getByRole("button", { name: "Зарегистрировать" }));
+    expect(await screen.findByText("Этот участник заблокирован, регистрация невозможна.")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(onCheckedIn).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
   it("disables Cancel and ignores Escape while the check-in request is still in flight", async () => {
     // A genuinely in-flight (delayed) request is what makes this test prove
     // anything -- with an instant response there's no window in which a

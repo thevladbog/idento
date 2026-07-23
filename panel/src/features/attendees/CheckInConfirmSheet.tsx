@@ -2,6 +2,7 @@ import {
   Button, Sheet, SheetContent, SheetHeader, SheetTitle,
 } from "@idento/ui";
 import { CircleAlert } from "lucide-react";
+import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { useStationCheckin } from "../checkin/hooks";
 
@@ -26,12 +27,37 @@ export function CheckInConfirmSheet({
 }: CheckInConfirmSheetProps) {
   const { t } = useTranslation();
   const checkin = useStationCheckin(eventId);
+  // The check-in endpoint is verdict-style: it always returns HTTP 200, even
+  // for a blocked attendee (outcome: "blocked", checkin: null — nothing was
+  // actually recorded server-side). Tracked as its own boolean, separate from
+  // checkin.isError, since a "blocked" verdict is not a request failure.
+  const [blockedOutcome, setBlockedOutcome] = React.useState(false);
+
+  // Resets on every open -> closed transition (same pattern as
+  // AddAttendeeDialog.tsx's createAttendee.reset() effect) so a stale
+  // blocked/error verdict from a previous open never leaks into the next one.
+  React.useEffect(() => {
+    if (open) return;
+    setBlockedOutcome(false);
+    checkin.reset();
+    // checkin is a fresh mutation object each render; including it in the
+    // deps would reset on every render instead of only on the
+    // open->closed transition.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   function handleConfirm() {
     checkin.mutate(
       { params: { path: { event_id: eventId } }, body: { attendee_id: attendeeId } },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
+          if (data.outcome === "blocked") {
+            // Never actually checked in server-side -- keep the sheet open
+            // and show an inline explanation instead of firing the "no
+            // badge printed" success toast for an attempt that didn't work.
+            setBlockedOutcome(true);
+            return;
+          }
           onOpenChange(false);
           onCheckedIn();
         },
@@ -69,7 +95,11 @@ export function CheckInConfirmSheet({
             <span className="font-bold">{t("checkinConfirmNoBadgeTitle")}</span> {t("checkinConfirmNoBadgeBody")}
           </p>
         </div>
-        {checkin.isError ? <p className="text-caption text-destructive">{t("checkinConfirmError")}</p> : null}
+        {blockedOutcome ? (
+          <p className="text-caption text-destructive">{t("checkinConfirmBlockedError")}</p>
+        ) : checkin.isError ? (
+          <p className="text-caption text-destructive">{t("checkinConfirmError")}</p>
+        ) : null}
         <div className="flex gap-2.5">
           <Button
             variant="outline"
@@ -79,7 +109,13 @@ export function CheckInConfirmSheet({
           >
             {t("checkinConfirmCancel")}
           </Button>
-          <Button className="flex-[1.4]" onClick={handleConfirm} disabled={checkin.isPending}>
+          {/* Blocked is a dead end, not a retryable failure -- the endpoint
+              never actually checks the attendee in for this outcome, so
+              re-submitting would just come back "blocked" again. Disabling
+              the primary action leaves Cancel/X as the one clear path back
+              to closing, rather than adding a second differently-labeled
+              button for the exact same "close" behavior. */}
+          <Button className="flex-[1.4]" onClick={handleConfirm} disabled={checkin.isPending || blockedOutcome}>
             {t("checkinConfirmAction")}
           </Button>
         </div>
