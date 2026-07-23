@@ -1,9 +1,8 @@
 import {
-  Avatar, AvatarFallback, Button, Card, ConfirmDialog, QrDisplay, Skeleton,
+  Avatar, AvatarFallback, Button, Card, ConfirmDialog, Dialog, DialogContent, DialogTitle, QrDisplay, Skeleton,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
-import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { QrPrintCard } from "./QrPrintSheet";
@@ -440,19 +439,38 @@ export function StaffCard({
         onConfirm={handleConfirmRevoke}
       />
 
-      {fullScreenOpen && cachedToken
-        ? createPortal(
-          // Portaled straight to document.body (same idiom as
-          // QrPrintSheet's own #qr-print-root) rather than rendered inline:
-          // this card is one cell of StaffPage's grid (up to 3 per row), and
-          // QrDisplay itself has no fixed/overlay positioning of its own — it
-          // expects to occupy the whole viewport, exactly as AttendeeCard.tsx
-          // uses it (a full-route early return, no grid around it). Mounting
-          // it in place here would just stretch this one grid cell to
-          // min-h-screen instead of ever covering the screen. `fixed inset-0
-          // z-50` (the same overlay layer every Radix Dialog/Sheet in this
-          // package uses) makes it a real full-screen overlay regardless of
-          // where in the tree it's mounted.
+      {/* Review fix (P6.3 T8): this used to be a hand-rolled
+          `createPortal(..., document.body)` with `className="fixed inset-0
+          z-50"` — visually full-screen, but with none of Radix's Dialog
+          behaviors (focus trap, aria-modal, Escape-to-close, background
+          inerting), so StaffPage's grid (other staff cards' Print/Zones/
+          Revoke buttons, plus the page-level "Print all"/"+ Add staff"
+          buttons) stayed fully live and tabbable underneath it. Reusing the
+          same Dialog/DialogContent primitives ConfirmDialog itself builds on
+          (see the two ConfirmDialogs below) gets all of that for free —
+          DialogContent's own centered-modal positioning (`fixed left-1/2
+          top-1/2 ... max-w-lg -translate-x-1/2 -translate-y-1/2 ...`) is
+          overridden below via the `cn()` merge in dialog.tsx so it fills the
+          viewport instead.
+          `hideClose` suppresses DialogContent's own X — QrDisplay already
+          renders its own visible close (X) button internally, so a second
+          one stacked on top would be a redundant, confusingly-duplicate
+          control. A visually-hidden DialogTitle is still required: Radix
+          only wires `aria-labelledby` onto the dialog element when a
+          DialogTitle is actually rendered (see dialog.tsx's other
+          consumers, which all render one), and QrDisplay's own on-screen
+          "title" text is a plain styled div, not something Radix can pick
+          up as the dialog's accessible name — sr-only here (this
+          codebase's established hidden-text idiom, see status-pill.tsx)
+          keeps it out of the visual layout entirely. */}
+      <Dialog open={fullScreenOpen && !!cachedToken} onOpenChange={setFullScreenOpen}>
+        <DialogContent
+          hideClose
+          closeLabel={t("staffQrBackToCard")}
+          className="inset-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-transparent p-0 shadow-none"
+        >
+          <DialogTitle className="sr-only">{`${t("staffQrSubtitle")} — ${user.email}`}</DialogTitle>
+          {cachedToken ? (
             <QrDisplay
               value={cachedToken}
               title={user.email}
@@ -463,11 +481,10 @@ export function StaffCard({
               closeLabel={t("moreSheetCloseLabel")}
               onClose={() => setFullScreenOpen(false)}
               onRegenerate={() => setFullScreenOpen(false)}
-              className="fixed inset-0 z-50"
-            />,
-            document.body,
-          )
-        : null}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
