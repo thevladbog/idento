@@ -132,6 +132,32 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.getByText(`Issued ${expectedDate} · valid 30 days`)).toBeInTheDocument();
     });
 
+    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and its 'Back to card' just closes it", async () => {
+      const user = userEvent.setup();
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        zoneNames: ["Main hall", "VIP"],
+        cachedToken: "QR_cached_token",
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+
+      const fullScreenImg = await screen.findByRole("img", { name: "QR_cached_token" });
+      expect(fullScreenImg).toBeInTheDocument();
+      // "alice@example.com" is deliberately not asserted here — it's the
+      // QrDisplay title AND already the card's own header text, so it's a
+      // genuine (harmless) duplicate on the page; "Staff login" (the
+      // subtitle) is the unique signal that QrDisplay actually mounted.
+      expect(screen.getByText("Staff login")).toBeInTheDocument();
+
+      // "Back to card" (QrDisplay's regenerateLabel here) just closes the
+      // full-screen view — it never re-mints a token (that stays gated
+      // behind the existing "Print card" confirm flow).
+      await user.click(screen.getByRole("button", { name: "Back to card" }));
+      expect(screen.queryByRole("img", { name: "QR_cached_token" })).not.toBeInTheDocument();
+      expect(qrTokenCallCount).toBe(0);
+    });
+
     it("has_qr_token but not cached: shows the muted 'can't be re-displayed' box with the issued date, no QrSvg", async () => {
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),

@@ -1,8 +1,9 @@
 import {
-  Avatar, AvatarFallback, Button, Card, ConfirmDialog, Skeleton,
+  Avatar, AvatarFallback, Button, Card, ConfirmDialog, QrDisplay, Skeleton,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { QrPrintCard } from "./QrPrintSheet";
@@ -132,6 +133,11 @@ export function StaffCard({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [zonesOpen, setZonesOpen] = React.useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = React.useState(false);
+  // Board 8l: the full-screen QrDisplay viewer for the cached token. Purely
+  // a viewing affordance — it never re-mints a token itself (see
+  // `onRegenerate` below); a genuinely new token still only comes from the
+  // existing "Print card" confirm flow.
+  const [fullScreenOpen, setFullScreenOpen] = React.useState(false);
   // Same non-blocking, session-ref-guarded pattern as the regenerate confirm
   // below: revoke is a single fire-and-forget destructive action once
   // confirmed, so backing out mid-flight just means "don't act on the
@@ -305,6 +311,13 @@ export function StaffCard({
                 {t("staffQrIssued", { date: formatIssuedAt(user.qr_token_created_at, i18n.language) })}
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setFullScreenOpen(true)}
+              className="mt-0.5 self-start text-caption font-semibold text-success"
+            >
+              {t("staffQrShowFullScreen")}
+            </button>
           </div>
         </div>
       ) : user.has_qr_token ? (
@@ -426,6 +439,35 @@ export function StaffCard({
         confirmDisabled={revokeStaff.isPending}
         onConfirm={handleConfirmRevoke}
       />
+
+      {fullScreenOpen && cachedToken
+        ? createPortal(
+          // Portaled straight to document.body (same idiom as
+          // QrPrintSheet's own #qr-print-root) rather than rendered inline:
+          // this card is one cell of StaffPage's grid (up to 3 per row), and
+          // QrDisplay itself has no fixed/overlay positioning of its own — it
+          // expects to occupy the whole viewport, exactly as AttendeeCard.tsx
+          // uses it (a full-route early return, no grid around it). Mounting
+          // it in place here would just stretch this one grid cell to
+          // min-h-screen instead of ever covering the screen. `fixed inset-0
+          // z-50` (the same overlay layer every Radix Dialog/Sheet in this
+          // package uses) makes it a real full-screen overlay regardless of
+          // where in the tree it's mounted.
+            <QrDisplay
+              value={cachedToken}
+              title={user.email}
+              subtitle={t("staffQrSubtitle")}
+              expiresAt={null}
+              expiredLabel=""
+              regenerateLabel={t("staffQrBackToCard")}
+              closeLabel={t("moreSheetCloseLabel")}
+              onClose={() => setFullScreenOpen(false)}
+              onRegenerate={() => setFullScreenOpen(false)}
+              className="fixed inset-0 z-50"
+            />,
+            document.body,
+          )
+        : null}
     </Card>
   );
 }
