@@ -2,12 +2,25 @@ import { act, render, screen } from "@testing-library/react";
 import { QrDisplay } from "./qr-display";
 
 describe("QrDisplay", () => {
+  // @testing-library/dom's `waitFor`/`findBy*` only recognize *Jest's* fake
+  // timers (it feature-detects a global `jest` with a mocked `setTimeout`), so
+  // under Vitest's `vi.useFakeTimers()` its internal polling interval is
+  // scheduled on the faked clock and never fires — any test that awaits
+  // `findBy*`/`waitFor` while fake timers are active hangs until the real
+  // per-test timeout. Shimming a minimal `jest.advanceTimersByTime` (aliased to
+  // Vitest's own) makes testing-library detect fake timers and drive its
+  // polling through them instead of a dead real-time wait. See
+  // https://github.com/testing-library/dom-testing-library/issues/939.
   beforeEach(() => {
     vi.useFakeTimers();
+    (globalThis as any).jest = {
+      advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms),
+    };
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    delete (globalThis as any).jest;
   });
 
   function future(seconds: number): string {
