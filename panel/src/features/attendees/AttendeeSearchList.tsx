@@ -6,9 +6,9 @@ import type { components } from "../../shared/api/schema";
 type Attendee = components["schemas"]["Attendee"];
 
 function attendeeStatus(attendee: Attendee): { status: "ready" | "empty" | "error"; labelKey: string } {
-  if (attendee.blocked) return { status: "error", labelKey: "attendeeStatusBlocked" };
-  if (attendee.checkin_status) return { status: "ready", labelKey: "attendeeStatusCheckedIn" };
-  return { status: "empty", labelKey: "attendeeStatusNotCheckedIn" };
+  if (attendee.blocked) return { status: "error", labelKey: "attendeesStatusBlocked" };
+  if (attendee.checkin_status) return { status: "ready", labelKey: "attendeesStatusCheckedIn" };
+  return { status: "empty", labelKey: "attendeesStatusNotCheckedIn" };
 }
 
 export interface AttendeeSearchListProps {
