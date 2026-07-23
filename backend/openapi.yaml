@@ -5698,3 +5698,27 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/equipment/printers/pairing-export.csv:
+    get:
+      operationId: exportPrinterPairingCSV
+      summary: >
+        CSV of every network printer in the tenant's registry with a ready
+        qr_payload column, for bulk label generation in an external tool.
+        UTF-8 with BOM; one row per network printer.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: CSV (UTF-8 with BOM).
+          content:
+            text/csv:
+              schema: { type: string }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure loading printers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }

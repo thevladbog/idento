@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -146,5 +147,89 @@ func TestGetPrinterPairingQR_MissingDeviceIs404(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestExportPrinterPairingCSV_HeaderBOMAndRow(t *testing.T) {
+	e := echo.New()
+	tenantID, dev1 := uuid.New(), uuid.New()
+	fs := &fakeStore{
+		listEquipmentPrintersForTenant: func(_ uuid.UUID) ([]models.EquipmentPrinterExport, error) {
+			return []models.EquipmentPrinterExport{{
+				Device: models.EquipmentDevice{
+					ID: dev1, Class: "printer", Kind: "network",
+					DisplayName: "Entrance",
+					Config:      json.RawMessage(`{"agent_name":"z1","ip":"10.0.0.5","port":9100,"dpi":203}`),
+				},
+				Hostname: "kiosk-1",
+			}}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x", "", tenantID.String(), "admin")
+
+	if err := h.ExportPrinterPairingCSV(c); err != nil {
+		t.Fatalf("ExportPrinterPairingCSV: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/csv" {
+		t.Errorf("content-type = %q, want text/csv", ct)
+	}
+	body := rec.Body.String()
+	if !strings.HasPrefix(body, "\ufeff") {
+		t.Errorf("body missing UTF-8 BOM")
+	}
+	if !strings.Contains(body, "name,machine,printer_type,ip,port,dpi,qr_payload,device_id") {
+		t.Errorf("header row missing:\n%s", body)
+	}
+	if !strings.Contains(body, "Entrance") || !strings.Contains(body, "kiosk-1") || !strings.Contains(body, "10.0.0.5") {
+		t.Errorf("printer row missing fields:\n%s", body)
+	}
+}
+
+func TestExportPrinterPairingCSV_QRPayloadRoundTrips(t *testing.T) {
+	e := echo.New()
+	tenantID, dev1 := uuid.New(), uuid.New()
+	fs := &fakeStore{
+		listEquipmentPrintersForTenant: func(_ uuid.UUID) ([]models.EquipmentPrinterExport, error) {
+			return []models.EquipmentPrinterExport{{
+				Device: models.EquipmentDevice{
+					ID: dev1, Class: "printer", Kind: "network",
+					DisplayName: "Зал А",
+					Config:      json.RawMessage(`{"agent_name":"z1","ip":"10.0.0.7","port":9100}`),
+				},
+				Hostname: "kiosk-2",
+			}}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x", "", tenantID.String(), "admin")
+	if err := h.ExportPrinterPairingCSV(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	body := strings.TrimPrefix(rec.Body.String(), "\ufeff")
+	records, err := csv.NewReader(strings.NewReader(body)).ReadAll()
+	if err != nil {
+		t.Fatalf("parse csv: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("rows = %d, want header+1", len(records))
+	}
+	col := map[string]int{}
+	for i, name := range records[0] {
+		col[name] = i
+	}
+	var payload models.PrinterQRData
+	if err := json.Unmarshal([]byte(records[1][col["qr_payload"]]), &payload); err != nil {
+		t.Fatalf("qr_payload not valid JSON: %v", err)
+	}
+	if payload.Type != "idento_printer" || payload.PrinterType != "ethernet" || payload.Name != "Зал А" {
+		t.Errorf("payload = %+v", payload)
+	}
+	if payload.IP == nil || *payload.IP != "10.0.0.7" {
+		t.Errorf("payload.ip = %v", payload.IP)
 	}
 }
