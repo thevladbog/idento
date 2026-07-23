@@ -114,7 +114,7 @@ function RunningCard({ event }: { event: ApiEvent }) {
           <p className="text-body text-destructive">{t("homeStatsLoadError")}</p>
         ) : (
           <p>
-            <span className="text-2xl font-extrabold text-foreground">{checkedIn}</span>
+            <span className="text-3xl font-extrabold tracking-tight text-foreground md:text-2xl md:tracking-normal">{checkedIn}</span>
             <span className="text-body text-muted-foreground">
               {" "}
               / {total} {t("homeCheckedIn")}
@@ -123,7 +123,7 @@ function RunningCard({ event }: { event: ApiEvent }) {
         )}
         {!snapshot.isLoading && snapshot.data ? (
           <>
-            <Progress value={checkedIn} max={total} className="w-56" />
+            <Progress value={checkedIn} max={total} className="w-full md:w-56" />
             {/* Compact per-zone mini-line (board 1c/1d): real zone-name +
                 count pairs from the monitor snapshot, unattributed shown
                 only when > 0 (an event with perfect zone coverage never
