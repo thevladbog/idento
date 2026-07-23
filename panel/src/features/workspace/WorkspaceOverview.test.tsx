@@ -97,6 +97,13 @@ let zonesResponse: unknown = [
 ];
 
 const server = startMswServer(
+  // Task 9 (board 8m): WorkspaceOverview now fetches the event itself (the
+  // same GET .../{id} EventWorkspaceLayout.tsx already warms) to pass its
+  // `name` down to AddStationAction — every test in this file needs this
+  // mocked now, not just ones that care about the quick action itself.
+  http.get("http://api.test/api/events/:id", ({ params }) => HttpResponse.json({
+    id: params.id, tenant_id: "t1", name: "TechConf Moscow 2026", created_at: "", updated_at: "",
+  })),
   http.get("http://api.test/api/events/:id/readiness", () => HttpResponse.json(readinessResponse)),
   http.get("http://api.test/api/events/:eventId/stats", () => HttpResponse.json(statsResponse)),
   http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(zonesResponse)),
@@ -170,6 +177,11 @@ describe("WorkspaceOverview", () => {
     ).toBeInTheDocument();
     expect(screen.queryByTestId("workspace-next-steps")).not.toBeInTheDocument();
     expect(screen.queryByText("Coming soon")).not.toBeInTheDocument();
+  });
+
+  it("mounts the Add station quick action once the event name has loaded (Task 9, board 8m)", async () => {
+    renderOverview();
+    expect(await screen.findByRole("button", { name: /Add station/ })).toBeInTheDocument();
   });
 
   it("renders real readiness counts, checked-in stats, and the first two zone names", async () => {
