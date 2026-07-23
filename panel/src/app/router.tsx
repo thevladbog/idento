@@ -9,6 +9,7 @@ import { validateAttendeesSearch } from "../features/attendees/searchParams";
 import { HomePage } from "../features/home/HomePage";
 import { ZonesPage } from "../features/zones/ZonesPage";
 import { StaffPage } from "../features/staff/StaffPage";
+import { SelfServicePage } from "../features/staff/SelfServicePage";
 import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
 import { BadgeEditorPage } from "../features/badge/BadgeEditorPage";
@@ -103,6 +104,18 @@ const organizationRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/organization",
   component: OrganizationPage,
+});
+
+// P6.3 Task 10 -- staff self-service page (board 8q). A TOP-LEVEL protected
+// route, a SIBLING of teamRoute/equipmentRoute/organizationRoute, so it
+// renders inside the same shell any authenticated user gets. Reachable by
+// anyone signed in -- no route-level role redirect (this codebase never
+// hard-blocks a route by role; see SelfServicePage.tsx's own doc comment).
+// The nav entry point pointing here is gated in the UI instead.
+const selfServiceRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/me",
+  component: SelfServicePage,
 });
 
 const eventWorkspaceRoute = createRoute({
@@ -223,6 +236,7 @@ const routeTree = rootRoute.addChildren([
     teamRoute,
     equipmentRoute,
     organizationRoute,
+    selfServiceRoute,
     eventWorkspaceRoute.addChildren([
       eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute, eventBadgeRoute,
     ]),
