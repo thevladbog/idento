@@ -1,10 +1,17 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 
 	"idento/backend/internal/models"
+
+	"github.com/google/uuid"
+	"github.com/labstack/echo/v4"
+	"github.com/skip2/go-qrcode"
 )
 
 // errPairingQRUnsupportedDevice is returned by buildPrinterQRPayload for any
@@ -52,4 +59,66 @@ func buildPrinterQRPayload(device models.EquipmentDevice) (models.PrinterQRData,
 		payload.Settings = &models.PrinterSettings{DPI: shape.DPI}
 	}
 	return payload, nil
+}
+
+// slugForFilename reduces a device display_name to an ASCII filename stem
+// (letters/digits kept, spaces/-/_ collapsed to '-'), falling back to the
+// device id when nothing printable survives — e.g. an all-Cyrillic name.
+func slugForFilename(name string, id uuid.UUID) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ' || r == '-' || r == '_':
+			b.WriteRune('-')
+		}
+	}
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		return id.String()
+	}
+	return slug
+}
+
+// GetPrinterPairingQR streams a PNG QR code the mobile app scans to connect
+// to this network printer. Only class=printer, kind=network devices are
+// eligible (422 otherwise). The QR encodes the same PrinterQRData JSON the
+// CSV export's qr_payload column carries — both come from
+// buildPrinterQRPayload.
+func (h *Handler) GetPrinterPairingQR(c echo.Context) error {
+	deviceID, err := uuid.Parse(c.Param("device_id"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid device ID"})
+	}
+	tenantID, err := tenantIDFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+
+	device, err := h.Store.GetEquipmentDeviceForTenant(c.Request().Context(), tenantID, deviceID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal error"})
+	}
+	if device == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Device not found"})
+	}
+
+	payload, err := buildPrinterQRPayload(*device)
+	if err != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to encode printer data"})
+	}
+	png, err := qrcode.Encode(string(jsonData), qrcode.Medium, 512)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate QR code"})
+	}
+
+	c.Response().Header().Set("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="%s-pairing-qr.png"`, slugForFilename(device.DisplayName, device.ID)))
+	return c.Blob(http.StatusOK, "image/png", png)
 }
