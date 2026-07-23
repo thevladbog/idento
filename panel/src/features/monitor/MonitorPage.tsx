@@ -104,10 +104,11 @@ export function MonitorPage() {
 
   return (
     <div className="flex h-full flex-col" data-testid="monitor-page">
-      {/* Header (56px per the board) -- LIVE pill · event name · "Updated
-          Ns ago" staleness label · (reconnecting badge, when the stream is
-          down) · Exit. */}
-      <div className="flex h-14 flex-none items-center gap-3 border-b border-border px-4">
+      {/* Header (48px on phone, 56px at `md`+ per board 8f/7e) -- LIVE pill
+          · truncating event name · "Updated Ns ago" staleness label ·
+          (reconnecting badge, when the stream is down) · Exit (board 8t:
+          desktop-only, the phone tab bar below owns phone navigation). */}
+      <div className="flex h-12 flex-none items-center gap-2 border-b border-border px-3 md:h-14 md:gap-3 md:px-4">
         {stream.status === "error" ? (
           // Finding C3: a terminal stream failure (401/403 tenant_suspended/
           // documented 4xx) has already stopped reconnecting for good --
@@ -140,7 +141,7 @@ export function MonitorPage() {
             ) : null}
           </>
         )}
-        <h1 className="text-page-title">{event.name}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-body font-bold md:flex-none md:text-page-title">{event.name}</h1>
         {updatedSeconds !== null ? (
           // Board 8p -- the staleness counter is part of the stream-state
           // vocabulary: muted mono while live (data is provably fresh),
@@ -158,7 +159,7 @@ export function MonitorPage() {
             {t("monitorUpdatedAgo", { seconds: updatedSeconds })}
           </span>
         ) : null}
-        <div className="ml-auto">
+        <div className="ml-auto hidden md:block" data-testid="monitor-exit">
           <Button asChild variant="outline">
             <Link to="/events/$eventId" params={{ eventId }}>
               <ArrowLeft aria-hidden className="size-4" />

@@ -342,6 +342,17 @@ describe("MonitorPage", () => {
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-totals-card")).not.toBeInTheDocument();
   });
+
+  // Board 8f / 8t: the phone tab bar (EventTabBar, mounted at the bottom of
+  // this very page) owns phone navigation, so the header's Exit control is
+  // desktop-only chrome -- hidden below `md`, restored at `md` alongside the
+  // rest of board 7e's desktop header.
+  it("hides the Exit button below md (the tab bar owns phone navigation)", async () => {
+    renderCorrectAt("/events/evt-1/monitor");
+
+    const exit = await screen.findByTestId("monitor-exit");
+    expect(exit).toHaveClass("hidden", "md:block");
+  });
 });
 
 // P4.2 Task 8 -- Stations card: board 7e's own answer to "how stale is
