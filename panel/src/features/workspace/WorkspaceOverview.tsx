@@ -6,6 +6,7 @@ import { Circle, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
+import { ReadinessStrip } from "./ReadinessStrip";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
@@ -65,6 +66,8 @@ export function WorkspaceOverview() {
         <h2 className="text-page-title">{t("workspaceOverviewTitle")}</h2>
         <p className="text-caption text-muted-foreground">{t("workspaceOverviewSubtitle")}</p>
       </div>
+
+      <ReadinessStrip steps={steps} />
 
       <Card>
         <CardHeader>

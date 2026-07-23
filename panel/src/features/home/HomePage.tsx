@@ -19,7 +19,7 @@ export function HomePage() {
 
   if (eventsQuery.isLoading) {
     return (
-      <div className="flex flex-col gap-6 p-6">
+      <div className="flex flex-col gap-6 p-4 md:p-6">
         <Skeleton className="h-28 w-full" />
         <div className="flex flex-col gap-3">
           <Skeleton className="h-6 w-32" />
@@ -31,7 +31,7 @@ export function HomePage() {
 
   if (eventsQuery.isError) {
     return (
-      <div className="flex flex-col items-start gap-3 p-6">
+      <div className="flex flex-col items-start gap-3 p-4 md:p-6">
         <p className="text-body text-destructive">{t("homeLoadError")}</p>
         <Button variant="outline" onClick={() => void eventsQuery.refetch()}>
           {t("retry")}
@@ -44,7 +44,7 @@ export function HomePage() {
 
   if (events.length === 0) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <EmptyState
           icon={CalendarPlus}
           title={t("homeEmptyTitle")}
@@ -70,7 +70,7 @@ export function HomePage() {
   const upcomingListEvents = hasRunning ? upcoming : upcoming.slice(1);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-4 md:p-6">
       <LiveStrip running={running[0]} nextUpcoming={upcoming[0]} />
 
       <section className="flex flex-col gap-3">
