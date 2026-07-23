@@ -1300,11 +1300,24 @@ describe("EquipmentPage", () => {
       expect(downloadPrinterPairingCsv).toHaveBeenCalledTimes(1);
     });
 
-    it("disables Export printers when there is no network printer", async () => {
+    // Whole-branch review fix: the export is TENANT-WIDE (Task 4's endpoint
+    // pulls network printers across every machine in the tenant, not just
+    // this one), so the button must stay enabled even when THIS machine has
+    // no network printer of its own -- gating it on printerRows was wrong,
+    // since another machine's network printer would still be exportable.
+    it("enables Export printers even when this machine has no network printer, and clicking it still exports tenant-wide", async () => {
       machineDevices = [scannerWedge()];
       renderPage();
       const exportBtn = await screen.findByRole("button", { name: "Export printers (CSV)" });
-      expect(exportBtn).toBeDisabled();
+      expect(exportBtn).toBeEnabled();
+
+      // Calls accumulate on this shared vi.fn() across tests in this file
+      // (no mock reset config) -- assert the DELTA, not an absolute count,
+      // same idiom as this file's own agentPrintersFetchCount before/after
+      // checks.
+      const callsBefore = vi.mocked(downloadPrinterPairingCsv).mock.calls.length;
+      await userEvent.click(exportBtn);
+      expect(downloadPrinterPairingCsv).toHaveBeenCalledTimes(callsBefore + 1);
     });
 
     it("downloads a pairing QR from a network printer's row menu", async () => {

@@ -361,12 +361,6 @@ export function EquipmentPage() {
     .filter((device) => device.class === "scanner")
     .map((device) => ({ device, liveness: deviceLiveness(device, printers.printers, scanners.scanners) }));
   const unsavedPrinters = unsavedLivePrinters(devices, printers.printers);
-  // P4.3 Task 6 (printer pairing QR export) -- the hub's "Export printers
-  // (CSV)" button gate: enabled iff at least one registry printer row is a
-  // network printer (the only kind the backend's pairing-export endpoints
-  // (Tasks 3/4) serve; a tenant with system printers only has nothing to
-  // export).
-  const hasNetworkPrinter = printerRows.some((row) => row.device.kind === "network");
 
   const agentDown = agentInfo.state === "disconnected";
   // PR #83 bot-review round 2, Finding 8: whether the agent can actually
@@ -462,13 +456,15 @@ export function EquipmentPage() {
         <span className="text-caption text-muted-foreground">{t("equipmentCaption")}</span>
         <div className="ml-auto flex items-center gap-2">
           {/* P4.3 Task 6 (printer pairing QR export) -- tenant-wide CSV of
-              every saved network printer (Task 4's export endpoint), gated
-              on at least one existing network-printer row -- nothing honest
-              to export otherwise. */}
+              every network printer saved ANYWHERE in the tenant (Task 4's
+              export endpoint queries across all machines, not just this
+              one), so the button must never be gated on this machine's own
+              printerRows -- whole-branch review finding: a machine with no
+              network printer of its own could still have a non-empty
+              tenant-wide export. */}
           <Button
             type="button"
             variant="ghost"
-            disabled={!hasNetworkPrinter}
             onClick={() => {
               void downloadPrinterPairingCsv();
             }}

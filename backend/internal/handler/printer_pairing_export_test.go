@@ -233,3 +233,60 @@ func TestExportPrinterPairingCSV_QRPayloadRoundTrips(t *testing.T) {
 		t.Errorf("payload.ip = %v", payload.IP)
 	}
 }
+
+// Whole-branch review finding: neither pairing-export handler had a test
+// proving it scopes to the AUTHED tenant (JWT) rather than any
+// client-supplied value -- the security-critical property behind both
+// endpoints sitting on the TenantGate. These pin that the tenantID reaching
+// the store is exactly the one newAuthedContext put in the JWT context.
+func TestGetPrinterPairingQR_ScopesToAuthedTenant(t *testing.T) {
+	e := echo.New()
+	tenantID, deviceID := uuid.New(), uuid.New()
+	var gotTenant uuid.UUID
+	fs := &fakeStore{
+		getEquipmentDeviceForTenant: func(tid, _ uuid.UUID) (*models.EquipmentDevice, error) {
+			gotTenant = tid
+			return &models.EquipmentDevice{
+				ID: deviceID, Class: "printer", Kind: "network",
+				DisplayName: "Entrance",
+				Config:      json.RawMessage(`{"agent_name":"z1","ip":"10.0.0.5","port":9100}`),
+			}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x", "", tenantID.String(), "admin")
+	c.SetParamNames("device_id")
+	c.SetParamValues(deviceID.String())
+	if err := h.GetPrinterPairingQR(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if gotTenant != tenantID {
+		t.Errorf("store queried tenant %v, want authed tenant %v", gotTenant, tenantID)
+	}
+}
+
+func TestExportPrinterPairingCSV_ScopesToAuthedTenant(t *testing.T) {
+	e := echo.New()
+	tenantID := uuid.New()
+	var gotTenant uuid.UUID
+	fs := &fakeStore{
+		listEquipmentPrintersForTenant: func(tid uuid.UUID) ([]models.EquipmentPrinterExport, error) {
+			gotTenant = tid
+			return []models.EquipmentPrinterExport{}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x", "", tenantID.String(), "admin")
+	if err := h.ExportPrinterPairingCSV(c); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if gotTenant != tenantID {
+		t.Errorf("store queried tenant %v, want authed tenant %v", gotTenant, tenantID)
+	}
+}
