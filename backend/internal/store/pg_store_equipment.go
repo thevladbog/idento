@@ -311,3 +311,40 @@ func (s *PGStore) TenantHasTestedDefaultPrinter(ctx context.Context, tenantID uu
 	}
 	return exists, nil
 }
+
+// ListEquipmentPrintersForTenant returns every network printer across all of
+// the tenant's machines (joined to equipment_machines for the hostname), the
+// data source for the pairing-QR CSV export. Non-network printers and
+// scanners are excluded at the SQL level — only kind='network' devices carry
+// a reachable ip:port a mobile device can pair to. Ordered (hostname,
+// display_name) so the export reads machine-by-machine.
+func (s *PGStore) ListEquipmentPrintersForTenant(ctx context.Context, tenantID uuid.UUID) ([]models.EquipmentPrinterExport, error) {
+	rows, err := s.db.Query(ctx,
+		`SELECT d.id, d.machine_id, d.class, d.kind, d.display_name, d.config, m.hostname
+		 FROM equipment_devices d
+		 JOIN equipment_machines m ON m.tenant_id = d.tenant_id AND m.machine_id = d.machine_id
+		 WHERE d.tenant_id = $1 AND d.class = 'printer' AND d.kind = 'network'
+		 ORDER BY m.hostname, d.display_name`,
+		tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.EquipmentPrinterExport, 0)
+	for rows.Next() {
+		var d models.EquipmentDevice
+		var configJSON []byte
+		var hostname string
+		if err := rows.Scan(&d.ID, &d.MachineID, &d.Class, &d.Kind, &d.DisplayName, &configJSON, &hostname); err != nil {
+			return nil, err
+		}
+		d.TenantID = tenantID
+		d.Config = json.RawMessage(configJSON)
+		out = append(out, models.EquipmentPrinterExport{Device: d, Hostname: hostname})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
