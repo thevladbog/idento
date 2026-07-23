@@ -115,6 +115,20 @@ let getDelayMs = 0;
 let putRequests: CapturedPut[] = [];
 let putStatus = 200;
 let putDelayMs = 0;
+// A manually-released gate for the save PUT: while armed, the PUT stays
+// pending until the test calls the returned release fn. Replaces the old
+// fixed 60ms `putDelayMs` window for "is it still pending?" assertions — on a
+// loaded CI runner the short real delay could elapse before a test's
+// synchronous `toBeDisabled()` checks ran, re-enabling the buttons ("Received
+// element is not disabled" flake that reddened main, 2026-07-23).
+let putGate: Promise<void> | null = null;
+function armPutGate(): () => void {
+  let release!: () => void;
+  putGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return release;
+}
 let readinessHitCount = 0;
 
 // Task 12's preview data: usePreviewAttendee fires this on every render of
@@ -176,7 +190,8 @@ const server = startMswServer(
   http.put("http://api.test/api/events/:id/badge-template", async ({ request, params }) => {
     const body = (await request.json()) as CapturedPut["body"];
     putRequests.push({ eventId: params.id as string, body });
-    if (putDelayMs) await delay(putDelayMs);
+    if (putGate) await putGate;
+    else if (putDelayMs) await delay(putDelayMs);
     if (putStatus === 409) {
       return HttpResponse.json({ error: "conflict", current_version: body.version + 1 }, { status: 409 });
     }
@@ -241,6 +256,7 @@ describe("BadgeEditorPage", () => {
     putRequests = [];
     putStatus = 200;
     putDelayMs = 0;
+    putGate = null;
     readinessHitCount = 0;
     attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
     attendeesStatus = 200;
@@ -623,6 +639,7 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     putRequests = [];
     putStatus = 200;
     putDelayMs = 0;
+    putGate = null;
     readinessHitCount = 0;
     attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
     attendeesStatus = 200;
@@ -730,7 +747,7 @@ describe("BadgeEditorPage save model (Task 10)", () => {
   });
 
   it("shows Saving and disables Save while the PUT is pending, then Saved once it resolves", async () => {
-    putDelayMs = 60;
+    const releasePut = armPutGate();
     const user = userEvent.setup();
     renderPage();
 
@@ -741,6 +758,7 @@ describe("BadgeEditorPage save model (Task 10)", () => {
     await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saving"));
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
+    releasePut();
     await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saved"));
   });
 
@@ -1069,6 +1087,7 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
     putRequests = [];
     putStatus = 200;
     putDelayMs = 0;
+    putGate = null;
     readinessHitCount = 0;
     lastBlockerOptions = undefined;
     attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
@@ -1172,7 +1191,7 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
   });
 
   it("busy-gates all three guard buttons while the Save & leave PUT is pending", async () => {
-    putDelayMs = 60;
+    const releasePut = armPutGate();
     const user = userEvent.setup();
     const { router } = renderPage();
     await screen.findByTestId("badge-pane-elements");
@@ -1188,7 +1207,8 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
     expect(within(dialog).getByRole("button", { name: "Keep editing" })).toBeDisabled();
     expect(within(dialog).getByRole("button", { name: "Save & leave" })).toBeDisabled();
 
-    // Let the delayed PUT resolve so nothing bleeds into the next test.
+    // Release the gated PUT and let it resolve so nothing bleeds into the next test.
+    releasePut();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
@@ -1244,7 +1264,7 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
   });
 
   it("busy-gates the Escape/overlay dismiss path too — the dialog does not close via Escape while the PUT is pending", async () => {
-    putDelayMs = 60;
+    const releasePut = armPutGate();
     const user = userEvent.setup();
     const { router } = renderPage();
     await screen.findByTestId("badge-pane-elements");
@@ -1259,6 +1279,7 @@ describe("BadgeEditorPage dirty guard (Task 11)", () => {
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog")).toBe(dialog); // still open, busy-gated
 
+    releasePut();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
@@ -1443,6 +1464,7 @@ describe("BadgeEditorPage preview data (Task 12)", () => {
     putRequests = [];
     putStatus = 200;
     putDelayMs = 0;
+    putGate = null;
     readinessHitCount = 0;
     attendeesResponse = { attendees: [ZOE, MAX], total: 2, page: 1, per_page: 50 };
     attendeesStatus = 200;
@@ -1697,6 +1719,7 @@ describe("BadgeEditorPage save model — Codex round Fix 3/Fix 4", () => {
     putRequests = [];
     putStatus = 200;
     putDelayMs = 0;
+    putGate = null;
     readinessHitCount = 0;
     attendeesResponse = DEFAULT_ATTENDEES_RESPONSE;
     attendeesStatus = 200;
