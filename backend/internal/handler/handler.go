@@ -201,6 +201,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	api.DELETE("/equipment/devices/:device_id", h.DeleteEquipmentDevice)
 	api.PUT("/equipment/machines/:machine_id/default-printer", h.PutDefaultEquipmentPrinter)
 	api.POST("/equipment/devices/:device_id/test-passed", h.MarkEquipmentDeviceTestPassed)
+	api.GET("/equipment/devices/:device_id/pairing-qr.png", h.GetPrinterPairingQR)
+	api.GET("/equipment/printers/pairing-export.csv", h.ExportPrinterPairingCSV)
 
 	// Public API endpoints (with API key authentication)
 	public := e.Group("/api/public")

@@ -5657,3 +5657,73 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/equipment/devices/{device_id}/pairing-qr.png:
+    get:
+      operationId: getPrinterPairingQR
+      summary: >
+        PNG QR code the mobile app scans to connect to this network printer
+        (encodes the PrinterQRData JSON). Only class=printer, kind=network
+        devices are eligible.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: PNG image of the pairing QR.
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "400":
+          description: device_id is not a UUID.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: device_id does not exist or belongs to a different tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: >
+            Device is not a network printer (no reachable ip:port for a
+            mobile pairing QR).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: QR generation failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/equipment/printers/pairing-export.csv:
+    get:
+      operationId: exportPrinterPairingCSV
+      summary: >
+        CSV of every network printer in the tenant's registry with a ready
+        qr_payload column, for bulk label generation in an external tool.
+        UTF-8 with BOM; one row per network printer.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: CSV (UTF-8 with BOM).
+          content:
+            text/csv:
+              schema: { type: string }
+        "403":
+          description: tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failure loading printers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }

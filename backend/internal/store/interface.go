@@ -495,6 +495,12 @@ type Store interface {
 	// "foreign" from this method alone (same contract as
 	// GetEventByIDForTenant/GetAttendeeByIDForTenant).
 	GetEquipmentDeviceForTenant(ctx context.Context, tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
+	// ListEquipmentPrintersForTenant returns every class=printer,
+	// kind=network device across ALL of the tenant's machines, each paired
+	// with its machine's hostname, for the pairing-QR CSV export. Ordered by
+	// (hostname, display_name). Returns an empty (non-nil) slice when the
+	// tenant has no network printers.
+	ListEquipmentPrintersForTenant(ctx context.Context, tenantID uuid.UUID) ([]models.EquipmentPrinterExport, error)
 	// CreateEquipmentDevice inserts a new device under d.TenantID/d.MachineID
 	// and fills d.ID/d.CreatedAt/d.UpdatedAt/d.TestPassedAt from the
 	// INSERT's RETURNING clause (all four are DB-generated/DB-computed).

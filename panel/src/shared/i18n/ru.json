@@ -757,6 +757,8 @@
   "equipmentWizardAgentUnreachable": "Не удаётся подключиться к локальному агенту — подключите его и попробуйте снова.",
   "equipmentWizardComAddError": "Не удалось добавить сканер.",
   "equipmentWizardScanTestWarn": "Сканирование подтверждено — но сервер не зафиксировал тест. Синхронизируется при следующем визите.",
+  "equipmentDownloadPairingQr": "Скачать QR подключения",
+  "equipmentExportPrinters": "Экспорт принтеров (CSV)",
   "gateCopyLink": "Скопировать ссылку для десктопа",
   "gateLinkCopied": "Ссылка скопирована",
   "gateCopyFailed": "Не удалось скопировать ссылку",

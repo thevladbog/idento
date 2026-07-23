@@ -36,3 +36,12 @@ type EquipmentDevice struct {
 	CreatedAt    time.Time       `json:"created_at"`
 	UpdatedAt    time.Time       `json:"updated_at"`
 }
+
+// EquipmentPrinterExport is one network printer paired with its machine's
+// hostname — the row shape ListEquipmentPrintersForTenant returns for the
+// pairing-QR CSV export. Hostname is a display-only column; the mobile
+// PrinterQRData payload never carries it.
+type EquipmentPrinterExport struct {
+	Device   EquipmentDevice
+	Hostname string
+}

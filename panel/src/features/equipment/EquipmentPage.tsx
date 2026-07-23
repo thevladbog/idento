@@ -30,6 +30,7 @@ import {
   isEmptyRegistry, useDeleteDevice, useEquipmentMachine, usePatchDevice, useSetDefaultPrinter, useUpsertMachine,
   type EquipmentDevice,
 } from "./hooks";
+import { downloadPrinterPairingCsv, downloadPrinterPairingQr } from "./pairingExport";
 import { PrinterWizard, type PrinterWizardPrefill, type PrinterWizardRetest } from "./PrinterWizard";
 import { computeSeenDeviceIds, deviceLiveness, unsavedLivePrinters } from "./reconcile";
 import { ScannerWizard } from "./ScannerWizard";
@@ -453,7 +454,23 @@ export function EquipmentPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-page-title">{t("equipmentTitle")}</h1>
         <span className="text-caption text-muted-foreground">{t("equipmentCaption")}</span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {/* P4.3 Task 6 (printer pairing QR export) -- tenant-wide CSV of
+              every network printer saved ANYWHERE in the tenant (Task 4's
+              export endpoint queries across all machines, not just this
+              one), so the button must never be gated on this machine's own
+              printerRows -- whole-branch review finding: a machine with no
+              network printer of its own could still have a non-empty
+              tenant-wide export. */}
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              void downloadPrinterPairingCsv();
+            }}
+          >
+            {t("equipmentExportPrinters")}
+          </Button>
           {/* Task 8 wired the Printer option to the real wizard; Task 9
               wires Scanner the same way -- the last `wizard-todo`
               placeholder on this page is gone. */}
@@ -534,6 +551,9 @@ export function EquipmentPage() {
               }
               onDelete={(device) => setDialog({ kind: "delete", device })}
               onEditAddress={(device) => setDialog({ kind: "edit-address", device })}
+              onDownloadPairingQr={(device) => {
+                void downloadPrinterPairingQr(device.id, device.display_name);
+              }}
               onRetryLive={() => void printers.refetch()}
               onSetUp={() => openCreateWizard()}
               onSaveUnsaved={(printer: AgentPrinter) => openCreateWizard({ agentName: printer.name, type: printer.type })}

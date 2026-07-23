@@ -103,6 +103,13 @@ const markEquipmentDeviceTestPassedSQLPattern = `UPDATE equipment_devices SET te
 // tested default printer satisfies readiness), not scoped to one machine.
 const tenantHasTestedDefaultPrinterSQLPattern = `SELECT EXISTS \(SELECT 1 FROM equipment_devices WHERE tenant_id = \$1 AND is_default AND class = 'printer' AND test_passed_at IS NOT NULL\)`
 
+// listEquipmentPrintersForTenantSQLPattern pins ListEquipmentPrintersForTenant —
+// a tenant-wide JOIN of every network printer to its machine's hostname,
+// filtered to class='printer' AND kind='network' (the only devices that
+// yield a mobile-scannable ethernet pairing QR), ordered (hostname,
+// display_name) for a machine-by-machine export.
+const listEquipmentPrintersForTenantSQLPattern = `SELECT d\.id, d\.machine_id, d\.class, d\.kind, d\.display_name, d\.config, m\.hostname FROM equipment_devices d JOIN equipment_machines m ON m\.tenant_id = d\.tenant_id AND m\.machine_id = d\.machine_id WHERE d\.tenant_id = \$1 AND d\.class = 'printer' AND d\.kind = 'network' ORDER BY m\.hostname, d\.display_name`
+
 func newEquipmentMock(t *testing.T) (pgxmock.PgxPoolIface, *PGStore) {
 	t.Helper()
 	mock, err := pgxmock.NewPool()
@@ -705,4 +712,38 @@ func TestTenantHasTestedDefaultPrinter_SQL(t *testing.T) {
 			t.Errorf("unmet expectations: %v", err)
 		}
 	})
+}
+
+func TestListEquipmentPrintersForTenant_ReturnsNetworkPrintersWithHostname(t *testing.T) {
+	mock, s := newEquipmentMock(t)
+
+	tenantID := uuid.New()
+	dev1, dev2 := uuid.New(), uuid.New()
+	m1, m2 := uuid.New(), uuid.New()
+
+	mock.ExpectQuery(listEquipmentPrintersForTenantSQLPattern).
+		WithArgs(tenantID).
+		WillReturnRows(pgxmock.NewRows([]string{"id", "machine_id", "class", "kind", "display_name", "config", "hostname"}).
+			AddRow(dev1, m1, "printer", "network", "Entrance", json.RawMessage(`{"agent_name":"z1","ip":"10.0.0.5","port":9100}`), "kiosk-1").
+			AddRow(dev2, m2, "printer", "network", "Hall B", json.RawMessage(`{"agent_name":"z2","ip":"10.0.0.6","port":9100,"dpi":300}`), "kiosk-2"))
+
+	got, err := s.ListEquipmentPrintersForTenant(context.Background(), tenantID)
+	if err != nil {
+		t.Fatalf("ListEquipmentPrintersForTenant: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].Device.ID != dev1 || got[0].Hostname != "kiosk-1" {
+		t.Errorf("row 0 = %+v", got[0])
+	}
+	if got[1].Device.ID != dev2 || got[1].Hostname != "kiosk-2" {
+		t.Errorf("row 1 = %+v", got[1])
+	}
+	if got[0].Device.TenantID != tenantID {
+		t.Errorf("tenant not stamped: %+v", got[0].Device)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
 }

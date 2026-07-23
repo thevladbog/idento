@@ -126,15 +126,16 @@ type fakeStore struct {
 
 	getPlatformAnalytics func() (*models.PlatformAnalytics, error)
 
-	upsertEquipmentMachine        func(m *models.EquipmentMachine, seenDeviceIDs []uuid.UUID) error
-	getEquipmentMachine           func(tenantID, machineID uuid.UUID) (*models.EquipmentMachine, []models.EquipmentDevice, error)
-	getEquipmentDeviceForTenant   func(tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
-	createEquipmentDevice         func(d *models.EquipmentDevice, makeDefault bool, testPassed bool) error
-	updateEquipmentDevice         func(tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error
-	deleteEquipmentDevice         func(tenantID, deviceID uuid.UUID) error
-	setDefaultEquipmentPrinter    func(tenantID, machineID uuid.UUID, deviceID *uuid.UUID) error
-	markEquipmentDeviceTestPassed func(tenantID, deviceID uuid.UUID) error
-	tenantHasTestedDefaultPrinter func(tenantID uuid.UUID) (bool, error)
+	upsertEquipmentMachine         func(m *models.EquipmentMachine, seenDeviceIDs []uuid.UUID) error
+	getEquipmentMachine            func(tenantID, machineID uuid.UUID) (*models.EquipmentMachine, []models.EquipmentDevice, error)
+	getEquipmentDeviceForTenant    func(tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error)
+	listEquipmentPrintersForTenant func(tenantID uuid.UUID) ([]models.EquipmentPrinterExport, error)
+	createEquipmentDevice          func(d *models.EquipmentDevice, makeDefault bool, testPassed bool) error
+	updateEquipmentDevice          func(tenantID, deviceID uuid.UUID, displayName string, config json.RawMessage) error
+	deleteEquipmentDevice          func(tenantID, deviceID uuid.UUID) error
+	setDefaultEquipmentPrinter     func(tenantID, machineID uuid.UUID, deviceID *uuid.UUID) error
+	markEquipmentDeviceTestPassed  func(tenantID, deviceID uuid.UUID) error
+	tenantHasTestedDefaultPrinter  func(tenantID uuid.UUID) (bool, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -484,6 +485,9 @@ func (f *fakeStore) GetEquipmentMachine(_ context.Context, tenantID, machineID u
 }
 func (f *fakeStore) GetEquipmentDeviceForTenant(_ context.Context, tenantID, deviceID uuid.UUID) (*models.EquipmentDevice, error) {
 	return f.getEquipmentDeviceForTenant(tenantID, deviceID)
+}
+func (f *fakeStore) ListEquipmentPrintersForTenant(_ context.Context, tenantID uuid.UUID) ([]models.EquipmentPrinterExport, error) {
+	return f.listEquipmentPrintersForTenant(tenantID)
 }
 func (f *fakeStore) CreateEquipmentDevice(_ context.Context, d *models.EquipmentDevice, makeDefault bool, testPassed bool) error {
 	return f.createEquipmentDevice(d, makeDefault, testPassed)
