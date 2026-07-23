@@ -1,9 +1,12 @@
-import { Button, QrDisplay, Skeleton } from "@idento/ui";
-import { ArrowLeft, IdCard, ShieldOff } from "lucide-react";
+import { Button, ConfirmDialog, QrDisplay, Skeleton } from "@idento/ui";
+import { ArrowLeft, Check, IdCard, ShieldOff, Undo2 } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 import { CheckInConfirmSheet } from "./CheckInConfirmSheet";
-import { useAttendeeDetail, useAttendeeZoneAccess } from "./hooks";
+import { useAttendeeDetail, useAttendeeZoneAccess, useBlockAttendee, useEventZones } from "./hooks";
+import { useUndoCheckin } from "../checkin/hooks";
+import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 
 export interface AttendeeCardProps {
   eventId: string;
@@ -23,20 +26,20 @@ function initials(firstName: string, lastName: string): string {
 export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps) {
   const { t } = useTranslation();
   const detail = useAttendeeDetail(attendeeId);
-  // Fetched here but only RENDERED by Task 6's checked-in variant, which
-  // lands in the very next dispatch on this same branch/file. Verified in
-  // isolation (this task's own dispatch, before Task 6 exists) that both
-  // eslint's no-unused-vars AND tsc's noUnusedLocals genuinely flag this as
-  // dead -- the brief's suggested `_zoneAccess` prefix silences eslint but
-  // NOT tsc (TypeScript's noUnusedLocals, unlike noUnusedParameters, does
-  // not special-case a leading underscore), so `npm run typecheck` would
-  // still fail. `void zoneAccess` marks the binding as read for both tools
-  // without changing its name, so Task 6 can drop this line and start
-  // reading `zoneAccess.data` with a one-line diff. See task-5-report.md.
   const zoneAccess = useAttendeeZoneAccess(attendeeId);
-  void zoneAccess;
+  const zonesQuery = useEventZones(eventId);
+  const undoCheckin = useUndoCheckin(eventId);
+  // Lifted to the top of the component (rather than declared only inside the
+  // checked-in branch) so BOTH the not-checked-in variant's "Block" button
+  // (a Task 5 stub) and the checked-in variant's own destructive Block row
+  // can trigger the same dialog/mutation -- an attendee can be blocked
+  // whether or not they're checked in (design intent per board 8h/8i), so
+  // there's no reason for two separate implementations.
+  const blockAttendee = useBlockAttendee(eventId);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [qrOpen, setQrOpen] = React.useState(false);
+  const [undoOpen, setUndoOpen] = React.useState(false);
+  const [blockOpen, setBlockOpen] = React.useState(false);
 
   if (detail.isLoading) {
     return (
@@ -60,6 +63,31 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
 
   const attendee = detail.data;
   const fullName = `${attendee.last_name} ${attendee.first_name}`;
+
+  // zoneIdentity normalizes the two possible zones-list response shapes
+  // (plain EventZone vs the with_stats-wrapped EventZoneWithStats) to a flat
+  // { id, name } pair, matching AttendeesPage.tsx's own zone-filter usage of
+  // useEventZones. Only `allowed: true` zone-access rows render as chips —
+  // a missing zone name (e.g. the zones list hasn't loaded yet) falls back
+  // to a truncated id rather than hiding the chip entirely.
+  const zoneNameById = new Map((zonesQuery.data ?? []).map((z) => [zoneIdentity(z).id, zoneIdentity(z).name]));
+  const allowedZoneNames = (zoneAccess.data ?? [])
+    .filter((entry) => entry.allowed)
+    .map((entry) => zoneNameById.get(entry.zone_id) ?? entry.zone_id.slice(0, 8));
+
+  function handleUndoCheckin() {
+    undoCheckin.mutate(
+      { params: { path: { event_id: eventId } }, body: { attendee_id: attendeeId } },
+      { onSuccess: () => setUndoOpen(false) },
+    );
+  }
+
+  function handleBlock() {
+    blockAttendee.mutate(
+      { params: { path: { id: attendeeId } }, body: {} },
+      { onSuccess: () => setBlockOpen(false) },
+    );
+  }
 
   if (qrOpen) {
     return (
@@ -125,7 +153,7 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
               <IdCard aria-hidden className="size-4" />
               {t("attendeeCardShowQr")}
             </Button>
-            <Button variant="outline" className="min-h-11 flex-1 gap-1.5 text-destructive" onClick={() => {}}>
+            <Button variant="outline" className="min-h-11 flex-1 gap-1.5 text-destructive" onClick={() => setBlockOpen(true)}>
               <ShieldOff aria-hidden className="size-4" />
               {t("attendeeCardBlock")}
             </Button>
@@ -138,11 +166,87 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
             open={confirmOpen}
             onOpenChange={setConfirmOpen}
             onCheckedIn={() => {
-              /* Task 6 wires the undo toast here. */
+              toast.success(t("toastCheckedInNoBadge"), {
+                action: { label: t("toastUndo"), onClick: handleUndoCheckin },
+              });
             }}
           />
         </>
-      ) : null}
+      ) : (
+        <>
+          <div className="flex items-center gap-2.5 rounded-lg border border-success/30 bg-success/10 p-3">
+            <span className="flex size-7.5 flex-none items-center justify-center rounded-full bg-success text-success-foreground">
+              <Check aria-hidden className="size-3.5" />
+            </span>
+            <div>
+              <div className="text-body font-bold text-success">{t("attendeeCardCheckedIn")}</div>
+              <div className="text-caption text-success/80">
+                {attendee.checked_in_at ? new Date(attendee.checked_in_at).toLocaleTimeString() : null}
+                {attendee.checked_in_point_name ? ` · ${attendee.checked_in_point_name}` : ` · ${t("attendeeCardCheckedInNoBadgeCaption")}`}
+              </div>
+            </div>
+          </div>
+
+          {allowedZoneNames.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              <span className="w-full text-caption font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("attendeeCardZoneAccess")}
+              </span>
+              {allowedZoneNames.map((name) => (
+                <span key={name} className="rounded-full bg-success/10 px-2.5 py-1 text-caption font-semibold text-success">
+                  {name}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="overflow-hidden rounded-lg border border-border">
+            <button type="button" onClick={() => setQrOpen(true)} className="flex min-h-12 w-full items-center gap-2.5 px-3.5 hover:bg-muted">
+              <IdCard aria-hidden className="size-4 text-muted-foreground" />
+              <span className="flex-1 text-left text-body font-semibold">{t("attendeeCardShowQr")}</span>
+            </button>
+            <div className="h-px bg-border" />
+            <button type="button" onClick={() => setUndoOpen(true)} className="flex min-h-12 w-full items-center gap-2.5 px-3.5 hover:bg-muted">
+              <Undo2 aria-hidden className="size-4 text-muted-foreground" />
+              <span className="flex-1 text-left text-body font-semibold">{t("attendeeCardUndoCheckin")}</span>
+            </button>
+          </div>
+          <div className="overflow-hidden rounded-lg border border-destructive/30">
+            <button type="button" onClick={() => setBlockOpen(true)} className="flex min-h-12 w-full items-center gap-2.5 px-3.5 text-destructive hover:bg-destructive/10">
+              <ShieldOff aria-hidden className="size-4" />
+              <span className="flex-1 text-left text-body font-semibold">{t("attendeeCardBlock")}</span>
+            </button>
+          </div>
+
+          <ConfirmDialog
+            open={undoOpen}
+            onOpenChange={setUndoOpen}
+            title={t("attendeeCardUndoConfirmTitle")}
+            description={t("attendeeCardUndoConfirmBody", { name: fullName })}
+            confirmLabel={t("attendeeCardUndoCheckin")}
+            cancelLabel={t("attendeeCardConfirmCancel")}
+            closeLabel={t("moreSheetCloseLabel")}
+            onConfirm={handleUndoCheckin}
+          />
+        </>
+      )}
+
+      {/* Rendered once, outside the checkin-status ternary above, so it's
+          reachable from EITHER branch's Block trigger (the not-checked-in
+          variant's Block button, and the checked-in variant's own
+          destructive Block row both just call setBlockOpen(true)) — an
+          attendee can be blocked whether or not they're checked in. */}
+      <ConfirmDialog
+        open={blockOpen}
+        onOpenChange={setBlockOpen}
+        title={t("attendeeCardBlockConfirmTitle", { name: fullName })}
+        description={t("attendeeCardBlockConfirmBody")}
+        confirmLabel={t("attendeeCardConfirmDestructive")}
+        cancelLabel={t("attendeeCardConfirmCancel")}
+        closeLabel={t("moreSheetCloseLabel")}
+        destructive
+        onConfirm={handleBlock}
+      />
     </div>
   );
 }
