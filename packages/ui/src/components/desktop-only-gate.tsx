@@ -1,4 +1,4 @@
-import { Check, Copy, Download, PenTool, Printer, type LucideIcon } from "lucide-react";
+import { Check, CircleAlert, Copy, Download, PenTool, Printer, type LucideIcon } from "lucide-react";
 import * as React from "react";
 import { cn } from "../lib/cn";
 import { Button } from "./button";
@@ -23,22 +23,24 @@ export interface DesktopOnlyGateProps {
   href: string;
   copyLabel: string;
   copiedLabel: string;
+  /** Shown for 2 s when the clipboard write fails or the API is unavailable. */
+  copyFailedLabel: string;
   /** Way back (the consumer's router link) — deep links never strand the user. */
   back?: React.ReactNode;
   className?: string;
 }
 
 export function DesktopOnlyGate({
-  flavor, title, reason, href, copyLabel, copiedLabel, back, className,
+  flavor, title, reason, href, copyLabel, copiedLabel, copyFailedLabel, back, className,
 }: DesktopOnlyGateProps) {
   const { icon: Icon, className: iconClassName } = FLAVOR_ICON[flavor];
-  const [copied, setCopied] = React.useState(false);
+  const [copyState, setCopyState] = React.useState<"idle" | "copied" | "failed">("idle");
 
   React.useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
+    if (copyState === "idle") return;
+    const timer = setTimeout(() => setCopyState("idle"), 2000);
     return () => clearTimeout(timer);
-  }, [copied]);
+  }, [copyState]);
 
   return (
     <div className={cn("flex min-h-[60vh] flex-col items-center justify-center gap-1 p-6 text-center", className)}>
@@ -50,15 +52,28 @@ export function DesktopOnlyGate({
       <Button
         className="mt-4"
         onClick={() => {
-          void navigator.clipboard?.writeText(href);
-          setCopied(true);
+          void (async () => {
+            try {
+              if (!navigator.clipboard) throw new Error("clipboard unavailable");
+              await navigator.clipboard.writeText(href);
+              setCopyState("copied");
+            } catch {
+              setCopyState("failed");
+            }
+          })();
         }}
       >
-        {copied ? <Check aria-hidden className="size-4" /> : <Copy aria-hidden className="size-4" />}
-        {copied ? copiedLabel : copyLabel}
+        {copyState === "copied" ? (
+          <Check aria-hidden className="size-4" />
+        ) : copyState === "failed" ? (
+          <CircleAlert aria-hidden className="size-4" />
+        ) : (
+          <Copy aria-hidden className="size-4" />
+        )}
+        {copyState === "copied" ? copiedLabel : copyState === "failed" ? copyFailedLabel : copyLabel}
       </Button>
       <span aria-live="polite" className="sr-only">
-        {copied ? copiedLabel : ""}
+        {copyState === "copied" ? copiedLabel : copyState === "failed" ? copyFailedLabel : ""}
       </span>
       {back ? <div className="mt-2 flex min-h-11 items-center">{back}</div> : null}
     </div>

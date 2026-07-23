@@ -30,12 +30,16 @@ export interface TabBarItemProps {
   icon: LucideIcon;
   label: string;
   active?: boolean;
-  /** Attention dot (board 8r): warning tone, means "needs a look" — never a count. */
-  badge?: boolean;
+  /**
+   * Attention dot (board 8r): warning tone, means "needs a look" — never a
+   * count. The string is announced to assistive tech (sr-only); the dot
+   * itself stays decorative.
+   */
+  badge?: string;
   className?: string;
 }
 
-export function TabBarItem({ icon: Icon, label, active = false, badge = false, className }: TabBarItemProps) {
+export function TabBarItem({ icon: Icon, label, active = false, badge, className }: TabBarItemProps) {
   return (
     <span
       className={cn(
@@ -47,11 +51,14 @@ export function TabBarItem({ icon: Icon, label, active = false, badge = false, c
       <span className="relative">
         <Icon aria-hidden className="size-5" />
         {badge ? (
-          <span
-            data-testid="tab-bar-badge"
-            aria-hidden
-            className="absolute -right-1.5 -top-0.5 size-[7px] rounded-full bg-warning ring-2 ring-card"
-          />
+          <>
+            <span
+              data-testid="tab-bar-badge"
+              aria-hidden
+              className="absolute -right-1.5 -top-0.5 size-[7px] rounded-full bg-warning ring-2 ring-card"
+            />
+            <span className="sr-only">{badge}</span>
+          </>
         ) : null}
       </span>
       <span className={cn("text-[10px] leading-none", active ? "font-bold" : "font-medium")}>{label}</span>

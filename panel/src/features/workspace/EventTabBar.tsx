@@ -71,7 +71,13 @@ export function EventTabBar({ eventId }: { eventId: string }) {
         >
           <TabBarItem icon={Users} label={t("tabBarStaff")} active={active === "staff"} />
         </Link>
-        <button type="button" aria-haspopup="dialog" onClick={() => setMoreOpen(true)} className="flex flex-1">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen(true)}
+          className="flex flex-1"
+        >
           <TabBarItem icon={MoreHorizontal} label={t("tabBarMore")} />
         </button>
       </TabBar>

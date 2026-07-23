@@ -1,12 +1,15 @@
 import { render, screen, within } from "@testing-library/react";
 import { ReadinessStrip } from "./ReadinessStrip";
+import type { components } from "../../shared/api/schema";
 import "../../shared/i18n";
 
-const STEPS = [
+type ReadinessStep = components["schemas"]["ReadinessStep"];
+
+const STEPS: ReadinessStep[] = [
   { key: "attendees", status: "done", count: 340 },
   { key: "badge", status: "not_done" },
   { key: "zones", status: "skipped" },
-] as never;
+];
 
 describe("ReadinessStrip", () => {
   it("renders one chip per step with label, count and an sr-only status", () => {

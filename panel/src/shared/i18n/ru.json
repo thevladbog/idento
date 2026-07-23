@@ -759,6 +759,7 @@
   "equipmentWizardScanTestWarn": "Сканирование подтверждено — но сервер не зафиксировал тест. Синхронизируется при следующем визите.",
   "gateCopyLink": "Скопировать ссылку для десктопа",
   "gateLinkCopied": "Ссылка скопирована",
+  "gateCopyFailed": "Не удалось скопировать ссылку",
   "gateBackOverview": "Назад к обзору",
   "gateBackHome": "На главную",
   "gateBadgeTitle": "Редактор бейджей",

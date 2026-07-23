@@ -23,6 +23,7 @@ describe("DesktopOnlyGate", () => {
         href="https://panel.test/equipment"
         copyLabel="Copy link for desktop"
         copiedLabel="Link copied"
+        copyFailedLabel="Couldn't copy link"
         back={<a href="/">Back to Home</a>}
       />,
     );
@@ -35,11 +36,25 @@ describe("DesktopOnlyGate", () => {
     expect(screen.getByRole("link", { name: "Back to Home" })).toBeInTheDocument();
   });
 
-  it("copies the deep link and swaps to the copied label for 2 s", () => {
+  it("copies the deep link and swaps to the copied label for 2 s", async () => {
     renderGate();
     fireEvent.click(screen.getByRole("button", { name: "Copy link for desktop" }));
+    await act(async () => {});
     expect(writeText).toHaveBeenCalledWith("https://panel.test/equipment");
     expect(screen.getByRole("button", { name: /Link copied/ })).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole("button", { name: "Copy link for desktop" })).toBeInTheDocument();
+  });
+
+  it("shows the failure label and never announces success when the write rejects", async () => {
+    writeText.mockRejectedValueOnce(new Error("denied"));
+    renderGate();
+    fireEvent.click(screen.getByRole("button", { name: "Copy link for desktop" }));
+    await act(async () => {});
+    expect(screen.getByRole("button", { name: /Couldn't copy link/ })).toBeInTheDocument();
+    expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(2000);
     });

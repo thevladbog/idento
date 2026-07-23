@@ -25,8 +25,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <>
             {/* Hidden on phones: the header's min-content must fit 390px (P6.1
             acceptance — no horizontal overflow); the version tag is the most
-            expendable item and returns at `sm`. */}
-            <span className="hidden text-caption text-muted-foreground sm:inline">{t("onPremVersionTag", { version: instance.data.version })}</span>
+            expendable item and returns at `md` (single cutover). */}
+            <span className="hidden text-caption text-muted-foreground md:inline">{t("onPremVersionTag", { version: instance.data.version })}</span>
           </>
         ) : null}
         <nav className="hidden items-center gap-4 md:flex">

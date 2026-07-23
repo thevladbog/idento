@@ -64,6 +64,7 @@ describe("EventTabBar", () => {
     const user = userEvent.setup();
     renderAt("/events/evt-1");
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
+    expect(within(bar).getByRole("button", { name: "More" })).toHaveAttribute("aria-expanded", "false");
     await user.click(within(bar).getByRole("button", { name: "More" }));
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByRole("link", { name: /Badge editor/ })).toHaveAttribute("href", "/events/evt-1/badge");

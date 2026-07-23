@@ -18,8 +18,9 @@ describe("TabBar", () => {
   it("shows the attention dot only when badge is set", () => {
     const { rerender } = render(<TabBarItem icon={Activity} label="Monitor" />);
     expect(screen.queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
-    rerender(<TabBarItem icon={Activity} label="Monitor" badge />);
+    rerender(<TabBarItem icon={Activity} label="Monitor" badge="Needs attention" />);
     expect(screen.getByTestId("tab-bar-badge")).toBeInTheDocument();
+    expect(screen.getByText("Needs attention")).toHaveClass("sr-only");
   });
 
   it("marks the active item with the success tone", () => {

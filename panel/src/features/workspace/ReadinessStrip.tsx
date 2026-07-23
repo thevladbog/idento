@@ -1,5 +1,5 @@
 import { cn } from "@idento/ui";
-import { Check, Circle } from "lucide-react";
+import { Check, Circle, MinusCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
 import type { components } from "../../shared/api/schema";
@@ -33,7 +33,7 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
               !done && !skipped && "border-warning/30 bg-warning/10 text-warning",
             )}
           >
-            {done ? <Check aria-hidden className="size-3" /> : <Circle aria-hidden className="size-3" />}
+            {done ? <Check aria-hidden className="size-3" /> : skipped ? <MinusCircle aria-hidden className="size-3" /> : <Circle aria-hidden className="size-3" />}
             {t(STEP_LABEL_KEYS[step.key])}
             {step.count !== undefined ? <span className="font-mono">{step.count}</span> : null}
             <span className="sr-only">{statusText}</span>

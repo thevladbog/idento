@@ -32,6 +32,7 @@ export function DesktopOnly({ flavor, titleKey, reasonKey, children }: DesktopOn
       href={window.location.href}
       copyLabel={t("gateCopyLink")}
       copiedLabel={t("gateLinkCopied")}
+      copyFailedLabel={t("gateCopyFailed")}
       back={
         params.eventId ? (
           <Link to="/events/$eventId" params={{ eventId: params.eventId }} className="text-body font-medium text-success">
