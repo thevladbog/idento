@@ -62,13 +62,28 @@ export function TotalsCard({ totals }: TotalsCardProps) {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline gap-2">
-          <span className="text-2xl font-extrabold text-foreground">
+          {/* Board 8f — glanceable-from-arm's-length on a phone (XXL,
+              tight leading); board 7e's desktop scale returns at `md`. */}
+          <span
+            data-testid="monitor-totals-headline"
+            className="text-5xl font-extrabold leading-none tracking-tight text-foreground md:text-2xl md:leading-normal md:tracking-normal"
+          >
             {numberFmt.format(totals.checked_in)} / {numberFmt.format(totals.total)}
           </span>
-          <span className="text-body font-semibold text-muted-foreground">{percent}%</span>
+          {/* Boards 7e/8f both right-align the percent. */}
+          <span className="ml-auto text-body font-semibold text-muted-foreground">{percent}%</span>
         </div>
         <Progress value={totals.checked_in} max={totals.total} />
-        <p className="text-caption text-muted-foreground">{rateParts.join(" · ")}</p>
+        {/* Board 8f — the rate stats spread edge-to-edge as separate spans
+            (was one "·"-joined string); flex-wrap keeps long locales safe. */}
+        <div
+          data-testid="monitor-rate-row"
+          className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-caption text-muted-foreground"
+        >
+          {rateParts.map((part) => (
+            <span key={part}>{part}</span>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );

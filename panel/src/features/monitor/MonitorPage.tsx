@@ -30,9 +30,9 @@
 // C6 -- retain-last-known-good, gated on `!snapshot` rather than
 // `isError`, so a single failed background refetch never blanks the page).
 import * as React from "react";
-import { Button, Card, CardContent, Skeleton, StatusPill } from "@idento/ui";
+import { Button, Card, CardContent, Skeleton, StatusPill, cn } from "@idento/ui";
 import { Link, getRouteApi } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Clock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { $api } from "../../shared/api/query";
 import { EventTabBar } from "../workspace/EventTabBar";
@@ -104,10 +104,11 @@ export function MonitorPage() {
 
   return (
     <div className="flex h-full flex-col" data-testid="monitor-page">
-      {/* Header (56px per the board) -- LIVE pill · event name · "Updated
-          Ns ago" staleness label · (reconnecting badge, when the stream is
-          down) · Exit. */}
-      <div className="flex h-14 flex-none items-center gap-3 border-b border-border px-4">
+      {/* Header (48px on phone, 56px at `md`+ per board 8f/7e) -- LIVE pill
+          · truncating event name · "Updated Ns ago" staleness label ·
+          (reconnecting badge, when the stream is down) · Exit (board 8t:
+          desktop-only, the phone tab bar below owns phone navigation). */}
+      <div className="flex h-12 flex-none items-center gap-2 border-b border-border px-3 md:h-14 md:gap-3 md:px-4">
         {stream.status === "error" ? (
           // Finding C3: a terminal stream failure (401/403 tenant_suspended/
           // documented 4xx) has already stopped reconnecting for good --
@@ -140,13 +141,25 @@ export function MonitorPage() {
             ) : null}
           </>
         )}
-        <h1 className="text-page-title">{event.name}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-body font-bold md:flex-none md:text-page-title">{event.name}</h1>
         {updatedSeconds !== null ? (
-          <span className="text-caption text-muted-foreground" data-testid="monitor-updated-ago">
+          // Board 8p -- the staleness counter is part of the stream-state
+          // vocabulary: muted mono while live (data is provably fresh),
+          // warning tone + clock icon while degraded (the counter is the
+          // "how stale" answer the amber badge alone can't give). Icon +
+          // text + color, never color alone (WCAG 1.4.1).
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 font-mono text-caption",
+              live ? "text-muted-foreground" : "text-warning",
+            )}
+            data-testid="monitor-updated-ago"
+          >
+            {live ? null : <Clock aria-hidden className="size-3" />}
             {t("monitorUpdatedAgo", { seconds: updatedSeconds })}
           </span>
         ) : null}
-        <div className="ml-auto">
+        <div className="ml-auto hidden md:block" data-testid="monitor-exit">
           <Button asChild variant="outline">
             <Link to="/events/$eventId" params={{ eventId }}>
               <ArrowLeft aria-hidden className="size-4" />
@@ -156,13 +169,42 @@ export function MonitorPage() {
         </div>
       </div>
 
+      {/* Board 8p -- aria-live announces stream-state changes; content
+          change (live -> reconnecting -> error) is what triggers the
+          announcement, so this renders the current state's label. Fix round
+          1: explicit 4-branch match rather than a ternary chain whose
+          `else` silently caught BOTH "connecting" (every ordinary mount,
+          before the SSE handshake completes) and "error" -- collapsing them
+          both onto monitorStreamError falsely announced "Live updates
+          unavailable" on every normal page load. "connecting" now announces
+          nothing: there is no existing i18n copy for that transient state,
+          and the header itself shows no badge during it either (see the
+          "still connecting" test above), so silence here matches that. */}
+      <span aria-live="polite" className="sr-only" data-testid="monitor-stream-announcer">
+        {stream.status === "live"
+          ? t("monitorLive")
+          : stream.status === "reconnecting"
+            ? t("monitorReconnecting")
+            : stream.status === "error"
+              ? t("monitorStreamError")
+              : ""}
+      </span>
+
       {/* Body -- #fafafa background (theme.css's --background token is
           already that exact value), 2-column grid (1.15fr 1fr) per board
           7e. */}
       {/* INTERIM phone stack (P6.1): single column below `md` so nothing
           overflows at 390px; the real glanceable phone layout is P6.2
           (board 8f). Desktop/tablet keeps board 7e's two-column grid. */}
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-y-auto bg-background p-4 pb-24 md:p-6 md:[grid-template-columns:1.15fr_1fr]">
+      <div
+        data-testid="monitor-body"
+        className={cn(
+          "grid flex-1 grid-cols-1 gap-4 overflow-y-auto bg-background p-4 pb-24 transition-opacity md:p-6 md:[grid-template-columns:1.15fr_1fr]",
+          // Board 8p -- stale numbers never masquerade as live: anything
+          // short of an open stream dims the whole body to 60%.
+          !live && "opacity-60",
+        )}
+      >
         {snapshotQuery.isLoading ? (
           <>
             <div className="flex flex-col gap-4">

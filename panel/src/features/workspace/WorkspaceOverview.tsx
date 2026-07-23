@@ -5,7 +5,7 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { Circle, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { STEP_LABEL_KEYS } from "../home/ReadinessCell";
+import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
 import { ReadinessStrip } from "./ReadinessStrip";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
