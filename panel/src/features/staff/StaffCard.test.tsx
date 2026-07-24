@@ -132,6 +132,69 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.getByText(`Issued ${expectedDate} · valid 30 days`)).toBeInTheDocument();
     });
 
+    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and its 'Back to card' just closes it", async () => {
+      const user = userEvent.setup();
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        zoneNames: ["Main hall", "VIP"],
+        cachedToken: "QR_cached_token",
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+
+      // QrDisplay's img has a generic "QR code" accessible name (never the
+      // raw token) — data-testid is its own test hook for the rendered code.
+      const fullScreenImg = await screen.findByTestId("qr-display-code");
+      expect(fullScreenImg).toBeInTheDocument();
+      // "alice@example.com" is deliberately not asserted here — it's the
+      // QrDisplay title AND already the card's own header text, so it's a
+      // genuine (harmless) duplicate on the page; "Staff login" (the
+      // subtitle) is the unique signal that QrDisplay actually mounted.
+      expect(screen.getByText("Staff login")).toBeInTheDocument();
+
+      // "Back to card" (QrDisplay's regenerateLabel here) just closes the
+      // full-screen view — it never re-mints a token (that stays gated
+      // behind the existing "Print card" confirm flow).
+      await user.click(screen.getByRole("button", { name: "Back to card" }));
+      expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+      expect(qrTokenCallCount).toBe(0);
+    });
+
+    // Review fix (P6.3 T8): the full-screen QrDisplay now mounts inside a
+    // Radix Dialog instead of a hand-rolled `createPortal` div, specifically
+    // so it gets focus-trap/aria-modal-equivalent/Escape-to-close for free.
+    // This is the regression test for that — a raw portal div has no
+    // `role="dialog"`, no accessible name, no focus trap, and Escape would
+    // be a no-op. (This installed @radix-ui/react-dialog version doesn't
+    // stamp an `aria-modal` attribute — verified by reading
+    // node_modules/@radix-ui/react-dialog/dist/index.mjs — so `role="dialog"`
+    // + focus containment + a real accessible name via aria-labelledby is
+    // what's actually asserted here instead of that literal attribute.)
+    it("full-screen QR mounts as a real accessible dialog, traps focus, and Escape closes it", async () => {
+      const user = userEvent.setup();
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        zoneNames: ["Main hall", "VIP"],
+        cachedToken: "QR_cached_token",
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      await screen.findByTestId("qr-display-code");
+
+      // Accessible name comes from the sr-only DialogTitle via
+      // aria-labelledby — proves Radix actually wired it up, not just that
+      // *some* element with role="dialog" exists.
+      const dialog = screen.getByRole("dialog", { name: "Staff login — alice@example.com" });
+      // Radix's FocusScope auto-focuses something inside the dialog on
+      // mount (here, QrDisplay's own X close button) — the StaffPage grid
+      // underneath is genuinely inert, not just visually covered.
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+    });
+
     it("has_qr_token but not cached: shows the muted 'can't be re-displayed' box with the issued date, no QrSvg", async () => {
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),

@@ -6,11 +6,14 @@ import { Users } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { AddAttendeeDialog } from "./AddAttendeeDialog";
+import { AttendeeCard } from "./AttendeeCard";
 import { AttendeeDrawer } from "./AttendeeDrawer";
+import { AttendeeSearchList, PHONE_PER_PAGE } from "./AttendeeSearchList";
 import { AttendeePager, AttendeeTable } from "./AttendeeTable";
 import { BulkBar } from "./BulkBar";
 import { useAttendeesPage, useEventZones } from "./hooks";
 import { ImportWizard } from "./import/ImportWizard";
+import { useIsMobile } from "../../shared/hooks/useIsMobile";
 import { zoneIdentity } from "../../shared/lib/zoneIdentity";
 import type { AttendeesSearch } from "./searchParams";
 
@@ -42,6 +45,7 @@ export function AttendeesPage() {
   const { eventId } = routeApi.useParams();
   const search = routeApi.useSearch();
   const navigate = routeApi.useNavigate();
+  const isMobile = useIsMobile();
 
   const page = search.page ?? 1;
 
@@ -70,9 +74,17 @@ export function AttendeesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce timer keys off searchInput only; navigate/search.search are read fresh inside the closure.
   }, [searchInput]);
 
+  // On mobile, AttendeeSearchList runs its own useAttendeesPage(page: 1,
+  // perPage: PHONE_PER_PAGE, ...) for the actual rows it renders -- this
+  // query exists there only for the header total (and the desktop
+  // table/pager, which never mounts on mobile). Matching its page/perPage
+  // here makes both calls resolve to the exact same $api query key, so
+  // TanStack Query dedupes them into one cache entry / one network request
+  // instead of firing two nearly-identical list fetches on every
+  // keystroke/filter change.
   const attendeesQuery = useAttendeesPage(eventId, {
-    page,
-    perPage: PER_PAGE,
+    page: isMobile ? 1 : page,
+    perPage: isMobile ? PHONE_PER_PAGE : PER_PAGE,
     search: search.search,
     zone: search.zone,
     status: search.status,
@@ -223,10 +235,13 @@ export function AttendeesPage() {
           </SelectContent>
         </Select>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto hidden items-center gap-2 md:flex">
           {/* Import CSV opens the wizard to step 1 (Task 11); the wizard's
               own steps 2-3 (column mapping, chunked import) land in Tasks
-              12-13. + Add attendee is wired by Task 7. */}
+              12-13. + Add attendee is wired by Task 7. CSV import and bulk
+              add stay desktop-only per board 8g's own hint text (P6.3 T3) —
+              the zone/status filters above stay visible on phone since
+              they're useful for narrowing search there too. */}
           <Button type="button" variant="outline" onClick={() => setImportOpen(true)}>
             {t("attendeesImportCsv")}
           </Button>
@@ -236,7 +251,23 @@ export function AttendeesPage() {
         </div>
       </div>
 
-      {attendeesQuery.isLoading ? (
+      {isMobile ? (
+        // "Card replaces list" phone-screen-stack semantic (board 8g/8h/8i's
+        // design intent) -- rendering the list underneath an already-open
+        // AttendeeCard put both on screen at once with no way to tell a row
+        // click had done anything (the card renders ~1800px below the fold,
+        // far past the visible viewport). The card itself is mounted further
+        // down, keyed off this same `search.attendee`.
+        search.attendee ? null : (
+          <AttendeeSearchList
+            eventId={eventId}
+            search={search.search}
+            zone={search.zone}
+            status={search.status}
+            onRowClick={openAttendee}
+          />
+        )
+      ) : attendeesQuery.isLoading ? (
         <AttendeesTableSkeleton />
       ) : attendeesQuery.isError ? (
         <div className="flex flex-col items-start gap-2 rounded-lg border border-border p-6">
@@ -292,9 +323,15 @@ export function AttendeesPage() {
       {/* Task 8: mounted (not just shown/hidden) whenever `attendee` is set,
           so a fresh page load with ?attendee=<id> already in the URL
           renders it too (deep-link support) — not only after a row click
-          during the current session. */}
+          during the current session. AttendeeCard (P6.3 T5-6) has the exact
+          same prop shape as AttendeeDrawer, so the phone/desktop swap below
+          is the only change needed here (P6.3 T7). */}
       {search.attendee ? (
-        <AttendeeDrawer eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        isMobile ? (
+          <AttendeeCard eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        ) : (
+          <AttendeeDrawer eventId={eventId} attendeeId={search.attendee} onClose={closeAttendee} />
+        )
       ) : null}
     </div>
   );

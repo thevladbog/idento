@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { $api } from "../../shared/api/query";
 import type { components } from "../../shared/api/schema";
 
@@ -118,4 +119,34 @@ export function ATTENDEE_ZONE_ACCESS_KEY(attendeeId: string) {
 // contract — the drawer trusts that ordering rather than re-sorting.
 export function useAttendeeZoneHistory(attendeeId: string) {
   return $api.useQuery("get", "/api/attendees/{attendee_id}/zone-history", { params: { path: { attendee_id: attendeeId } } });
+}
+
+// ---------------------------------------------------------------------------
+// Block / unblock — POST /api/attendees/{id}/block, POST /api/attendees/{id}/unblock.
+// Net-new for P6.3 (board 8h/8i): no prior panel UI called either endpoint,
+// though both have existed in the generated client since P2. Same
+// unconditional-invalidation convention as useStationCheckin/useUndoCheckin
+// (checkin/hooks.ts) — invalidate both the list (blocked status shows in the
+// phone search list's status pill) and this one attendee's own detail query
+// (the card reads its data from useAttendeeDetail).
+// ---------------------------------------------------------------------------
+
+export function useBlockAttendee(eventId: string) {
+  const queryClient = useQueryClient();
+  return $api.useMutation("post", "/api/attendees/{id}/block", {
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      void queryClient.invalidateQueries({ queryKey: ATTENDEE_DETAIL_KEY(variables.params.path.id) });
+    },
+  });
+}
+
+export function useUnblockAttendee(eventId: string) {
+  const queryClient = useQueryClient();
+  return $api.useMutation("post", "/api/attendees/{id}/unblock", {
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ATTENDEES_LIST_KEY(eventId) });
+      void queryClient.invalidateQueries({ queryKey: ATTENDEE_DETAIL_KEY(variables.params.path.id) });
+    },
+  });
 }

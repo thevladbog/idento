@@ -1,9 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { startMswServer } from "../../test/msw";
-import { ATTENDEES_LIST_KEY, useAttendeesPage, useEventZones } from "./hooks";
+import {
+  ATTENDEE_DETAIL_KEY,
+  ATTENDEES_LIST_KEY,
+  useAttendeesPage,
+  useBlockAttendee,
+  useEventZones,
+  useUnblockAttendee,
+} from "./hooks";
 
 interface CapturedRequest {
   eventId: string;
@@ -209,6 +216,46 @@ describe("attendees hooks", () => {
       expect(zonesFetchCount).toBe(1);
       expect(result.current.data).toHaveLength(1);
       expect(result.current.data?.[0]?.name).toBe("Main Hall");
+    });
+  });
+
+  describe("useBlockAttendee", () => {
+    it("invalidates both the attendees list and the blocked attendee's detail query on success", async () => {
+      server.use(
+        http.post("http://api.test/api/attendees/:id/block", ({ params }) =>
+          HttpResponse.json({ id: params.id, blocked: true, block_reason: "no-show" }),
+        ),
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useBlockAttendee("evt-1"), {
+        wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({ params: { path: { id: "att-1" } }, body: { reason: "no-show" } });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEE_DETAIL_KEY("att-1") });
+    });
+  });
+
+  describe("useUnblockAttendee", () => {
+    it("invalidates both the attendees list and the unblocked attendee's detail query on success", async () => {
+      server.use(
+        http.post("http://api.test/api/attendees/:id/unblock", ({ params }) =>
+          HttpResponse.json({ id: params.id, blocked: false, block_reason: null }),
+        ),
+      );
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { result } = renderHook(() => useUnblockAttendee("evt-1"), {
+        wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>,
+      });
+      await act(async () => {
+        await result.current.mutateAsync({ params: { path: { id: "att-1" } } });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEES_LIST_KEY("evt-1") });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ATTENDEE_DETAIL_KEY("att-1") });
     });
   });
 });

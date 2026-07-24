@@ -1,5 +1,5 @@
 import {
-  Avatar, AvatarFallback, Button, Card, ConfirmDialog, Skeleton,
+  Avatar, AvatarFallback, Button, Card, ConfirmDialog, Dialog, DialogContent, DialogTitle, QrDisplay, Skeleton,
 } from "@idento/ui";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -132,6 +132,11 @@ export function StaffCard({
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [zonesOpen, setZonesOpen] = React.useState(false);
   const [revokeConfirmOpen, setRevokeConfirmOpen] = React.useState(false);
+  // Board 8l: the full-screen QrDisplay viewer for the cached token. Purely
+  // a viewing affordance — it never re-mints a token itself (see
+  // `onRegenerate` below); a genuinely new token still only comes from the
+  // existing "Print card" confirm flow.
+  const [fullScreenOpen, setFullScreenOpen] = React.useState(false);
   // Same non-blocking, session-ref-guarded pattern as the regenerate confirm
   // below: revoke is a single fire-and-forget destructive action once
   // confirmed, so backing out mid-flight just means "don't act on the
@@ -305,6 +310,13 @@ export function StaffCard({
                 {t("staffQrIssued", { date: formatIssuedAt(user.qr_token_created_at, i18n.language) })}
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => setFullScreenOpen(true)}
+              className="mt-0.5 self-start text-caption font-semibold text-success"
+            >
+              {t("staffQrShowFullScreen")}
+            </button>
           </div>
         </div>
       ) : user.has_qr_token ? (
@@ -426,6 +438,53 @@ export function StaffCard({
         confirmDisabled={revokeStaff.isPending}
         onConfirm={handleConfirmRevoke}
       />
+
+      {/* Review fix (P6.3 T8): this used to be a hand-rolled
+          `createPortal(..., document.body)` with `className="fixed inset-0
+          z-50"` — visually full-screen, but with none of Radix's Dialog
+          behaviors (focus trap, aria-modal, Escape-to-close, background
+          inerting), so StaffPage's grid (other staff cards' Print/Zones/
+          Revoke buttons, plus the page-level "Print all"/"+ Add staff"
+          buttons) stayed fully live and tabbable underneath it. Reusing the
+          same Dialog/DialogContent primitives ConfirmDialog itself builds on
+          (see the two ConfirmDialogs below) gets all of that for free —
+          DialogContent's own centered-modal positioning (`fixed left-1/2
+          top-1/2 ... max-w-lg -translate-x-1/2 -translate-y-1/2 ...`) is
+          overridden below via the `cn()` merge in dialog.tsx so it fills the
+          viewport instead.
+          `hideClose` suppresses DialogContent's own X — QrDisplay already
+          renders its own visible close (X) button internally, so a second
+          one stacked on top would be a redundant, confusingly-duplicate
+          control. A visually-hidden DialogTitle is still required: Radix
+          only wires `aria-labelledby` onto the dialog element when a
+          DialogTitle is actually rendered (see dialog.tsx's other
+          consumers, which all render one), and QrDisplay's own on-screen
+          "title" text is a plain styled div, not something Radix can pick
+          up as the dialog's accessible name — sr-only here (this
+          codebase's established hidden-text idiom, see status-pill.tsx)
+          keeps it out of the visual layout entirely. */}
+      <Dialog open={fullScreenOpen && !!cachedToken} onOpenChange={setFullScreenOpen}>
+        <DialogContent
+          hideClose
+          closeLabel={t("staffQrBackToCard")}
+          className="inset-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-transparent p-0 shadow-none"
+        >
+          <DialogTitle className="sr-only">{`${t("staffQrSubtitle")} — ${user.email}`}</DialogTitle>
+          {cachedToken ? (
+            <QrDisplay
+              value={cachedToken}
+              title={user.email}
+              subtitle={t("staffQrSubtitle")}
+              expiresAt={null}
+              expiredLabel=""
+              regenerateLabel={t("staffQrBackToCard")}
+              closeLabel={t("moreSheetCloseLabel")}
+              onClose={() => setFullScreenOpen(false)}
+              onRegenerate={() => setFullScreenOpen(false)}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

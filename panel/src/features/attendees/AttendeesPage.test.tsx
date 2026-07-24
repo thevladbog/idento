@@ -50,6 +50,26 @@ function renderAt(path: string) {
   return router;
 }
 
+// Matches DesktopOnly.test.tsx's own helper (same media-query string as
+// useIsMobile.ts's MOBILE_QUERY) -- this file's other tests all render at
+// the default (desktop) matchMedia mock, so only the one phone-branch test
+// below needs this, with vi.unstubAllGlobals() restoring it afterward.
+function installMatchMedia(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockReturnValue({
+      matches,
+      media: "(max-width: 767.98px)",
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 interface CapturedRequest {
   params: URLSearchParams;
 }
@@ -344,6 +364,56 @@ describe("AttendeesPage", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(await within(screen.getByRole("dialog")).findByText("Bob Noll")).toBeInTheDocument();
+  });
+
+  it("renders AttendeeCard instead of AttendeeDrawer on phone when ?attendee is set", async () => {
+    installMatchMedia(true); // below md
+    renderAt("/events/evt-1/attendees?attendee=a2");
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument(); // AttendeeCard's back control
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(); // AttendeeDrawer is a Dialog; AttendeeCard isn't
+    expect(screen.queryByRole("button", { name: /Reprint/i })).not.toBeInTheDocument(); // AttendeeDrawer-only affordance, absence proves the swap
+  });
+
+  // Reproduces the finding: on phone, the search list used to render
+  // unconditionally alongside the card, appended far below it in the DOM —
+  // a row click opened the card with no visible viewport change. "Card
+  // replaces list" is the intended phone-screen-stack semantic: this test's
+  // default fixture (set in the outer beforeEach) is [ADA, BOB], and the
+  // opened card is for BOB (a2) — so Ada's own search-list row ("Lovelace
+  // Ada", per AttendeeSearchList's `{last_name} {first_name}` row format,
+  // distinct from the card's own "Noll Bob" heading) is a signal that's
+  // present only when the list itself is actually rendered.
+  it("hides the search list on phone while the card is open, and shows it again after closing", async () => {
+    installMatchMedia(true); // below md
+    renderAt("/events/evt-1/attendees?attendee=a2");
+
+    expect(await screen.findByRole("button", { name: "Back" })).toBeInTheDocument();
+    expect(screen.queryByText(/Lovelace Ada/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(await screen.findByText(/Lovelace Ada/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back" })).not.toBeInTheDocument();
+  });
+
+  // Regression: the page's own header-total query used to request
+  // per_page=50/page=<url page> unconditionally, while AttendeeSearchList's
+  // own internal query requests per_page=30/page=1 -- different $api query
+  // keys, so two nearly-identical list requests fired on mount instead of
+  // one. On mobile there's no pager UI to ever move `page` off 1, so
+  // matching AttendeeSearchList's own params here is safe and lets both
+  // queries share one cache entry.
+  it("sends exactly one attendees-list request on phone, matching AttendeeSearchList's own page/perPage", async () => {
+    installMatchMedia(true); // below md
+    attendeesResponse = { attendees: [ADA, BOB], total: 2, page: 1, per_page: 30 };
+    renderAt("/events/evt-1/attendees");
+
+    await screen.findByText(/Lovelace Ada/);
+
+    expect(capturedRequests).toHaveLength(1);
+    expect(capturedRequests[0]?.params.get("per_page")).toBe("30");
+    expect(capturedRequests[0]?.params.get("page")).toBe("1");
   });
 
   // Reproduces the finding: deleting the last row(s) on a non-first page

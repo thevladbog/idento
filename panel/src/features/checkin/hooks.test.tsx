@@ -3,7 +3,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { startMswServer } from "../../test/msw";
-import { useAttendeesPage } from "../attendees/hooks";
+import { useAttendeeDetail, useAttendeesPage } from "../attendees/hooks";
 import {
   CHECKIN_ACTIONS_KEY,
   CHECKIN_SETTINGS_KEY,
@@ -31,6 +31,7 @@ let stationsGetCount = 0;
 let heartbeatPostCount = 0;
 let actionsGetCount = 0;
 let attendeesGetCount = 0;
+let attendeeDetailGetCount = 0;
 
 let currentSettings: unknown = null;
 
@@ -136,6 +137,11 @@ const server = startMswServer(
     captured.push({ path: "undoCheckin", method: "POST", params: new URLSearchParams(), body });
     return HttpResponse.json({ attendee: makeAttendee({ id: body.attendee_id, checkin_status: false }) });
   }),
+  http.get("http://api.test/api/attendees/:id", ({ params }) => {
+    attendeeDetailGetCount += 1;
+    captured.push({ path: "getAttendeeDetail", method: "GET", params: new URLSearchParams({ id: String(params.id) }) });
+    return HttpResponse.json(makeAttendee({ id: params.id, checkin_status: true }));
+  }),
   http.get("http://api.test/api/events/:eventId/attendees", ({ request }) => {
     attendeesGetCount += 1;
     const url = new URL(request.url);
@@ -173,6 +179,7 @@ describe("checkin hooks", () => {
     heartbeatPostCount = 0;
     actionsGetCount = 0;
     attendeesGetCount = 0;
+    attendeeDetailGetCount = 0;
     currentSettings = null;
     localStorage.clear();
     localStorage.setItem("token", "jwt-test");
@@ -524,6 +531,45 @@ describe("checkin hooks", () => {
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(actionsGetCount).toBe(1);
+    });
+
+    // Regression: AttendeeCard (P6.3) keeps useAttendeeDetail mounted for the
+    // whole time its QR/undo/block actions are visible. Before this fix,
+    // neither hook invalidated ATTENDEE_DETAIL_KEY, so a mounted card kept
+    // showing the pre-mutation checkin_status indefinitely even though the
+    // attendees list (and thus the search results behind the card) had
+    // already refetched and moved on — a real, reproducible staleness bug
+    // caught during the P6.3 Task 11 live device walk.
+    it("useStationCheckin invalidates ATTENDEE_DETAIL_KEY for the mutated attendee", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: detailResult } = renderHook(() => useAttendeeDetail("att-1"), { wrapper: Wrapper });
+      await waitFor(() => expect(detailResult.current.isSuccess).toBe(true));
+      expect(attendeeDetailGetCount).toBe(1);
+
+      const { result: checkinResult } = renderHook(() => useStationCheckin("evt-1"), { wrapper: Wrapper });
+      checkinResult.current.mutate({
+        params: { path: { event_id: "evt-1" } },
+        body: { attendee_id: "att-1", station_id: "st-1" },
+      });
+      await waitFor(() => expect(checkinResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(attendeeDetailGetCount).toBe(2));
+    });
+
+    it("useUndoCheckin invalidates ATTENDEE_DETAIL_KEY for the mutated attendee", async () => {
+      const { Wrapper } = makeWrapper();
+      const { result: detailResult } = renderHook(() => useAttendeeDetail("att-1"), { wrapper: Wrapper });
+      await waitFor(() => expect(detailResult.current.isSuccess).toBe(true));
+      expect(attendeeDetailGetCount).toBe(1);
+
+      const { result: undoResult } = renderHook(() => useUndoCheckin("evt-1"), { wrapper: Wrapper });
+      undoResult.current.mutate({
+        params: { path: { event_id: "evt-1" } },
+        body: { attendee_id: "att-1", station_id: "st-1" },
+      });
+      await waitFor(() => expect(undoResult.current.isSuccess).toBe(true));
+
+      await waitFor(() => expect(attendeeDetailGetCount).toBe(2));
     });
   });
 });

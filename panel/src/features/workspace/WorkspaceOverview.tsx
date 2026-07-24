@@ -6,6 +6,7 @@ import { Circle, Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { STEP_LABEL_KEYS } from "../../shared/lib/readinessLabels";
+import { AddStationAction } from "./AddStationAction";
 import { ReadinessStrip } from "./ReadinessStrip";
 import { useEventReadiness, useEventStats } from "../events/hooks";
 import { $api } from "../../shared/api/query";
@@ -47,6 +48,11 @@ export function WorkspaceOverview() {
   const readiness = useEventReadiness(eventId);
   const stats = useEventStats(eventId);
   const zonesQuery = $api.useQuery("get", "/api/events/{event_id}/zones", { params: { path: { event_id: eventId } } });
+  // Identical query (method/path/params) to EventWorkspaceLayout.tsx's own
+  // fetch of the event — since WorkspaceOverview renders as that layout's
+  // <Outlet/> child, this hits the same already-warm TanStack Query cache
+  // entry rather than firing a duplicate request.
+  const eventQuery = $api.useQuery("get", "/api/events/{id}", { params: { path: { id: eventId } } });
 
   const steps = readiness.data?.steps;
   const stepsByKey = new Map(steps?.map((step) => [step.key, step]) ?? []);
@@ -132,6 +138,8 @@ export function WorkspaceOverview() {
           caption={<p className="text-caption text-muted-foreground">/ {stats.data?.total_attendees ?? 0}</p>}
         />
       </div>
+
+      {eventQuery.data ? <AddStationAction eventId={eventId} eventName={eventQuery.data.name} /> : null}
     </div>
   );
 }
