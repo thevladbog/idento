@@ -1265,7 +1265,7 @@ export interface components {
             /** Format: date-time */
             deleted_at?: string | null;
         };
-        /** @description A staff-to-event assignment record — the response shape for POST /api/events/{event_id}/staff. Distinct from GET .../staff, which returns full User records (store.GetEventStaff joins through the event_staff table back to users, not this assignment row shape). */
+        /** @description A staff-to-event assignment record — the response shape for POST /api/events/{event_id}/staff. Distinct from GET .../staff, which returns full User records projected into the event tenant with each user's current membership role (not this assignment row shape). */
         EventStaff: {
             /** Format: uuid */
             id: string;
@@ -3738,7 +3738,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Assigned staff, as full User records — store.GetEventStaff joins event_staff back to users, so this is an array of User, NOT the EventStaff assignment shape (see POST on this same path, which does return EventStaff). */
+            /** @description Assigned staff, as full User records projected into the event tenant: tenant_id is the event tenant and role is the user's current membership role in that tenant. Assignments without a current event-tenant membership are omitted. This is an array of User, NOT the EventStaff assignment shape (see POST on this same path, which does return EventStaff). */
             200: {
                 headers: {
                     [name: string]: unknown;

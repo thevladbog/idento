@@ -454,11 +454,12 @@ func (s *PGStore) AssignStaffToEvent(ctx context.Context, assignment *models.Eve
 }
 
 func (s *PGStore) GetEventStaff(ctx context.Context, eventID uuid.UUID) ([]*models.User, error) {
-	query := `SELECT u.id, u.tenant_id, u.email, u.role, u.is_super_admin,
+	query := `SELECT u.id, e.tenant_id, u.email, ut.role, u.is_super_admin,
 	                 (q.user_id IS NOT NULL), q.created_at, u.created_at, u.updated_at
 			  FROM users u
 			  INNER JOIN event_staff es ON u.id = es.user_id
 			  INNER JOIN events e ON e.id = es.event_id
+			  INNER JOIN user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = e.tenant_id
 			  LEFT JOIN user_qr_credentials q ON q.user_id = u.id AND q.tenant_id = e.tenant_id
 			  WHERE es.event_id = $1
 			  ORDER BY es.assigned_at DESC`
