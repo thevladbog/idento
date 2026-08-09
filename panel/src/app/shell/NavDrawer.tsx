@@ -6,7 +6,7 @@ import { Menu } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-export function NavDrawer() {
+export function NavDrawer({ showSelfService }: { showSelfService: boolean }) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
 
@@ -34,6 +34,11 @@ export function NavDrawer() {
           <Link to="/organization" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navOrganization")}
           </Link>
+          {showSelfService ? (
+            <Link to="/me" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+              {t("navMyProfile")}
+            </Link>
+          ) : null}
         </nav>
       </SheetContent>
     </Sheet>
