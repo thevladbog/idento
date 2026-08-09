@@ -41,6 +41,7 @@ export function SelfServicePage() {
         },
         onSettled: () => {
           mintInFlightRef.current = false;
+          if (session !== qrSessionRef.current) generateToken.reset();
         },
       },
     );
@@ -48,7 +49,7 @@ export function SelfServicePage() {
 
   function closeQrSession() {
     qrSessionRef.current += 1;
-    generateToken.reset();
+    if (!generateToken.isPending) generateToken.reset();
     setCachedToken(null);
     setQrOpen(false);
   }
@@ -73,7 +74,7 @@ export function SelfServicePage() {
         {generateToken.isError ? (
           <p
             role="alert"
-            className="absolute inset-x-6 bottom-[max(1.5rem,env(safe-area-inset-bottom))] rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-caption text-destructive"
+            className="absolute inset-x-6 bottom-[max(1.5rem,env(safe-area-inset-bottom))] rounded-lg border border-destructive/30 bg-background px-3 py-2 text-caption text-destructive"
           >
             {t("selfServiceQrError")}
           </p>

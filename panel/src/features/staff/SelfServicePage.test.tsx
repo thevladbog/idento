@@ -49,6 +49,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  document.documentElement.classList.remove("dark");
   await i18n.changeLanguage("en");
 });
 
@@ -103,7 +104,8 @@ describe("SelfServicePage", () => {
     expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
   });
 
-  it("keeps the cached QR and a retryable error visible when regeneration fails", async () => {
+  it("keeps the cached QR and an opaque dark-theme error visible when regeneration fails", async () => {
+    document.documentElement.classList.add("dark");
     let qrTokenCallCount = 0;
     server.use(
       http.post("http://api.test/api/users/:id/qr-token", () => {
@@ -115,12 +117,17 @@ describe("SelfServicePage", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
-    await screen.findByTestId("qr-display-code");
+    const initialQrMarkup = (await screen.findByTestId("qr-display-code")).innerHTML;
 
     await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать QR для входа. Попробуйте ещё раз.");
-    expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Не удалось создать QR для входа. Попробуйте ещё раз.");
+    expect(alert).toHaveClass("bg-background");
+    expect(alert).toHaveClass("text-destructive");
+    // Boolean equality intentionally prevents Vitest from serializing the
+    // bearer-derived SVG markup into a failure diff.
+    expect(screen.getByTestId("qr-display-code").innerHTML === initialQrMarkup).toBe(true);
     expect(screen.getByRole("button", { name: "Показать мой QR для входа" })).toBeEnabled();
     expect(
       screen.queryByText("Сканирование, контроль зон и печать бейджей происходят в приложении станции Idento на вашем устройстве."),
@@ -217,10 +224,16 @@ describe("SelfServicePage", () => {
     expect(qrTokenCallCount).toBe(2);
 
     await user.click(screen.getByRole("button", { name: "Закрыть" }));
-    releaseRegeneration();
 
     const openQr = await screen.findByRole("button", { name: "Показать мой QR для входа" });
+    const remainedDisabledWhileRequestWasPending = (openQr as HTMLButtonElement).disabled;
+    releaseRegeneration();
+    expect(remainedDisabledWhileRequestWasPending).toBe(true);
     await waitFor(() => expect(openQr).toBeEnabled());
     expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+
+    await user.click(openQr);
+    await waitFor(() => expect(qrTokenCallCount).toBe(3));
+    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
   });
 });
