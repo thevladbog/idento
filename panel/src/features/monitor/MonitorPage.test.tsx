@@ -748,7 +748,10 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
 
       streamConnections[0].close();
       await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
-      expect(screen.getByTestId("monitor-body")).toHaveClass("opacity-60");
+      expect(screen.getByTestId("monitor-body")).toHaveClass(
+        "opacity-60",
+        "[&_.text-muted-foreground]:text-foreground",
+      );
 
       // Backoff is 1s base +/-25% jitter (max 1250ms) -- bounded wait for
       // the retried connect() to land as a brand-new request, same as the
@@ -756,7 +759,10 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
       await waitFor(() => expect(streamConnections.length).toBe(2), { timeout: 3000 });
       streamConnections[1].push("event: hello\ndata: {}\n\n");
       await waitFor(() => expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument());
-      expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass(
+        "opacity-60",
+        "[&_.text-muted-foreground]:text-foreground",
+      );
     },
     8000,
   );

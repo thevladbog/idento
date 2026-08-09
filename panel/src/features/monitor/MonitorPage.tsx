@@ -202,8 +202,11 @@ export function MonitorPage() {
           "grid flex-1 grid-cols-1 gap-4 overflow-y-auto bg-background p-4 pb-24 transition-opacity md:p-6 md:[grid-template-columns:1.15fr_1fr]",
           // Board 8p -- stale numbers never masquerade as live: anything
           // short of an open stream dims real retained snapshot content to
-          // 60%. An initial error has no stale numbers to visually degrade.
-          snapshot && !live && "opacity-60",
+          // 60%. At that parent opacity, text-muted-foreground rendered
+          // 2.53:1 on the light background, so retained degraded descendants
+          // start from text-foreground before compositing. An initial error
+          // has no stale numbers to visually degrade.
+          snapshot && !live && "opacity-60 [&_.text-muted-foreground]:text-foreground",
         )}
       >
         {snapshotQuery.isLoading ? (
