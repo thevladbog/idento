@@ -307,12 +307,25 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     await expectNoBodyOverflow(page);
     await expectTouchTargetsAtLeast44(eventTabActions(page));
 
-    const provisioningResponse = page.waitForResponse((response) =>
+    const assignee = page.getByRole("combobox", { name: "Assigned staff" });
+    await expect(assignee).toBeVisible();
+    await expectTouchTargetsAtLeast44(assignee);
+    await assignee.click();
+    const seededStaffOption = page.getByRole("option", { name: `${seed.staff.email} · Staff` });
+    await expect(seededStaffOption).toBeVisible();
+    await expectTouchTargetsAtLeast44(seededStaffOption);
+    await seededStaffOption.click();
+    await expect(page.getByRole("button", { name: /Add station/ })).toBeEnabled();
+
+    const provisioningResponsePromise = page.waitForResponse((response) =>
       isPostTo(response, `/api/events/${seed.eventId}/stations/provisioning-token`),
     );
     await page.getByRole("button", { name: /Add station/ }).click();
+    const provisioningResponse = await provisioningResponsePromise;
+    const provisioningRequestBody = provisioningResponse.request().postDataJSON() as { staff_user_id?: string };
+    expect(provisioningRequestBody.staff_user_id).toBe(seed.staff.id);
     const provisioningBearer = await credentialFrom(
-      await provisioningResponse,
+      provisioningResponse,
       "token",
       "station provisioning QR mint",
     );
