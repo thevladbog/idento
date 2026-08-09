@@ -15,6 +15,10 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
   if (!steps?.length) return null;
   return (
     <div data-testid="readiness-strip" className="min-w-0 max-w-full overflow-hidden md:hidden">
+      {/* eslint-disable jsx-a11y/no-noninteractive-tabindex --
+          This named scroll region must be keyboard-focusable so keyboard users
+          can scroll its overflowing readiness chips; an interactive ARIA role
+          would misrepresent the region's semantics. */}
       <div
         data-testid="readiness-strip-scroller"
         role="region"
@@ -22,6 +26,7 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
         tabIndex={0}
         className="flex min-w-0 min-h-11 max-w-full gap-1.5 overflow-x-auto"
       >
+        {/* eslint-enable jsx-a11y/no-noninteractive-tabindex */}
         {steps.map((step) => {
           const done = step.status === "done";
           const skipped = step.status === "skipped";
