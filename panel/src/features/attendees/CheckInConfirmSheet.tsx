@@ -93,6 +93,7 @@ export function CheckInConfirmSheet({
       <SheetContent
         side="bottom"
         closeLabel={t("moreSheetCloseLabel")}
+        hideClose={checkin.isPending}
         onEscapeKeyDown={preventDismissWhilePending}
         onPointerDownOutside={preventDismissWhilePending}
         onInteractOutside={preventDismissWhilePending}

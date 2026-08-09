@@ -26,26 +26,28 @@ const sheetVariants = cva(
 export const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> &
-    VariantProps<typeof sheetVariants> & { closeLabel: string }
->(({ className, children, side, closeLabel, ...props }, ref) => (
+    VariantProps<typeof sheetVariants> & { closeLabel: string; hideClose?: boolean }
+>(({ className, children, side, closeLabel, hideClose, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-overlay/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
     <DialogPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
       {children}
-      <DialogPrimitive.Close
-        aria-label={closeLabel}
-        // WCAG 2.5.8 target size — same fix/rationale as dialog.tsx's
-        // DialogContent close button (icon-only size-4 alone is 16px,
-        // under the 24px floor; size-6 + flex-centering is this codebase's
-        // established icon-button hit-target convention).
-        // Bottom sheets are phone-only chrome — 44px per the P6 adaptive rules (WCAG 2.5.5 level).
-        className={cn(
-          "absolute right-4 top-4 inline-flex items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          side === "bottom" ? "size-11" : "size-6",
-        )}
-      >
-        <X className="size-4" />
-      </DialogPrimitive.Close>
+      {!hideClose ? (
+        <DialogPrimitive.Close
+          aria-label={closeLabel}
+          // WCAG 2.5.8 target size — same fix/rationale as dialog.tsx's
+          // DialogContent close button (icon-only size-4 alone is 16px,
+          // under the 24px floor; size-6 + flex-centering is this codebase's
+          // established icon-button hit-target convention).
+          // Bottom sheets are phone-only chrome — 44px per the P6 adaptive rules (WCAG 2.5.5 level).
+          className={cn(
+            "absolute right-4 top-4 inline-flex items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            side === "bottom" ? "size-11" : "size-6",
+          )}
+        >
+          <X className="size-4" />
+        </DialogPrimitive.Close>
+      ) : null}
     </DialogPrimitive.Content>
   </DialogPrimitive.Portal>
 ));
