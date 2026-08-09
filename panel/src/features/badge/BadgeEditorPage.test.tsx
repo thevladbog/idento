@@ -1774,7 +1774,23 @@ describe("BadgeEditorPage save model — Codex round Fix 3/Fix 4", () => {
     "Fix 4: a save that settles after the operator has navigated to a different event's editor does not " +
       "corrupt that event's state, but its own cache invalidation still runs",
     async () => {
-      putDelayMs = 60;
+      let markEntered!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        markEntered = resolve;
+      });
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        http.put("http://api.test/api/events/:id/badge-template", async ({ request, params }) => {
+          const body = (await request.json()) as CapturedPut["body"];
+          putRequests.push({ eventId: params.id as string, body });
+          markEntered();
+          await pending;
+          return HttpResponse.json({ template: body.template, version: body.version + 1 });
+        }),
+      );
       const user = userEvent.setup();
       const { router, queryClient } = renderPage(<ReadinessObserver eventId="evt-1" />);
       await waitFor(() => expect(readinessHitCount).toBe(1));
@@ -1782,29 +1798,30 @@ describe("BadgeEditorPage save model — Codex round Fix 3/Fix 4", () => {
       await screen.findByTestId("badge-pane-elements");
       await addTextElement(user);
       await user.click(screen.getByRole("button", { name: "Save" }));
+      await entered;
 
-      // isPending is now true (evt-1's PUT is held by putDelayMs) --
+      // isPending is now true (evt-1's PUT is held by the explicit gate) --
       // shouldBlockFn's own `!saveTemplate.isPending` check means this exact
       // navigation attempt passes straight through with NO guard dialog at
       // all: the same deliberate "let it through mid-save" exemption
       // BadgeEditorPage.tsx's shouldBlockFn comment documents, and precisely
       // the race Fix 4 covers -- evt-1's save is still in flight while the
       // operator moves to a different event entirely.
-      await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saving"));
-      await act(async () => {
-        await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
-      });
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      try {
+        await waitFor(() => expect(screen.getByTestId("badge-save-state-pill")).toHaveAttribute("data-state", "saving"));
+        await act(async () => {
+          await router.navigate({ to: "/events/$eventId/badge", params: { eventId: "evt-2" } });
+        });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-      // evt-2's own (unrelated, clean, never-saved) template is now showing.
-      // Its OWN pill still legitimately reads "Saving…" for a moment here —
-      // `saveTemplate.isPending` reflects the ONE shared mutation object
-      // (evt-1's still-in-flight PUT), not a per-event flag, and that
-      // display quirk is unrelated to what Fix 4 covers (the onSuccess/
-      // onError SIDE EFFECTS) — so the assertion below waits for the PUT to
-      // actually settle before checking the pill is gone.
-      await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+        // evt-2's own (unrelated, clean, never-saved) template is now showing.
+        // Its OWN pill still legitimately reads "Saving…" while evt-1 is held,
+        // because the shared mutation object is not per-event.
+        await waitFor(() => expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/));
+        expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      } finally {
+        release();
+      }
 
       // evt-1's PUT now settles, well after the navigation. Without the
       // captured-eventId guard, its onSuccess would dispatch "saved" and
@@ -1812,25 +1829,20 @@ describe("BadgeEditorPage save model — Codex round Fix 3/Fix 4", () => {
       // evt-2's freshly-loaded doc -- falsely flipping evt-2's pill to
       // "Saved" and corrupting evt-2's baseline, even though evt-2 was never
       // touched.
-      await waitFor(() => expect(putRequests).toHaveLength(1));
-      await waitFor(() => expect(putRequests[0].eventId).toBe("evt-1"));
-      // Give the delayed PUT's settle-time callbacks a chance to run (and,
-      // pre-fix, misfire) before the negative assertions below.
-      await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
+      expect(putRequests).toHaveLength(1);
+      expect(putRequests[0].eventId).toBe("evt-1");
+
+      // Observable refetch/cache completion proves the released PUT's
+      // settle-time callbacks ran before the session-guard assertions below.
+      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
+      await waitFor(() =>
+        expect(queryClient.getQueryData(["get", "/api/events/{id}/badge-template", { params: { path: { id: "evt-1" } } }]))
+          .toEqual({ template: putRequests[0].body.template, version: 1 }),
+      );
 
       expect(screen.getByTestId("badge-pane-canvas").textContent).toMatch(/100/);
       expect(screen.queryByTestId("badge-save-state-pill")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-
-      // evt-1's OWN cache invalidation must still be unconditional and keyed
-      // to the CAPTURED (evt-1) id -- Fix 4 only guards the CURRENT editor's
-      // reaction, not the mutation's own cache bookkeeping. The mounted
-      // ReadinessObserver for evt-1 is a genuinely-subscribed observer (PR
-      // #70's pattern), so a real refetch bumps this count regardless of
-      // which page is currently on screen.
-      await waitFor(() => expect(readinessHitCount).toBeGreaterThan(1));
-      expect(queryClient.getQueryData(["get", "/api/events/{id}/badge-template", { params: { path: { id: "evt-1" } } }]))
-        .toEqual({ template: putRequests[0].body.template, version: 1 });
     },
   );
 });

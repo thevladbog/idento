@@ -211,7 +211,23 @@ describe("ZoneFormDialog", () => {
     });
 
     it("blocks Cancel/Escape/outside-click dismissal while the create request is in flight", async () => {
-      createDelayMs = 60;
+      let markEntered!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        markEntered = resolve;
+      });
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        http.post("http://api.test/api/events/:eventId/zones", async ({ request }) => {
+          createCount += 1;
+          lastCreateBody = await request.json();
+          markEntered();
+          await pending;
+          return HttpResponse.json({ ...FULL_ZONE, id: "z-new" }, { status: 201 });
+        }),
+      );
       const user = userEvent.setup();
       const onOpenChange = vi.fn();
       renderWithProviders(<ZoneFormDialog eventId="evt-1" open onOpenChange={onOpenChange} />);
@@ -219,15 +235,20 @@ describe("ZoneFormDialog", () => {
       await user.type(screen.getByLabelText("Name"), "Backstage");
       await user.click(screen.getByRole("button", { name: "Create zone" }));
 
-      await waitFor(() => expect(createCount).toBe(1));
-      const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
-      expect(cancelButtons).toHaveLength(1);
-      expect(cancelButtons[0]).toBeDisabled();
+      await entered;
+      try {
+        expect(createCount).toBe(1);
+        const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
+        expect(cancelButtons).toHaveLength(1);
+        expect(cancelButtons[0]).toBeDisabled();
 
-      await user.click(cancelButtons[0]);
-      await user.keyboard("{Escape}");
-      expect(onOpenChange).not.toHaveBeenCalled();
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
+        await user.click(cancelButtons[0]);
+        await user.keyboard("{Escape}");
+        expect(onOpenChange).not.toHaveBeenCalled();
+        expect(screen.getByRole("dialog")).toBeInTheDocument();
+      } finally {
+        release();
+      }
 
       await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     });

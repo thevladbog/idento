@@ -397,11 +397,20 @@ describe("LaunchCeremony", () => {
 
   it("keeps Start check-in disabled while a settings save is pending (in flight), even after the request resolves successfully", async () => {
     readinessResponse = { ready: true, steps: [{ key: "attendees", status: "done", count: 10 }] };
+    let markEntered!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     server.use(
       http.put("http://api.test/api/events/:id/checkin-settings", async ({ request }) => {
-        await delay(50);
         const body = (await request.json()) as { settings: unknown };
         capturedSettingsPut = body;
+        markEntered();
+        await pending;
         return HttpResponse.json({ settings: body.settings });
       }),
     );
@@ -413,9 +422,15 @@ describe("LaunchCeremony", () => {
     await user.click(screen.getByRole("switch", { name: "Print badge on check-in" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled();
+    await entered;
+    try {
+      expect(screen.getByRole("button", { name: "Start check-in" })).toBeDisabled();
+    } finally {
+      release();
+    }
 
-    await waitFor(() => expect(capturedSettingsPut).not.toBeNull());
+    expect(capturedSettingsPut).not.toBeNull();
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Start check-in" })).toBeEnabled());
   });
 

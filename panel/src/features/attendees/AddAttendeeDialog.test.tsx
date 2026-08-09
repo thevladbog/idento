@@ -205,7 +205,41 @@ describe("AddAttendeeDialog", () => {
   });
 
   it("blocks Cancel/Escape/outside-click dismissal while the create request is in flight", async () => {
-    createDelayMs = 60;
+    let markEntered!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post("http://api.test/api/events/:eventId/attendees", async ({ request, params }) => {
+        createCount += 1;
+        lastCreateBody = await request.json();
+        markEntered();
+        await pending;
+        return HttpResponse.json(
+          {
+            id: "att-new",
+            event_id: params.eventId as string,
+            first_name: "",
+            last_name: "",
+            email: "",
+            company: "",
+            position: "",
+            code: "AUTO1",
+            checkin_status: false,
+            printed_count: 0,
+            blocked: false,
+            packet_delivered: false,
+            created_at: "",
+            updated_at: "",
+          },
+          { status: 201 },
+        );
+      }),
+    );
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     renderWithProviders(<AddAttendeeDialog eventId="evt-1" open onOpenChange={onOpenChange} />);
@@ -213,21 +247,26 @@ describe("AddAttendeeDialog", () => {
     await user.type(screen.getByLabelText("First name"), "Ada");
     await user.click(screen.getByRole("button", { name: "Add attendee" }));
 
-    await waitFor(() => expect(createCount).toBe(1));
-    // The submit is now pending: the X close button (whose accessible name
-    // is also "Cancel", same closeLabel as the footer button) is hidden
-    // entirely via hideClose, leaving exactly one "Cancel"-named button —
-    // the footer one — and it's disabled.
-    const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
-    expect(cancelButtons).toHaveLength(1);
-    expect(cancelButtons[0]).toBeDisabled();
+    await entered;
+    try {
+      expect(createCount).toBe(1);
+      // The submit is now pending: the X close button (whose accessible name
+      // is also "Cancel", same closeLabel as the footer button) is hidden
+      // entirely via hideClose, leaving exactly one "Cancel"-named button —
+      // the footer one — and it's disabled.
+      const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
+      expect(cancelButtons).toHaveLength(1);
+      expect(cancelButtons[0]).toBeDisabled();
 
-    await user.click(cancelButtons[0]);
-    await user.keyboard("{Escape}");
-    expect(onOpenChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+      await user.click(cancelButtons[0]);
+      await user.keyboard("{Escape}");
+      expect(onOpenChange).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    } finally {
+      release();
+    }
 
-    // Once the delayed response resolves, the dialog closes normally.
+    // Once the explicitly released response resolves, the dialog closes normally.
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   });
 

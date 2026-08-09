@@ -1267,7 +1267,23 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     agentHealthOk = true;
     printersResponse = [{ name: "Zebra_ZD421", type: "system" }];
     defaultPrinterResponse = { default: "Zebra_ZD421" };
-    printDelayMs = 40;
+    let markEntered!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post("http://agent.test/print", async ({ request }) => {
+        printHitCount += 1;
+        printCapture = (await request.json()) as { printer_name: string; zpl: string };
+        markEntered();
+        await pending;
+        return HttpResponse.json({ status: "printed" });
+      }),
+    );
     const user = userEvent.setup();
     renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={vi.fn()} />);
     await screen.findByText("Ada Lovelace");
@@ -1282,14 +1298,18 @@ describe("AttendeeDrawer — Task 8 reprint", () => {
     ).not.toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Print" }));
-    expect(
-      await within(dialog).findByText(
+    await entered;
+    try {
+      expect(within(dialog).getByText(
         "Sending can't be cancelled — a badge already sent to the printer will still print.",
-      ),
-    ).toBeInTheDocument();
+      )).toBeInTheDocument();
+    } finally {
+      release();
+    }
 
-    // The happy path closes the dialog once the send resolves — the hint
-    // goes with it.
+    // A successful mark-printed request proves the released print completed;
+    // only then do we assert that its pending-only dialog/hint went away.
+    await waitFor(() => expect(markPrintedHitCount).toBe(1));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Reprint badge" })).not.toBeInTheDocument());
   });
 
