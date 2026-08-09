@@ -36,7 +36,7 @@ func (h *Handler) GetUsers(c echo.Context) error {
 	}
 
 	for _, u := range users {
-		u.HasQRToken = u.QRToken != nil
+		u.HasQRToken = u.HasQRToken || u.QRToken != nil
 	}
 
 	return c.JSON(http.StatusOK, users)

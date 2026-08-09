@@ -59,6 +59,41 @@ func TestGetUsers_DoesNotLeakQRToken(t *testing.T) {
 	}
 }
 
+func TestGetUsers_PreservesScopedCredentialMetadata(t *testing.T) {
+	tenant := uuid.New()
+	issuedAt := time.Now()
+	fs := &fakeStore{
+		getUsersByTenantID: func(id uuid.UUID) ([]*models.User, error) {
+			return []*models.User{{
+				ID:               uuid.New(),
+				TenantID:         tenant,
+				Email:            "staff@org.test",
+				Role:             "staff",
+				HasQRToken:       true,
+				QRTokenCreatedAt: &issuedAt,
+				CreatedAt:        time.Now(),
+			}}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/users", "", tenant.String(), "manager")
+
+	if err := h.GetUsers(c); err != nil {
+		t.Fatalf("GetUsers: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var out []models.User
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(out) != 1 || !out[0].HasQRToken || out[0].QRTokenCreatedAt == nil {
+		t.Fatal("GetUsers discarded scoped QR credential metadata from the store")
+	}
+}
+
 func TestGenerateQRToken_AdminCanMintForOtherActiveTenantMember(t *testing.T) {
 	e := echo.New()
 	activeTenant := uuid.New()
