@@ -56,7 +56,9 @@ describe("QrDisplay", () => {
     expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
     expect(screen.queryByText("https://example.test/token/abc")).not.toBeInTheDocument();
-    expect(screen.getByText(/Have Anna scan this/)).toBeInTheDocument();
+    const hint = screen.getByText(/Have Anna scan this/);
+    expect(hint).toHaveClass("text-black/60");
+    expect(hint).not.toHaveClass("text-black/50");
     const timer = screen.getByRole("timer", { name: /Истекает через 5:00/ });
     expect(timer).not.toHaveAttribute("aria-live");
     expect(screen.getByRole("button", { name: "Regenerate" })).toHaveClass("min-h-11");

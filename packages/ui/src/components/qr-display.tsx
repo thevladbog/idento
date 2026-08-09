@@ -166,7 +166,7 @@ export function QrDisplay({
         </button>
       ) : null}
 
-      {hint ? <p className="mt-auto max-w-[280px] pt-8 text-caption text-black/50">{hint}</p> : null}
+      {hint ? <p className="mt-auto max-w-[280px] pt-8 text-caption text-black/60">{hint}</p> : null}
     </div>
   );
 }
