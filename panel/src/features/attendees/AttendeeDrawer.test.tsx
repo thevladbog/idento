@@ -977,8 +977,18 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
       }),
     );
     const user = userEvent.setup();
-    renderWithProviders(<AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />);
+    renderWithProviders(
+      <>
+        <AttendeesListObserver />
+        <ReadinessObserver eventId="evt-1" />
+        <AttendeeDrawer eventId="evt-1" attendeeId="a1" onClose={onClose} />
+      </>,
+    );
     await screen.findByText("Ada Lovelace");
+    await waitFor(() => expect(listHitCount).toBe(1));
+    await waitFor(() => expect(readinessHitCount).toBe(1));
+    const listHitCountBeforeDelete = listHitCount;
+    const readinessHitCountBeforeDelete = readinessHitCount;
 
     await user.click(screen.getByRole("button", { name: "Delete…" }));
     const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
@@ -997,7 +1007,11 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
       gate.release();
     }
 
-    await waitFor(() => expect(onClose).not.toHaveBeenCalled());
+    await waitFor(() => expect(listHitCount).toBeGreaterThan(listHitCountBeforeDelete));
+    await waitFor(() => expect(readinessHitCount).toBeGreaterThan(readinessHitCountBeforeDelete));
+    expect(screen.queryByRole("dialog", { name: "Delete attendee" })).not.toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
   });
 });
 
