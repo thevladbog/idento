@@ -384,14 +384,17 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     // still verified by its complete display name below.
     await search.fill(seed.attendeeCode);
     await searchResponse;
-    const availableRow = page.getByRole("button", { name: new RegExp(seed.availableAttendee.name) });
+    const availableAttendeeDisplayName = "Lovelace Ada";
+    const availableRow = page.getByRole("button", {
+      name: new RegExp(`${availableAttendeeDisplayName}.*${seed.attendeeCode}`),
+    });
     await expect(availableRow).toBeVisible();
     await availableRow.click();
     await expect(page.getByText("Not checked in", { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: /Check in manually/ }).click();
     let dialog = page.getByRole("dialog");
-    await expect(dialog.getByRole("heading", { name: `Check in ${seed.availableAttendee.name}?` })).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: `Check in ${availableAttendeeDisplayName}?` })).toBeVisible();
     await expectTouchTargetsAtLeast44(dialog.getByRole("button"));
     await submitOnceWhilePending(
       page,
