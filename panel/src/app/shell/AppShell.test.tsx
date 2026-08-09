@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { AppShell } from "./AppShell";
@@ -155,6 +155,10 @@ describe("AppShell", () => {
 
     await user.click(screen.getByRole("button", { name: "Menu" }));
     await waitFor(() => expect(screen.getAllByText("My profile")).toHaveLength(2));
+    const drawer = screen.getByRole("dialog");
+    const drawerRows = within(drawer).getAllByRole("link");
+    expect(drawerRows).toHaveLength(5);
+    for (const row of drawerRows) expect(row).toHaveClass("min-h-11");
     const profileLabels = screen.getAllByText("My profile");
     expect(profileLabels[1].closest("a")).toHaveAttribute("href", "/me");
   });

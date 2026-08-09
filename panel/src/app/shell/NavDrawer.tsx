@@ -22,20 +22,20 @@ export function NavDrawer({ showSelfService }: { showSelfService: boolean }) {
           <SheetTitle>{t("appName")}</SheetTitle>
         </SheetHeader>
         <nav className="flex flex-col gap-1">
-          <Link to="/" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+          <Link to="/" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navEvents")}
           </Link>
-          <Link to="/team" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+          <Link to="/team" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navTeam")}
           </Link>
-          <Link to="/equipment" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+          <Link to="/equipment" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navEquipment")}
           </Link>
-          <Link to="/organization" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+          <Link to="/organization" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navOrganization")}
           </Link>
           {showSelfService ? (
-            <Link to="/me" onClick={() => setOpen(false)} className="rounded-md px-3 py-2 text-body hover:bg-muted">
+            <Link to="/me" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
               {t("navMyProfile")}
             </Link>
           ) : null}

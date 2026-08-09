@@ -50,7 +50,7 @@ export function DesktopOnlyGate({
       <h1 className="text-section-title">{title}</h1>
       <p className="max-w-xs text-body text-muted-foreground">{reason}</p>
       <Button
-        className="mt-4"
+        className="mt-4 min-h-11"
         onClick={() => {
           void (async () => {
             try {
