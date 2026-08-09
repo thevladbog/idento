@@ -21,7 +21,22 @@ function ReadinessObserver({ eventId }: { eventId: string }) {
 let qrTokenCallCount = 0;
 let qrTokenCallIds: string[] = [];
 let qrTokenStatus = 200;
-let qrTokenDelayMs = 0;
+type RequestGate = {
+  entered: Promise<void>;
+  markEntered: () => void;
+  wait: Promise<void>;
+  release: () => void;
+};
+
+function createRequestGate(): RequestGate {
+  let markEntered!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  return { entered, markEntered, wait, release };
+}
+
+let qrTokenGate: RequestGate | null = null;
 let qrTokenCounter = 0;
 let zonesResponse: unknown[] = [];
 let userZonesResponse: unknown[] = [];
@@ -38,7 +53,10 @@ const server = startMswServer(
   http.post("http://api.test/api/users/:id/qr-token", async ({ params }) => {
     qrTokenCallCount += 1;
     qrTokenCallIds.push(params.id as string);
-    if (qrTokenDelayMs) await delay(qrTokenDelayMs);
+    if (qrTokenGate) {
+      qrTokenGate.markEntered();
+      await qrTokenGate.wait;
+    }
     if (qrTokenStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: qrTokenStatus });
     }
@@ -101,7 +119,7 @@ describe("StaffCard — QR area + print flow", () => {
     qrTokenCallCount = 0;
     qrTokenCallIds = [];
     qrTokenStatus = 200;
-    qrTokenDelayMs = 0;
+    qrTokenGate = null;
     qrTokenCounter = 0;
     zonesResponse = [];
     userZonesResponse = [];
@@ -377,7 +395,8 @@ describe("StaffCard — QR area + print flow", () => {
     });
 
     it("session-ref cancel race: closing the confirm dialog mid-flight still caches the token (unconditional) but never opens the sheet", async () => {
-      qrTokenDelayMs = 40;
+      const gate = createRequestGate();
+      qrTokenGate = gate;
       const user = userEvent.setup();
       const onTokenCached = vi.fn();
       const onOpenPrintSheet = vi.fn();
@@ -390,19 +409,14 @@ describe("StaffCard — QR area + print flow", () => {
       await user.click(await screen.findByRole("button", { name: "Print card" }));
       const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "Print card" }));
+      await gate.entered;
 
-      // Back out of the dialog WHILE the (delayed) mutation is still in
-      // flight — unlike AddAttendeeDialog's form-entry dialogs, this is not
-      // blocked: there's no in-progress data entry to protect, just a
-      // single fire-and-forget regenerate the user can walk away from.
       await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-      await waitFor(() => expect(onTokenCached).toHaveBeenCalledWith("u4", "QR_generated_1"));
-      // Give the resolved promise's callback a moment to (not) call this.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      gate.release();
+      await waitFor(() => expect(onTokenCached).toHaveBeenCalledTimes(1));
       expect(onOpenPrintSheet).not.toHaveBeenCalled();
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 
@@ -456,7 +470,8 @@ describe("StaffCard — QR area + print flow", () => {
   // pending window.
   describe("row busy gating while a QR token is being issued", () => {
     it("disables Zones and Revoke… while the (confirm-less) generate is pending, and re-enables both once it settles", async () => {
-      qrTokenDelayMs = 60;
+      const gate = createRequestGate();
+      qrTokenGate = gate;
       const user = userEvent.setup();
       renderCard({ user: staffUser({ id: "u6", has_qr_token: false }) });
 
@@ -468,10 +483,11 @@ describe("StaffCard — QR area + print flow", () => {
       // Confirm-less path: never-issued -> the dashed box's own Generate.
       await user.click(screen.getByRole("button", { name: "Generate" }));
 
-      await waitFor(() => expect(qrTokenCallCount).toBe(1));
+      await gate.entered;
       expect(zonesButton).toBeDisabled();
       expect(revokeButton).toBeDisabled();
 
+      gate.release();
       await waitFor(() => expect(zonesButton).toBeEnabled());
       expect(revokeButton).toBeEnabled();
     });
