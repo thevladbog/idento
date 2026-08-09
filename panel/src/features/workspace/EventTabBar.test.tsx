@@ -6,10 +6,12 @@ import {
   act, render, screen, waitFor, within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { EventTabBar } from "./EventTabBar";
 import { MONITOR_SNAPSHOT_KEY } from "../monitor/hooks";
 import { STATION_STALE_MS } from "../monitor/liveness";
 import type { components } from "../../shared/api/schema";
+import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
 // Real generated MonitorSnapshot shape (components["schemas"]["MonitorSnapshot"],
@@ -25,6 +27,16 @@ const STALE_SNAPSHOT: components["schemas"]["MonitorSnapshot"] = {
   ],
   recent: [],
 };
+
+let monitorRequestCount = 0;
+
+const server = startMswServer(
+  http.get("http://api.test/api/events/:eventId/monitor", () => {
+    monitorRequestCount += 1;
+    return HttpResponse.json(STALE_SNAPSHOT);
+  }),
+);
+void server;
 
 function freshSnapshotAt(lastSeenAtIso: string): components["schemas"]["MonitorSnapshot"] {
   return {
@@ -76,9 +88,15 @@ function renderAt(path: string, seedSnapshot?: (queryClient: QueryClient) => voi
       <RouterProvider router={router as never} />
     </QueryClientProvider>,
   );
+  return { queryClient };
 }
 
 describe("EventTabBar", () => {
+  beforeEach(() => {
+    window.__ENV__ = { API_URL: "http://api.test" };
+    monitorRequestCount = 0;
+  });
+
   it("renders the four section links plus More, with Overview active at the index route", async () => {
     renderAt("/events/evt-1");
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
@@ -132,27 +150,27 @@ describe("EventTabBar", () => {
     renderAt("/events/evt-1");
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
     expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
+    expect(monitorRequestCount).toBe(0);
   });
 
-  it("lights the dot once a cached station crosses staleness purely from the clock advancing, with no cache update", async () => {
+  it("keeps a fresh cached station fresh when wall time advances beyond the cache timestamp", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const now = Date.now();
-    // Fresh at render time (well inside STATION_STALE_MS), so the dot must
-    // start off — this asserts the fix recomputes over time, not that a
-    // stale fixture happens to always read stale.
-    const freshLastSeenAt = new Date(now - 1_000).toISOString();
-    renderAt("/events/evt-1", (queryClient) => {
-      queryClient.setQueryData(MONITOR_SNAPSHOT_KEY("evt-1"), freshSnapshotAt(freshLastSeenAt));
+    vi.setSystemTime(new Date("2026-08-09T10:00:00.000Z"));
+    const { queryClient } = renderAt("/events/evt-1", (client) => {
+      client.setQueryData(
+        MONITOR_SNAPSHOT_KEY("evt-1"),
+        freshSnapshotAt("2026-08-09T09:59:59.000Z"),
+        { updatedAt: Date.now() },
+      );
     });
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
     expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
 
-    // Advance real elapsed time past STATION_STALE_MS without touching the
-    // cache at all — only the local recheck tick should flip the dot on.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(STATION_STALE_MS + 15_000);
     });
-    expect(within(bar).getByTestId("tab-bar-badge")).toBeInTheDocument();
+    expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
+    expect(queryClient.getQueryData(MONITOR_SNAPSHOT_KEY("evt-1"))).toBeDefined();
     vi.useRealTimers();
   });
 });

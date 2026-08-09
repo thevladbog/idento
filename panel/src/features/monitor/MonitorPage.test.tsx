@@ -24,6 +24,7 @@ import {
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { MonitorPage } from "./MonitorPage";
+import { MONITOR_SNAPSHOT_KEY } from "./hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -339,6 +340,7 @@ describe("MonitorPage", () => {
     await screen.findByRole("heading", { name: "Partner Day — Autumn" });
 
     expect(await screen.findByTestId("monitor-snapshot-error")).toBeInTheDocument();
+    expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-totals-card")).not.toBeInTheDocument();
   });
@@ -780,6 +782,7 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toHaveClass("sr-only");
     expect(region).toHaveTextContent("Reconnecting");
+    expect(screen.getByTestId("monitor-updated-ago")).not.toHaveAttribute("aria-live");
   });
 
   // Fix round 1 (P6.2 T2 review finding): before the SSE hello frame
@@ -833,38 +836,33 @@ describe("MonitorPage -- retains stale data across a failed background refetch (
     monitorSnapshot = snapshotBody();
   });
 
-  it("keeps rendering the snapshot content after a background refetch fails", async () => {
+  it("keeps rendering the event and snapshot content after both background refetches fail", async () => {
     const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
 
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(await screen.findByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
 
     server.use(
+      http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })),
       http.get("http://api.test/api/events/:eventId/monitor", () => new HttpResponse(null, { status: 500 })),
     );
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{event_id}/monitor"] });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["get", "/api/events/{id}", { params: { path: { id: "evt-1" } } }],
+        }),
+        queryClient.invalidateQueries({ queryKey: MONITOR_SNAPSHOT_KEY("evt-1") }),
+      ]);
     });
 
     // The failed refetch must not have replaced the content with the
     // snapshot-error card -- `getBy` (not `findBy`) proves it's the SAME
     // still-mounted content, not a fresh success re-render.
+    expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
     expect(screen.queryByTestId("monitor-snapshot-error")).not.toBeInTheDocument();
-  });
-
-  it("keeps rendering the event header after a background event refetch fails", async () => {
-    const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
-
-    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
-
-    server.use(http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })));
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{id}"] });
-    });
-
-    expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByTestId("monitor-page")).toBeInTheDocument();
   });
 });
