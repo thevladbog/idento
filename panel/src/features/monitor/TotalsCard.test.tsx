@@ -25,6 +25,12 @@ const TOTALS_FIXTURE: MonitorTotals = {
 };
 
 describe("TotalsCard", () => {
+  it("names the check-in progress bar", () => {
+    render(<TotalsCard totals={TOTALS_FIXTURE} />);
+
+    expect(screen.getByRole("progressbar", { name: "Event check-in progress" })).toBeInTheDocument();
+  });
+
   it("renders the rate parts as separate spans in the rate row", () => {
     render(<TotalsCard totals={TOTALS_FIXTURE} />);
 

@@ -1099,7 +1099,7 @@ function Step3Body({ state, chunkFailure, retryingRows, onRetryRemaining, onSkip
           <span className="text-body font-bold text-foreground">{t("importProgress", { done, total })}</span>
           <span className="font-mono text-caption text-muted-foreground">{pct}%</span>
         </div>
-        <Progress value={done} max={total} />
+        <Progress value={done} max={total} ariaLabel={t("importProgressLabel")} />
       </div>
 
       {chunkFailure ? (

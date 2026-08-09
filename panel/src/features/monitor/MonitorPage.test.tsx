@@ -269,6 +269,10 @@ describe("MonitorPage", () => {
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("Backstage")).toBeInTheDocument();
     expect(screen.getByText("32")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Event check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Main hall check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "VIP check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Backstage check-in progress" })).toBeInTheDocument();
 
     // Right column: Task 8's placeholders, present but empty.
     expect(screen.getByTestId("monitor-stations-placeholder")).toBeInTheDocument();
