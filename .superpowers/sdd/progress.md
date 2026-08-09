@@ -933,3 +933,17 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - No password, token, QR value, bearer body, trace, screenshot, or credential artifact was recorded.
 - Integrity: initial worktree was clean. The exact historical-range `git diff --check origin/main...HEAD` exits 2 only for the same three already documented Markdown hard-break lines in the committed design-spec header; Task 13 introduced no whitespace change.
 - Push, PR #113 reconciliation, CI monitoring, and manual GitGuardian incident `35916563` disposition were pending when this local record was written.
+
+### P6.4 — Task 19 fresh final verification (`75591c4`)
+
+- Baseline: clean source worktree at `75591c4`; no pre-Task-18 diagnostic result was reused.
+- Panel consecutive run 1: PASS — 135/135 files and 1,625/1,625 tests in 50.53s (command wall time 50.92s).
+- Panel consecutive run 2, immediately after run 1: PASS — 135/135 files and 1,625/1,625 tests in 50.04s (command wall time 50.48s). Required counter: 2/2 with no reset.
+- Backend: PASS — fresh `go test -count=1 ./...` passed every package in 3.28s; `go build ./...` passed in 1.31s; unrestricted `golangci-lint run ./internal/...` reported 0 issues in 0.94s.
+- Shared UI: PASS — 37/37 files and 348/348 tests in 8.71s; typecheck and lint passed.
+- Panel static/build: PASS — typecheck, lint, and production build passed; Vite transformed 3,241 modules. Bundle budget passed at 1,480,778 raw / 414,954 gzip bytes.
+- E2E static/discovery: PASS — authorized ESNext/Bundler compile exited 0; discovery found exactly 7 desktop `chromium` and 3 `mobile-chromium` tests.
+- Fresh real-backend mobile acceptance: PASS — isolated PostgreSQL 16 applied migration `000026`; all three serial 390x844 mobile journeys passed in 56.7s (14.5s, 6.2s, 34.6s; command wall time 57.23s).
+- Credential/resource hygiene: generated secrets stayed inside the shared execution shell; no credential/QR/bearer value or response body was recorded; mobile trace/screenshot/video stayed off; exact PostgreSQL/backend/browser artifacts were cleaned; ports 55441/8008/5174 were free; stopped `idento_db` remained untouched.
+- Real-backend desktop Chromium, separate manual browser/Lighthouse capture, physical iOS/Android, KMP QR scanning, printer/scanner hardware, and real cellular/venue-Wi-Fi transition: NOT RUN / NOT CAPTURED.
+- Publication, PR #113 reconciliation, final independent review, and manual GitGuardian incident `35916563` disposition remained pending at the time of this local record.
