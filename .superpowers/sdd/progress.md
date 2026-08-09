@@ -903,3 +903,17 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - Physical Android Chrome: NOT RUN — no physical Android device was available.
 - KMP staff/station QR scans: NOT RUN — no KMP device/scanner hardware was available.
 - Real cellular/venue-Wi-Fi SSE transition: NOT RUN — no physical network-transition environment was available.
+
+### P6.4 — Final post-review verification addendum (`63cc132`)
+
+- Verified source HEAD before the run: `63cc1324f6a01298e1cbab75a8b15b31492c9c15`; the baseline worktree was clean.
+- Shared UI: PASS — 37 files / 347 tests; typecheck and lint both exited 0.
+- Panel consecutive run 1: PASS — 134 files / 1,607 tests, exit 0.
+- Panel consecutive run 2: PASS — 134 files / 1,607 tests, exit 0 immediately after run 1. Before the counted pair, one full run exposed the existing fixed-60ms `ZoneFormDialog` pending-dismissal timing race (1 failed / 1,606 passed); the exact file passed 14/14 in isolation. No code was changed, and the counter was restarted rather than treating the isolated rerun as a substitute.
+- Panel typecheck/lint/build: PASS — all exited 0; Vite transformed 3,241 modules. Bundle budget: PASS — raw 1,476,005 / 1,550,000 bytes; gzip 413,768 / 430,000 bytes.
+- Backend: PASS — fresh uncached `go test -count=1 ./...` passed every package; `go build ./...` exited 0; unrestricted `golangci-lint run ./internal/...` reported `0 issues.` The first sandboxed lint attempt failed to load package context (exit 5), so it was not counted.
+- E2E static/discovery gates: PASS — strict standalone TypeScript compilation of the Playwright config, specs, assertions, and fixtures exited 0; discovery found exactly 10 tests: 7 desktop under `chromium` and 3 mobile under `mobile-chromium`.
+- Package/lock/OpenAPI/config integrity: PASS — offline `npm ci --ignore-scripts --dry-run` reported up to date; package and lock metadata agree for `@lhci/cli` and `puppeteer`; generated OpenAPI client produced no diff; both workflow YAML files parsed; targeted CI/Playwright/Lighthouse wiring assertions passed. `actionlint` was unavailable.
+- Diff integrity: the final working-tree `git diff --check` passed. The historical branch range `b4c36a1..63cc132` reports three trailing-whitespace lines in the already-committed design-spec header; these are Markdown hard-breaks, not newly introduced final-verification changes.
+- Real-backend Playwright desktop/mobile, light/dark browser walk, and Lighthouse collection: NOT RUN / NOT CAPTURED — required backend/bootstrap prerequisites were not provided, and no substitute acceptance is claimed.
+- Physical iOS Safari, Android Chrome, KMP QR scanning, and cellular/venue-Wi-Fi SSE transition: NOT RUN — the required devices, scanners, and network environment were unavailable.
