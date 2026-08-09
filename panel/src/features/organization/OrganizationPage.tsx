@@ -231,32 +231,33 @@ export function OrganizationPage() {
     { enabled: tenant !== null },
   );
 
+  let content: React.ReactNode;
   if (tenant === null) {
-    return <p className="text-body text-destructive">{t("homeLoadError")}</p>;
-  }
-
-  if (tenantQuery.isLoading) {
-    return (
+    content = <p className="text-body text-destructive">{t("homeLoadError")}</p>;
+  } else if (tenantQuery.isLoading) {
+    content = (
       <div className="flex flex-col gap-3">
         <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full max-w-2xl" />
+        <Skeleton className="h-64 w-full" />
       </div>
+    );
+  } else if (tenantQuery.isError || !tenantQuery.data) {
+    content = <p className="text-body text-destructive">{t("settingsLoadError")}</p>;
+  } else {
+    content = (
+      /* `key={tenant.id}` forces a full remount (fresh `useState`
+         initializers) whenever the active tenant changes — OrgSwitcher
+         switches tenants without navigating away from this route, so
+         without this key the same component instance would keep the
+         previous org's baseline/form state and could PUT stale values
+         into the newly-selected tenant's record. */
+      <OrganizationForm key={tenant.id} tenantId={tenant.id} tenant={tenantQuery.data} />
     );
   }
 
-  if (tenantQuery.isError || !tenantQuery.data) {
-    return <p className="text-body text-destructive">{t("settingsLoadError")}</p>;
-  }
-
   return (
-    <div className="max-w-2xl">
-      {/* `key={tenant.id}` forces a full remount (fresh `useState`
-          initializers) whenever the active tenant changes — OrgSwitcher
-          switches tenants without navigating away from this route, so
-          without this key the same component instance would keep the
-          previous org's baseline/form state and could PUT stale values
-          into the newly-selected tenant's record. */}
-      <OrganizationForm key={tenant.id} tenantId={tenant.id} tenant={tenantQuery.data} />
+    <div data-testid="organization-page" className="w-full max-w-2xl p-4 md:p-6">
+      {content}
     </div>
   );
 }

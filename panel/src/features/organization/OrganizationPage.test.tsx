@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
@@ -73,6 +73,8 @@ describe("OrganizationPage", () => {
     renderWithProviders(<OrganizationPage />);
 
     expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
+    const page = screen.getByTestId("organization-page");
+    expect(page).toHaveClass("w-full", "max-w-2xl", "p-4", "md:p-6");
     expect(screen.getByLabelText("Website")).toHaveValue("https://acme.example.com");
     expect(screen.getByLabelText("Contact email")).toHaveValue("ops@acme.example.com");
     expect(screen.getByLabelText("Logo URL")).toHaveValue("https://cdn.example.com/logo.png");
@@ -171,7 +173,31 @@ describe("OrganizationPage", () => {
     localStorage.removeItem("current_tenant");
     renderWithProviders(<OrganizationPage />);
 
+    const page = screen.getByTestId("organization-page");
+    expect(page).toHaveClass("w-full", "max-w-2xl", "p-4", "md:p-6");
     expect(screen.getByText("Couldn't load your events.")).toBeInTheDocument();
     expect(screen.queryByLabelText("Organization name")).not.toBeInTheDocument();
+  });
+
+  it("keeps the loading skeleton inside the bounded page frame", async () => {
+    let releaseTenant!: () => void;
+    const tenantGate = new Promise<void>((resolve) => {
+      releaseTenant = resolve;
+    });
+    server.use(
+      http.get("http://api.test/api/tenants/:id", async () => {
+        await tenantGate;
+        return HttpResponse.json(currentTenant);
+      }),
+    );
+
+    renderWithProviders(<OrganizationPage />);
+
+    const page = screen.getByTestId("organization-page");
+    expect(page).toHaveClass("w-full", "max-w-2xl", "p-4", "md:p-6");
+    expect(within(page).getAllByRole("status")).toHaveLength(2);
+
+    releaseTenant();
+    expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
   });
 });
