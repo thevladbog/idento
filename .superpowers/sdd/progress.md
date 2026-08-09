@@ -884,3 +884,22 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - 3 IMPORTANT found and FIXED (63366b6, 1f70de5, a5c55da): (a) AttendeeCard had NO attendee.blocked branch at all — a blocked attendee fell into the not-checked-in variant with a functional "Check in manually" + a meaningless "Block" button, and useUnblockAttendee (built in Task 2) had zero UI consumers anywhere in the panel despite the Block confirm copy promising "you can unblock at any time" — fixed with a dedicated blocked variant (destructive status card + block_reason + Show QR + Unblock, no Check-in/Block); (b) AttendeesPage rendered AttendeeSearchList AND AttendeeCard simultaneously on phone (list never hidden when a card opens) — confirmed live-reproducible on a real list (not caught during T11's walk since the seed only had 1 attendee, so scrolling wasn't dramatic) — fixed by hiding the list whenever search.attendee is set; (c) AttendeeSearchList had no query.isError branch, so a network error rendered as "No matches" (misleading during live check-in) — fixed to reuse the existing attendeesLoadError+retry pattern already used by the desktop table.
 - All 4 fixes independently verified by the controller (not just trusting the fix-subagent's report): read every diff hunk directly, re-ran typecheck/lint/full suite (131 files/1570 tests, +5 net new since T11's 1565), and re-exercised the blocked-attendee flow live at 390px against the real backend (Block Ada → blocked variant renders correctly with Show-QR/Unblock only → Unblock → reverts cleanly to checked-in variant).
 - Deferred to P6.4, non-blocking (per reviewer triage, all independently spot-checked): SheetContent hideClose-equivalent prop; /me nav entry point (role-gated); QrDisplay's hardcoded English "Expires in" countdown label (no RU translation — the one EN/RU parity gap on the branch, since keyParity.test.ts can't see packages/ui); ReadinessStrip overflow (pre-existing, confirmed via git log/merge-base, not a P6.3 regression); assorted Minors (duplicate attendees network request on phone, dead onSearchChange prop, aria-live countdown chattiness, sub-44px tap targets on 2 text buttons, QrDisplay presentation inconsistency across consumers, AttendeeCard empty-company separator).
+
+### P6.4 — Mobile hardening & parity
+
+- Automated shared UI: PASS — `npm test -w @idento/ui` completed 37 files / 345 tests; `npm run typecheck -w @idento/ui` and `npm run lint -w @idento/ui` exited 0.
+- Panel Vitest consecutive run 1: PASS — 133 files / 1,601 tests, exit 0.
+- Panel Vitest consecutive run 2: PASS — 133 files / 1,601 tests, exit 0.
+- Panel typecheck/lint/build: PASS — all three commands exited 0; the production build transformed 3,241 modules.
+- Backend authorization scope: PASS — after the sandbox-only Go-cache/`httptest` port restriction was removed, fresh `go test ./...` exited 0 for every backend package; `go build ./...` exited 0; `golangci-lint run ./internal/...` reported 0 issues.
+- Package/lock/config integrity: PASS — offline `npm ci --ignore-scripts --dry-run` reported up to date; the bundle checker passed 1 file / 4 tests; both modified workflow YAML files parsed successfully; package and lockfile metadata agree for `@lhci/cli` and `puppeteer`; required bundle, E2E, Lighthouse-advisory, and `ci-success` wiring is present. `actionlint` was unavailable locally.
+- Bundle: PASS — raw 1,475,681 bytes versus 1,550,000; gzip 413,717 bytes versus 430,000.
+- Playwright desktop: NOT RUN — the required real backend on `:8008` and bootstrap credential environment are unavailable in this session.
+- Playwright mobile 390×844: NOT RUN — the required real backend on `:8008` and bootstrap credential environment are unavailable in this session.
+- Browser walk light: NOT RUN — the same real-backend/bootstrap preconditions are unavailable; no browser acceptance is claimed.
+- Browser walk dark: NOT RUN — the same real-backend/bootstrap preconditions are unavailable; no browser acceptance is claimed.
+- Lighthouse representative: NOT CAPTURED — collection was not started without its required real backend and bootstrap credential environment.
+- Physical iOS Safari: NOT RUN — no physical iOS device was available.
+- Physical Android Chrome: NOT RUN — no physical Android device was available.
+- KMP staff/station QR scans: NOT RUN — no KMP device/scanner hardware was available.
+- Real cellular/venue-Wi-Fi SSE transition: NOT RUN — no physical network-transition environment was available.
