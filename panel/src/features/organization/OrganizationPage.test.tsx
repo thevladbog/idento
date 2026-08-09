@@ -193,11 +193,13 @@ describe("OrganizationPage", () => {
 
     renderWithProviders(<OrganizationPage />);
 
-    const page = screen.getByTestId("organization-page");
-    expect(page).toHaveClass("w-full", "max-w-2xl", "p-4", "md:p-6");
-    expect(within(page).getAllByRole("status")).toHaveLength(2);
-
-    releaseTenant();
-    expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
+    try {
+      const page = screen.getByTestId("organization-page");
+      expect(page).toHaveClass("w-full", "max-w-2xl", "p-4", "md:p-6");
+      expect(within(page).getAllByRole("status")).toHaveLength(2);
+    } finally {
+      releaseTenant();
+      expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
+    }
   });
 });
