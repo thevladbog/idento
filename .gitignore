@@ -43,6 +43,8 @@ panel/test-results/
 panel/playwright-report/
 panel/playwright/.cache/
 panel/blob-report/
+panel/.lighthouseci/
+panel/lighthouse-reports/
 
 # Desktop (Tauri / Vite)
 desktop/dist/

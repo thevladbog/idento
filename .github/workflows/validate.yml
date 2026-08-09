@@ -476,6 +476,9 @@ jobs:
       - name: Build
         run: npm run build -w panel
 
+      - name: Check panel bundle budget
+        run: npm run check:bundle -w panel
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6
         with:

@@ -206,9 +206,7 @@ jobs:
           echo "## Combined Docker Build" >> $GITHUB_STEP_SUMMARY
           echo "✅ Combined image built successfully" >> $GITHUB_STEP_SUMMARY
 
-  # First e2e suite for panel/ (P5.3.2) — soft check: runs and reports but
-  # is deliberately NOT in ci-success's needs: until proven stable over real
-  # PRs (spec decision, 2026-07-21).
+  # Required desktop + mobile browser acceptance for panel/.
   e2e-panel:
     name: E2E Panel (Playwright)
     runs-on: ubuntu-latest
@@ -216,6 +214,9 @@ jobs:
     if: needs.changes.outputs.panel == 'true' || needs.changes.outputs.backend == 'true'
     permissions:
       contents: read
+    env:
+      IDENTO_ADMIN_EMAIL: "admin@test.com"
+      IDENTO_ADMIN_PASSWORD: "password"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -252,13 +253,11 @@ jobs:
         env:
           DATABASE_URL: "postgres://idento:idento_password@localhost:5438/idento_db?sslmode=disable"
           JWT_SECRET: "ci-e2e-secret"
-          CORS_ALLOWED_ORIGINS: "http://localhost:5174"
+          CORS_ALLOWED_ORIGINS: "http://localhost:5174,http://127.0.0.1:4174"
           # Onprem mode (the default) bootstraps its own admin from these on
           # first run against an empty DB (bootstrap.OnPremAdmin) — without
           # them main.go fatals before the server ever starts. Same
           # email/password the e2e seed helper logs in as.
-          IDENTO_ADMIN_EMAIL: "admin@test.com"
-          IDENTO_ADMIN_PASSWORD: "password"
         run: |
           cd backend
           nohup go run main.go > /tmp/backend.log 2>&1 &
@@ -282,6 +281,13 @@ jobs:
       - name: Run e2e
         run: npm run e2e -w panel
 
+      - name: Build panel for Lighthouse
+        run: npm run build -w panel
+
+      - name: Run advisory Lighthouse Mobile
+        continue-on-error: true
+        run: npm run lighthouse -w panel
+
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v6
@@ -290,11 +296,41 @@ jobs:
           path: panel/playwright-report/
           retention-days: 7
 
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: lighthouse-panel-mobile
+          path: panel/lighthouse-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Summary
         if: always()
         run: |
           echo "## Panel E2E Results" >> $GITHUB_STEP_SUMMARY
-          echo "Soft check — see job status above; not required for merge yet." >> $GITHUB_STEP_SUMMARY
+          echo "Required desktop + mobile browser acceptance — see job status above." >> $GITHUB_STEP_SUMMARY
+          node <<'NODE'
+          const fs = require("node:fs");
+          const manifestPath = "panel/lighthouse-reports/manifest.json";
+          const lines = ["", "## Panel Lighthouse Mobile"];
+          try {
+            const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+            const representative = Array.isArray(manifest)
+              ? manifest.find((entry) => entry?.isRepresentativeRun === true)
+              : undefined;
+            const performance = representative?.summary?.performance;
+            const accessibility = representative?.summary?.accessibility;
+            if (!Number.isFinite(performance) || !Number.isFinite(accessibility)) {
+              lines.push("Collection failed or representative run is missing.");
+            } else {
+              lines.push(`Representative run: performance ${Math.round(performance * 100)}%, accessibility ${Math.round(accessibility * 100)}%.`);
+            }
+          } catch {
+            lines.push("Collection failed or manifest is missing or invalid.");
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          NODE
 
   # Security: Dependency review for pull requests
   dependency-review:
@@ -321,7 +357,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [validate, build-android, build-ios, build-desktop, docker-build-image, dependency-review]
+    needs: [validate, build-android, build-ios, build-desktop, docker-build-image, e2e-panel, dependency-review]
     if: always()
     steps:
       - name: Check job statuses
@@ -345,6 +381,10 @@ jobs:
           fi
           if [[ "${{ needs.docker-build-image.result }}" != "success" && "${{ needs.docker-build-image.result }}" != "skipped" ]]; then
             echo "docker-build-image failed"
+            exit 1
+          fi
+          if [[ "${{ needs.e2e-panel.result }}" != "success" && "${{ needs.e2e-panel.result }}" != "skipped" ]]; then
+            echo "e2e-panel failed"
             exit 1
           fi
           if [[ "${{ needs.dependency-review.result }}" != "success" && "${{ needs.dependency-review.result }}" != "skipped" ]]; then
