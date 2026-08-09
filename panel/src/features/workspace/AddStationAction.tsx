@@ -1,22 +1,27 @@
-import { QrDisplay } from "@idento/ui";
+import {
+  Label, QrDisplay, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@idento/ui";
 import { LayoutGrid } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { $api } from "../../shared/api/query";
-import { getCurrentUser } from "../../shared/api/session";
+import { useEventStaff } from "../staff/hooks";
 
 export interface AddStationActionProps {
   eventId: string;
   eventName: string;
 }
 
-// Board 8m — mints a station-provisioning token under the CURRENT
-// organizer's own account (see the plan's design-decision note: the
-// endpoint requires staff_user_id and board 8m shows no staff-picker
-// step). Phone-only quick action; desktop provisions stations through
-// its own existing flow (not built by this task).
 export function AddStationAction({ eventId, eventName }: AddStationActionProps) {
   const { t } = useTranslation();
+  const staffQuery = useEventStaff(eventId);
+  const [selectedStaffUserId, setSelectedStaffUserId] = React.useState("");
+  const eligibleStaff = React.useMemo(
+    () => (staffQuery.data ?? []).filter((user) => user.role === "staff" || user.role === "manager"),
+    [staffQuery.data],
+  );
+  const selectedStaff = eligibleStaff.find((user) => user.id === selectedStaffUserId);
+  const staffInitialError = staffQuery.isError && !staffQuery.data;
   const mint = $api.useMutation("post", "/api/events/{event_id}/stations/provisioning-token");
   // Cached separately from mint.data: onRegenerate calls mint.mutate() again
   // (the QrDisplay's own regenerate action), which resets the mutation to
@@ -28,9 +33,12 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
   const qrSessionRef = React.useRef(0);
   const mintInFlightRef = React.useRef(false);
 
+  React.useEffect(() => {
+    if (selectedStaffUserId && !selectedStaff) setSelectedStaffUserId("");
+  }, [selectedStaff, selectedStaffUserId]);
+
   function mintToken(openNewSession = false) {
-    const user = getCurrentUser();
-    if (!user || mintInFlightRef.current) return;
+    if (!selectedStaff || mintInFlightRef.current) return;
     if (openNewSession) {
       qrSessionRef.current += 1;
       setMintFailed(false);
@@ -38,7 +46,7 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
     const session = qrSessionRef.current;
     mintInFlightRef.current = true;
     mint.mutate(
-      { params: { path: { event_id: eventId } }, body: { staff_user_id: user.id } },
+      { params: { path: { event_id: eventId } }, body: { staff_user_id: selectedStaff.id } },
       {
         onSuccess: (data) => {
           if (session !== qrSessionRef.current) return;
@@ -75,7 +83,7 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
         closeLabel={t("moreSheetCloseLabel")}
         onClose={closeQrSession}
         onRegenerate={() => mintToken()}
-        isRegenerating={mint.isPending}
+        isRegenerating={mint.isPending || !selectedStaff}
         hint={t("addStationHint")}
       />
     );
@@ -83,9 +91,32 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
 
   return (
     <div className="md:hidden">
+      <div className="mb-3 space-y-1.5">
+        <Label htmlFor="station-assignee">{t("addStationAssigneeLabel")}</Label>
+        {staffQuery.isLoading ? (
+          <p role="status" className="text-caption text-muted-foreground">{t("addStationAssigneeLoading")}</p>
+        ) : staffInitialError ? (
+          <p role="alert" className="text-caption text-destructive">{t("addStationAssigneeError")}</p>
+        ) : eligibleStaff.length === 0 ? (
+          <p className="text-caption text-muted-foreground">{t("addStationAssigneeEmpty")}</p>
+        ) : (
+          <Select value={selectedStaff?.id ?? ""} onValueChange={setSelectedStaffUserId}>
+            <SelectTrigger id="station-assignee" className="min-h-11">
+              <SelectValue placeholder={t("addStationAssigneePlaceholder")} />
+            </SelectTrigger>
+            <SelectContent>
+              {eligibleStaff.map((user) => (
+                <SelectItem key={user.id} value={user.id} className="min-h-11">
+                  {user.email} · {t(user.role === "manager" ? "staffRoleManager" : "staffRoleStaff")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       <button
         type="button"
-        disabled={mint.isPending}
+        disabled={!selectedStaff || mint.isPending}
         onClick={() => mintToken(true)}
         className="flex min-h-13 w-full items-center gap-3 rounded-lg border border-border bg-card px-3.5 hover:bg-muted"
       >
