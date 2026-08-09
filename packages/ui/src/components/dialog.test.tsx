@@ -43,6 +43,14 @@ describe("Dialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   });
 
+  it("keeps the phone close target at least 44px square", async () => {
+    const user = userEvent.setup();
+    render(<TestDialog />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(screen.getByRole("button", { name: "Close" })).toHaveClass("max-md:size-11");
+  });
+
   it("omits the close button entirely when hideClose is set", () => {
     render(<TestDialogNoClose />);
     expect(screen.getByRole("dialog")).toBeInTheDocument();

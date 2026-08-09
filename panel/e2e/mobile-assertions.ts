@@ -29,11 +29,39 @@ export async function expectNoAxeViolations(page: Page) {
 }
 
 export async function expectBearerAbsent(page: Page, bearer: string) {
-  const bodyContainsBearer = (await page.locator("body").innerText()).includes(bearer);
-  expect(bodyContainsBearer, "body text must not expose the bearer credential").toBe(false);
-  const namedContainsBearer = await page.locator("[aria-label]").evaluateAll(
-    (nodes, secret) => nodes.some((node) => (node.getAttribute("aria-label") ?? "").includes(secret)),
-    bearer,
-  );
-  expect(namedContainsBearer, "accessible names must not expose the bearer credential").toBe(false);
+  const exposed = await page.evaluate((secret) => {
+    const elements = Array.from(document.querySelectorAll<HTMLElement>("*"));
+    const hasSecret = (value: string | null | undefined) => (value ?? "").includes(secret);
+    const directText = hasSecret(document.body?.textContent);
+    const directAttributes = elements.some((element) =>
+      ["aria-label", "alt", "title"].some((name) => hasSecret(element.getAttribute(name))),
+    );
+    const labelledText = elements.some((element) => {
+      const labelledBy = element.getAttribute("aria-labelledby");
+      if (!labelledBy) return false;
+      return labelledBy.split(/\s+/).some((id) => {
+        const source = document.getElementById(id);
+        if (!source) return false;
+        const controlValue = source instanceof HTMLInputElement
+          || source instanceof HTMLTextAreaElement
+          || source instanceof HTMLSelectElement
+          ? source.value
+          : null;
+        return hasSecret(source.textContent)
+          || hasSecret(source.getAttribute("aria-label"))
+          || hasSecret(source.getAttribute("alt"))
+          || hasSecret(source.getAttribute("title"))
+          || hasSecret(controlValue);
+      });
+    });
+    const controlValues = elements.some((element) =>
+      (element instanceof HTMLInputElement
+        || element instanceof HTMLTextAreaElement
+        || element instanceof HTMLSelectElement)
+      && hasSecret(element.value),
+    );
+    return directText || directAttributes || labelledText || controlValues;
+  }, bearer);
+
+  expect(exposed, "rendered DOM and accessible names must not expose the bearer credential").toBe(false);
 }

@@ -294,6 +294,7 @@ jobs:
         with:
           name: playwright-report
           path: panel/playwright-report/
+          if-no-files-found: error
           retention-days: 7
 
       - name: Upload Lighthouse reports

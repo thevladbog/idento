@@ -61,10 +61,11 @@ export function ConfirmDialog({
           </div>
         ) : null}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button className="max-md:min-h-11" variant="outline" onClick={() => onOpenChange(false)}>
             {cancelLabel}
           </Button>
           <Button
+            className="max-md:min-h-11"
             variant={destructive ? "destructive" : "default"}
             disabled={disabled}
             onClick={onConfirm}

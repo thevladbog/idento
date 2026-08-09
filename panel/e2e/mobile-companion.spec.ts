@@ -134,6 +134,45 @@ function staffCard(page: Page, email: string): Locator {
     .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' p-4 ')][1]");
 }
 
+async function proveBearerAbsenceNegativeControls(page: Page) {
+  for (const source of ["alt", "title", "aria-labelledby", "value"] as const) {
+    const sentinel = `non-secret-${crypto.randomUUID()}`;
+    await page.setContent("<main></main>");
+    await page.evaluate(({ kind, value }) => {
+      const root = document.querySelector("main")!;
+      if (kind === "alt") {
+        const image = document.createElement("img");
+        image.alt = value;
+        root.append(image);
+      } else if (kind === "title") {
+        const target = document.createElement("button");
+        target.title = value;
+        root.append(target);
+      } else if (kind === "aria-labelledby") {
+        const target = document.createElement("button");
+        target.setAttribute("aria-labelledby", "negative-control-label");
+        const label = document.createElement("span");
+        label.id = "negative-control-label";
+        label.textContent = value;
+        root.append(target, label);
+      } else {
+        const input = document.createElement("input");
+        input.value = value;
+        root.append(input);
+      }
+    }, { kind: source, value: sentinel });
+
+    let rejected = false;
+    try {
+      await expectBearerAbsent(page, sentinel);
+    } catch {
+      rejected = true;
+    }
+    expect(rejected, `${source} bearer-detector negative control must reject`).toBe(true);
+  }
+  await page.setContent("");
+}
+
 async function mintStaffQr(page: Page, seed: MobileSeed): Promise<string> {
   const card = staffCard(page, seed.staff.email);
   await expect(card).toBeVisible();
@@ -143,21 +182,28 @@ async function mintStaffQr(page: Page, seed: MobileSeed): Promise<string> {
   );
 
   if (await generate.isVisible()) {
+    await expectTouchTargetsAtLeast44(generate);
     await generate.click();
   } else {
-    await card.getByRole("button", { name: "Print card" }).click();
+    const printCard = card.getByRole("button", { name: "Print card" });
+    await expectTouchTargetsAtLeast44(printCard);
+    await printCard.click();
     const confirm = page.getByRole("dialog");
     await expect(confirm.getByRole("heading", { name: "Regenerate QR code?" })).toBeVisible();
+    await expectTouchTargetsAtLeast44(confirm.getByRole("button"));
     await confirm.getByRole("button", { name: "Print card" }).click();
   }
 
-  return credentialFrom(await responsePromise, "qr_token", "staff QR mint");
+  const credential = await credentialFrom(await responsePromise, "qr_token", "staff QR mint");
+  await expect(card.locator('[role="img"] svg')).toBeAttached();
+  return credential;
 }
 
 test.describe.serial("real-backend mobile companion acceptance", () => {
   test.setTimeout(240_000);
 
   test("light-theme functional journey", async ({ page, context }) => {
+    await proveBearerAbsenceNegativeControls(page);
     const seed = await seedMobileCompanion();
     await installSession(page, seed.adminSession, "light");
 
@@ -195,6 +241,8 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     await expectBearerAbsent(page, provisioningBearer);
     await checkpoint(page, page.getByRole("img", { name: "QR code" }));
     await expectTouchTargetsAtLeast44(page.getByRole("button", { name: /^(Close|Add station)$/ }));
+    const renderedQr = page.getByTestId("qr-display-code");
+    const previousQrMarkup = await renderedQr.innerHTML();
     const regeneratedResponse = page.waitForResponse((response) =>
       isPostTo(response, `/api/events/${seed.eventId}/stations/provisioning-token`),
     );
@@ -204,6 +252,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
       "token",
       "station provisioning QR regenerate",
     );
+    await expect.poll(() => renderedQr.innerHTML()).not.toBe(previousQrMarkup);
     await expectBearerAbsent(page, regeneratedBearer);
     await page.getByRole("button", { name: "Close" }).click();
 
@@ -257,6 +306,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
 
     await page.getByRole("button", { name: "Undo check-in" }).click();
     dialog = page.getByRole("dialog");
+    await expectTouchTargetsAtLeast44(dialog.getByRole("button"));
     await submitOnceWhilePending(
       page,
       `**/api/events/${seed.eventId}/checkin/undo`,
@@ -267,6 +317,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
 
     await page.getByRole("button", { name: "Block" }).click();
     dialog = page.getByRole("dialog");
+    await expectTouchTargetsAtLeast44(dialog.getByRole("button"));
     await submitOnceWhilePending(
       page,
       `**/api/attendees/${seed.availableAttendee.id}/block`,
@@ -311,6 +362,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     const staffBearer = await mintStaffQr(page, seed);
     await expectBearerAbsent(page, staffBearer);
     const fullScreenTrigger = staffCard(page, seed.staff.email).getByRole("button", { name: "Show full screen" });
+    await expectTouchTargetsAtLeast44(fullScreenTrigger);
     await fullScreenTrigger.click();
     const qrDialog = page.getByRole("dialog");
     await expectQrSurface(page);
@@ -342,6 +394,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
       const selfAction = staffPage.getByRole("button", { name: "Show my login QR" });
       await checkpoint(staffPage, selfAction);
       await expectTouchTargetsAtLeast44(selfAction);
+      await expectTouchTargetsAtLeast44(staffPage.getByRole("button", { name: "Sign out" }));
       const selfResponse = staffPage.waitForResponse((response) =>
         isPostTo(response, `/api/users/${seed.staff.id}/qr-token`),
       );
@@ -416,7 +469,9 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
         await expect(page.getByRole("heading", { name: "Staff" })).toBeVisible();
         const staffBearer = await mintStaffQr(page, seed);
         await expectBearerAbsent(page, staffBearer);
-        await staffCard(page, seed.staff.email).getByRole("button", { name: "Show full screen" }).click();
+        const fullScreenTrigger = staffCard(page, seed.staff.email).getByRole("button", { name: "Show full screen" });
+        await expectTouchTargetsAtLeast44(fullScreenTrigger);
+        await fullScreenTrigger.click();
         await expectQrSurface(page);
         await expectBearerAbsent(page, staffBearer);
         await themeCheckpoint(page, page.getByRole("img", { name: "QR code" }), theme);

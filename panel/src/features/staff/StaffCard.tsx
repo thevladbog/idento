@@ -313,7 +313,7 @@ export function StaffCard({
             <button
               type="button"
               onClick={() => setFullScreenOpen(true)}
-              className="mt-0.5 self-start text-caption font-semibold text-success"
+              className="mt-0.5 inline-flex self-start items-center text-caption font-semibold text-success max-md:min-h-11"
             >
               {t("staffQrShowFullScreen")}
             </button>
@@ -335,6 +335,7 @@ export function StaffCard({
             disabled={controlsDisabled}
             title={controlsTitle}
             onClick={handleGenerateClick}
+            className="max-md:min-h-11"
           >
             {t("staffQrGenerate")}
           </Button>
@@ -362,7 +363,7 @@ export function StaffCard({
             disabled={controlsDisabled}
             title={controlsTitle}
             onClick={handlePrintClick}
-            className="h-auto p-0 text-caption text-success hover:no-underline"
+            className="h-auto p-0 text-caption text-success hover:no-underline max-md:min-h-11"
           >
             {t("staffActionPrint")}
           </Button>
@@ -378,7 +379,7 @@ export function StaffCard({
             variant="link"
             disabled={generateToken.isPending}
             onClick={() => setZonesOpen(true)}
-            className="h-auto p-0 text-caption text-muted-foreground hover:no-underline"
+            className="h-auto p-0 text-caption text-muted-foreground hover:no-underline max-md:min-h-11"
           >
             {t("staffActionZones")}
           </Button>
@@ -387,7 +388,7 @@ export function StaffCard({
             variant="link"
             disabled={generateToken.isPending}
             onClick={() => setRevokeConfirmOpen(true)}
-            className="ml-auto h-auto p-0 text-caption text-destructive hover:no-underline"
+            className="ml-auto h-auto p-0 text-caption text-destructive hover:no-underline max-md:min-h-11"
           >
             {t("staffActionRevoke")}
           </Button>

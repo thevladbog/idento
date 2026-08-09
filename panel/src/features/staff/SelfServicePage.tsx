@@ -67,7 +67,7 @@ export function SelfServicePage() {
             clearSession();
             window.location.assign("/login");
           }}
-          className="text-caption font-semibold text-muted-foreground"
+          className="inline-flex items-center text-caption font-semibold text-muted-foreground max-md:min-h-11"
         >
           {t("selfServiceSignOut")}
         </button>

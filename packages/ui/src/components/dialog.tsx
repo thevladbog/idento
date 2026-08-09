@@ -47,7 +47,7 @@ export const DialogContent = React.forwardRef<
           // (see date-picker.tsx's clear button, Checkbox's own size-6 box)
           // — grows the clickable/hoverable box to the exact 24px floor
           // while the visible X glyph itself stays size-4.
-          className="absolute right-4 top-4 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute right-4 top-4 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-md:size-11"
         >
           <X className="size-4" />
         </DialogPrimitive.Close>
