@@ -1,6 +1,6 @@
 import { Button, EmptyState, Skeleton } from "@idento/ui";
 import { CalendarPlus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PastRow, UpcomingRow } from "./EventRow";
 import { LiveStrip } from "./LiveStrip";
@@ -16,6 +16,7 @@ export function HomePage() {
   const { t } = useTranslation();
   const eventsQuery = useEventsQuery();
   const [createOpen, setCreateOpen] = useState(false);
+  const createTriggerRef = useRef<HTMLButtonElement>(null);
 
   if (eventsQuery.isLoading) {
     return (
@@ -50,12 +51,12 @@ export function HomePage() {
           title={t("homeEmptyTitle")}
           description={t("homeEmptyBody")}
           actions={
-            <Button aria-expanded={createOpen} onClick={() => setCreateOpen(true)}>
+            <Button ref={createTriggerRef} aria-expanded={createOpen} onClick={() => setCreateOpen(true)}>
               {t("homeNewEvent")}
             </Button>
           }
         />
-        <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} />
+        <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} returnFocusRef={createTriggerRef} />
       </div>
     );
   }
@@ -76,7 +77,7 @@ export function HomePage() {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-section-title">{t("homeUpcoming")}</h2>
-          <Button size="sm" aria-expanded={createOpen} onClick={() => setCreateOpen(true)}>
+          <Button ref={createTriggerRef} size="sm" aria-expanded={createOpen} onClick={() => setCreateOpen(true)}>
             {t("homeNewEvent")}
           </Button>
         </div>
@@ -99,7 +100,7 @@ export function HomePage() {
           </div>
         </section>
       ) : null}
-      <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateEventDialog open={createOpen} onOpenChange={setCreateOpen} returnFocusRef={createTriggerRef} />
     </div>
   );
 }
