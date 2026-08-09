@@ -110,7 +110,7 @@ export function RecentFeedCard({ recent, stations, zones }: RecentFeedCardProps)
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 font-mono text-caption text-muted-foreground">
+                <span className="shrink-0 font-mono text-caption text-foreground">
                   {formatUtcHHMMSS(row.created_at)}
                 </span>
               </div>

@@ -31,7 +31,7 @@
 // itself flags amber as an overloaded color token elsewhere on this same
 // card, so the board extract is not the final word on this card's color
 // discipline) -- the codebase's codified never-color-alone rule governs. A
-// fresh row now ALSO renders its own small VISIBLE muted status word (a NEW
+// fresh row now ALSO renders its own small VISIBLE status word (a NEW
 // `monitorStationOnline` i18n key, kept separate from `monitorStationFresh`
 // -- the dot's own accessible sr-only label -- so the two can diverge later
 // without forcing a shared string), mirroring the stale row's pre-existing
@@ -96,7 +96,7 @@ export function StationsCard({ stations, now }: StationsCardProps) {
                   </span>
                 ) : (
                   <span
-                    className="shrink-0 text-caption text-muted-foreground"
+                    className="shrink-0 text-caption text-foreground"
                     data-testid={`monitor-station-online-${station.id}`}
                   >
                     {t("monitorStationOnline")}

@@ -400,10 +400,13 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     expect(screen.queryByTestId("monitor-station-stale-st-1")).not.toBeInTheDocument();
     expect(screen.queryByText(/stale/i)).not.toBeInTheDocument();
     // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
-    // row now ALSO renders its own visible muted "Online" status word next
+    // row now ALSO renders its own visible "Online" status word next
     // to the dot -- the green dot is never the sole channel conveying
     // liveness (never color alone).
-    expect(screen.getByTestId("monitor-station-online-st-1")).toHaveTextContent("Online");
+    const online = screen.getByTestId("monitor-station-online-st-1");
+    expect(online).toHaveTextContent("Online");
+    expect(online).toHaveClass("text-foreground");
+    expect(online).not.toHaveClass("text-muted-foreground");
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 
@@ -450,9 +453,9 @@ describe("MonitorPage -- Stations card (liveness)", () => {
 
   // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
   // row's dot alone must never be the ONLY channel conveying "online" --
-  // this station's row also carries its own separate, VISIBLE muted status
+  // this station's row also carries its own separate, VISIBLE status
   // word (distinct from the dot's own sr-only label above).
-  it("shows a fresh station's own visible muted 'Online' status word, not just a colored dot", async () => {
+  it("shows a fresh station's own visible 'Online' status word, not just a colored dot", async () => {
     monitorSnapshot = snapshotBody({
       stations: [
         { id: "st-4", name: "Kiosk D", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 5 },
@@ -499,6 +502,9 @@ describe("MonitorPage -- Recent feed card (read-only)", () => {
     const row = await screen.findByTestId("monitor-recent-row-act-1");
     expect(row).toHaveTextContent("Ada Lovelace");
     expect(row).toHaveTextContent("09:05:03");
+    const timestamp = screen.getByText("09:05:03");
+    expect(timestamp).toHaveClass("text-foreground");
+    expect(timestamp).not.toHaveClass("text-muted-foreground");
 
     const icon = row.querySelector("svg");
     expect(icon).toHaveClass("text-verdict-allowed");

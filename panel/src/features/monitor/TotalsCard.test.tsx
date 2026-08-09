@@ -34,9 +34,12 @@ describe("TotalsCard", () => {
   it("renders the rate parts as separate spans in the rate row", () => {
     render(<TotalsCard totals={TOTALS_FIXTURE} />);
 
+    expect(screen.getByText("53%")).toHaveClass("text-foreground");
     const row = screen.getByTestId("monitor-rate-row");
     expect(row.children.length).toBe(3);
     expect(within(row).getByText(/min/)).toBeInTheDocument();
+    expect(row).toHaveClass("text-foreground");
+    expect(row).not.toHaveClass("text-muted-foreground");
   });
 
   it("keeps the XXL phone sizing classes on the headline number", () => {
