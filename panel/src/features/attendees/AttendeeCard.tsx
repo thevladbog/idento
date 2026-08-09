@@ -189,7 +189,7 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
 
           <Button className="h-auto min-h-13 flex-col gap-0.5 py-2.5" onClick={() => setConfirmOpen(true)}>
             <span className="text-body font-bold">{t("attendeeCardCheckInManually")}</span>
-            <span className="text-caption font-normal text-primary-foreground/85">{t("attendeeCardNoBadgeSublabel")}</span>
+            <span className="text-caption font-normal text-primary-foreground">{t("attendeeCardNoBadgeSublabel")}</span>
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" className="min-h-11 flex-1 gap-1.5" onClick={() => setQrOpen(true)}>

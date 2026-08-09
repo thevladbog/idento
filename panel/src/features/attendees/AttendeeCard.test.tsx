@@ -82,6 +82,9 @@ describe("AttendeeCard — not checked in", () => {
     expect(screen.getByText("Не зарегистрирован")).toBeInTheDocument();
     const button = screen.getByRole("button", { name: /Зарегистрировать вручную/ });
     expect(button).toHaveTextContent("бейдж не будет напечатан");
+    const subcaption = screen.getByText("бейдж не будет напечатан");
+    expect(subcaption).toHaveClass("text-primary-foreground");
+    expect(subcaption).not.toHaveClass("text-primary-foreground/85");
   });
 
   it("does not render an orphan separator when the attendee has no company", async () => {
