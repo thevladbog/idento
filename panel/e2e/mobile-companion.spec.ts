@@ -522,7 +522,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
         const readinessChip = page
           .getByTestId("readiness-strip-scroller")
           .locator(":scope > span")
-          .filter({ has: page.getByText("Attendees", { exact: true }) });
+          .filter({ hasText: "Attendees" });
         await expect(readinessChip).toBeVisible();
         await expect(readinessChip.locator("svg")).toBeVisible();
         await expect(readinessChip.getByText("Done", { exact: true })).toBeVisible();
@@ -540,14 +540,14 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
 
         await page.goto(`/events/${seed.eventId}/attendees`);
         await themeCheckpoint(page, page.getByRole("heading", { name: "Attendees" }), theme);
-        for (const [attendee, status] of [
-          [seed.availableAttendee, "Not checked in"],
-          [seed.checkedInAttendee, "Checked in"],
-          [seed.blockedAttendee, "Blocked"],
+        for (const [attendeeDisplayName, status] of [
+          ["Lovelace Ada", "Not checked in"],
+          ["Hopper Grace", "Checked in"],
+          ["Johnson Katherine", "Blocked"],
         ] as const) {
           const row = page
             .getByRole("button")
-            .filter({ has: page.getByText(attendee.name, { exact: true }) });
+            .filter({ has: page.getByText(attendeeDisplayName, { exact: true }) });
           const statusPill = row.locator("[data-status]");
           await expect(row).toBeVisible();
           await expect(statusPill.locator("svg")).toBeVisible();
