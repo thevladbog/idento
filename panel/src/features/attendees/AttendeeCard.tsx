@@ -130,7 +130,8 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         <div className="min-w-0">
           <div className="text-card-title font-bold">{fullName}</div>
           <div className="truncate text-caption text-muted-foreground">
-            {attendee.company} · <span className="font-mono">{attendee.code}</span>
+            {attendee.company ? <>{attendee.company} · </> : null}
+            <span className="font-mono">{attendee.code}</span>
           </div>
         </div>
       </div>

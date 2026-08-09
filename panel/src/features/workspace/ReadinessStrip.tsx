@@ -14,32 +14,34 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
   const { t } = useTranslation();
   if (!steps?.length) return null;
   return (
-    <div data-testid="readiness-strip" className="-mx-4 flex gap-1.5 overflow-x-auto px-4 md:hidden">
-      {steps.map((step) => {
-        const done = step.status === "done";
-        const skipped = step.status === "skipped";
-        const statusText = done
-          ? t("readinessStatusDone")
-          : skipped
-            ? t("readinessSkipped")
-            : t("readinessStatusNotDone");
-        return (
-          <span
-            key={step.key}
-            className={cn(
-              "inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-caption font-medium",
-              done && "border-success/30 bg-success/10 text-success",
-              skipped && "border-dashed border-border bg-muted text-muted-foreground",
-              !done && !skipped && "border-warning/30 bg-warning/10 text-warning",
-            )}
-          >
-            {done ? <Check aria-hidden className="size-3" /> : skipped ? <MinusCircle aria-hidden className="size-3" /> : <Circle aria-hidden className="size-3" />}
-            {t(STEP_LABEL_KEYS[step.key])}
-            {step.count !== undefined ? <span className="font-mono">{step.count}</span> : null}
-            <span className="sr-only">{statusText}</span>
-          </span>
-        );
-      })}
+    <div data-testid="readiness-strip" className="min-w-0 max-w-full overflow-hidden md:hidden">
+      <div data-testid="readiness-strip-scroller" className="flex min-w-0 max-w-full gap-1.5 overflow-x-auto">
+        {steps.map((step) => {
+          const done = step.status === "done";
+          const skipped = step.status === "skipped";
+          const statusText = done
+            ? t("readinessStatusDone")
+            : skipped
+              ? t("readinessSkipped")
+              : t("readinessStatusNotDone");
+          return (
+            <span
+              key={step.key}
+              className={cn(
+                "inline-flex flex-none items-center gap-1 rounded-full border px-2.5 py-1 text-caption font-medium",
+                done && "border-success/30 bg-success/10 text-success",
+                skipped && "border-dashed border-border bg-muted text-muted-foreground",
+                !done && !skipped && "border-warning/30 bg-warning/10 text-warning",
+              )}
+            >
+              {done ? <Check aria-hidden className="size-3" /> : skipped ? <MinusCircle aria-hidden className="size-3" /> : <Circle aria-hidden className="size-3" />}
+              {t(STEP_LABEL_KEYS[step.key])}
+              {step.count !== undefined ? <span className="font-mono">{step.count}</span> : null}
+              <span className="sr-only">{statusText}</span>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }

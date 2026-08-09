@@ -84,6 +84,15 @@ describe("AttendeeCard — not checked in", () => {
     expect(button).toHaveTextContent("бейдж не будет напечатан");
   });
 
+  it("does not render an orphan separator when the attendee has no company", async () => {
+    server.use(http.get("http://api.test/api/attendees/:id", () =>
+      HttpResponse.json({ ...NOT_CHECKED_IN, company: "" }),
+    ));
+    renderCard();
+    await screen.findByText("Иванова Мария");
+    expect(screen.getByText("QR-11730").parentElement).toHaveTextContent(/^QR-11730$/);
+  });
+
   it("opens the check-in confirm sheet when the primary button is tapped", async () => {
     const user = userEvent.setup();
     renderCard();

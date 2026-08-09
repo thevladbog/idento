@@ -31,7 +31,7 @@ describe("DesktopOnlyGate", () => {
 
   it("renders title, reason and the back slot", () => {
     renderGate();
-    expect(screen.getByRole("heading", { name: "Equipment" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Equipment" })).toBeInTheDocument();
     expect(screen.getByText(/Idento agent on your desk computer/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to Home" })).toBeInTheDocument();
   });

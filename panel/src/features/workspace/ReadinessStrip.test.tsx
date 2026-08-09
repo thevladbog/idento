@@ -22,6 +22,14 @@ describe("ReadinessStrip", () => {
     expect(within(strip).getByText("Skipped")).toHaveClass("sr-only");
   });
 
+  it("contains overflow in a bounded outer layer while the inner row scrolls", () => {
+    render(<ReadinessStrip steps={STEPS} />);
+    const outer = screen.getByTestId("readiness-strip");
+    const scroller = screen.getByTestId("readiness-strip-scroller");
+    expect(outer).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
+    expect(scroller).toHaveClass("min-w-0", "max-w-full", "overflow-x-auto");
+  });
+
   it("renders nothing without steps", () => {
     render(<ReadinessStrip steps={undefined} />);
     expect(screen.queryByTestId("readiness-strip")).not.toBeInTheDocument();
