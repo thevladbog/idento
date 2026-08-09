@@ -185,7 +185,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate a QR-card login token for a staff user (admin only) */
+        /** Generate a QR-card login token (admin for members; staff for self) */
         post: operations["generateQRToken"];
         delete?: never;
         options?: never;
@@ -2416,7 +2416,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description Caller is not admin (HTTPError), or tenant_suspended from the tenant gate (Error). */
+            /** @description Caller is a manager, or is staff targeting another user (HTTPError); or tenant_suspended from the tenant gate (Error). */
             403: {
                 headers: {
                     [name: string]: unknown;

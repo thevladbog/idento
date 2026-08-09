@@ -126,9 +126,17 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	// Only admin can generate QR tokens
-	if currentUser.Role != "admin" {
-		return echo.NewHTTPError(http.StatusForbidden, "Only admins can generate QR tokens")
+	// Admins may issue a card for any active-tenant member. Staff may only
+	// mint their own self-service card; managers and staff targeting another
+	// user are rejected before any target lookup or token write.
+	staffTargetsSelf := false
+	if currentUser.Role == "staff" {
+		callerUUID, callerErr := uuid.Parse(currentUser.UserID)
+		targetUUID, targetErr := uuid.Parse(c.Param("id"))
+		staffTargetsSelf = callerErr == nil && targetErr == nil && callerUUID == targetUUID
+	}
+	if currentUser.Role != "admin" && !staffTargetsSelf {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
 	}
 
 	userID := c.Param("id")

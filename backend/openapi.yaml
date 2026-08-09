@@ -1456,7 +1456,7 @@ paths:
   /api/users/{id}/qr-token:
     post:
       operationId: generateQRToken
-      summary: Generate a QR-card login token for a staff user (admin only)
+      summary: Generate a QR-card login token (admin for members; staff for self)
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1476,8 +1476,8 @@ paths:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "403":
           description: >
-            Caller is not admin (HTTPError), or tenant_suspended from the
-            tenant gate (Error).
+            Caller is a manager, or is staff targeting another user
+            (HTTPError); or tenant_suspended from the tenant gate (Error).
           content:
             application/json:
               schema:

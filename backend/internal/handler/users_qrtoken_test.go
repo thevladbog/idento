@@ -48,7 +48,7 @@ func TestGetUsers_DoesNotLeakQRToken(t *testing.T) {
 	}
 }
 
-func TestGenerateQRTokenUsesActiveTenantMembership(t *testing.T) {
+func TestGenerateQRToken_AdminCanMintForOtherActiveTenantMember(t *testing.T) {
 	e := echo.New()
 	activeTenant := uuid.New()
 	homeTenant := uuid.New() // user's users.tenant_id differs from the active tenant
@@ -81,6 +81,155 @@ func TestGenerateQRTokenUsesActiveTenantMembership(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK || !saved {
 		t.Fatalf("status = %d, saved = %v; want 200 with token saved (membership via user_tenants must authorize)", rec.Code, saved)
+	}
+}
+
+func TestGenerateQRToken_StaffCanMintForSelf(t *testing.T) {
+	e := echo.New()
+	activeTenant := uuid.New()
+	staffID := uuid.New()
+
+	saved := false
+	fs := &fakeStore{
+		getUserByID: func(id uuid.UUID) (*models.User, error) {
+			if id != staffID {
+				t.Fatalf("GetUserByID id = %v, want caller id %v", id, staffID)
+			}
+			return &models.User{ID: staffID, TenantID: activeTenant, Email: "staff@org.test"}, nil
+		},
+		getUserTenantRole: func(userID, tenantID uuid.UUID) (string, error) {
+			if userID != staffID || tenantID != activeTenant {
+				t.Fatalf("GetUserTenantRole(%v, %v), want (%v, %v)", userID, tenantID, staffID, activeTenant)
+			}
+			return "staff", nil
+		},
+		updateUserQRToken: func(userID uuid.UUID, token string, _ time.Time) error {
+			if userID != staffID {
+				t.Fatalf("UpdateUserQRToken user id = %v, want %v", userID, staffID)
+			}
+			if token == "" {
+				t.Fatal("UpdateUserQRToken received an empty token")
+			}
+			saved = true
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, rec := newAuthedContextWithUserID(
+		e,
+		http.MethodPost,
+		"/api/users/"+staffID.String()+"/qr-token",
+		"",
+		activeTenant.String(),
+		staffID,
+		"staff",
+	)
+	c.SetParamNames("id")
+	c.SetParamValues(staffID.String())
+
+	if err := h.GenerateQRToken(c); err != nil {
+		t.Fatalf("GenerateQRToken returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !saved {
+		t.Fatal("staff self-service mint did not persist a token")
+	}
+
+	var response struct {
+		QRToken string `json:"qr_token"`
+		UserID  string `json:"user_id"`
+		Email   string `json:"email"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("invalid response JSON: %v", err)
+	}
+	if response.QRToken == "" || response.UserID != staffID.String() || response.Email != "staff@org.test" {
+		t.Fatalf("response metadata = {token_present:%v user_id:%q email:%q}, want self-service QR response shape", response.QRToken != "", response.UserID, response.Email)
+	}
+}
+
+func TestGenerateQRToken_StaffCannotMintForOtherUser(t *testing.T) {
+	e := echo.New()
+	activeTenant := uuid.New()
+	callerID := uuid.New()
+	targetID := uuid.New()
+	storeCalled := false
+
+	fs := &fakeStore{
+		getUserByID: func(uuid.UUID) (*models.User, error) {
+			storeCalled = true
+			return nil, nil
+		},
+		updateUserQRToken: func(uuid.UUID, string, time.Time) error {
+			storeCalled = true
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, _ := newAuthedContextWithUserID(
+		e,
+		http.MethodPost,
+		"/api/users/"+targetID.String()+"/qr-token",
+		"",
+		activeTenant.String(),
+		callerID,
+		"staff",
+	)
+	c.SetParamNames("id")
+	c.SetParamValues(targetID.String())
+
+	err := h.GenerateQRToken(c)
+	httpErr, ok := err.(*echo.HTTPError)
+	if !ok || httpErr.Code != http.StatusForbidden {
+		t.Fatalf("error = %v, want 403", err)
+	}
+	if storeCalled {
+		t.Fatal("staff targeting another user reached the store or token write")
+	}
+}
+
+func TestGenerateQRToken_ManagerCannotMintForAnyUser(t *testing.T) {
+	e := echo.New()
+	activeTenant := uuid.New()
+	managerID := uuid.New()
+	targetID := uuid.New()
+	storeCalled := false
+
+	fs := &fakeStore{
+		getUserByID: func(uuid.UUID) (*models.User, error) {
+			storeCalled = true
+			return nil, nil
+		},
+		updateUserQRToken: func(uuid.UUID, string, time.Time) error {
+			storeCalled = true
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+
+	c, _ := newAuthedContextWithUserID(
+		e,
+		http.MethodPost,
+		"/api/users/"+targetID.String()+"/qr-token",
+		"",
+		activeTenant.String(),
+		managerID,
+		"manager",
+	)
+	c.SetParamNames("id")
+	c.SetParamValues(targetID.String())
+
+	err := h.GenerateQRToken(c)
+	httpErr, ok := err.(*echo.HTTPError)
+	if !ok || httpErr.Code != http.StatusForbidden {
+		t.Fatalf("error = %v, want 403", err)
+	}
+	if storeCalled {
+		t.Fatal("manager QR mint reached the store or token write")
 	}
 }
 
