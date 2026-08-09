@@ -87,8 +87,15 @@ func TestContractRegister(t *testing.T) {
 func TestContractLoginWithQR(t *testing.T) {
 	t.Setenv("JWT_SECRET", "test-secret")
 	user := contractUser("staff@org.io")
+	activeTenant := uuid.New()
+	activeRole := "staff"
+	now := time.Now()
+	user.QRTokenTenantID = &activeTenant
+	user.QRTokenRole = &activeRole
+	user.QRTokenCreatedAt = &now
 	h := New(&fakeStore{
-		getUserByQRToken: func(string) (*models.User, error) { return user, nil },
+		getUserByQRToken:  func(string) (*models.User, error) { return user, nil },
+		getUserTenantRole: func(_, _ uuid.UUID) (string, error) { return activeRole, nil },
 	})
 	e := echo.New()
 	c, rec := newUnauthedContext(e, http.MethodPost, "/auth/login-qr", `{"qr_token":"tok"}`)

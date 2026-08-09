@@ -1176,7 +1176,9 @@ paths:
               required: [qr_token]
       responses:
         "200":
-          description: Authenticated as the staff user's own tenant/role.
+          description: >
+            Authenticated in the tenant/role persisted with the QR credential,
+            after that tenant membership and role are revalidated live.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QrLoginResponse" }
@@ -1186,7 +1188,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "401":
-          description: Unknown or expired QR token (echo.NewHTTPError shape).
+          description: >
+            Unknown, expired, legacy/unscoped, or stale-membership QR token
+            (echo.NewHTTPError shape).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HTTPError" }
@@ -1465,7 +1469,9 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: New QR token for the target user.
+          description: >
+            New QR token bound to the caller's active tenant and the target's
+            current role in that tenant.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QRTokenResponse" }
@@ -1476,8 +1482,9 @@ paths:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "403":
           description: >
-            Caller is a manager, or is staff targeting another user
-            (HTTPError); or tenant_suspended from the tenant gate (Error).
+            Caller is a manager; is staff targeting another user; or has a
+            stale staff claim while their live active-tenant role is no longer
+            staff (HTTPError); or tenant_suspended from the tenant gate (Error).
           content:
             application/json:
               schema:

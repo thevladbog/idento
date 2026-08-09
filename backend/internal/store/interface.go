@@ -44,7 +44,7 @@ type Store interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error)
 	GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.User, error)
 	GetUserByQRToken(ctx context.Context, token string) (*models.User, error)
-	UpdateUserQRToken(ctx context.Context, userID uuid.UUID, token string, createdAt time.Time) error
+	UpdateUserQRToken(ctx context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error
 
 	// Multi-organization support
 	AddUserToTenant(ctx context.Context, userTenant *models.UserTenant) error

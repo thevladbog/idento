@@ -411,10 +411,12 @@ func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 
 func (s *PGStore) GetUserByQRToken(ctx context.Context, token string) (*models.User, error) {
 	var u models.User
-	query := `SELECT id, tenant_id, email, password_hash, role, is_super_admin, qr_token, qr_token_created_at, created_at, updated_at 
+	query := `SELECT id, tenant_id, email, password_hash, role, is_super_admin, qr_token, qr_token_created_at,
+	                 qr_token_tenant_id, qr_token_role, created_at, updated_at
 			  FROM users WHERE qr_token = $1`
 	err := s.db.QueryRow(ctx, query, token).Scan(
-		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt,
+		&u.QRTokenTenantID, &u.QRTokenRole, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -422,9 +424,11 @@ func (s *PGStore) GetUserByQRToken(ctx context.Context, token string) (*models.U
 	return &u, nil
 }
 
-func (s *PGStore) UpdateUserQRToken(ctx context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
-	query := `UPDATE users SET qr_token = $1, qr_token_created_at = $2, updated_at = NOW() WHERE id = $3`
-	_, err := s.db.Exec(ctx, query, token, createdAt, userID)
+func (s *PGStore) UpdateUserQRToken(ctx context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error {
+	query := `UPDATE users
+	          SET qr_token = $1, qr_token_created_at = $2, qr_token_tenant_id = $3, qr_token_role = $4, updated_at = NOW()
+	          WHERE id = $5`
+	_, err := s.db.Exec(ctx, query, token, createdAt, tenantID, role, userID)
 	return err
 }
 

@@ -1982,7 +1982,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Authenticated as the staff user's own tenant/role. */
+            /** @description Authenticated in the tenant/role persisted with the QR credential, after that tenant membership and role are revalidated live. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2000,7 +2000,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description Unknown or expired QR token (echo.NewHTTPError shape). */
+            /** @description Unknown, expired, legacy/unscoped, or stale-membership QR token (echo.NewHTTPError shape). */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2398,7 +2398,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description New QR token for the target user. */
+            /** @description New QR token bound to the caller's active tenant and the target's current role in that tenant. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2416,7 +2416,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description Caller is a manager, or is staff targeting another user (HTTPError); or tenant_suspended from the tenant gate (Error). */
+            /** @description Caller is a manager; is staff targeting another user; or has a stale staff claim while their live active-tenant role is no longer staff (HTTPError); or tenant_suspended from the tenant gate (Error). */
             403: {
                 headers: {
                     [name: string]: unknown;

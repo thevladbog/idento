@@ -162,6 +162,9 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 		// Uniform 404: don't reveal that the user exists in another tenant.
 		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
+	if staffTargetsSelf && role != "staff" {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	}
 
 	// Generate random token
 	tokenBytes := make([]byte, 32)
@@ -172,7 +175,7 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 	now := time.Now()
 
 	// Update user with QR token
-	if err := h.Store.UpdateUserQRToken(c.Request().Context(), userUUID, token, now); err != nil {
+	if err := h.Store.UpdateUserQRToken(c.Request().Context(), userUUID, currentTenantID, role, token, now); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save QR token")
 	}
 

@@ -102,7 +102,7 @@ type fakeStore struct {
 	getAuditLog               func(filters map[string]interface{}, limit, offset int) ([]*models.AdminAuditLog, int, error)
 
 	getUserTenantRole func(userID, tenantID uuid.UUID) (string, error)
-	updateUserQRToken func(userID uuid.UUID, token string, createdAt time.Time) error
+	updateUserQRToken func(userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error
 	logUsage          func(log *models.UsageLog) error
 
 	createProvisioningToken  func(tok *models.StationProvisioningToken) error
@@ -416,8 +416,8 @@ func (f *fakeStore) GetAuditLog(_ context.Context, filters map[string]interface{
 func (f *fakeStore) GetUserTenantRole(_ context.Context, userID, tenantID uuid.UUID) (string, error) {
 	return f.getUserTenantRole(userID, tenantID)
 }
-func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
-	return f.updateUserQRToken(userID, token, createdAt)
+func (f *fakeStore) UpdateUserQRToken(_ context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error {
+	return f.updateUserQRToken(userID, tenantID, role, token, createdAt)
 }
 func (f *fakeStore) LogUsage(_ context.Context, log *models.UsageLog) error {
 	return f.logUsage(log)

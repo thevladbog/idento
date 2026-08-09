@@ -46,6 +46,8 @@ type User struct {
 	QRToken          *string    `json:"-"`
 	HasQRToken       bool       `json:"has_qr_token"`
 	QRTokenCreatedAt *time.Time `json:"qr_token_created_at,omitempty"`
+	QRTokenTenantID  *uuid.UUID `json:"-"`
+	QRTokenRole      *string    `json:"-"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
 }
