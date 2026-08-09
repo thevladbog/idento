@@ -917,3 +917,19 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - Diff integrity: the final working-tree `git diff --check` passed. The historical branch range `b4c36a1..63cc132` reports three trailing-whitespace lines in the already-committed design-spec header; these are Markdown hard-breaks, not newly introduced final-verification changes.
 - Real-backend Playwright desktop/mobile, light/dark browser walk, and Lighthouse collection: NOT RUN / NOT CAPTURED — required backend/bootstrap prerequisites were not provided, and no substitute acceptance is claimed.
 - Physical iOS Safari, Android Chrome, KMP QR scanning, and cellular/venue-Wi-Fi SSE transition: NOT RUN — the required devices, scanners, and network environment were unavailable.
+
+### P6.4 — Station assignee correction final verification (`e1ced5c`)
+
+- Baseline: clean worktree on `e1ced5c`; the required full panel consecutive counter started at zero.
+- Panel consecutive run 1: PASS — 135/135 files and 1,622/1,622 tests, exit 0, 53.37s.
+- Panel consecutive run 2, immediately after run 1: PASS — 135/135 files and 1,622/1,622 tests, exit 0, 49.47s. Required counter: 2/2.
+- Shared UI: PASS — 37/37 files and 348/348 tests; typecheck and lint both exited 0.
+- Panel static/build: PASS — typecheck, lint, and production build exited 0; Vite transformed 3,241 modules.
+- Bundle: PASS — 1,479,807 raw bytes versus 1,550,000; 414,713 gzip bytes versus 430,000.
+- E2E static/discovery: PASS — authorized ESNext/Bundler standalone TypeScript compile exited 0; discovery found exactly 7 desktop `chromium` and 3 `mobile-chromium` tests.
+- Real-backend mobile Chromium 390x844: reused fresh, isolated, independently reviewed Task 3 PASS evidence — 3/3 serial tests in 57.7s (14.7s, 6.3s, 34.6s). It was not rerun because doing so would unnecessarily mint credential-bearing station/QR data.
+- Real-backend desktop Chromium: NOT RUN in this verification; discovery is not reported as execution.
+- Physical iOS Safari, Android Chrome, KMP QR scanning, printer/scanner acceptance, and real cellular/venue-Wi-Fi SSE transition: NOT RUN.
+- No password, token, QR value, bearer body, trace, screenshot, or credential artifact was recorded.
+- Integrity: initial worktree was clean. The exact historical-range `git diff --check origin/main...HEAD` exits 2 only for the same three already documented Markdown hard-break lines in the committed design-spec header; Task 13 introduced no whitespace change.
+- Push, PR #113 reconciliation, CI monitoring, and manual GitGuardian incident `35916563` disposition were pending when this local record was written.
