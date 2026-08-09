@@ -116,4 +116,42 @@ describe("AddStationAction", () => {
     await waitFor(() => expect(mintCallCount).toBe(2));
     expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
   });
+
+  it("serializes regeneration and ignores its response after the QR session closes", async () => {
+    let mintCallCount = 0;
+    let releaseRegeneration!: () => void;
+    const regenerationGate = new Promise<void>((resolve) => {
+      releaseRegeneration = resolve;
+    });
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 2) await regenerationGate;
+        return HttpResponse.json({
+          token: mintCallCount === 1 ? "prov-tok-abc" : "prov-tok-xyz",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderAction();
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    await screen.findByTestId("qr-display-code");
+
+    const regenerate = screen.getByRole("button", { name: "Добавить станцию" });
+    await user.click(regenerate);
+    await waitFor(() => expect(mintCallCount).toBe(2));
+    expect(regenerate).toBeDisabled();
+    await user.click(regenerate);
+    expect(mintCallCount).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    releaseRegeneration();
+
+    const addStation = await screen.findByRole("button", { name: /Добавить станцию/ });
+    await waitFor(() => expect(addStation).toBeEnabled());
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+  });
 });

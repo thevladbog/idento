@@ -78,6 +78,8 @@ describe("SelfServicePage", () => {
     const signOut = screen.getByRole("button", { name: "Выйти" });
     expect(signOut).toHaveClass("max-md:min-h-11");
     expect(signOut).toHaveClass("max-md:min-w-11");
+    expect(signOut).not.toHaveClass("min-h-11");
+    expect(signOut).not.toHaveClass("min-w-11");
   });
 
   it("mints a token and shows the full-screen QR when tapped", async () => {
@@ -121,5 +123,43 @@ describe("SelfServicePage", () => {
     ).not.toBeInTheDocument();
     await waitFor(() => expect(qrTokenCallCount).toBe(2));
     expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
+  });
+
+  it("serializes regeneration and ignores its response after the QR session closes", async () => {
+    let qrTokenCallCount = 0;
+    let releaseRegeneration!: () => void;
+    const regenerationGate = new Promise<void>((resolve) => {
+      releaseRegeneration = resolve;
+    });
+    server.use(
+      http.post("http://api.test/api/users/:id/qr-token", async () => {
+        qrTokenCallCount += 1;
+        if (qrTokenCallCount === 2) await regenerationGate;
+        return HttpResponse.json({
+          qr_token: qrTokenCallCount === 1 ? "self-tok-1" : "self-tok-2",
+          user_id: "user-1",
+          email: "anna@x.com",
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+    await screen.findByTestId("qr-display-code");
+
+    const regenerate = screen.getByRole("button", { name: "Показать мой QR для входа" });
+    await user.click(regenerate);
+    await waitFor(() => expect(qrTokenCallCount).toBe(2));
+    expect(regenerate).toBeDisabled();
+    await user.click(regenerate);
+    expect(qrTokenCallCount).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    releaseRegeneration();
+
+    const openQr = await screen.findByRole("button", { name: "Показать мой QR для входа" });
+    await waitFor(() => expect(openQr).toBeEnabled());
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
   });
 });

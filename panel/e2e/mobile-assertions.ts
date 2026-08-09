@@ -13,6 +13,7 @@ export async function expectNoBodyOverflow(page: Page) {
 
 export async function expectTouchTargetsAtLeast44(locator: Locator) {
   const count = await locator.count();
+  expect(count, "touch target locator must match at least one element").toBeGreaterThan(0);
   for (let index = 0; index < count; index += 1) {
     const target = locator.nth(index);
     if (!(await target.isVisible())) continue;

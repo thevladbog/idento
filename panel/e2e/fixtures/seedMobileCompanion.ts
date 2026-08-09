@@ -9,6 +9,7 @@ type SeedAttendee = {
   id: string;
   first_name: string;
   last_name: string;
+  code: string;
 };
 
 type SeedUser = {
@@ -26,7 +27,7 @@ export type MobileSeed = SeedResult & {
 };
 
 function displayName(attendee: SeedAttendee): string {
-  return `${attendee.last_name} ${attendee.first_name}`;
+  return `${attendee.first_name} ${attendee.last_name}`;
 }
 
 function ensureOk(response: APIResponse, operation: string): void {
@@ -64,8 +65,8 @@ export async function seedMobileCompanion(): Promise<MobileSeed> {
     });
     ensureOk(availableResponse, "mobile seed find available attendee");
     const availableRows = (await availableResponse.json()) as SeedAttendee[];
-    const available = availableRows[0];
-    if (!available) throw new Error("mobile seed available attendee was not returned");
+    const available = availableRows.find((attendee) => attendee.code === base.attendeeCode);
+    if (!available) throw new Error("mobile seed attendee code did not match the requested attendee");
 
     const checkedIn = await createAttendee(api, base.eventId, "Grace", "Hopper");
     const blocked = await createAttendee(api, base.eventId, "Katherine", "Johnson");

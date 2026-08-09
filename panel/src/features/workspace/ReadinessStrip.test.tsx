@@ -18,11 +18,16 @@ describe("ReadinessStrip", () => {
     const attendeesChip = within(strip).getByText("Attendees");
     expect(attendeesChip.querySelector("svg")).toBeInTheDocument();
     expect(within(strip).getByText("340")).toBeInTheDocument();
-    for (const status of ["Done", "Not done", "Skipped"]) {
+    for (const [status, semanticClass] of [
+      ["Done", "text-success"],
+      ["Not done", "text-warning"],
+      ["Skipped", "text-muted-foreground"],
+    ] as const) {
       const statusText = within(strip).getByText(status);
       expect(statusText).toBeVisible();
       expect(statusText).not.toHaveClass("sr-only");
       expect(statusText.parentElement?.querySelector("svg")).toBeInTheDocument();
+      expect(statusText.parentElement).toHaveClass(semanticClass);
     }
   });
 

@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { TriangleAlert, X } from "lucide-react";
 import * as QRCode from "qrcode";
 import * as React from "react";
 import { cn } from "../lib/cn";
@@ -18,6 +18,8 @@ export interface QrDisplayProps {
   closeLabel: string;
   onClose: () => void;
   onRegenerate: () => void;
+  /** Prevents duplicate token rotation while the caller's request is active. */
+  isRegenerating?: boolean;
   /** Small caption under the code (who/what it's for). */
   hint?: string;
   className?: string;
@@ -49,6 +51,7 @@ function formatCountdown(ms: number): string {
 // API, since every value this component is handed is a bearer credential.
 export function QrDisplay({
   value, title, subtitle, codeLabel, expiresInLabel, expiresAt, expiredLabel, regenerateLabel, closeLabel, onClose, onRegenerate, hint, className,
+  isRegenerating = false,
   showRegenerate = true,
 }: QrDisplayProps) {
   const [svg, setSvg] = React.useState<string | null>(null);
@@ -107,7 +110,10 @@ export function QrDisplay({
       <div className="relative mt-8 rounded-2xl border border-black/10 p-4">
         {expired ? (
           <div className="flex size-[228px] flex-col items-center justify-center gap-2">
-            <span role="status" className="text-body font-bold">{expiredLabel}</span>
+            <span role="status" className="inline-flex items-center gap-2 text-body font-bold text-warning">
+              <TriangleAlert aria-hidden className="size-5" />
+              {expiredLabel}
+            </span>
           </div>
         ) : svg ? (
           <div
@@ -145,12 +151,17 @@ export function QrDisplay({
         // `showRegenerate={false}` callers), but guarded for defensive
         // correctness anyway.
         showRegenerate ? (
-          <Button className="mt-6 w-[228px]" onClick={onRegenerate}>
+          <Button className="mt-6 w-[228px]" disabled={isRegenerating} onClick={onRegenerate}>
             {regenerateLabel}
           </Button>
         ) : null
       ) : showRegenerate ? (
-        <button type="button" onClick={onRegenerate} className="mt-5 min-h-11 px-2 text-caption font-semibold text-black/70 underline-offset-2 hover:underline">
+        <button
+          type="button"
+          disabled={isRegenerating}
+          onClick={onRegenerate}
+          className="mt-5 min-h-11 px-2 text-caption font-semibold text-black/70 underline-offset-2 hover:underline disabled:opacity-50"
+        >
           {regenerateLabel}
         </button>
       ) : null}

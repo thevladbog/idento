@@ -52,7 +52,7 @@ void server;
 
 function renderWithProviders(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return { queryClient, ...render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>) };
 }
 
 describe("OrganizationPage", () => {
@@ -201,5 +201,25 @@ describe("OrganizationPage", () => {
       releaseTenant();
       expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
     }
+  });
+
+  it("keeps cached organization data visible after a background refetch error", async () => {
+    let shouldFail = false;
+    server.use(
+      http.get("http://api.test/api/tenants/:id", () => (
+        shouldFail
+          ? HttpResponse.json({ error: "boom" }, { status: 500 })
+          : HttpResponse.json(currentTenant)
+      )),
+    );
+    const { queryClient } = renderWithProviders(<OrganizationPage />);
+
+    expect(await screen.findByLabelText("Organization name")).toHaveValue("Acme Events");
+    shouldFail = true;
+    await queryClient.invalidateQueries();
+
+    await waitFor(() => expect(queryClient.getQueryCache().findAll()[0]?.state.status).toBe("error"));
+    expect(screen.getByLabelText("Organization name")).toHaveValue("Acme Events");
+    expect(screen.queryByText("Couldn't load settings.")).not.toBeInTheDocument();
   });
 });

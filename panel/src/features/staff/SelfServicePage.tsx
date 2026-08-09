@@ -21,19 +21,35 @@ export function SelfServicePage() {
   // stays put until the new token actually lands.
   const [cachedToken, setCachedToken] = React.useState<string | null>(null);
   const generateToken = $api.useMutation("post", "/api/users/{id}/qr-token");
+  const qrSessionRef = React.useRef(0);
+  const mintInFlightRef = React.useRef(false);
 
   if (!user) return null;
 
-  function mintToken() {
+  function mintToken(openNewSession = false) {
+    if (mintInFlightRef.current) return;
+    if (openNewSession) qrSessionRef.current += 1;
+    const session = qrSessionRef.current;
+    mintInFlightRef.current = true;
     generateToken.mutate(
       { params: { path: { id: user!.id } } },
       {
         onSuccess: (data) => {
+          if (session !== qrSessionRef.current) return;
           setCachedToken(data.qr_token);
           setQrOpen(true);
         },
+        onSettled: () => {
+          mintInFlightRef.current = false;
+        },
       },
     );
+  }
+
+  function closeQrSession() {
+    qrSessionRef.current += 1;
+    setCachedToken(null);
+    setQrOpen(false);
   }
 
   if (qrOpen && cachedToken) {
@@ -48,8 +64,9 @@ export function SelfServicePage() {
         expiredLabel=""
         regenerateLabel={t("selfServiceShowMyQr")}
         closeLabel={t("moreSheetCloseLabel")}
-        onClose={() => setQrOpen(false)}
-        onRegenerate={mintToken}
+        onClose={closeQrSession}
+        onRegenerate={() => mintToken()}
+        isRegenerating={generateToken.isPending}
       />
     );
   }
@@ -73,7 +90,7 @@ export function SelfServicePage() {
         </button>
       </div>
 
-      <Button className="min-h-11 gap-2" onClick={mintToken}>
+      <Button className="min-h-11 gap-2" disabled={generateToken.isPending} onClick={() => mintToken(true)}>
         <IdCard aria-hidden className="size-4" />
         {t("selfServiceShowMyQr")}
       </Button>

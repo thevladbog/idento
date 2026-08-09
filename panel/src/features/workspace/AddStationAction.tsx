@@ -24,14 +24,41 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
   // whole QR screen flicker back to the base "Add station" button for that
   // window. The cached value stays on screen until the new token lands.
   const [cached, setCached] = React.useState<{ token: string; expiresAt: string } | null>(null);
+  const [mintFailed, setMintFailed] = React.useState(false);
+  const qrSessionRef = React.useRef(0);
+  const mintInFlightRef = React.useRef(false);
 
-  function mintToken() {
+  function mintToken(openNewSession = false) {
     const user = getCurrentUser();
-    if (!user) return;
+    if (!user || mintInFlightRef.current) return;
+    if (openNewSession) {
+      qrSessionRef.current += 1;
+      setMintFailed(false);
+    }
+    const session = qrSessionRef.current;
+    mintInFlightRef.current = true;
     mint.mutate(
       { params: { path: { event_id: eventId } }, body: { staff_user_id: user.id } },
-      { onSuccess: (data) => setCached({ token: data.token, expiresAt: data.expires_at }) },
+      {
+        onSuccess: (data) => {
+          if (session !== qrSessionRef.current) return;
+          setMintFailed(false);
+          setCached({ token: data.token, expiresAt: data.expires_at });
+        },
+        onError: () => {
+          if (session === qrSessionRef.current) setMintFailed(true);
+        },
+        onSettled: () => {
+          mintInFlightRef.current = false;
+        },
+      },
     );
+  }
+
+  function closeQrSession() {
+    qrSessionRef.current += 1;
+    setCached(null);
+    setMintFailed(false);
   }
 
   if (cached) {
@@ -46,11 +73,9 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
         expiredLabel={t("addStationCodeExpired")}
         regenerateLabel={t("addStationTitle")}
         closeLabel={t("moreSheetCloseLabel")}
-        onClose={() => {
-          setCached(null);
-          mint.reset();
-        }}
-        onRegenerate={mintToken}
+        onClose={closeQrSession}
+        onRegenerate={() => mintToken()}
+        isRegenerating={mint.isPending}
         hint={t("addStationHint")}
       />
     );
@@ -60,7 +85,8 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
     <div className="md:hidden">
       <button
         type="button"
-        onClick={mintToken}
+        disabled={mint.isPending}
+        onClick={() => mintToken(true)}
         className="flex min-h-13 w-full items-center gap-3 rounded-lg border border-border bg-card px-3.5 hover:bg-muted"
       >
         <span className="flex size-7.5 flex-none items-center justify-center rounded-md bg-success/10 text-success">
@@ -69,7 +95,7 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
         <span className="flex-1 text-left text-body font-semibold">{t("addStationTitle")}</span>
         <span className="text-caption text-muted-foreground">{t("addStationSubtitle")}</span>
       </button>
-      {mint.isError ? <p className="mt-2 text-caption text-destructive">{t("addStationError")}</p> : null}
+      {mintFailed ? <p className="mt-2 text-caption text-destructive">{t("addStationError")}</p> : null}
     </div>
   );
 }

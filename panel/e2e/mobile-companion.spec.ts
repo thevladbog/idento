@@ -233,6 +233,17 @@ async function proveBearerAbsenceNegativeControls(page: Page) {
   await page.setContent("");
 }
 
+async function proveTouchTargetEmptyLocatorNegativeControl(page: Page) {
+  await page.setContent("<main><p>No actions here</p></main>");
+  let failureMessage = "";
+  try {
+    await expectTouchTargetsAtLeast44(page.getByRole("button"));
+  } catch (error) {
+    failureMessage = error instanceof Error ? error.message : String(error);
+  }
+  expect(failureMessage).toContain("touch target locator must match at least one element");
+}
+
 async function mintStaffQr(page: Page, seed: MobileSeed): Promise<string> {
   const card = staffCard(page, seed.staff.email);
   await expect(card).toBeVisible();
@@ -266,6 +277,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
   test("light-theme functional journey", async ({ page, context }) => {
     await prepareTrustedNegativeControlOrigin(page);
     await proveBearerAbsenceNegativeControls(page);
+    await proveTouchTargetEmptyLocatorNegativeControl(page);
     await prepareTrustedNegativeControlOrigin(page);
     await proveQrRenderSynchronizationNegativeControl(page);
     const seed = await seedMobileCompanion();
@@ -278,7 +290,10 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     const createDialog = page.getByRole("dialog");
     await expect(createDialog.getByRole("heading", { name: "New event" })).toBeVisible();
     await expectFocusContained(page, createDialog);
-    await createDialog.getByRole("button", { name: "Cancel" }).click();
+    await createDialog
+      .getByRole("button", { name: "Cancel", exact: true })
+      .filter({ hasText: /^Cancel$/ })
+      .click();
     await expect(createDialog).toBeHidden();
     await expect(newEvent).toBeFocused();
 

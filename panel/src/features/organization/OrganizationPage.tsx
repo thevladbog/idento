@@ -234,14 +234,14 @@ export function OrganizationPage() {
   let content: React.ReactNode;
   if (tenant === null) {
     content = <p className="text-body text-destructive">{t("homeLoadError")}</p>;
-  } else if (tenantQuery.isLoading) {
+  } else if (tenantQuery.isLoading && !tenantQuery.data) {
     content = (
       <div className="flex flex-col gap-3">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-64 w-full" />
       </div>
     );
-  } else if (tenantQuery.isError || !tenantQuery.data) {
+  } else if (!tenantQuery.data) {
     content = <p className="text-body text-destructive">{t("settingsLoadError")}</p>;
   } else {
     content = (

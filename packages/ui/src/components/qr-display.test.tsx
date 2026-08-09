@@ -88,7 +88,10 @@ describe("QrDisplay", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500);
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Code expired");
+    const expiredStatus = screen.getByRole("status");
+    expect(expiredStatus).toHaveTextContent("Code expired");
+    expect(expiredStatus).toHaveClass("text-warning");
+    expect(expiredStatus.querySelector("svg")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     fireEventClickRegenerate();
     expect(onRegenerate).toHaveBeenCalledTimes(1);
@@ -96,6 +99,28 @@ describe("QrDisplay", () => {
     function fireEventClickRegenerate() {
       screen.getByRole("button", { name: "Regenerate" }).click();
     }
+  });
+
+  it("disables regeneration while a token request is already pending", async () => {
+    render(
+      <QrDisplay
+        value="tok"
+        title="t"
+        subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
+        expiresAt={null}
+        expiredLabel="Code expired"
+        regenerateLabel="Regenerate"
+        closeLabel="Close"
+        onClose={() => {}}
+        onRegenerate={() => {}}
+        isRegenerating
+      />,
+    );
+
+    await screen.findByRole("img", { name: "QR-код" });
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
   });
 
   it("renders no countdown chrome when expiresAt is null", () => {
