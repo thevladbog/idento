@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Locator, type Page } from "@playwright/test";
+import { meetsMinimumTouchTarget } from "./mobile-geometry";
 
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"];
 
@@ -19,8 +20,14 @@ export async function expectTouchTargetsAtLeast44(locator: Locator) {
     if (!(await target.isVisible())) continue;
     const box = await target.boundingBox();
     expect(box, `touch target ${index} must have a box`).not.toBeNull();
-    expect(box!.width).toBeGreaterThanOrEqual(44);
-    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(
+      meetsMinimumTouchTarget(box!.width),
+      `touch target ${index} width ${box!.width}px must be at least 44px`,
+    ).toBe(true);
+    expect(
+      meetsMinimumTouchTarget(box!.height),
+      `touch target ${index} height ${box!.height}px must be at least 44px`,
+    ).toBe(true);
   }
 }
 
