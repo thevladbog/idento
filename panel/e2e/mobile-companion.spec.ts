@@ -354,6 +354,11 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     await expectTouchTargetsAtLeast44(eventTabActions(page));
     try {
       await context.setOffline(true);
+      // Chromium keeps an established fetch stream open when offline
+      // emulation flips. Remount it so a new connection observes the outage.
+      await page.getByRole("link", { name: "Overview" }).click();
+      await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+      await page.getByRole("link", { name: "Monitor" }).click();
       await expect(page.getByTestId("monitor-reconnecting-badge")).toBeVisible({ timeout: 15_000 });
       await expect(totalsCard).toBeVisible();
       await checkpoint(page, page.getByTestId("monitor-reconnecting-badge"));
