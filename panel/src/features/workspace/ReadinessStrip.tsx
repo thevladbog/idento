@@ -37,7 +37,7 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
               {done ? <Check aria-hidden className="size-3" /> : skipped ? <MinusCircle aria-hidden className="size-3" /> : <Circle aria-hidden className="size-3" />}
               {t(STEP_LABEL_KEYS[step.key])}
               {step.count !== undefined ? <span className="font-mono">{step.count}</span> : null}
-              <span className="sr-only">{statusText}</span>
+              <span>{statusText}</span>
             </span>
           );
         })}

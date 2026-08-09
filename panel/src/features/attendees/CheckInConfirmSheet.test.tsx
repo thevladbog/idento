@@ -59,6 +59,12 @@ describe("CheckInConfirmSheet", () => {
     expect(screen.getByText("Бейдж не будет напечатан.")).toBeInTheDocument();
   });
 
+  it("gives both mobile sheet actions a 44px minimum height", () => {
+    renderSheet();
+    expect(screen.getByRole("button", { name: "Отмена" })).toHaveClass("min-h-11");
+    expect(screen.getByRole("button", { name: "Зарегистрировать" })).toHaveClass("min-h-11");
+  });
+
   it("checks the attendee in with no station_id and closes + calls onCheckedIn on success", async () => {
     let capturedBody: unknown;
     server.use(

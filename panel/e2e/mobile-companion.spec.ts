@@ -34,6 +34,10 @@ function isPostTo(response: Response, pathname: string): boolean {
   return response.request().method() === "POST" && new URL(response.url()).pathname === pathname;
 }
 
+function isGetTo(response: Response, pathname: string): boolean {
+  return response.request().method() === "GET" && new URL(response.url()).pathname === pathname;
+}
+
 async function credentialFrom(
   response: Response,
   key: "token" | "qr_token",
@@ -227,9 +231,12 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     const searchResponse = page.waitForResponse((response) =>
       response.request().method() === "GET"
       && ATTENDEE_LIST_RE.test(response.url())
-      && new URL(response.url()).searchParams.get("search") === seed.availableAttendee.name,
+      && new URL(response.url()).searchParams.get("search") === seed.attendeeCode,
     );
-    await search.fill(seed.availableAttendee.name);
+    // The backend matches each field independently, not a synthesized full
+    // name. The seeded code is one exact searchable field; the UI row is
+    // still verified by its complete display name below.
+    await search.fill(seed.attendeeCode);
     await searchResponse;
     const availableRow = page.getByRole("button", { name: new RegExp(seed.availableAttendee.name) });
     await expect(availableRow).toBeVisible();
@@ -267,11 +274,12 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
       async () => expect(dialog).toBeHidden(),
     );
     await expect(page.getByText("Blocked", { exact: true })).toBeVisible();
-    const unblockResponse = page.waitForResponse((response) =>
-      isPostTo(response, `/api/attendees/${seed.availableAttendee.id}/unblock`),
+    await submitOnceWhilePending(
+      page,
+      `**/api/attendees/${seed.availableAttendee.id}/unblock`,
+      page.getByRole("button", { name: "Unblock" }),
+      async () => expect(page.getByText("Not checked in", { exact: true })).toBeVisible(),
     );
-    await page.getByRole("button", { name: "Unblock" }).click();
-    expect((await unblockResponse).ok()).toBe(true);
     await expect(page.getByText("Not checked in", { exact: true })).toBeVisible();
     await checkpoint(page, page.getByText("Not checked in", { exact: true }));
     await expectTouchTargetsAtLeast44(page.getByRole("button", { name: /^(Back|Show attendee QR|Unblock|Block)/ }));
@@ -358,19 +366,40 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
 
         await page.goto(`/events/${seed.eventId}`);
         await themeCheckpoint(page, page.getByTestId("readiness-strip"), theme);
-        await expect(page.getByTestId("readiness-strip").locator("svg").first()).toBeVisible();
-        await expect(page.getByText("Done", { exact: true }).first()).toBeAttached();
+        const readinessChip = page
+          .getByTestId("readiness-strip-scroller")
+          .locator(":scope > span")
+          .filter({ has: page.getByText("Attendees", { exact: true }) });
+        await expect(readinessChip).toBeVisible();
+        await expect(readinessChip.locator("svg")).toBeVisible();
+        await expect(readinessChip.getByText("Done", { exact: true })).toBeVisible();
 
         await page.goto(`/events/${seed.eventId}/monitor`);
         await themeCheckpoint(page, page.getByTestId("monitor-stations-card"), theme);
-        await expect(page.locator('[data-testid^="monitor-station-dot-"]').first()).toBeVisible();
-        await expect(page.getByTestId("monitor-stations-card")).toContainText(/Online|stale \d+ s/);
+        const stationRow = page.getByTestId(`monitor-station-${seed.stationId}`);
+        const stationStatus = stationRow.getByTestId(
+          new RegExp(`^monitor-station-(?:online|stale)-${seed.stationId}$`),
+        );
+        await expect(stationRow).toBeVisible();
+        await expect(stationRow.getByTestId(`monitor-station-dot-${seed.stationId}`)).toBeVisible();
+        await expect(stationStatus).toBeVisible();
+        await expect(stationStatus).toHaveText(/Online|stale \d+ s/);
 
         await page.goto(`/events/${seed.eventId}/attendees`);
         await themeCheckpoint(page, page.getByRole("heading", { name: "Attendees" }), theme);
-        await expect(page.getByText("Not checked in", { exact: true }).first()).toBeVisible();
-        await expect(page.getByText("Checked in", { exact: true }).first()).toBeVisible();
-        await expect(page.getByText("Blocked", { exact: true }).first()).toBeVisible();
+        for (const [attendee, status] of [
+          [seed.availableAttendee, "Not checked in"],
+          [seed.checkedInAttendee, "Checked in"],
+          [seed.blockedAttendee, "Blocked"],
+        ] as const) {
+          const row = page
+            .getByRole("button")
+            .filter({ has: page.getByText(attendee.name, { exact: true }) });
+          const statusPill = row.locator("[data-status]");
+          await expect(row).toBeVisible();
+          await expect(statusPill.locator("svg")).toBeVisible();
+          await expect(statusPill.getByText(status, { exact: true })).toBeVisible();
+        }
 
         await page.goto(`/events/${seed.eventId}/staff`);
         await themeCheckpoint(page, page.getByRole("heading", { name: "Staff" }), theme);
@@ -438,6 +467,12 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
       homeGate.resolve();
       await page.unroute("**/api/events", homeHandler);
     }
+    const homeRecovery = page.waitForResponse(
+      (response) => isGetTo(response, "/api/events") && response.ok(),
+    );
+    await page.getByRole("button", { name: "Retry" }).click();
+    await homeRecovery;
+    await checkpoint(page, page.getByText(/^E2E Check-in /).first());
 
     const tenantGate = deferred();
     let tenantFailure = false;
@@ -518,17 +553,49 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     const retainedTotals = await totals.innerText();
     const retainedTitle = await page.getByRole("heading", { level: 1 }).innerText();
 
-    await page.route(monitorPattern, monitorFailureHandler);
+    let failedMonitorRequests = 0;
+    let failedStreamRequests = 0;
+    const backgroundMonitorFailureHandler = async (route: Route) => {
+      if (route.request().method() === "GET") {
+        failedMonitorRequests += 1;
+        await route.abort("failed");
+      } else {
+        await route.continue();
+      }
+    };
+    const monitorStreamPattern = `**/api/events/${seed.eventId}/monitor/stream`;
+    const monitorStreamFailureHandler = async (route: Route) => {
+      if (route.request().method() === "GET") {
+        failedStreamRequests += 1;
+        await route.abort("failed");
+      } else {
+        await route.continue();
+      }
+    };
+    await page.route(monitorPattern, backgroundMonitorFailureHandler);
+    await page.route(monitorStreamPattern, monitorStreamFailureHandler);
     try {
       await page.getByRole("link", { name: "Overview" }).click();
       await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
       await page.getByRole("link", { name: "Monitor" }).click();
+      await expect.poll(() => failedMonitorRequests).toBeGreaterThan(0);
+      await expect.poll(() => failedStreamRequests).toBeGreaterThan(0);
       await expect(page.getByRole("heading", { level: 1 })).toHaveText(retainedTitle);
       await expect(totals).toHaveText(retainedTotals);
       await expect(page.getByTestId("monitor-snapshot-error")).toHaveCount(0);
-      await checkpoint(page, totals);
+      await checkpoint(page, page.getByTestId("monitor-reconnecting-badge"));
     } finally {
-      await page.unroute(monitorPattern, monitorFailureHandler);
+      await page.unroute(monitorStreamPattern, monitorStreamFailureHandler);
+      await page.unroute(monitorPattern, backgroundMonitorFailureHandler);
     }
+    const monitorRecovery = page.waitForResponse(
+      (response) => isGetTo(response, `/api/events/${seed.eventId}/monitor`) && response.ok(),
+    );
+    await page.getByRole("link", { name: "Overview" }).click();
+    await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+    await page.getByRole("link", { name: "Monitor" }).click();
+    await monitorRecovery;
+    await checkpoint(page, totals);
+    await expect(page.getByTestId("monitor-live-pill")).toBeVisible({ timeout: 15_000 });
   });
 });

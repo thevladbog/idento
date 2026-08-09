@@ -73,7 +73,7 @@ export function SelfServicePage() {
         </button>
       </div>
 
-      <Button className="gap-2" onClick={mintToken}>
+      <Button className="min-h-11 gap-2" onClick={mintToken}>
         <IdCard aria-hidden className="size-4" />
         {t("selfServiceShowMyQr")}
       </Button>

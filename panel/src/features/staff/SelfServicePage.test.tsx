@@ -68,6 +68,11 @@ describe("SelfServicePage", () => {
     expect(screen.getByRole("button", { name: "Показать мой QR для входа" })).toBeInTheDocument();
   });
 
+  it("gives the mobile self-service QR action a 44px minimum height", () => {
+    renderPage();
+    expect(screen.getByRole("button", { name: "Показать мой QR для входа" })).toHaveClass("min-h-11");
+  });
+
   it("mints a token and shows the full-screen QR when tapped", async () => {
     const user = userEvent.setup();
     renderPage();

@@ -12,14 +12,18 @@ const STEPS: ReadinessStep[] = [
 ];
 
 describe("ReadinessStrip", () => {
-  it("renders one chip per step with label, count and an sr-only status", () => {
+  it("renders each localized status visibly in the same chip as its status icon", () => {
     render(<ReadinessStrip steps={STEPS} />);
     const strip = screen.getByTestId("readiness-strip");
-    expect(within(strip).getByText("Attendees")).toBeInTheDocument();
+    const attendeesChip = within(strip).getByText("Attendees");
+    expect(attendeesChip.querySelector("svg")).toBeInTheDocument();
     expect(within(strip).getByText("340")).toBeInTheDocument();
-    expect(within(strip).getByText("Done")).toHaveClass("sr-only");
-    expect(within(strip).getByText("Not done")).toHaveClass("sr-only");
-    expect(within(strip).getByText("Skipped")).toHaveClass("sr-only");
+    for (const status of ["Done", "Not done", "Skipped"]) {
+      const statusText = within(strip).getByText(status);
+      expect(statusText).toBeVisible();
+      expect(statusText).not.toHaveClass("sr-only");
+      expect(statusText.parentElement?.querySelector("svg")).toBeInTheDocument();
+    }
   });
 
   it("contains overflow in a bounded outer layer while the inner row scrolls", () => {
