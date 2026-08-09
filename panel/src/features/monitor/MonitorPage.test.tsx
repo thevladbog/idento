@@ -892,7 +892,7 @@ describe("MonitorPage -- retains stale data across a failed background refetch (
       "[&_.text-muted-foreground]:text-foreground",
     );
     expect(screen.getByTestId("monitor-updated-ago")).toHaveClass("text-warning");
-    expect(screen.queryByTestId("monitor-live-pill")?.querySelector(".animate-ping") ?? null).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-live-pill")).not.toBeInTheDocument();
     expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("Data refresh failed");
   });
 });
