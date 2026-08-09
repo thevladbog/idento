@@ -150,6 +150,11 @@ describe("EventTabBar", () => {
     renderAt("/events/evt-1");
     const bar = await screen.findByRole("navigation", { name: "Event sections" });
     expect(within(bar).queryByTestId("tab-bar-badge")).not.toBeInTheDocument();
+    // DOM readiness can precede TanStack Query's scheduled fetch. Cross a
+    // bounded macrotask/network window before proving that no request began.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
     expect(monitorRequestCount).toBe(0);
   });
 
