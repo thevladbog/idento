@@ -48,26 +48,37 @@ export function SelfServicePage() {
 
   function closeQrSession() {
     qrSessionRef.current += 1;
+    generateToken.reset();
     setCachedToken(null);
     setQrOpen(false);
   }
 
   if (qrOpen && cachedToken) {
     return (
-      <QrDisplay
-        value={cachedToken}
-        title={user.email}
-        subtitle={t("selfServiceStaffLabel")}
-        codeLabel={t("qrDisplayCodeLabel")}
-        expiresInLabel={t("qrDisplayExpiresIn")}
-        expiresAt={null}
-        expiredLabel=""
-        regenerateLabel={t("selfServiceShowMyQr")}
-        closeLabel={t("moreSheetCloseLabel")}
-        onClose={closeQrSession}
-        onRegenerate={() => mintToken()}
-        isRegenerating={generateToken.isPending}
-      />
+      <div className="relative">
+        <QrDisplay
+          value={cachedToken}
+          title={user.email}
+          subtitle={t("selfServiceStaffLabel")}
+          codeLabel={t("qrDisplayCodeLabel")}
+          expiresInLabel={t("qrDisplayExpiresIn")}
+          expiresAt={null}
+          expiredLabel=""
+          regenerateLabel={t("selfServiceShowMyQr")}
+          closeLabel={t("moreSheetCloseLabel")}
+          onClose={closeQrSession}
+          onRegenerate={() => mintToken()}
+          isRegenerating={generateToken.isPending}
+        />
+        {generateToken.isError ? (
+          <p
+            role="alert"
+            className="absolute inset-x-6 bottom-[max(1.5rem,env(safe-area-inset-bottom))] rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-caption text-destructive"
+          >
+            {t("selfServiceQrError")}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -94,6 +105,7 @@ export function SelfServicePage() {
         <IdCard aria-hidden className="size-4" />
         {t("selfServiceShowMyQr")}
       </Button>
+      {generateToken.isError ? <p role="alert" className="text-caption text-destructive">{t("selfServiceQrError")}</p> : null}
       <p className="text-caption text-muted-foreground">{t("selfServiceScanningNote")}</p>
     </div>
   );

@@ -89,6 +89,67 @@ describe("SelfServicePage", () => {
     expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
   });
 
+  it("shows a retryable error when the first QR mint fails", async () => {
+    server.use(
+      http.post("http://api.test/api/users/:id/qr-token", () => HttpResponse.json({ message: "failed" }, { status: 500 })),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать QR для входа. Попробуйте ещё раз.");
+    expect(screen.getByRole("button", { name: "Показать мой QR для входа" })).toBeEnabled();
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+  });
+
+  it("keeps the cached QR and a retryable error visible when regeneration fails", async () => {
+    let qrTokenCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/users/:id/qr-token", () => {
+        qrTokenCallCount += 1;
+        if (qrTokenCallCount === 2) return HttpResponse.json({ message: "failed" }, { status: 500 });
+        return HttpResponse.json({ qr_token: "self-tok-1", user_id: "user-1", email: "anna@x.com" });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+    await screen.findByTestId("qr-display-code");
+
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать QR для входа. Попробуйте ещё раз.");
+    expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Показать мой QR для входа" })).toBeEnabled();
+    expect(
+      screen.queryByText("Сканирование, контроль зон и печать бейджей происходят в приложении станции Idento на вашем устройстве."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clears a failed regeneration error when the QR session closes", async () => {
+    let qrTokenCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/users/:id/qr-token", () => {
+        qrTokenCallCount += 1;
+        if (qrTokenCallCount === 2) return HttpResponse.json({ message: "failed" }, { status: 500 });
+        return HttpResponse.json({ qr_token: "self-tok-1", user_id: "user-1", email: "anna@x.com" });
+      }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+    await screen.findByTestId("qr-display-code");
+    await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
+    await screen.findByRole("alert");
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+
+    expect(screen.getByText("Сканирование, контроль зон и печать бейджей происходят в приложении станции Idento на вашем устройстве.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+  });
+
   // Regression: onRegenerate re-calls the same mutation, which resets it to
   // pending -- gating render on generateToken.data directly (rather than a
   // cached value) made the QR screen flash back to the base page for that

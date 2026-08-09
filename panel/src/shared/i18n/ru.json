@@ -622,6 +622,7 @@
   "selfServiceSignOut": "Выйти",
   "selfServiceStaffLabel": "Персонал",
   "selfServiceShowMyQr": "Показать мой QR для входа",
+  "selfServiceQrError": "Не удалось создать QR для входа. Попробуйте ещё раз.",
   "selfServiceScanningNote": "Сканирование, контроль зон и печать бейджей происходят в приложении станции Idento на вашем устройстве.",
   "checkinScanWedgeHint": "Отсканируйте бейдж, чтобы зарегистрировать участника.",
   "checkinScanWedgeInputLabel": "Поле ввода сканера бейджей",
