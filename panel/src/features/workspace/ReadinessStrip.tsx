@@ -15,7 +15,13 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
   if (!steps?.length) return null;
   return (
     <div data-testid="readiness-strip" className="min-w-0 max-w-full overflow-hidden md:hidden">
-      <div data-testid="readiness-strip-scroller" className="flex min-w-0 max-w-full gap-1.5 overflow-x-auto">
+      <div
+        data-testid="readiness-strip-scroller"
+        role="region"
+        aria-label={t("workspaceRailLabel")}
+        tabIndex={0}
+        className="flex min-w-0 min-h-11 max-w-full gap-1.5 overflow-x-auto"
+      >
         {steps.map((step) => {
           const done = step.status === "done";
           const skipped = step.status === "skipped";

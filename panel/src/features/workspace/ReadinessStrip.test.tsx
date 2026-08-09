@@ -36,7 +36,9 @@ describe("ReadinessStrip", () => {
     const outer = screen.getByTestId("readiness-strip");
     const scroller = screen.getByTestId("readiness-strip-scroller");
     expect(outer).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
-    expect(scroller).toHaveClass("min-w-0", "max-w-full", "overflow-x-auto");
+    expect(scroller).toHaveClass("min-w-0", "min-h-11", "max-w-full", "overflow-x-auto");
+    expect(scroller).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("region", { name: "Readiness pipeline" })).toBeInTheDocument();
   });
 
   it("renders nothing without steps", () => {
