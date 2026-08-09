@@ -134,6 +134,48 @@ function staffCard(page: Page, email: string): Locator {
     .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' p-4 ')][1]");
 }
 
+async function qrRenderFingerprint(qr: Locator): Promise<string> {
+  return qr.evaluate(async (node) => {
+    const encoded = new TextEncoder().encode(node.innerHTML);
+    const digest = await crypto.subtle.digest("SHA-256", encoded);
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  });
+}
+
+async function expectQrRenderChanged(qr: Locator, previousFingerprint: string, timeout = 5_000) {
+  await expect.poll(
+    async () => (await qrRenderFingerprint(qr)) !== previousFingerprint,
+    { message: "QR render must change after successful regeneration", timeout },
+  ).toBe(true);
+}
+
+async function proveQrRenderSynchronizationNegativeControl(page: Page) {
+  const sentinel = `non-secret-${crypto.randomUUID()}`;
+  await page.setContent('<main><div data-testid="unchanged-qr"></div></main>');
+  try {
+    const unchangedQr = page.getByTestId("unchanged-qr");
+    await unchangedQr.evaluate((node, value) => {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("data-marker", value);
+      node.append(svg);
+    }, sentinel);
+    const fingerprint = await qrRenderFingerprint(unchangedQr);
+
+    let failureMessage = "";
+    try {
+      await expectQrRenderChanged(unchangedQr, fingerprint, 100);
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(failureMessage).toContain("QR render must change after successful regeneration");
+    expect(failureMessage).not.toContain(sentinel);
+    expect(failureMessage).not.toContain("<svg");
+  } finally {
+    await page.setContent("");
+  }
+}
+
 async function proveBearerAbsenceNegativeControls(page: Page) {
   for (const source of ["alt", "title", "aria-labelledby", "value"] as const) {
     const sentinel = `non-secret-${crypto.randomUUID()}`;
@@ -196,6 +238,7 @@ async function mintStaffQr(page: Page, seed: MobileSeed): Promise<string> {
 
   const credential = await credentialFrom(await responsePromise, "qr_token", "staff QR mint");
   await expect(card.locator('[role="img"] svg')).toBeAttached();
+  await expectTouchTargetsAtLeast44(card.getByRole("button"));
   return credential;
 }
 
@@ -204,6 +247,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
 
   test("light-theme functional journey", async ({ page, context }) => {
     await proveBearerAbsenceNegativeControls(page);
+    await proveQrRenderSynchronizationNegativeControl(page);
     const seed = await seedMobileCompanion();
     await installSession(page, seed.adminSession, "light");
 
@@ -242,7 +286,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
     await checkpoint(page, page.getByRole("img", { name: "QR code" }));
     await expectTouchTargetsAtLeast44(page.getByRole("button", { name: /^(Close|Add station)$/ }));
     const renderedQr = page.getByTestId("qr-display-code");
-    const previousQrMarkup = await renderedQr.innerHTML();
+    const previousQrFingerprint = await qrRenderFingerprint(renderedQr);
     const regeneratedResponse = page.waitForResponse((response) =>
       isPostTo(response, `/api/events/${seed.eventId}/stations/provisioning-token`),
     );
@@ -252,7 +296,7 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
       "token",
       "station provisioning QR regenerate",
     );
-    await expect.poll(() => renderedQr.innerHTML()).not.toBe(previousQrMarkup);
+    await expectQrRenderChanged(renderedQr, previousQrFingerprint);
     await expectBearerAbsent(page, regeneratedBearer);
     await page.getByRole("button", { name: "Close" }).click();
 

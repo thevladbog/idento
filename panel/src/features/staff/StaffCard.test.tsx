@@ -9,7 +9,7 @@ import { StaffCard, type StaffCardProps } from "./StaffCard";
 import type { StaffUser } from "./hooks";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
-import "../../shared/i18n";
+import i18n from "../../shared/i18n";
 
 // Genuinely subscribed observer for GET /api/events/:id/readiness — same
 // pattern as DangerZoneCard.test.tsx's ListObserver.
@@ -114,7 +114,8 @@ function renderCard(overrides: Partial<StaffCardProps> = {}) {
 }
 
 describe("StaffCard — QR area + print flow", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     window.__ENV__ = { API_URL: "http://api.test" };
     qrTokenCallCount = 0;
     qrTokenCallIds = [];
@@ -138,6 +139,17 @@ describe("StaffCard — QR area + print flow", () => {
       }
     });
 
+    it("keeps every link-like staff action at least 44px wide and high with short RU labels", async () => {
+      await i18n.changeLanguage("ru");
+      renderCard({ user: staffUser({ has_qr_token: false }), cachedToken: undefined });
+
+      for (const name of ["Распечатать карту", "Зоны", "Отозвать…"]) {
+        const action = await screen.findByRole("button", { name });
+        expect(action).toHaveClass("max-md:min-h-11");
+        expect(action).toHaveClass("max-md:min-w-11");
+      }
+    });
+
     it("keeps cached-card Print and Show full screen actions at least 44px high on phones", async () => {
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
@@ -146,6 +158,18 @@ describe("StaffCard — QR area + print flow", () => {
 
       expect(await screen.findByRole("button", { name: "Show full screen" })).toHaveClass("max-md:min-h-11");
       expect(screen.getByRole("button", { name: "Print card" })).toHaveClass("max-md:min-h-11");
+    });
+
+    it("keeps the cached-card RU Show full screen action at least 44px wide and high on phones", async () => {
+      await i18n.changeLanguage("ru");
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        cachedToken: "QR_cached_token",
+      });
+
+      const showFullScreen = await screen.findByRole("button", { name: "Показать на весь экран" });
+      expect(showFullScreen).toHaveClass("max-md:min-h-11");
+      expect(showFullScreen).toHaveClass("max-md:min-w-11");
     });
 
     it("cached token: renders a live QrSvg + the zones caption + the issued/valid-30-days line from qr_token_created_at (local time)", async () => {
