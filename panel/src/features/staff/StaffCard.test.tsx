@@ -160,9 +160,9 @@ describe("StaffCard — QR area + print flow", () => {
 
       await user.click(await screen.findByRole("button", { name: "Show full screen" }));
 
-      // QrDisplay's img has a generic "QR code" accessible name (never the
-      // raw token) — data-testid is its own test hook for the rendered code.
-      const fullScreenImg = await screen.findByTestId("qr-display-code");
+      // QrDisplay receives the generic, localized label from the panel
+      // boundary (never the raw token).
+      const fullScreenImg = await screen.findByRole("img", { name: "QR code" });
       expect(fullScreenImg).toBeInTheDocument();
       // "alice@example.com" is deliberately not asserted here — it's the
       // QrDisplay title AND already the card's own header text, so it's a

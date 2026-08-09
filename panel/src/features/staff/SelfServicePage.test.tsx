@@ -72,7 +72,7 @@ describe("SelfServicePage", () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Показать мой QR для входа" }));
-    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
   });
 
   // Regression: onRegenerate re-calls the same mutation, which resets it to

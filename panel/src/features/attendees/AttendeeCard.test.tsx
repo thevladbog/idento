@@ -108,6 +108,7 @@ describe("AttendeeCard — not checked in", () => {
     const user = userEvent.setup();
     renderCard();
     await user.click(await screen.findByRole("button", { name: /Показать QR/ }));
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
   });
 });

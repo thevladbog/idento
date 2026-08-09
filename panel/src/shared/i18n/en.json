@@ -9,6 +9,8 @@
   "loginCreateOrgLink": "Create an organization",
   "loginSaasOnlyBadge": "SaaS only",
   "loginStaffLink": "Event staff? Sign in with your QR card →",
+  "qrDisplayCodeLabel": "QR code",
+  "qrDisplayExpiresIn": "Expires in",
   "authErrorInvalidCredentials": "Incorrect email/code or password. Please try again.",
   "authErrorServer": "Something went wrong on our end. Please try again in a moment.",
   "authErrorGeneric": "Something went wrong. Please try again.",

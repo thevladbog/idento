@@ -475,6 +475,8 @@ export function StaffCard({
               value={cachedToken}
               title={user.email}
               subtitle={t("staffQrSubtitle")}
+              codeLabel={t("qrDisplayCodeLabel")}
+              expiresInLabel={t("qrDisplayExpiresIn")}
               expiresAt={null}
               expiredLabel=""
               regenerateLabel={t("staffQrBackToCard")}

@@ -69,9 +69,8 @@ describe("AddStationAction", () => {
     const user = userEvent.setup();
     renderAction();
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
-    // The QR image's accessible name is a generic "QR code" (never the raw
-    // token) — data-testid is QrDisplay's own test hook for the rendered code.
-    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+    // The QR image gets a localized, generic name — never the raw token.
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.getByText("TechConf Moscow 2026 · подключится как станция регистрации")).toBeInTheDocument();
     expect(capturedBody).toEqual({ staff_user_id: "user-1" });
   });

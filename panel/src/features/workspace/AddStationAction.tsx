@@ -40,6 +40,8 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
         value={cached.token}
         title={t("addStationTitle")}
         subtitle={t("addStationQrSubtitle", { eventName })}
+        codeLabel={t("qrDisplayCodeLabel")}
+        expiresInLabel={t("qrDisplayExpiresIn")}
         expiresAt={cached.expiresAt}
         expiredLabel={t("addStationCodeExpired")}
         regenerateLabel={t("addStationTitle")}

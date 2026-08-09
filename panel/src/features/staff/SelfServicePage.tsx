@@ -42,6 +42,8 @@ export function SelfServicePage() {
         value={cachedToken}
         title={user.email}
         subtitle={t("selfServiceStaffLabel")}
+        codeLabel={t("qrDisplayCodeLabel")}
+        expiresInLabel={t("qrDisplayExpiresIn")}
         expiresAt={null}
         expiredLabel=""
         regenerateLabel={t("selfServiceShowMyQr")}

@@ -96,6 +96,8 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         value={attendee.code}
         title={fullName}
         subtitle={attendee.company ?? ""}
+        codeLabel={t("qrDisplayCodeLabel")}
+        expiresInLabel={t("qrDisplayExpiresIn")}
         expiresAt={null}
         expiredLabel=""
         // Never rendered: an attendee's QR is a static, non-rotating value,

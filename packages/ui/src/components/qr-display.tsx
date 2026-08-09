@@ -9,6 +9,8 @@ export interface QrDisplayProps {
   value: string;
   title: string;
   subtitle: string;
+  codeLabel: string;
+  expiresInLabel: string;
   /** ISO timestamp the code stops being valid at, or null for no expiry UI. */
   expiresAt: string | null;
   expiredLabel: string;
@@ -46,7 +48,7 @@ function formatCountdown(ms: number): string {
 // Local rendering only (`qrcode` npm package) — never a third-party chart
 // API, since every value this component is handed is a bearer credential.
 export function QrDisplay({
-  value, title, subtitle, expiresAt, expiredLabel, regenerateLabel, closeLabel, onClose, onRegenerate, hint, className,
+  value, title, subtitle, codeLabel, expiresInLabel, expiresAt, expiredLabel, regenerateLabel, closeLabel, onClose, onRegenerate, hint, className,
   showRegenerate = true,
 }: QrDisplayProps) {
   const [svg, setSvg] = React.useState<string | null>(null);
@@ -105,7 +107,7 @@ export function QrDisplay({
       <div className="relative mt-8 rounded-2xl border border-black/10 p-4">
         {expired ? (
           <div className="flex size-[228px] flex-col items-center justify-center gap-2">
-            <span className="text-body font-bold">{expiredLabel}</span>
+            <span role="status" className="text-body font-bold">{expiredLabel}</span>
           </div>
         ) : svg ? (
           <div
@@ -116,7 +118,7 @@ export function QrDisplay({
             // decode), an aria-label is plain text sitting in the DOM/a11y
             // tree, readable by devtools, extensions, or any a11y-tree
             // scrape without ever decoding the code itself.
-            aria-label="QR code"
+            aria-label={codeLabel}
             data-testid="qr-display-code"
             className="size-[228px] [&_svg]:size-full"
             // Local, deterministic SVG string from the `qrcode` package —
@@ -129,8 +131,12 @@ export function QrDisplay({
       </div>
 
       {!expired && msRemaining !== null ? (
-        <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-black/5 px-3.5 py-1.5 text-caption font-semibold">
-          <span aria-live="polite">Expires in {formatCountdown(msRemaining)}</span>
+        <div
+          role="timer"
+          aria-label={`${expiresInLabel} ${formatCountdown(msRemaining)}`}
+          className="mt-5 inline-flex items-center gap-2 rounded-full bg-black/5 px-3.5 py-1.5 text-caption font-semibold"
+        >
+          {expiresInLabel} {formatCountdown(msRemaining)}
         </div>
       ) : null}
 
@@ -144,7 +150,7 @@ export function QrDisplay({
           </Button>
         ) : null
       ) : showRegenerate ? (
-        <button type="button" onClick={onRegenerate} className="mt-5 text-caption font-semibold text-black/70 underline-offset-2 hover:underline">
+        <button type="button" onClick={onRegenerate} className="mt-5 min-h-11 px-2 text-caption font-semibold text-black/70 underline-offset-2 hover:underline">
           {regenerateLabel}
         </button>
       ) : null}
