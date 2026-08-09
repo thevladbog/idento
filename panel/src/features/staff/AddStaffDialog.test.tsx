@@ -214,7 +214,28 @@ describe("AddStaffDialog", () => {
     });
 
     it("session-ref cancel race: closing the dialog mid-flight does not close/error into a reopened session", async () => {
-      assignDelayMs = 60;
+      let markEntered!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        markEntered = resolve;
+      });
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      server.use(
+        http.post("http://api.test/api/events/:eventId/staff", async ({ request, params }) => {
+          assignCount += 1;
+          lastAssignBody = await request.json();
+          markEntered();
+          await wait;
+          return HttpResponse.json(
+            {
+              id: "es-1", event_id: params.eventId as string, user_id: (lastAssignBody as { user_id: string }).user_id, assigned_at: "2026-01-01T00:00:00Z", assigned_by: "u-admin",
+            },
+            { status: 201 },
+          );
+        }),
+      );
       const user = userEvent.setup();
       const onOpenChange = vi.fn();
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -226,14 +247,19 @@ describe("AddStaffDialog", () => {
 
       await user.click(await screen.findByText("bob@example.com"));
       await user.click(screen.getByRole("button", { name: "Add" }));
-      await waitFor(() => expect(assignCount).toBe(1));
+      try {
+        await entered;
+        expect(assignCount).toBe(1);
 
-      // The submit is pending: Cancel/Escape are blocked (matches
-      // AddAttendeeDialog's pending-dismiss guard).
-      const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
-      await user.click(cancelButtons[0]);
-      await user.keyboard("{Escape}");
-      expect(onOpenChange).not.toHaveBeenCalled();
+        // The submit is pending: Cancel/Escape are blocked (matches
+        // AddAttendeeDialog's pending-dismiss guard).
+        const cancelButtons = screen.getAllByRole("button", { name: "Cancel" });
+        await user.click(cancelButtons[0]);
+        await user.keyboard("{Escape}");
+        expect(onOpenChange).not.toHaveBeenCalled();
+      } finally {
+        release();
+      }
 
       await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
     });
