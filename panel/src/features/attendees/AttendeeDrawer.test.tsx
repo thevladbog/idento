@@ -249,18 +249,20 @@ function ReadinessObserver({ eventId }: { eventId: string }) {
   return null;
 }
 
-// Same shape as ImportWizard.test.tsx's `createGate()`: a deterministic,
-// manually-released promise for a delayed MSW handler to await, so a test
-// can synchronize on the handler having settled (via the returned
-// non-optional `resolve`, always called and always followed by a `waitFor`)
-// instead of a fixed-duration sleep "long enough" for it to probably have
-// finished.
+// Same deterministic, manually-released pattern as ImportWizard.test.tsx,
+// with an explicit request-entry signal for assertions that must happen
+// while an MSW handler is still pending. The legacy `promise`/`resolve`
+// aliases keep the earlier gates below unchanged.
 function createGate() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((res) => {
-    resolve = res;
+  let markEntered!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    markEntered = resolve;
   });
-  return { promise, resolve };
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { entered, markEntered, wait, release, promise: wait, resolve: release };
 }
 
 // Shared Task 8 reset, called from BOTH describe blocks' beforeEach (every
@@ -964,11 +966,13 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
   // DangerZoneCard.test.tsx's equivalent for event deletion.
   it("does not close the drawer or surface an error if the delete confirm dialog is cancelled before a pending DELETE resolves", async () => {
     const onClose = vi.fn();
+    const gate = createGate();
     server.use(
       http.delete("http://api.test/api/attendees/:id", async ({ params }) => {
         deleteAttendeeCount += 1;
         lastDeletedAttendeeId = params.id as string;
-        await delay(50);
+        gate.markEntered();
+        await gate.wait;
         return new HttpResponse(null, { status: 204 });
       }),
     );
@@ -979,14 +983,21 @@ describe("AttendeeDrawer — Task 9 mutations", () => {
     await user.click(screen.getByRole("button", { name: "Delete…" }));
     const dialog = await screen.findByRole("dialog", { name: "Delete attendee" });
     await user.click(within(dialog).getByRole("button", { name: "Delete" }));
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    try {
+      await gate.entered;
+      await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Delete attendee" })).not.toBeInTheDocument(),
-    );
-    await waitFor(() => expect(deleteAttendeeCount).toBe(1));
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Delete attendee" })).not.toBeInTheDocument(),
+      );
+      expect(deleteAttendeeCount).toBe(1);
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.queryByText("Couldn't save changes. Try again.")).not.toBeInTheDocument();
+    } finally {
+      gate.release();
+    }
+
+    await waitFor(() => expect(onClose).not.toHaveBeenCalled());
   });
 });
 
