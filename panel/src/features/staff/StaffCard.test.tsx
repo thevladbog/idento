@@ -192,7 +192,7 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.getByText(`Issued ${expectedDate} · valid 30 days`)).toBeInTheDocument();
     });
 
-    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and its 'Back to card' just closes it", async () => {
+    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and Close returns focus to its opener", async () => {
       const user = userEvent.setup();
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
@@ -200,7 +200,8 @@ describe("StaffCard — QR area + print flow", () => {
         cachedToken: "QR_cached_token",
       });
 
-      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      const showFullScreen = await screen.findByRole("button", { name: "Show full screen" });
+      await user.click(showFullScreen);
 
       // QrDisplay receives the generic, localized label from the panel
       // boundary (never the raw token).
@@ -212,11 +213,12 @@ describe("StaffCard — QR area + print flow", () => {
       // subtitle) is the unique signal that QrDisplay actually mounted.
       expect(screen.getByText("Staff login")).toBeInTheDocument();
 
-      // "Back to card" (QrDisplay's regenerateLabel here) just closes the
-      // full-screen view — it never re-mints a token (that stays gated
-      // behind the existing "Print card" confirm flow).
-      await user.click(screen.getByRole("button", { name: "Back to card" }));
+      // Close just dismisses the full-screen view — it never re-mints a
+      // token (that stays gated behind the existing "Print card" confirm
+      // flow), and returns focus to the exact button that opened it.
+      await user.click(screen.getByRole("button", { name: "Close" }));
       expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+      expect(showFullScreen).toHaveFocus();
       expect(qrTokenCallCount).toBe(0);
     });
 
@@ -238,7 +240,8 @@ describe("StaffCard — QR area + print flow", () => {
         cachedToken: "QR_cached_token",
       });
 
-      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      const showFullScreen = await screen.findByRole("button", { name: "Show full screen" });
+      await user.click(showFullScreen);
       await screen.findByTestId("qr-display-code");
 
       // Accessible name comes from the sr-only DialogTitle via
@@ -253,6 +256,7 @@ describe("StaffCard — QR area + print flow", () => {
       await user.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+      expect(showFullScreen).toHaveFocus();
     });
 
     it("has_qr_token but not cached: shows the muted 'can't be re-displayed' box with the issued date, no QrSvg", async () => {

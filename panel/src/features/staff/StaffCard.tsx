@@ -137,6 +137,7 @@ export function StaffCard({
   // `onRegenerate` below); a genuinely new token still only comes from the
   // existing "Print card" confirm flow.
   const [fullScreenOpen, setFullScreenOpen] = React.useState(false);
+  const fullScreenTriggerRef = React.useRef<HTMLButtonElement>(null);
   // Same non-blocking, session-ref-guarded pattern as the regenerate confirm
   // below: revoke is a single fire-and-forget destructive action once
   // confirmed, so backing out mid-flight just means "don't act on the
@@ -311,6 +312,7 @@ export function StaffCard({
               </span>
             ) : null}
             <button
+              ref={fullScreenTriggerRef}
               type="button"
               onClick={() => setFullScreenOpen(true)}
               className="mt-0.5 inline-flex self-start items-center text-caption font-semibold text-success max-md:min-h-11 max-md:min-w-11"
@@ -468,6 +470,10 @@ export function StaffCard({
         <DialogContent
           hideClose
           closeLabel={t("staffQrBackToCard")}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            fullScreenTriggerRef.current?.focus();
+          }}
           className="inset-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-transparent p-0 shadow-none"
         >
           <DialogTitle className="sr-only">{`${t("staffQrSubtitle")} — ${user.email}`}</DialogTitle>
