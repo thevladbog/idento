@@ -29,6 +29,13 @@ type TenantMembership = components["schemas"]["TenantMembership"];
 let tenantRole: TenantMembership["role"] = "admin";
 let tenantStatus = 200;
 let tenantRequestCount = 0;
+let tenantResponseGate: Promise<void> | null = null;
+
+const TENANT_QUERY_KEY = [
+  "get",
+  "/api/tenants/{id}",
+  { params: { path: { id: "t1" } } },
+] as const;
 
 // AppShell mounts both the instance query and one live active-tenant query.
 // Default to saas/admin; individual tests override either response.
@@ -36,8 +43,9 @@ const server = startMswServer(
   http.get("http://api.test/api/instance", () =>
     HttpResponse.json({ mode: "saas", version: "1.0", license: null }),
   ),
-  http.get("http://api.test/api/tenants/:id", () => {
+  http.get("http://api.test/api/tenants/:id", async () => {
     tenantRequestCount += 1;
+    await tenantResponseGate;
     if (tenantStatus !== 200) return new HttpResponse(null, { status: tenantStatus });
     return HttpResponse.json({
       id: "t1",
@@ -76,6 +84,7 @@ describe("AppShell", () => {
     tenantRole = "admin";
     tenantStatus = 200;
     tenantRequestCount = 0;
+    tenantResponseGate = null;
   });
 
   it("renders the nav links and the children content, no ON-PREM tag on saas", () => {
@@ -169,6 +178,42 @@ describe("AppShell", () => {
     await waitFor(() => expect(tenantRequestCount).toBe(1));
     await waitFor(() => expect(queryClient.isFetching()).toBe(0));
     expect(screen.queryByRole("link", { name: "My profile" })).not.toBeInTheDocument();
+  });
+
+  it("fails closed while cached staff membership refetches and after its refetch errors", async () => {
+    tenantRole = "staff";
+    const user = userEvent.setup();
+    const queryClient = renderShell();
+
+    expect(await screen.findByRole("link", { name: "My profile" })).toHaveAttribute("href", "/me");
+    await user.click(screen.getByRole("button", { name: "Menu" }));
+    await waitFor(() => expect(screen.getAllByText("My profile")).toHaveLength(2));
+    expect(queryClient.getQueryState(TENANT_QUERY_KEY)).toMatchObject({
+      status: "success",
+      fetchStatus: "idle",
+    });
+
+    let releaseTenantResponse!: () => void;
+    tenantResponseGate = new Promise<void>((resolve) => {
+      releaseTenantResponse = resolve;
+    });
+    tenantStatus = 500;
+    const refetch = queryClient.invalidateQueries({ queryKey: TENANT_QUERY_KEY });
+
+    await waitFor(() => expect(tenantRequestCount).toBe(2));
+    await waitFor(() => expect(queryClient.getQueryState(TENANT_QUERY_KEY)).toMatchObject({
+      status: "success",
+      fetchStatus: "fetching",
+    }));
+    expect(screen.queryAllByText("My profile")).toHaveLength(0);
+
+    releaseTenantResponse();
+    await refetch;
+    await waitFor(() => expect(queryClient.getQueryState(TENANT_QUERY_KEY)).toMatchObject({
+      status: "error",
+      fetchStatus: "idle",
+    }));
+    expect(screen.queryAllByText("My profile")).toHaveLength(0);
   });
 
   it("hides My profile and skips the role request when there is no active tenant", async () => {

@@ -13,5 +13,6 @@ export function useActiveTenantRole(): TenantRole | undefined {
     { enabled: activeTenant !== null },
   );
 
+  if (!tenantQuery.isSuccess || tenantQuery.fetchStatus !== "idle") return undefined;
   return tenantQuery.data?.role;
 }
