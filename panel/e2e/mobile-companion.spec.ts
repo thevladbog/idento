@@ -134,6 +134,24 @@ function staffCard(page: Page, email: string): Locator {
     .locator("xpath=ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' p-4 ')][1]");
 }
 
+async function prepareTrustedNegativeControlOrigin(page: Page) {
+  // A newly-created Playwright page starts at about:blank, which is not a
+  // secure context and exposes no SubtleCrypto in Chromium. Navigate through
+  // the configured baseURL before any DOM-only control so browser-local
+  // hashing is available without moving QR markup across the process boundary.
+  await page.goto("/");
+  const trustedCryptoReady = await page.evaluate(() => {
+    const loopback = location.hostname === "localhost"
+      || location.hostname === "127.0.0.1"
+      || location.hostname === "[::1]";
+    return loopback && isSecureContext && typeof crypto.subtle?.digest === "function";
+  });
+  expect(
+    trustedCryptoReady,
+    "DOM security controls require the configured secure localhost origin and SubtleCrypto",
+  ).toBe(true);
+}
+
 async function qrRenderFingerprint(qr: Locator): Promise<string> {
   return qr.evaluate(async (node) => {
     const encoded = new TextEncoder().encode(node.innerHTML);
@@ -246,7 +264,9 @@ test.describe.serial("real-backend mobile companion acceptance", () => {
   test.setTimeout(240_000);
 
   test("light-theme functional journey", async ({ page, context }) => {
+    await prepareTrustedNegativeControlOrigin(page);
     await proveBearerAbsenceNegativeControls(page);
+    await prepareTrustedNegativeControlOrigin(page);
     await proveQrRenderSynchronizationNegativeControl(page);
     const seed = await seedMobileCompanion();
     await installSession(page, seed.adminSession, "light");
