@@ -705,6 +705,7 @@
   "monitorLoadError": "Couldn't load this event.",
   "monitorBackHome": "← Back to Home",
   "monitorStreamError": "Live updates unavailable",
+  "monitorDataStale": "Data refresh failed",
   "monitorTotalsTitle": "Totals",
   "monitorZonesTitle": "By zone",
   "monitorRate": "{{rate}} scans/min",

@@ -812,7 +812,7 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     renderCorrectAt("/events/evt-1/monitor");
 
     await screen.findByText("1,284 / 2,410");
-    expect(liveRing()).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-live-pill")?.querySelector(".animate-ping") ?? null).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
 
     const announcer = await screen.findByTestId("monitor-stream-announcer");
@@ -850,14 +850,19 @@ describe("MonitorPage -- retains stale data across a failed background refetch (
     localStorage.clear();
     localStorage.setItem("token", "jwt-test");
     monitorSnapshot = snapshotBody();
+    streamConnections = [];
+    server.use(controlledMonitorStreamHandler());
   });
 
-  it("keeps rendering the event and snapshot content after both background refetches fail", async () => {
+  it("marks retained live data stale when the snapshot background refetch fails", async () => {
     const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(await screen.findByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
 
     server.use(
       http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })),
@@ -875,10 +880,19 @@ describe("MonitorPage -- retains stale data across a failed background refetch (
     // The failed refetch must not have replaced the content with the
     // snapshot-error card -- `getBy` (not `findBy`) proves it's the SAME
     // still-mounted content, not a fresh success re-render.
+    expect(queryClient.getQueryState(MONITOR_SNAPSHOT_KEY("evt-1"))?.status).toBe("error");
     expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
     expect(screen.queryByTestId("monitor-snapshot-error")).not.toBeInTheDocument();
     expect(screen.getByTestId("monitor-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("monitor-data-stale-badge")).toHaveTextContent("Data refresh failed");
+    expect(screen.getByTestId("monitor-body")).toHaveClass(
+      "opacity-60",
+      "[&_.text-muted-foreground]:text-foreground",
+    );
+    expect(screen.getByTestId("monitor-updated-ago")).toHaveClass("text-warning");
+    expect(screen.queryByTestId("monitor-live-pill")?.querySelector(".animate-ping") ?? null).not.toBeInTheDocument();
+    expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("Data refresh failed");
   });
 });

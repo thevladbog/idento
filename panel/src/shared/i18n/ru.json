@@ -707,6 +707,7 @@
   "monitorLoadError": "Не удалось загрузить это мероприятие.",
   "monitorBackHome": "← На главную",
   "monitorStreamError": "Обновления в реальном времени недоступны",
+  "monitorDataStale": "Не удалось обновить данные",
   "monitorTotalsTitle": "Итоги",
   "monitorZonesTitle": "По зонам",
   "monitorRate": "{{rate}} сканов/мин",

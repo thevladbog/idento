@@ -99,8 +99,14 @@ export function MonitorPage() {
   const event = eventQuery.data;
   const updatedSeconds =
     snapshotQuery.dataUpdatedAt > 0 ? Math.max(0, Math.floor((now - snapshotQuery.dataUpdatedAt) / 1000)) : null;
-  const live = stream.status === "live";
+  const streamLive = stream.status === "live";
   const snapshot = snapshotQuery.data;
+  // A live transport alone cannot prove that the retained snapshot is
+  // current: React Query keeps the last successful snapshot after a failed
+  // background refetch. Treat that combination as stale until a new snapshot
+  // succeeds, rather than presenting its numbers as LIVE.
+  const dataFresh = streamLive && !snapshotQuery.isError;
+  const retainedSnapshotStale = Boolean(snapshot && snapshotQuery.isError);
 
   return (
     <div className="flex h-full flex-col" data-testid="monitor-page">
@@ -121,15 +127,21 @@ export function MonitorPage() {
           </span>
         ) : (
           <>
-            <span data-testid="monitor-live-pill">
-              <StatusPill
-                status="ready"
-                label={t("monitorLive")}
-                indicator="dot"
-                pulse={live}
-                className="font-bold uppercase"
-              />
-            </span>
+            {retainedSnapshotStale ? (
+              <span data-testid="monitor-data-stale-badge">
+                <StatusPill status="in_progress" label={t("monitorDataStale")} className="font-bold uppercase" />
+              </span>
+            ) : (
+              <span data-testid="monitor-live-pill">
+                <StatusPill
+                  status="ready"
+                  label={t("monitorLive")}
+                  indicator="dot"
+                  pulse={dataFresh}
+                  className="font-bold uppercase"
+                />
+              </span>
+            )}
             {/* Global Constraints: a dead-but-retryable stream shows a
                 reconnecting badge OVER stale data -- the body below keeps
                 rendering whatever snapshot was last fetched, unconditionally
@@ -144,18 +156,18 @@ export function MonitorPage() {
         <h1 className="min-w-0 flex-1 truncate text-body font-bold md:flex-none md:text-page-title">{event.name}</h1>
         {updatedSeconds !== null ? (
           // Board 8p -- the staleness counter is part of the stream-state
-          // vocabulary: muted mono while live (data is provably fresh),
+          // vocabulary: muted mono while data is fresh,
           // warning tone + clock icon while degraded (the counter is the
           // "how stale" answer the amber badge alone can't give). Icon +
           // text + color, never color alone (WCAG 1.4.1).
           <span
             className={cn(
               "inline-flex items-center gap-1 font-mono text-caption",
-              live ? "text-muted-foreground" : "text-warning",
+              dataFresh ? "text-muted-foreground" : "text-warning",
             )}
             data-testid="monitor-updated-ago"
           >
-            {live ? null : <Clock aria-hidden className="size-3" />}
+            {dataFresh ? null : <Clock aria-hidden className="size-3" />}
             {t("monitorUpdatedAgo", { seconds: updatedSeconds })}
           </span>
         ) : null}
@@ -181,13 +193,15 @@ export function MonitorPage() {
           and the header itself shows no badge during it either (see the
           "still connecting" test above), so silence here matches that. */}
       <span aria-live="polite" className="sr-only" data-testid="monitor-stream-announcer">
-        {stream.status === "live"
-          ? t("monitorLive")
-          : stream.status === "reconnecting"
-            ? t("monitorReconnecting")
-            : stream.status === "error"
-              ? t("monitorStreamError")
-              : ""}
+        {stream.status === "error"
+          ? t("monitorStreamError")
+          : retainedSnapshotStale
+            ? t("monitorDataStale")
+            : stream.status === "reconnecting"
+              ? t("monitorReconnecting")
+              : streamLive
+                ? t("monitorLive")
+                : ""}
       </span>
 
       {/* Body -- #fafafa background (theme.css's --background token is
@@ -201,12 +215,12 @@ export function MonitorPage() {
         className={cn(
           "grid flex-1 grid-cols-1 gap-4 overflow-y-auto bg-background p-4 pb-24 transition-opacity md:p-6 md:[grid-template-columns:1.15fr_1fr]",
           // Board 8p -- stale numbers never masquerade as live: anything
-          // short of an open stream dims real retained snapshot content to
+          // short of data-fresh dims real retained snapshot content to
           // 60%. At that parent opacity, text-muted-foreground rendered
           // 2.53:1 on the light background, so retained degraded descendants
           // start from text-foreground before compositing. An initial error
           // has no stale numbers to visually degrade.
-          snapshot && !live && "opacity-60 [&_.text-muted-foreground]:text-foreground",
+          snapshot && !dataFresh && "opacity-60 [&_.text-muted-foreground]:text-foreground",
         )}
       >
         {snapshotQuery.isLoading ? (
