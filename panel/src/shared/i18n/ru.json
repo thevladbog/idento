@@ -90,6 +90,7 @@
   "workspaceCheckin": "Регистрация",
   "workspaceCheckinLocked": "заблокировано",
   "workspaceRailLabel": "Пайплайн готовности",
+  "readinessStripLabel": "Шаги готовности события",
   "workspaceSettings": "Настройки",
   "workspaceOverview": "Обзор",
   "workspaceOverviewTitle": "Обзор",

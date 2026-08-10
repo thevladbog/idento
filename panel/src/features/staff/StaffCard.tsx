@@ -471,8 +471,10 @@ export function StaffCard({
           hideClose
           closeLabel={t("staffQrBackToCard")}
           onCloseAutoFocus={(event) => {
+            const opener = fullScreenTriggerRef.current;
+            if (!opener) return;
             event.preventDefault();
-            fullScreenTriggerRef.current?.focus();
+            opener.focus();
           }}
           className="inset-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 rounded-none border-0 bg-transparent p-0 shadow-none"
         >

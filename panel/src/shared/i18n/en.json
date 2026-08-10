@@ -90,6 +90,7 @@
   "workspaceCheckin": "Check-in",
   "workspaceCheckinLocked": "locked",
   "workspaceRailLabel": "Readiness pipeline",
+  "readinessStripLabel": "Event readiness steps",
   "workspaceSettings": "Settings",
   "workspaceOverview": "Overview",
   "workspaceOverviewTitle": "Overview",

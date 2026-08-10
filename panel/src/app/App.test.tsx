@@ -22,7 +22,9 @@ describe("App", () => {
     render(<App />);
 
     toast.success("Success");
-    await waitFor(() => expect(document.querySelector("[data-sonner-toaster]")).not.toBeNull());
+    await waitFor(() =>
+      expect(document.querySelector('[data-sonner-toast][data-type="success"]')).not.toBeNull(),
+    );
 
     const toaster = document.querySelector<HTMLElement>("[data-sonner-toaster]");
     expect(toaster).not.toBeNull();

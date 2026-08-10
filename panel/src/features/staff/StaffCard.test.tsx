@@ -11,6 +11,26 @@ import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
 import i18n from "../../shared/i18n";
 
+const fullScreenDialogCapture = vi.hoisted(() => ({
+  onCloseAutoFocus: undefined as ((event: Event) => void) | undefined,
+}));
+
+vi.mock("@idento/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@idento/ui")>();
+  const React = await import("react");
+  const DialogContent = React.forwardRef<
+    React.ElementRef<typeof actual.DialogContent>,
+    React.ComponentPropsWithoutRef<typeof actual.DialogContent>
+  >((props, ref) => {
+    if (props.className?.includes("h-screen")) {
+      fullScreenDialogCapture.onCloseAutoFocus = props.onCloseAutoFocus;
+    }
+    return React.createElement(actual.DialogContent, { ...props, ref });
+  });
+  DialogContent.displayName = "CapturedDialogContent";
+  return { ...actual, DialogContent };
+});
+
 // Genuinely subscribed observer for GET /api/events/:id/readiness — same
 // pattern as DangerZoneCard.test.tsx's ListObserver.
 function ReadinessObserver({ eventId }: { eventId: string }) {
@@ -128,6 +148,7 @@ describe("StaffCard — QR area + print flow", () => {
     revokeStatus = 200;
     revokeDelayMs = 0;
     readinessHitCount = 0;
+    fullScreenDialogCapture.onCloseAutoFocus = undefined;
   });
 
   describe("QR area states (admin)", () => {
@@ -220,6 +241,28 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
       expect(showFullScreen).toHaveFocus();
       expect(qrTokenCallCount).toBe(0);
+    });
+
+    it("preserves Radix close autofocus when the full-screen opener no longer exists", async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        cachedToken: "QR_cached_token",
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      await screen.findByRole("dialog", { name: "Staff login — alice@example.com" });
+      const onCloseAutoFocus = fullScreenDialogCapture.onCloseAutoFocus;
+      expect(onCloseAutoFocus).toBeTypeOf("function");
+
+      // Unmount clears fullScreenTriggerRef.current. The component-specific
+      // override must now leave the event untouched for Radix's default path.
+      unmount();
+      const closeAutoFocusEvent = new Event("focusScope.autoFocusOnUnmount", { cancelable: true });
+      const preventDefault = vi.spyOn(closeAutoFocusEvent, "preventDefault");
+      onCloseAutoFocus?.(closeAutoFocusEvent);
+
+      expect(preventDefault).not.toHaveBeenCalled();
     });
 
     // Review fix (P6.3 T8): the full-screen QrDisplay now mounts inside a

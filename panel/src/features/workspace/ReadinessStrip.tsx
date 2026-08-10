@@ -22,7 +22,7 @@ export function ReadinessStrip({ steps }: { steps: ReadinessStep[] | undefined }
       <div
         data-testid="readiness-strip-scroller"
         role="region"
-        aria-label={t("workspaceRailLabel")}
+        aria-label={t("readinessStripLabel")}
         tabIndex={0}
         className="flex min-w-0 min-h-11 max-w-full gap-1.5 overflow-x-auto"
       >

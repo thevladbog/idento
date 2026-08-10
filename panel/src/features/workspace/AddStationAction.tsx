@@ -71,21 +71,32 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
 
   if (cached) {
     return (
-      <QrDisplay
-        value={cached.token}
-        title={t("addStationTitle")}
-        subtitle={t("addStationQrSubtitle", { eventName })}
-        codeLabel={t("qrDisplayCodeLabel")}
-        expiresInLabel={t("qrDisplayExpiresIn")}
-        expiresAt={cached.expiresAt}
-        expiredLabel={t("addStationCodeExpired")}
-        regenerateLabel={t("addStationTitle")}
-        closeLabel={t("moreSheetCloseLabel")}
-        onClose={closeQrSession}
-        onRegenerate={() => mintToken()}
-        isRegenerating={mint.isPending || !selectedStaff}
-        hint={t("addStationHint")}
-      />
+      <div className="relative md:hidden">
+        <QrDisplay
+          value={cached.token}
+          title={t("addStationTitle")}
+          subtitle={t("addStationQrSubtitle", { eventName })}
+          codeLabel={t("qrDisplayCodeLabel")}
+          expiresInLabel={t("qrDisplayExpiresIn")}
+          expiresAt={cached.expiresAt}
+          expiredLabel={t("addStationCodeExpired")}
+          regenerateLabel={t("addStationTitle")}
+          closeLabel={t("moreSheetCloseLabel")}
+          onClose={closeQrSession}
+          onRegenerate={() => mintToken()}
+          isRegenerating={mint.isPending || !selectedStaff}
+          hint={t("addStationHint")}
+          className={mintFailed ? "pb-24" : undefined}
+        />
+        {mintFailed ? (
+          <p
+            role="alert"
+            className="absolute inset-x-6 bottom-[max(1.5rem,env(safe-area-inset-bottom))] rounded-md border border-destructive/30 bg-card px-3 py-2 text-caption font-semibold text-destructive"
+          >
+            {t("addStationError")}
+          </p>
+        ) : null}
+      </div>
     );
   }
 
@@ -126,7 +137,7 @@ export function AddStationAction({ eventId, eventName }: AddStationActionProps) 
         <span className="flex-1 text-left text-body font-semibold">{t("addStationTitle")}</span>
         <span className="text-caption text-muted-foreground">{t("addStationSubtitle")}</span>
       </button>
-      {mintFailed ? <p className="mt-2 text-caption text-destructive">{t("addStationError")}</p> : null}
+      {mintFailed ? <p role="alert" className="mt-2 text-caption text-destructive">{t("addStationError")}</p> : null}
     </div>
   );
 }

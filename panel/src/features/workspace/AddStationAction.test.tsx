@@ -136,7 +136,57 @@ describe("AddStationAction", () => {
 
     await selectStaff(user);
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
-    expect(await screen.findByText("Не удалось создать код для подключения — попробуйте снова.")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать код для подключения — попробуйте снова.");
+  });
+
+  it("clears an initial mint alert when a new mint succeeds", async () => {
+    let mintCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 1) return HttpResponse.json({ error: "boom" }, { status: 500 });
+        return HttpResponse.json({ token: "prov-tok-recovered", expires_at: new Date(Date.now() + 600_000).toISOString() });
+      }),
+    );
+    const user = userEvent.setup();
+    renderAction();
+
+    await selectStaff(user);
+    const addStation = screen.getByRole("button", { name: /Добавить станцию/ });
+    await user.click(addStation);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    await user.click(addStation);
+    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a regeneration alert without replacing the exact cached QR, then clears it on close", async () => {
+    let mintCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 2) return HttpResponse.json({ error: "boom" }, { status: 500 });
+        return HttpResponse.json({ token: "prov-tok-cached", expires_at: new Date(Date.now() + 600_000).toISOString() });
+      }),
+    );
+    const user = userEvent.setup();
+    renderAction();
+
+    await selectStaff(user);
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    const cachedQr = await screen.findByTestId("qr-display-code");
+    const cachedQrMarkup = cachedQr.innerHTML;
+
+    await user.click(screen.getByRole("button", { name: "Добавить станцию" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать код для подключения — попробуйте снова.");
+    expect(screen.getByTestId("qr-display-code").innerHTML === cachedQrMarkup).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
   });
 
   it("stays on the QR screen through a regenerate, without flashing back to the base button", async () => {

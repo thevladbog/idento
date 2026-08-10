@@ -765,10 +765,8 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
       await waitFor(() => expect(streamConnections.length).toBe(2), { timeout: 3000 });
       streamConnections[1].push("event: hello\ndata: {}\n\n");
       await waitFor(() => expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument());
-      expect(screen.getByTestId("monitor-body")).not.toHaveClass(
-        "opacity-60",
-        "[&_.text-muted-foreground]:text-foreground",
-      );
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass("[&_.text-muted-foreground]:text-foreground");
     },
     8000,
   );

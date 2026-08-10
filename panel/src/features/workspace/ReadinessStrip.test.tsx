@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { ReadinessStrip } from "./ReadinessStrip";
 import type { components } from "../../shared/api/schema";
-import "../../shared/i18n";
+import i18n from "../../shared/i18n";
 
 type ReadinessStep = components["schemas"]["ReadinessStep"];
 
@@ -12,6 +12,10 @@ const STEPS: ReadinessStep[] = [
 ];
 
 describe("ReadinessStrip", () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
+  });
+
   it("renders each localized status visibly in the same chip as its status icon", () => {
     render(<ReadinessStrip steps={STEPS} />);
     const strip = screen.getByTestId("readiness-strip");
@@ -38,7 +42,15 @@ describe("ReadinessStrip", () => {
     expect(outer).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
     expect(scroller).toHaveClass("min-w-0", "min-h-11", "max-w-full", "overflow-x-auto");
     expect(scroller).toHaveAttribute("tabindex", "0");
-    expect(screen.getByRole("region", { name: "Readiness pipeline" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Event readiness steps" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Readiness pipeline" })).not.toBeInTheDocument();
+  });
+
+  it("localizes the dedicated phone-strip region name in Russian", async () => {
+    await i18n.changeLanguage("ru");
+    render(<ReadinessStrip steps={STEPS} />);
+
+    expect(screen.getByRole("region", { name: "Шаги готовности события" })).toBeInTheDocument();
   });
 
   it("renders nothing without steps", () => {
