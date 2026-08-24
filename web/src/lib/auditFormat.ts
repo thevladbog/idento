@@ -1,6 +1,7 @@
 export type AuditLogEntry = {
   id: string;
-  admin_user_id: string;
+  /** NULL for system-actor rows (e.g. the retention job's purge_tenant). */
+  admin_user_id: string | null;
   action: string;
   target_type: string;
   target_id: string | null;
@@ -114,6 +115,17 @@ export function formatAuditDiff(entry: AuditLogEntry, planNames?: Record<string,
     }
     case 'create_tenant':
       return 'Tenant created';
+    case 'purge_tenant': {
+      // Written by the retention job (system actor, admin_user_id NULL)
+      // with { name, archived_at, retention_days } -- the row outlives the
+      // tenant it describes, so the name in changes is the only surviving
+      // identity.
+      const name = typeof c.name === 'string' && c.name ? ` "${c.name}"` : '';
+      const days = typeof c.retention_days === 'number' ? c.retention_days : null;
+      return days !== null
+        ? `Tenant${name} permanently purged after ${days}-day retention`
+        : `Tenant${name} permanently purged`;
+    }
     default:
       return entry.action.replace(/_/g, ' ');
   }

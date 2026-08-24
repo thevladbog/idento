@@ -37,7 +37,7 @@ export async function fetchImpersonationSummary(
       headers,
       params: { target_id: tenantId, action: 'impersonated_request', limit: PAGE_SIZE, offset },
     });
-    const entries: Array<{ created_at: string; admin_user_id: string }> = data.logs ?? [];
+    const entries: Array<{ created_at: string; admin_user_id: string | null }> = data.logs ?? [];
     const total: number = typeof data.total === 'number' ? data.total : offset + entries.length;
 
     let reachedOlderEntry = false;

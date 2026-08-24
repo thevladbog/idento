@@ -110,4 +110,33 @@ describe('formatAuditDiff', () => {
     );
     expect(line).toBe('Plan updated');
   });
+
+  // PR #58 follow-up: the retention purge job writes purge_tenant rows with
+  // admin_user_id NULL (system actor) and { name, archived_at,
+  // retention_days } in changes -- the type must admit the null and the
+  // formatter must render the row meaningfully instead of the bare
+  // "purge tenant" default.
+  it('renders a purge_tenant entry (NULL system actor) with tenant name and retention window', () => {
+    const line = formatAuditDiff(
+      entry({
+        action: 'purge_tenant',
+        admin_user_id: null,
+        changes: { name: 'Acme Corp', archived_at: '2026-04-01T00:00:00Z', retention_days: 90 },
+      })
+    );
+    expect(line).toBe('Tenant "Acme Corp" permanently purged after 90-day retention');
+  });
+
+  it('renders a purge_tenant entry without a retention window when changes are sparse', () => {
+    const line = formatAuditDiff(entry({ action: 'purge_tenant', admin_user_id: null, changes: {} }));
+    expect(line).toBe('Tenant permanently purged');
+  });
+
+  it('groups NULL-actor entries by day like any other entry', () => {
+    const groups = groupAuditLogByDay([
+      entry({ id: 'p1', action: 'purge_tenant', admin_user_id: null, created_at: '2026-07-11T10:00:00Z' }),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].entries[0].admin_user_id).toBeNull();
+  });
 });
