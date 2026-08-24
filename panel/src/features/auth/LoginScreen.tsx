@@ -22,6 +22,17 @@ export function LoginScreen() {
     mutationFn: () => login(email, password),
     onSuccess: (auth) => {
       saveSession(auth);
+      // A membership-free super admin (home tenant purged) has nothing to
+      // see here -- every panel screen is tenant-scoped and would fail
+      // closed. Hand the session to the operator console instead: it lives
+      // on the same origin and reads the same localStorage keys saveSession
+      // just wrote, so this is a working sign-in, not a bounce to another
+      // login form. Full navigation (not router navigate): the console is a
+      // separate SPA served under /super-admin/.
+      if (auth.user.is_super_admin && auth.tenants.length === 0) {
+        window.location.assign("/super-admin/");
+        return;
+      }
       navigate({ to: "/" });
     },
   });

@@ -13,13 +13,14 @@ import type { components } from "./schema";
 // backend change to e.g. the `role` enum or id format is still caught.
 export type User = Pick<
   components["schemas"]["User"],
-  "id" | "tenant_id" | "email" | "role" | "created_at" | "updated_at"
+  "id" | "tenant_id" | "email" | "role" | "is_super_admin" | "created_at" | "updated_at"
 >;
 export type Tenant = Pick<components["schemas"]["Tenant"], "id" | "name">;
 
-// AuthResponse mirrors LoginResponse's shape, but `current_tenant` is kept
-// optional rather than aliased as-is (the generated LoginResponse requires
-// it). session.ts's saveSession() already treats current_tenant as optional
+// AuthResponse mirrors LoginResponse's shape with `current_tenant`
+// optional -- since the membership-free super-admin login the generated
+// LoginResponse marks it optional too (absent when there is no tenant to
+// select). session.ts's saveSession() already treats current_tenant as optional
 // (`auth.current_tenant ?? auth.tenants[0]`), and QrLoginScreen constructs
 // an AuthResponse-shaped object with `current_tenant: undefined` after a
 // QR login (which has no tenant list at all). register() also returns this

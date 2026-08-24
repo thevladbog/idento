@@ -113,8 +113,29 @@ func (h *Handler) Login(c echo.Context) error {
 
 	// 3. Get all user's tenants
 	tenants, err := h.Store.GetUserTenants(c.Request().Context(), user.ID)
-	if err != nil || len(tenants) == 0 {
+	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "No organizations found"})
+	}
+	if len(tenants) == 0 {
+		// A super admin homed only in a since-purged tenant has zero
+		// user_tenants rows (PR #58's documented limitation) -- the platform
+		// operator must still be able to reach the operator console. The
+		// console's SuperAdminOnly middleware re-checks IsSuperAdmin from
+		// the DB and ignores the tenant claim, so the token carries the nil
+		// tenant with the weakest role: every tenant-scoped endpoint keeps
+		// failing closed. No current_tenant is fabricated in the response.
+		if !user.IsSuperAdmin {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "No organizations found"})
+		}
+		token, err := generateTokenForTenant(user, uuid.Nil.String(), "member")
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+		}
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"token":   token,
+			"user":    user,
+			"tenants": []*models.Tenant{},
+		})
 	}
 
 	// 4. Use first tenant as default (or the original tenant_id if available)

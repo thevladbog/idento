@@ -58,6 +58,49 @@ describe("LoginScreen", () => {
     await waitFor(() => expect(getCurrentUser()?.email).toBe("a@b.com"));
   });
 
+  // Membership-free super-admin login (home tenant purged, zero
+  // user_tenants rows): every panel screen is tenant-scoped, so the session
+  // is saved (same-origin console reads the same localStorage keys) and the
+  // browser is handed to the operator console SPA at /super-admin/. Uses
+  // the same location-mock idiom as useMonitorStream.test.tsx -- jsdom's
+  // window.location has non-configurable properties, so vi.spyOn on
+  // `.assign` throws.
+  it("hands a membership-free super admin to the operator console with the session saved", async () => {
+    server.use(
+      http.post("http://api.test/auth/login", () =>
+        HttpResponse.json({
+          token: "tok-root",
+          user: {
+            id: "u-root", tenant_id: "00000000-0000-0000-0000-000000000000", email: "root@op.io",
+            role: "member", is_super_admin: true, created_at: "", updated_at: "",
+          },
+          tenants: [],
+        }),
+      ),
+    );
+    const realLocation = window.location;
+    const assign = vi.fn();
+    // @ts-expect-error -- intentionally deleting a non-optional global for the mock swap
+    delete window.location;
+    window.location = { ...realLocation, assign } as Location;
+    try {
+      const user = userEvent.setup();
+      renderWithQuery(<LoginScreen />);
+
+      await user.type(screen.getByLabelText("Email"), "root@op.io");
+      await user.type(screen.getByLabelText("Password"), "secret");
+      await user.click(screen.getByRole("button", { name: "Sign in" }));
+
+      await waitFor(() => expect(assign).toHaveBeenCalledWith("/super-admin/"));
+      // The console must find a working session, not bounce to its login.
+      expect(getCurrentUser()?.email).toBe("root@op.io");
+      expect(localStorage.getItem("token")).toBe("tok-root");
+      expect(localStorage.getItem("current_tenant")).toBeNull();
+    } finally {
+      window.location = realLocation;
+    }
+  });
+
   it("shows the Idento brand mark", () => {
     renderWithQuery(<LoginScreen />);
     expect(screen.getByRole("img", { name: "Idento" })).toBeInTheDocument();

@@ -1194,7 +1194,7 @@ export interface components {
             token: string;
             user: components["schemas"]["User"];
             tenants: components["schemas"]["Tenant"][];
-            current_tenant: components["schemas"]["Tenant"];
+            current_tenant?: components["schemas"]["Tenant"];
         };
         RegisterResponse: {
             token: string;
@@ -1891,7 +1891,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Wrong credentials or user has no organizations. */
+            /** @description Wrong credentials, or a non-super-admin user has no organizations. */
             401: {
                 headers: {
                     [name: string]: unknown;
