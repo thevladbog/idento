@@ -1866,7 +1866,13 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 			sp.id as sp_id, sp.name as plan_name, sp.slug, sp.tier,
 			COUNT(DISTINCT u.id) as users_count,
 			COUNT(DISTINCT e.id) as events_count,
-			COUNT(DISTINCT a.id) as attendees_count
+			COUNT(DISTINCT a.id) as attendees_count,
+			COUNT(DISTINCT e.id) FILTER (WHERE e.deleted_at IS NULL AND e.created_at >= date_trunc('month', NOW())) as events_this_month,
+			(SELECT COALESCE(MAX(per_event.cnt), 0) FROM (
+				SELECT COUNT(*) AS cnt FROM attendees a2
+				INNER JOIN events e2 ON e2.id = a2.event_id
+				WHERE e2.tenant_id = t.id AND e2.deleted_at IS NULL AND a2.deleted_at IS NULL
+				GROUP BY a2.event_id) per_event) as max_attendees_per_event
 		FROM tenants t
 		LEFT JOIN subscriptions s ON t.id = s.tenant_id
 		LEFT JOIN subscription_plans sp ON s.plan_id = sp.id
@@ -1900,6 +1906,7 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 			&subID, &subPlanID, &sStatus, &sStartDate, &sEndDate,
 			&spID, &spName, &spSlug, &spTier,
 			&tws.UsersCount, &tws.EventsCount, &tws.AttendeesCount,
+			&tws.EventsThisMonth, &tws.MaxAttendeesPerEvent,
 		)
 		if err != nil {
 			return nil, err
@@ -1997,6 +2004,27 @@ func (s *PGStore) GetTenantStats(ctx context.Context, tenantID uuid.UUID) (*mode
 		WHERE e.tenant_id = $1 AND a.deleted_at IS NULL AND e.deleted_at IS NULL
 	`, tenantID).Scan(&tws.AttendeesCount); err != nil {
 		return nil, fmt.Errorf("failed to count attendees: %w", err)
+	}
+
+	// Scoped aggregates for limit comparisons -- the same counting rules
+	// CheckTenantLimit/CheckAttendeeLimit enforce (live rows only; calendar
+	// month per date_trunc), so the console's "over limit" view can never
+	// disagree with what enforcement would actually block.
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM events
+		WHERE tenant_id = $1 AND deleted_at IS NULL
+		  AND created_at >= date_trunc('month', NOW())
+	`, tenantID).Scan(&tws.EventsThisMonth); err != nil {
+		return nil, fmt.Errorf("failed to count this month's events: %w", err)
+	}
+	if err := s.db.QueryRow(ctx, `
+		SELECT COALESCE(MAX(per_event.cnt), 0) FROM (
+			SELECT COUNT(*) AS cnt FROM attendees a
+			INNER JOIN events e ON e.id = a.event_id
+			WHERE e.tenant_id = $1 AND e.deleted_at IS NULL AND a.deleted_at IS NULL
+			GROUP BY a.event_id) per_event
+	`, tenantID).Scan(&tws.MaxAttendeesPerEvent); err != nil {
+		return nil, fmt.Errorf("failed to compute peak attendees per event: %w", err)
 	}
 
 	return &tws, nil

@@ -173,7 +173,13 @@ type TenantWithStats struct {
 	UsersCount     int           `json:"users_count"`
 	EventsCount    int           `json:"events_count"`
 	AttendeesCount int           `json:"attendees_count"`
-	LastActivity   *time.Time    `json:"last_activity"`
+	// Scoped counterparts of the cumulative totals above, matching the
+	// enforcement semantics of the plan limits they are compared against
+	// (events_per_month / attendees_per_event): live events created this
+	// calendar month, and the peak live-attendee count of any live event.
+	EventsThisMonth      int        `json:"events_this_month"`
+	MaxAttendeesPerEvent int        `json:"max_attendees_per_event"`
+	LastActivity         *time.Time `json:"last_activity"`
 }
 
 type AdminAuditLog struct {
