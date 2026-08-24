@@ -9,6 +9,10 @@ export type TenantStat = {
   users_count?: number;
   events_count?: number;
   attendees_count?: number;
+  /** Live events created this calendar month -- the comparand for events_per_month. */
+  events_this_month?: number;
+  /** Peak live-attendee count of any live event -- the comparand for attendees_per_event. */
+  max_attendees_per_event?: number;
   last_activity?: string | null;
 };
 
@@ -37,9 +41,12 @@ export function trialsEndingWithinDays(tenants: TenantStat[], days: number): Ten
 }
 
 function isOverLimit(t: TenantStat): boolean {
+  // Each limit is compared against its OWN scope (the same counting rules
+  // the backend's CheckTenantLimit/CheckAttendeeLimit enforce) -- never
+  // against the cumulative lifetime totals, which only exist for display.
   const checks: Array<['events_per_month' | 'attendees_per_event' | 'users', number]> = [
-    ['events_per_month', t.events_count ?? 0],
-    ['attendees_per_event', t.attendees_count ?? 0],
+    ['events_per_month', t.events_this_month ?? 0],
+    ['attendees_per_event', t.max_attendees_per_event ?? 0],
     ['users', t.users_count ?? 0],
   ];
   return checks.some(([key, count]) => {

@@ -13,12 +13,12 @@ const mockTenants = [
   {
     tenant: { id: '1', name: 'Acme Conf Group', status: 'active' },
     subscription: { status: 'active', plan: { limits: { attendees_per_event: 500 } } },
-    users_count: 4, events_count: 2, attendees_count: 600, last_activity: null,
+    users_count: 4, events_count: 2, attendees_count: 600, max_attendees_per_event: 600, last_activity: null,
   },
   {
     tenant: { id: '2', name: 'Forum One', status: 'suspended' },
     subscription: { status: 'trial', trial_end_date: new Date(Date.now() + 2 * 86400000).toISOString(), plan: { limits: { attendees_per_event: 100 } } },
-    users_count: 1, events_count: 1, attendees_count: 10, last_activity: null,
+    users_count: 1, events_count: 1, attendees_count: 10, max_attendees_per_event: 10, last_activity: null,
   },
 ];
 

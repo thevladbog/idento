@@ -56,6 +56,8 @@ export const resources = {
 
       // Events
       events: "Events",
+      eventsThisMonth: "Events this month",
+      peakAttendeesPerEvent: "Peak attendees / event",
       createEvent: "Create Event",
       eventName: "Event Name",
       eventDate: "Start Date",
@@ -985,6 +987,8 @@ export const resources = {
 
       // Events
       events: "Мероприятия",
+      eventsThisMonth: "Мероприятий в этом месяце",
+      peakAttendeesPerEvent: "Пик участников на мероприятие",
       createEvent: "Создать мероприятие",
       eventName: "Название мероприятия",
       eventDate: "Дата начала",

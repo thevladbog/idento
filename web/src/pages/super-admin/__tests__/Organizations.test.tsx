@@ -16,6 +16,7 @@ const mockTenants = [
     users_count: 4,
     events_count: 2,
     attendees_count: 600,
+    max_attendees_per_event: 600,
     last_activity: '2026-07-01T00:00:00Z',
   },
   {
@@ -24,6 +25,7 @@ const mockTenants = [
     users_count: 1,
     events_count: 1,
     attendees_count: 50,
+    max_attendees_per_event: 50,
     last_activity: null,
   },
 ];

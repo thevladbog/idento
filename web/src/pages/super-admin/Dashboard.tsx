@@ -135,14 +135,17 @@ export default function SuperAdminDashboard() {
           <CardContent className="space-y-2">
             {overLimit.length === 0 && <p className="text-sm text-muted-foreground">{t('noItemsInQueue')}</p>}
             {overLimit.map((tn) => {
+              // Same scope rule as isOverLimit itself: the per-event limit
+              // is measured against the per-event peak, not the cumulative
+              // lifetime total.
               const limit = resolvedLimit(tn.subscription, 'attendees_per_event');
-              const tone = meterTone(tn.attendees_count ?? 0, limit);
+              const tone = meterTone(tn.max_attendees_per_event ?? 0, limit);
               return (
                 <div key={tn.tenant?.id} className="flex items-center justify-between text-sm">
                   <span>
                     {tn.tenant?.name}{' '}
                     <span className={meterToneClass(tone)}>
-                      ({tn.attendees_count}{limit !== -1 ? `/${limit}` : ''})
+                      ({tn.max_attendees_per_event ?? 0}{limit !== -1 ? `/${limit}` : ''})
                     </span>
                   </span>
                   <Button variant="outline" size="sm" asChild>
