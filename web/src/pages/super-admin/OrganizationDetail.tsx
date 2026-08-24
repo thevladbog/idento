@@ -36,6 +36,8 @@ interface TenantDetail {
   users_count?: number;
   events_count?: number;
   attendees_count?: number;
+  events_this_month?: number;
+  max_attendees_per_event?: number;
 }
 
 type Plan = { id: string; name: string; price_monthly?: number };
@@ -317,10 +319,14 @@ export default function OrganizationDetail() {
             <h2 className="mb-4 text-lg font-semibold">{t('td_nav_summary')}</h2>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {(
+                // Each meter shows the value its limit actually applies to
+                // (the backend's own enforcement scopes): users total,
+                // events created this month, and the busiest event's live
+                // attendee count -- not the cumulative lifetime totals.
                 [
                   ['users', Users, tenant.users_count ?? 0, resolvedLimit(tenant.subscription, 'users')],
-                  ['events', Calendar, tenant.events_count ?? 0, resolvedLimit(tenant.subscription, 'events_per_month')],
-                  ['attendees', UserCheck, tenant.attendees_count ?? 0, resolvedLimit(tenant.subscription, 'attendees_per_event')],
+                  ['eventsThisMonth', Calendar, tenant.events_this_month ?? 0, resolvedLimit(tenant.subscription, 'events_per_month')],
+                  ['peakAttendeesPerEvent', UserCheck, tenant.max_attendees_per_event ?? 0, resolvedLimit(tenant.subscription, 'attendees_per_event')],
                 ] as const
               ).map(([key, Icon, count, limit]) => {
                 const tone = meterTone(count, limit);

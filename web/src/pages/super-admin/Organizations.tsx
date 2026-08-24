@@ -250,7 +250,7 @@ export default function Organizations() {
                 </TableCell>
               </TableRow>
             ) : (
-              pagedTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string; slug?: string; limits?: Record<string, number> }; status?: string; custom_limits?: Record<string, number> | null }; users_count?: number; events_count?: number; attendees_count?: number; last_activity?: string | null }) => (
+              pagedTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string; slug?: string; limits?: Record<string, number> }; status?: string; custom_limits?: Record<string, number> | null }; users_count?: number; events_count?: number; attendees_count?: number; events_this_month?: number; max_attendees_per_event?: number; last_activity?: string | null }) => (
                 <TableRow key={tenant.tenant?.id ?? ''}>
                   <TableCell className="font-medium">{tenant.tenant?.name}</TableCell>
                   <TableCell>
@@ -267,12 +267,21 @@ export default function Organizations() {
                   <TableCell>{tenant.events_count}</TableCell>
                   <TableCell>
                     {(() => {
+                      // The limit is PER EVENT, so the number measured
+                      // against it is the per-event peak -- comparing the
+                      // cumulative lifetime total was the Batch-1 audit's
+                      // documented scope mismatch. Without a limit there is
+                      // nothing to measure against, so the plain cumulative
+                      // total stays (informational, as before).
                       const limit = resolvedLimit(tenant.subscription, 'attendees_per_event');
-                      const tone = meterTone(tenant.attendees_count ?? 0, limit);
+                      if (limit === -1) {
+                        return <span>{tenant.attendees_count ?? 0}</span>;
+                      }
+                      const peak = tenant.max_attendees_per_event ?? 0;
+                      const tone = meterTone(peak, limit);
                       return (
-                        <span className={meterToneClass(tone)}>
-                          {tenant.attendees_count ?? 0}
-                          {limit !== -1 ? ` / ${limit}` : ''}
+                        <span className={meterToneClass(tone)} title={t('peakAttendeesPerEvent')}>
+                          {peak} / {limit}
                         </span>
                       );
                     })()}

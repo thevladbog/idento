@@ -41,21 +41,53 @@ describe('trialsEndingWithinDays', () => {
 describe('overLimitTenants', () => {
   it('flags a tenant over its attendees limit', () => {
     const tenants: TenantStat[] = [
-      { tenant: { id: '1' }, attendees_count: 600, subscription: { plan: { limits: { attendees_per_event: 500 } } } },
-      { tenant: { id: '2' }, attendees_count: 100, subscription: { plan: { limits: { attendees_per_event: 500 } } } },
+      { tenant: { id: '1' }, max_attendees_per_event: 600, subscription: { plan: { limits: { attendees_per_event: 500 } } } },
+      { tenant: { id: '2' }, max_attendees_per_event: 100, subscription: { plan: { limits: { attendees_per_event: 500 } } } },
     ];
     expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
   });
   it('never flags an unlimited (-1) plan regardless of usage', () => {
     const tenants: TenantStat[] = [
-      { tenant: { id: '1' }, attendees_count: 999999, subscription: { plan: { limits: { attendees_per_event: -1 } } } },
+      { tenant: { id: '1' }, max_attendees_per_event: 999999, subscription: { plan: { limits: { attendees_per_event: -1 } } } },
     ];
     expect(overLimitTenants(tenants)).toEqual([]);
   });
   it('flags a tenant over its events_per_month limit', () => {
     const tenants: TenantStat[] = [
-      { tenant: { id: '1' }, events_count: 15, subscription: { plan: { limits: { events_per_month: 10 } } } },
-      { tenant: { id: '2' }, events_count: 5, subscription: { plan: { limits: { events_per_month: 10 } } } },
+      { tenant: { id: '1' }, events_this_month: 15, subscription: { plan: { limits: { events_per_month: 10 } } } },
+      { tenant: { id: '2' }, events_this_month: 5, subscription: { plan: { limits: { events_per_month: 10 } } } },
+    ];
+    expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
+  });
+  // The Batch-1 audit's scope mismatch, fixed for real: cumulative
+  // lifetime totals must never be compared against monthly/per-event
+  // limits -- a long-lived tenant with 200 all-time events is NOT over a
+  // 10-events-per-month limit if it created 2 this month.
+  it('ignores cumulative events_count when the scoped events_this_month is within the monthly limit', () => {
+    const tenants: TenantStat[] = [
+      {
+        tenant: { id: '1' },
+        events_count: 200,
+        events_this_month: 2,
+        subscription: { plan: { limits: { events_per_month: 10 } } },
+      },
+    ];
+    expect(overLimitTenants(tenants)).toEqual([]);
+  });
+  it('ignores cumulative attendees_count when the per-event peak is within the per-event limit', () => {
+    const tenants: TenantStat[] = [
+      {
+        tenant: { id: '1' },
+        attendees_count: 100000,
+        max_attendees_per_event: 400,
+        subscription: { plan: { limits: { attendees_per_event: 500 } } },
+      },
+    ];
+    expect(overLimitTenants(tenants)).toEqual([]);
+  });
+  it('flags a per-event peak over the attendees_per_event limit', () => {
+    const tenants: TenantStat[] = [
+      { tenant: { id: '1' }, max_attendees_per_event: 501, subscription: { plan: { limits: { attendees_per_event: 500 } } } },
     ];
     expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
   });
