@@ -26,6 +26,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       mobile: ${{ steps.filter.outputs.mobile }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      desktop-native: ${{ steps.filter.outputs.desktop-native }}
       shared-ui: ${{ steps.filter.outputs.shared-ui }}
       panel: ${{ steps.filter.outputs.panel }}
       deploy: ${{ steps.filter.outputs.deploy }}
@@ -50,6 +51,9 @@ jobs:
               - 'package.json'
               - 'package-lock.json'
               - '.npmrc'
+            # Rust/bundle side only -- gates the heavy Tauri build below.
+            desktop-native:
+              - 'desktop/src-tauri/**'
             shared-ui:
               - 'packages/**'
               - 'package.json'
@@ -147,12 +151,44 @@ jobs:
           echo "## iOS Build Results" >> $GITHUB_STEP_SUMMARY
           echo "✅ :shared compiled for iosArm64/iosSimulatorArm64, commonTest run on simulator" >> $GITHUB_STEP_SUMMARY
 
-  # Build desktop (Tauri)
+  # Fast TS-side desktop gate (K1 review recommendation): runs for ANY
+  # desktop-affecting change, including packages/** shared-UI edits -- no
+  # Rust toolchain, no Tauri system deps. This is also the only place
+  # desktop's typecheck/unit tests run on PRs at all (previously they ran
+  # only in release-desktop.yml's tag-gated validate job).
+  check-desktop:
+    name: Check Desktop (TS)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint (desktop)
+        run: npm run lint -w idento-desktop
+      - name: Typecheck (desktop)
+        run: npm run typecheck -w idento-desktop
+      - name: Test (desktop)
+        run: npm test -w idento-desktop
+      - name: Build (desktop frontend)
+        run: npm run build -w idento-desktop
+
+  # Heavy Rust/Tauri bundle -- only when desktop/src-tauri/** itself
+  # changes. A packages/ui-only PR no longer pays for the Rust toolchain +
+  # webkit system deps + full bundle (the TS side is covered by
+  # check-desktop above; the release workflow still builds the real
+  # per-platform bundles unconditionally).
   build-desktop:
     name: Build Desktop (Tauri)
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.desktop == 'true'
+    if: needs.changes.outputs.desktop-native == 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -164,12 +200,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
         run: npm ci
-      - name: Lint (desktop)
-        run: npm run lint -w idento-desktop
       - name: Install Tauri system deps (Linux)
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Test (desktop Rust crate)
+        working-directory: desktop/src-tauri
+        run: cargo test
       - name: Build Tauri
         run: cd desktop && npm run tauri build
         env:
@@ -358,7 +395,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [validate, build-android, build-ios, build-desktop, docker-build-image, e2e-panel, dependency-review]
+    needs: [validate, build-android, build-ios, check-desktop, build-desktop, docker-build-image, e2e-panel, dependency-review]
     if: always()
     steps:
       - name: Check job statuses
@@ -366,6 +403,10 @@ jobs:
           # This job succeeds only if all needed jobs succeeded or were skipped
           if [[ "${{ needs.validate.result }}" != "success" && "${{ needs.validate.result }}" != "skipped" ]]; then
             echo "validate failed"
+            exit 1
+          fi
+          if [[ "${{ needs.check-desktop.result }}" != "success" && "${{ needs.check-desktop.result }}" != "skipped" ]]; then
+            echo "check-desktop failed"
             exit 1
           fi
           if [[ "${{ needs.build-desktop.result }}" != "success" && "${{ needs.build-desktop.result }}" != "skipped" ]]; then
