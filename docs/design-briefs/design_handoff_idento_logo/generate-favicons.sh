@@ -72,3 +72,28 @@ rsvg-convert -w 32 -h 32 --stylesheet <(echo '*{color:#000}') "$ASSETS/tray-icon
 rsvg-convert -w 64 -h 64 --stylesheet <(echo '*{color:#000}') "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon@2x.png" 2>/dev/null \
   || rsvg-convert -w 64 -h 64 "$ASSETS/tray-icon-template.svg" -o "$ROOT/desktop/src-tauri/icons/tray-icon@2x.png"
 echo "Desktop icons regenerated in desktop/src-tauri/icons/."
+
+# ── mobile icons ──
+# Android needs NO generated binaries: the launcher icon is a pure adaptive
+# vector (mobile/androidApp/src/main/res/drawable/ic_launcher_foreground.xml,
+# hand-converted from logo-mark-white.svg's geometry) over a
+# @color/ic_launcher_background (#00935E) layer.
+#
+# iOS AppIcon must be a FULL-BLEED OPAQUE SQUARE (Apple applies the corner
+# mask itself; alpha is rejected at submission) -- app-icon-ios.svg's own
+# rounded corners are therefore squared off here onto the same brand green.
+cat > ios-appicon.svg <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <rect width="120" height="120" fill="#00935E"/>
+  <g transform="translate(26,26) scale(1.06)">
+    <rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"/>
+    <rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"/>
+    <circle cx="32" cy="30" r="6.5" fill="#fff"/>
+    <path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"/>
+    <circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935E" stroke-width="3.5"/>
+    <path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
+SVG
+rsvg-convert -w 1024 -h 1024 ios-appicon.svg -o "$ROOT/mobile/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+echo "iOS AppIcon regenerated in mobile/iosApp/iosApp/Assets.xcassets/."
