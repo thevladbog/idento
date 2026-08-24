@@ -817,6 +817,50 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     expect(announcer).toHaveTextContent("");
   });
 
+  // Task 21 (PR #113 review): freshness used to be derived from the
+  // transport alone, so an SSE hello landing BEFORE the initial snapshot
+  // resolved rendered the pulsing live ring and announced "LIVE" over a
+  // body that had no numbers at all. Freshness additionally requires a
+  // usable successful snapshot.
+  it("does not render or announce LIVE when the hello frame arrives before the initial snapshot, then goes live once the snapshot lands", async () => {
+    let releaseSnapshot!: () => void;
+    const snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor", async () => {
+        await snapshotGate;
+        return HttpResponse.json(monitorSnapshot);
+      }),
+    );
+
+    try {
+      renderCorrectAt("/events/evt-1/monitor");
+
+      expect(await screen.findByTestId("monitor-live-pill")).toBeInTheDocument();
+      await waitFor(() => expect(streamConnections.length).toBe(1));
+      streamConnections[0].push("event: hello\ndata: {}\n\n");
+
+      // Bounded settle window: the hello frame is processed asynchronously
+      // and a correctly-silent monitor has no positive signal to await
+      // here -- the release below retroactively proves the transport was
+      // genuinely live during this window.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(liveRing()).not.toBeInTheDocument();
+      expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("");
+      expect(screen.queryByText("1,284 / 2,410")).not.toBeInTheDocument();
+    } finally {
+      releaseSnapshot();
+    }
+
+    // Positive completion proof: with the SAME connection and no further
+    // hello frames, the ring appears as soon as the snapshot arrives -- so
+    // only the missing snapshot was holding LIVE back above.
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
+    expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("LIVE");
+  });
+
   it("renders the updated-ago counter in warning tone with a clock icon while the stream is degraded", async () => {
     renderCorrectAt("/events/evt-1/monitor");
 

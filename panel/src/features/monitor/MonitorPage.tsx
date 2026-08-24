@@ -101,11 +101,13 @@ export function MonitorPage() {
     snapshotQuery.dataUpdatedAt > 0 ? Math.max(0, Math.floor((now - snapshotQuery.dataUpdatedAt) / 1000)) : null;
   const streamLive = stream.status === "live";
   const snapshot = snapshotQuery.data;
-  // A live transport alone cannot prove that the retained snapshot is
-  // current: React Query keeps the last successful snapshot after a failed
-  // background refetch. Treat that combination as stale until a new snapshot
-  // succeeds, rather than presenting its numbers as LIVE.
-  const dataFresh = streamLive && !snapshotQuery.isError;
+  // A live transport alone cannot prove the data is current: React Query
+  // keeps the last successful snapshot after a failed background refetch
+  // (stale numbers), and an SSE hello can land BEFORE the initial snapshot
+  // resolves (no numbers at all). Freshness therefore requires all three --
+  // a live stream, a snapshot to show, and no snapshot error -- before
+  // anything is presented or announced as LIVE.
+  const dataFresh = streamLive && Boolean(snapshot) && !snapshotQuery.isError;
   const retainedSnapshotStale = Boolean(snapshot && snapshotQuery.isError);
 
   return (
@@ -199,7 +201,7 @@ export function MonitorPage() {
             ? t("monitorDataStale")
             : stream.status === "reconnecting"
               ? t("monitorReconnecting")
-              : streamLive
+              : dataFresh
                 ? t("monitorLive")
                 : ""}
       </span>
