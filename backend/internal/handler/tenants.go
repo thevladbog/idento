@@ -3,6 +3,7 @@ package handler
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -135,7 +136,14 @@ func (h *Handler) UpdateTenant(c echo.Context) error {
 
 	// Update fields if provided
 	if req.Name != nil {
-		tenant.Name = *req.Name
+		// The tenant name is identity-bearing (console lists, audit
+		// rendering, badge headers) -- an empty or whitespace-only value is
+		// a client error, never an update.
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Tenant name cannot be empty"})
+		}
+		tenant.Name = name
 	}
 	if req.Settings != nil {
 		tenant.Settings = *req.Settings
