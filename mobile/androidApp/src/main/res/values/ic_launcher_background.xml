@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Idento brand green — the same #00935E every other surface's icon
+         tiles use (see docs/design-briefs/design_handoff_idento_logo/). -->
+    <color name="ic_launcher_background">#00935E</color>
+</resources>
