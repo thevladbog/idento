@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -389,12 +391,26 @@ func (s *PGStore) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, 
 	return &u, nil
 }
 
+// qrTokenDigest reduces a plaintext QR bearer to the deterministic SHA-256
+// hex digest that is the only credential form ever sent to or stored in the
+// database. The bearer is high-entropy, so an unsalted one-way digest both
+// prevents plaintext-at-rest and keeps lookups exact-match.
+func qrTokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// GetUsersByTenantID lists the CURRENT user_tenants memberships of the
+// requested tenant, projecting each row with that membership's own tenant id
+// and role (never the user's home-tenant columns). Users without a live
+// membership row are omitted -- fail closed.
 func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.User, error) {
-	query := `SELECT u.id, u.tenant_id, u.email, u.role, u.is_super_admin,
+	query := `SELECT u.id, ut.tenant_id, u.email, ut.role, u.is_super_admin,
 	                 (q.user_id IS NOT NULL), q.created_at, u.created_at, u.updated_at
 			  FROM users u
+			  INNER JOIN user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = $1
 			  LEFT JOIN user_qr_credentials q ON q.user_id = u.id AND q.tenant_id = $1
-			  WHERE u.tenant_id = $1 ORDER BY u.created_at DESC`
+			  ORDER BY u.created_at DESC`
 	rows, err := s.db.Query(ctx, query, tenantID)
 	if err != nil {
 		return nil, err
@@ -418,8 +434,8 @@ func (s *PGStore) GetUserByQRToken(ctx context.Context, token string) (*models.U
 	                 c.created_at, c.tenant_id, c.role, u.created_at, u.updated_at
 			  FROM user_qr_credentials c
 			  INNER JOIN users u ON u.id = c.user_id
-			  WHERE c.token = $1`
-	err := s.db.QueryRow(ctx, query, token).Scan(
+			  WHERE c.token_digest = $1`
+	err := s.db.QueryRow(ctx, query, qrTokenDigest(token)).Scan(
 		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Role, &u.IsSuperAdmin,
 		&u.QRTokenCreatedAt, &u.QRTokenTenantID, &u.QRTokenRole, &u.CreatedAt, &u.UpdatedAt,
 	)
@@ -434,14 +450,14 @@ func (s *PGStore) GetUserByQRToken(ctx context.Context, token string) (*models.U
 }
 
 func (s *PGStore) UpdateUserQRToken(ctx context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error {
-	query := `INSERT INTO user_qr_credentials (user_id, tenant_id, role, token, created_at)
+	query := `INSERT INTO user_qr_credentials (user_id, tenant_id, role, token_digest, created_at)
 	          VALUES ($1, $2, $3, $4, $5)
 	          ON CONFLICT (user_id) DO UPDATE
 	          SET tenant_id = EXCLUDED.tenant_id,
 	              role = EXCLUDED.role,
-	              token = EXCLUDED.token,
+	              token_digest = EXCLUDED.token_digest,
 	              created_at = EXCLUDED.created_at`
-	_, err := s.db.Exec(ctx, query, userID, tenantID, role, token, createdAt)
+	_, err := s.db.Exec(ctx, query, userID, tenantID, role, qrTokenDigest(token), createdAt)
 	return err
 }
 

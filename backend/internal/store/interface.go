@@ -42,8 +42,19 @@ type Store interface {
 	// whether the database is a genuinely fresh install.
 	HasAnyUsers(ctx context.Context) (bool, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error)
+	// GetUsersByTenantID lists the tenant's CURRENT user_tenants
+	// memberships, projected with each membership's own tenant id and
+	// role; users without a live membership are omitted (fail closed).
 	GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.User, error)
+	// GetUserByQRToken resolves the owner of the scoped QR credential
+	// matching the plaintext bearer (compared via its one-way digest --
+	// only a digest is ever stored). Unknown or revoked credentials
+	// return (nil, nil), not an error.
 	GetUserByQRToken(ctx context.Context, token string) (*models.User, error)
+	// UpdateUserQRToken upserts the SINGLE credential keyed by user_id:
+	// minting again replaces -- and thereby revokes -- the prior
+	// credential across every tenant. Only a one-way digest of token is
+	// persisted; the plaintext exists solely at mint time.
 	UpdateUserQRToken(ctx context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error
 
 	// Multi-organization support
