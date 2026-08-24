@@ -103,3 +103,41 @@ func TestSwitchTenantRejectsImpersonationToken(t *testing.T) {
 		t.Fatalf("status = %d, want 403 (imp sessions are sealed)", rec.Code)
 	}
 }
+
+// TestImpersonateUnknownTenantIs404 pins the not-found branch the earlier
+// impersonation tests never exercised (a long-standing backlog item):
+// GetTenantStatus returning "" means the tenant row does not exist, and the
+// handler must answer 404 without minting a token or writing an audit row.
+func TestImpersonateUnknownTenantIs404(t *testing.T) {
+	t.Setenv("JWT_SECRET", "test-secret")
+	e := echo.New()
+	audited := false
+	fs := &fakeStore{
+		getTenantStatus: func(uuid.UUID) (string, error) { return "", nil },
+		logAdminAction: func(uuid.UUID, string, string, uuid.UUID, interface{}, string, string) error {
+			audited = true
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", `{"reason":"test impersonation"}`, uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+
+	if err := h.ImpersonateTenant(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+	if audited {
+		t.Fatal("a not-found impersonation attempt must not write an audit row")
+	}
+	if body := rec.Body.String(); len(body) > 0 && json.Valid([]byte(body)) {
+		var resp map[string]string
+		_ = json.Unmarshal([]byte(body), &resp)
+		if resp["token"] != "" {
+			t.Fatal("a not-found impersonation attempt must not mint a token")
+		}
+	}
+}
