@@ -10,11 +10,13 @@ target = project.new_target(:application, 'iosApp', :ios, '14.0')
 app_group = project.new_group('iosApp')
 app_group.new_reference('iosApp/iOSApp.swift')
 app_group.new_reference('iosApp/Info.plist')
+assets_ref = app_group.new_reference('iosApp/Assets.xcassets')
 
 # Add files to target
 project.targets.first.add_file_references([
   app_group.files.first
 ])
+target.resources_build_phase.add_file_reference(assets_ref)
 
 # Set Info.plist path
 target.build_configurations.each do |config|

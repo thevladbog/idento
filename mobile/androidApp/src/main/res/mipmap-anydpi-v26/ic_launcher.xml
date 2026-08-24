@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- minSdk is 26, so the adaptive icon is the ONLY launcher icon — no
+     legacy density mipmaps needed. The monochrome layer (Android 13+ themed
+     icons) reuses the white-mark foreground: single-color, so the system's
+     tint renders it correctly. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>

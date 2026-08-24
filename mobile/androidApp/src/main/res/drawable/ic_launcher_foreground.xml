@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Idento brand mark (outlined attendee badge + "checked-in" check disc),
+     hand-converted from the canonical handoff SVG
+     (docs/design-briefs/design_handoff_idento_logo/assets/logo-mark-white.svg
+     geometry, same 64-unit space) so the launcher icon stays a pure vector —
+     no density PNGs to regenerate. The group centers the mark's visual bounds
+     (x 9.5..61.75, y 5.5..60.75) at 54,54 scaled to ~41dp: inside the 66dp
+     adaptive-icon safe zone with the margin the handoff's own Android tiles
+     use. The check disc's green ring is the SAME brand green as the adaptive
+     background layer (#00935E), matching the handoff icon exactly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.75"
+        android:scaleY="0.75"
+        android:translateX="27.3"
+        android:translateY="29.2">
+        <!-- badge outline: rect x12 y8 w40 h48 rx10, white 5dp stroke -->
+        <path
+            android:pathData="M22,8 L42,8 A10,10 0 0 1 52,18 L52,46 A10,10 0 0 1 42,56 L22,56 A10,10 0 0 1 12,46 L12,18 A10,10 0 0 1 22,8 Z"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="5" />
+        <!-- lanyard slot: rect x26 y14 w12 h4.5 rx2.25 -->
+        <path
+            android:pathData="M28.25,14 L35.75,14 A2.25,2.25 0 0 1 35.75,18.5 L28.25,18.5 A2.25,2.25 0 0 1 28.25,14 Z"
+            android:fillColor="#FFFFFF" />
+        <!-- head: circle cx32 cy30 r6.5 -->
+        <path
+            android:pathData="M32,23.5 A6.5,6.5 0 0 1 32,36.5 A6.5,6.5 0 0 1 32,23.5 Z"
+            android:fillColor="#FFFFFF" />
+        <!-- shoulders -->
+        <path
+            android:pathData="M22,48 A10,10 0 0 1 42,48 Z"
+            android:fillColor="#FFFFFF" />
+        <!-- check disc: circle cx50 cy49 r10, green ring -->
+        <path
+            android:pathData="M50,39 A10,10 0 0 1 50,59 A10,10 0 0 1 50,39 Z"
+            android:fillColor="#FFFFFF"
+            android:strokeColor="#00935E"
+            android:strokeWidth="3.5" />
+        <!-- check mark -->
+        <path
+            android:pathData="M45.7,49 L48.7,52 L54.6,45.4"
+            android:strokeColor="#00935E"
+            android:strokeWidth="3"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
+</vector>
