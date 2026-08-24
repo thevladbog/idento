@@ -95,8 +95,10 @@ components:
         tenants:
           type: array
           items: { $ref: "#/components/schemas/Tenant" }
+        # Absent for a membership-free super-admin login (operator console
+        # only) -- there is no tenant to select.
         current_tenant: { $ref: "#/components/schemas/Tenant" }
-      required: [token, user, tenants, current_tenant]
+      required: [token, user, tenants]
     RegisterResponse:
       type: object
       properties:
@@ -1113,7 +1115,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "401":
-          description: Wrong credentials or user has no organizations.
+          description: Wrong credentials, or a non-super-admin user has no organizations.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
