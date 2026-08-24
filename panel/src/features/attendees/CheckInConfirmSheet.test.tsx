@@ -59,6 +59,12 @@ describe("CheckInConfirmSheet", () => {
     expect(screen.getByText("Бейдж не будет напечатан.")).toBeInTheDocument();
   });
 
+  it("gives both mobile sheet actions a 44px minimum height", () => {
+    renderSheet();
+    expect(screen.getByRole("button", { name: "Отмена" })).toHaveClass("min-h-11");
+    expect(screen.getByRole("button", { name: "Зарегистрировать" })).toHaveClass("min-h-11");
+  });
+
   it("checks the attendee in with no station_id and closes + calls onCheckedIn on success", async () => {
     let capturedBody: unknown;
     server.use(
@@ -143,27 +149,25 @@ describe("CheckInConfirmSheet", () => {
     expect(onCheckedIn).toHaveBeenCalledTimes(1);
   });
 
-  // Regression: SheetContent's X close button is a Radix Dialog.Close --
-  // it calls the Sheet Root's onOpenChange(false) directly, never going
-  // through onEscapeKeyDown/onPointerDownOutside/onInteractOutside above,
-  // so it needs its own guard (same race as the Cancel/Escape test above --
-  // a delayed response is what makes this prove anything).
-  it("ignores a click on the X close button while the check-in request is still in flight", async () => {
+  it("hides the close button while the check-in request is still in flight", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const requestEntered = new Promise<void>((resolve) => { entered = resolve; });
+    const responseGate = new Promise<void>((resolve) => { release = resolve; });
     server.use(
       http.post("http://api.test/api/events/:eventId/checkin", async () => {
-        await delay(40);
-        return HttpResponse.json({ outcome: "checked_in", attendee: { id: "att-2" }, checkin: { at: "2026-01-01T00:00:00Z", by_email: "a@b.com" } });
+        entered();
+        await responseGate;
+        return HttpResponse.json({ error: "boom" }, { status: 500 });
       }),
     );
     const user = userEvent.setup();
-    const { onOpenChange, onCheckedIn } = renderSheet();
+    renderSheet();
     await user.click(screen.getByRole("button", { name: "Зарегистрировать" }));
-
-    await user.click(screen.getByRole("button", { name: "Закрыть" }));
-    expect(onOpenChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-    expect(onCheckedIn).toHaveBeenCalledTimes(1);
+    await requestEntered;
+    expect(screen.queryByRole("button", { name: "Закрыть" })).not.toBeInTheDocument();
+    release();
+    expect(await screen.findByText("Не удалось зарегистрировать. Попробуйте ещё раз.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Закрыть" })).toBeInTheDocument();
   });
 });

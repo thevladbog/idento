@@ -96,6 +96,8 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         value={attendee.code}
         title={fullName}
         subtitle={attendee.company ?? ""}
+        codeLabel={t("qrDisplayCodeLabel")}
+        expiresInLabel={t("qrDisplayExpiresIn")}
         expiresAt={null}
         expiredLabel=""
         // Never rendered: an attendee's QR is a static, non-rotating value,
@@ -128,7 +130,8 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
         <div className="min-w-0">
           <div className="text-card-title font-bold">{fullName}</div>
           <div className="truncate text-caption text-muted-foreground">
-            {attendee.company} · <span className="font-mono">{attendee.code}</span>
+            {attendee.company ? <>{attendee.company} · </> : null}
+            <span className="font-mono">{attendee.code}</span>
           </div>
         </div>
       </div>
@@ -186,7 +189,7 @@ export function AttendeeCard({ eventId, attendeeId, onClose }: AttendeeCardProps
 
           <Button className="h-auto min-h-13 flex-col gap-0.5 py-2.5" onClick={() => setConfirmOpen(true)}>
             <span className="text-body font-bold">{t("attendeeCardCheckInManually")}</span>
-            <span className="text-caption font-normal text-primary-foreground/85">{t("attendeeCardNoBadgeSublabel")}</span>
+            <span className="text-caption font-normal text-primary-foreground">{t("attendeeCardNoBadgeSublabel")}</span>
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" className="min-h-11 flex-1 gap-1.5" onClick={() => setQrOpen(true)}>

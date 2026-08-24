@@ -36,7 +36,7 @@ func (h *Handler) GetUsers(c echo.Context) error {
 	}
 
 	for _, u := range users {
-		u.HasQRToken = u.QRToken != nil
+		u.HasQRToken = u.HasQRToken || u.QRToken != nil
 	}
 
 	return c.JSON(http.StatusOK, users)
@@ -126,9 +126,17 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	// Only admin can generate QR tokens
-	if currentUser.Role != "admin" {
-		return echo.NewHTTPError(http.StatusForbidden, "Only admins can generate QR tokens")
+	// Admins may issue a card for any active-tenant member. Staff may only
+	// mint their own self-service card; managers and staff targeting another
+	// user are rejected before any target lookup or token write.
+	staffTargetsSelf := false
+	if currentUser.Role == "staff" {
+		callerUUID, callerErr := uuid.Parse(currentUser.UserID)
+		targetUUID, targetErr := uuid.Parse(c.Param("id"))
+		staffTargetsSelf = callerErr == nil && targetErr == nil && callerUUID == targetUUID
+	}
+	if currentUser.Role != "admin" && !staffTargetsSelf {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
 	}
 
 	userID := c.Param("id")
@@ -154,6 +162,9 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 		// Uniform 404: don't reveal that the user exists in another tenant.
 		return echo.NewHTTPError(http.StatusNotFound, "User not found")
 	}
+	if staffTargetsSelf && role != "staff" {
+		return echo.NewHTTPError(http.StatusForbidden, "Access denied")
+	}
 
 	// Generate random token
 	tokenBytes := make([]byte, 32)
@@ -164,7 +175,7 @@ func (h *Handler) GenerateQRToken(c echo.Context) error {
 	now := time.Now()
 
 	// Update user with QR token
-	if err := h.Store.UpdateUserQRToken(c.Request().Context(), userUUID, token, now); err != nil {
+	if err := h.Store.UpdateUserQRToken(c.Request().Context(), userUUID, currentTenantID, role, token, now); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save QR token")
 	}
 

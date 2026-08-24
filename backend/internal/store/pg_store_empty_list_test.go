@@ -25,9 +25,9 @@ func TestPGStore_EmptyResultsReturnEmptySliceNotNil(t *testing.T) {
 		{
 			name: "GetUsersByTenantID",
 			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
-				mock.ExpectQuery(`FROM users WHERE tenant_id`).
+				mock.ExpectQuery(`FROM users u[\s\S]*LEFT JOIN user_qr_credentials`).
 					WithArgs(id).
-					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
+					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "has_qr_token", "qr_token_created_at", "created_at", "updated_at"}))
 			},
 			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
 				users, err := s.GetUsersByTenantID(context.Background(), id)
@@ -37,9 +37,9 @@ func TestPGStore_EmptyResultsReturnEmptySliceNotNil(t *testing.T) {
 		{
 			name: "GetEventStaff",
 			setup: func(mock pgxmock.PgxPoolIface, id uuid.UUID, _ time.Time) {
-				mock.ExpectQuery(`FROM users u`).
+				mock.ExpectQuery(`FROM users u[\s\S]*LEFT JOIN user_qr_credentials`).
 					WithArgs(id).
-					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "qr_token", "qr_token_created_at", "created_at", "updated_at"}))
+					WillReturnRows(pgxmock.NewRows([]string{"id", "tenant_id", "email", "role", "is_super_admin", "has_qr_token", "qr_token_created_at", "created_at", "updated_at"}))
 			},
 			run: func(s *PGStore, id uuid.UUID, _ time.Time) (int, bool, error) {
 				staff, err := s.GetEventStaff(context.Background(), id)

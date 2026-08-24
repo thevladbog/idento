@@ -1,24 +1,29 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { AddStationAction } from "./AddStationAction";
-import { startMswServer } from "../../test/msw";
+import type { components } from "../../shared/api/schema";
 import i18n from "../../shared/i18n";
+import { startMswServer } from "../../test/msw";
+import { STAFF_KEY } from "../staff/hooks";
+import { AddStationAction } from "./AddStationAction";
 
-// Partial mock (`importOriginal`), not a full replacement: `shared/api/http`'s
-// `auth` middleware imports `getToken` from this same module and runs on
-// EVERY request (including this test's provisioning-token mutation) — a
-// full `vi.mock` that only supplies `getCurrentUser` leaves `getToken`
-// undefined, which throws inside that middleware before the request ever
-// reaches MSW (surfaces as a spurious mutation error, not a missing mock).
-vi.mock("../../shared/api/session", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../shared/api/session")>();
+type StaffUser = components["schemas"]["User"];
+
+function staffUser(id: string, email: string, role: StaffUser["role"]): StaffUser {
   return {
-    ...actual,
-    getCurrentUser: () => ({ id: "user-1", tenant_id: "t1", email: "a@b.com", role: "admin", created_at: "", updated_at: "" }),
+    id,
+    tenant_id: "tenant-1",
+    email,
+    role,
+    is_super_admin: false,
+    has_qr_token: false,
+    created_at: "2026-08-09T00:00:00Z",
+    updated_at: "2026-08-09T00:00:00Z",
   };
-});
+}
+
+let staffResponse: StaffUser[] = [];
 
 function renderAction() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -27,15 +32,16 @@ function renderAction() {
       <AddStationAction eventId="evt-1" eventName="TechConf Moscow 2026" />
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
-// Registered once at module scope (AttendeeCard.test.tsx's own convention/
-// comment on this exact hazard: calling `startMswServer(...)` from *inside*
-// each `it()` body registers the server's beforeAll/afterEach/afterAll hooks
-// too late for beforeAll to run before the request fires, so MSW never
-// intercepts and every request falls through to a real failing network
-// call). Per-test behavior is layered in via `server.use(...)` below.
+async function selectStaff(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("combobox", { name: "Назначенный сотрудник" }));
+  await user.click(screen.getByRole("option", { name: "staff@example.test · Сотрудник" }));
+}
+
 const server = startMswServer(
+  http.get("http://api.test/api/events/:eventId/staff", () => HttpResponse.json(staffResponse)),
   http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
     await request.json();
     return HttpResponse.json({ token: "prov-tok-abc", expires_at: new Date(Date.now() + 600_000).toISOString() });
@@ -43,22 +49,66 @@ const server = startMswServer(
 );
 
 describe("AddStationAction", () => {
-  // Same beforeEach/afterEach locale-switch + __ENV__ pattern as
-  // AttendeeCard.test.tsx / StaffCard.test.tsx / WorkspaceOverview.test.tsx:
-  // i18n is a shared singleton across test files, so it's switched here and
-  // restored afterward rather than assumed, and `window.__ENV__.API_URL` is
-  // set so `$api` resolves its baseUrl against the mocked origin instead of
-  // falling through to the unmocked http://localhost:8008 default.
   beforeEach(async () => {
     await i18n.changeLanguage("ru");
     window.__ENV__ = { API_URL: "http://api.test" };
+    staffResponse = [
+      staffUser("admin-1", "owner@example.test", "admin"),
+      staffUser("staff-1", "staff@example.test", "staff"),
+      staffUser("manager-1", "manager@example.test", "manager"),
+    ];
   });
 
   afterEach(async () => {
     await i18n.changeLanguage("en");
   });
 
-  it("mints a provisioning token for the current user and shows it as a QR with the returned expiry", async () => {
+  it("requires an explicit staff or manager selection and never offers an admin", async () => {
+    const user = userEvent.setup();
+    renderAction();
+
+    const addStation = await screen.findByRole("button", { name: /Добавить станцию/ });
+    expect(addStation).toBeDisabled();
+    await user.click(await screen.findByRole("combobox", { name: "Назначенный сотрудник" }));
+    expect(screen.queryByRole("option", { name: /owner@example\.test/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "staff@example.test · Сотрудник" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "manager@example.test · Менеджер" })).toBeInTheDocument();
+  });
+
+  it("does not auto-select the only eligible user", async () => {
+    staffResponse = [staffUser("staff-1", "staff@example.test", "staff")];
+    renderAction();
+
+    expect(await screen.findByRole("combobox", { name: "Назначенный сотрудник" })).toHaveTextContent("Выберите сотрудника");
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled();
+  });
+
+  it("shows loading and keeps provisioning disabled before staff resolves", () => {
+    renderAction();
+
+    expect(screen.getByText("Загрузка назначенных сотрудников…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled();
+  });
+
+  it("shows an initial staff error distinct from the empty state", async () => {
+    server.use(http.get("http://api.test/api/events/:eventId/staff", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    renderAction();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось загрузить назначенных сотрудников.");
+    expect(screen.queryByText("Для события нет доступных сотрудников или менеджеров.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled();
+  });
+
+  it("shows an empty state when only an ineligible admin is assigned", async () => {
+    staffResponse = [staffUser("admin-1", "owner@example.test", "admin")];
+    renderAction();
+
+    expect(await screen.findByText("Для события нет доступных сотрудников или менеджеров.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled();
+  });
+
+  it("mints a provisioning token for the explicitly selected staff user and shows it as a QR with the returned expiry", async () => {
     let capturedBody: unknown;
     server.use(
       http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
@@ -68,12 +118,13 @@ describe("AddStationAction", () => {
     );
     const user = userEvent.setup();
     renderAction();
+
+    await selectStaff(user);
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
-    // The QR image's accessible name is a generic "QR code" (never the raw
-    // token) — data-testid is QrDisplay's own test hook for the rendered code.
-    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.getByText("TechConf Moscow 2026 · подключится как станция регистрации")).toBeInTheDocument();
-    expect(capturedBody).toEqual({ staff_user_id: "user-1" });
+    expect(capturedBody).toEqual({ staff_user_id: "staff-1" });
   });
 
   it("shows an inline error if minting fails", async () => {
@@ -82,15 +133,62 @@ describe("AddStationAction", () => {
     );
     const user = userEvent.setup();
     renderAction();
+
+    await selectStaff(user);
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
-    expect(await screen.findByText("Не удалось создать код для подключения — попробуйте снова.")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать код для подключения — попробуйте снова.");
   });
 
-  // Regression: onRegenerate re-calls mint.mutate(), which resets the
-  // mutation to pending -- gating render on mint.isSuccess/mint.data
-  // directly made the QR screen flash back to the base "Add station" button
-  // for that window. A second, distinct token proves the cache actually
-  // updates too, not just that the QR stays visible.
+  it("clears an initial mint alert when a new mint succeeds", async () => {
+    let mintCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 1) return HttpResponse.json({ error: "boom" }, { status: 500 });
+        return HttpResponse.json({ token: "prov-tok-recovered", expires_at: new Date(Date.now() + 600_000).toISOString() });
+      }),
+    );
+    const user = userEvent.setup();
+    renderAction();
+
+    await selectStaff(user);
+    const addStation = screen.getByRole("button", { name: /Добавить станцию/ });
+    await user.click(addStation);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    await user.click(addStation);
+    expect(await screen.findByTestId("qr-display-code")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a regeneration alert without replacing the exact cached QR, then clears it on close", async () => {
+    let mintCallCount = 0;
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 2) return HttpResponse.json({ error: "boom" }, { status: 500 });
+        return HttpResponse.json({ token: "prov-tok-cached", expires_at: new Date(Date.now() + 600_000).toISOString() });
+      }),
+    );
+    const user = userEvent.setup();
+    renderAction();
+
+    await selectStaff(user);
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    const cachedQr = await screen.findByTestId("qr-display-code");
+    const cachedQrMarkup = cachedQr.innerHTML;
+
+    await user.click(screen.getByRole("button", { name: "Добавить станцию" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось создать код для подключения — попробуйте снова.");
+    expect(screen.getByTestId("qr-display-code").innerHTML === cachedQrMarkup).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+  });
+
   it("stays on the QR screen through a regenerate, without flashing back to the base button", async () => {
     let mintCallCount = 0;
     server.use(
@@ -105,16 +203,102 @@ describe("AddStationAction", () => {
     );
     const user = userEvent.setup();
     renderAction();
+
+    await selectStaff(user);
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
     await screen.findByTestId("qr-display-code");
-
-    // The regenerate control shares the "Добавить станцию" label with the
-    // base page's mint button, so the base page's own subtitle caption
-    // (never rendered on the QR screen) is the unambiguous signal here.
     await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
 
     expect(screen.queryByText("покажет QR")).not.toBeInTheDocument();
     await waitFor(() => expect(mintCallCount).toBe(2));
     expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
+  });
+
+  it("serializes regeneration and ignores its response after the QR session closes", async () => {
+    let mintCallCount = 0;
+    let releaseRegeneration!: () => void;
+    const regenerationGate = new Promise<void>((resolve) => {
+      releaseRegeneration = resolve;
+    });
+    server.use(
+      http.post("http://api.test/api/events/:eventId/stations/provisioning-token", async ({ request }) => {
+        await request.json();
+        mintCallCount += 1;
+        if (mintCallCount === 2) await regenerationGate;
+        return HttpResponse.json({
+          token: mintCallCount === 1 ? "prov-tok-abc" : "prov-tok-xyz",
+          expires_at: new Date(Date.now() + 600_000).toISOString(),
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderAction();
+
+    await selectStaff(user);
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    await screen.findByTestId("qr-display-code");
+
+    const regenerate = screen.getByRole("button", { name: "Добавить станцию" });
+    await user.click(regenerate);
+    await waitFor(() => expect(mintCallCount).toBe(2));
+    expect(regenerate).toBeDisabled();
+    await user.click(regenerate);
+    expect(mintCallCount).toBe(2);
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    releaseRegeneration();
+
+    const addStation = await screen.findByRole("button", { name: /Добавить станцию/ });
+    await waitFor(() => expect(addStation).toBeEnabled());
+    expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+  });
+
+  it("clears a selected user and disables base provisioning when their role becomes ineligible", async () => {
+    const user = userEvent.setup();
+    const queryClient = renderAction();
+
+    await selectStaff(user);
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeEnabled();
+
+    act(() => {
+      queryClient.setQueryData(STAFF_KEY("evt-1"), [
+        staffUser("staff-1", "staff@example.test", "admin"),
+        staffUser("manager-1", "manager@example.test", "manager"),
+      ]);
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled());
+    expect(screen.getByRole("combobox", { name: "Назначенный сотрудник" })).toHaveTextContent("Выберите сотрудника");
+  });
+
+  it("disables QR regeneration and remains fail-closed after an assigned user is removed", async () => {
+    const user = userEvent.setup();
+    const queryClient = renderAction();
+
+    await selectStaff(user);
+    await user.click(screen.getByRole("button", { name: /Добавить станцию/ }));
+    await screen.findByTestId("qr-display-code");
+    act(() => {
+      queryClient.setQueryData(STAFF_KEY("evt-1"), [staffUser("manager-1", "manager@example.test", "manager")]);
+    });
+    const regenerate = screen.getByRole("button", { name: "Добавить станцию" });
+    await waitFor(() => expect(regenerate).toBeDisabled());
+
+    await user.click(screen.getByRole("button", { name: "Закрыть" }));
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeDisabled();
+  });
+
+  it("retains a selected eligible user after a failed background refresh", async () => {
+    const user = userEvent.setup();
+    const queryClient = renderAction();
+
+    await selectStaff(user);
+    server.use(http.get("http://api.test/api/events/:eventId/staff", () => HttpResponse.json({ error: "boom" }, { status: 500 })));
+    await queryClient.invalidateQueries({ queryKey: STAFF_KEY("evt-1") });
+
+    await waitFor(() => expect(queryClient.getQueryState(STAFF_KEY("evt-1"))?.status).toBe("error"));
+    expect(screen.getByRole("combobox", { name: "Назначенный сотрудник" })).toHaveTextContent("staff@example.test");
+    expect(screen.getByRole("button", { name: /Добавить станцию/ })).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });

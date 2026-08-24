@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterContextProvider, createRootRoute, createRouter } from "@tanstack/react-router";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { HomePage } from "./HomePage";
@@ -73,6 +74,23 @@ describe("HomePage", () => {
       screen.getByText("Create your first event to start importing attendees and printing badges."),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ New event" })).toBeInTheDocument();
+  });
+
+  it("returns focus to the create trigger after the controlled dialog closes", async () => {
+    server.use(http.get("http://api.test/api/events", () => HttpResponse.json([])));
+    const user = userEvent.setup();
+    renderWithProviders(<HomePage />);
+
+    const trigger = await screen.findByRole("button", { name: "+ New event" });
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog");
+    const cancel = within(dialog)
+      .getAllByRole("button", { name: "Cancel" })
+      .find((button) => button.textContent === "Cancel");
+    expect(cancel).toBeDefined();
+    await user.click(cancel!);
+
+    expect(await screen.findByRole("button", { name: "+ New event" })).toHaveFocus();
   });
 
   it("renders LiveStrip + both sections with the correct row counts when a running event exists", async () => {

@@ -884,3 +884,66 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - 3 IMPORTANT found and FIXED (63366b6, 1f70de5, a5c55da): (a) AttendeeCard had NO attendee.blocked branch at all — a blocked attendee fell into the not-checked-in variant with a functional "Check in manually" + a meaningless "Block" button, and useUnblockAttendee (built in Task 2) had zero UI consumers anywhere in the panel despite the Block confirm copy promising "you can unblock at any time" — fixed with a dedicated blocked variant (destructive status card + block_reason + Show QR + Unblock, no Check-in/Block); (b) AttendeesPage rendered AttendeeSearchList AND AttendeeCard simultaneously on phone (list never hidden when a card opens) — confirmed live-reproducible on a real list (not caught during T11's walk since the seed only had 1 attendee, so scrolling wasn't dramatic) — fixed by hiding the list whenever search.attendee is set; (c) AttendeeSearchList had no query.isError branch, so a network error rendered as "No matches" (misleading during live check-in) — fixed to reuse the existing attendeesLoadError+retry pattern already used by the desktop table.
 - All 4 fixes independently verified by the controller (not just trusting the fix-subagent's report): read every diff hunk directly, re-ran typecheck/lint/full suite (131 files/1570 tests, +5 net new since T11's 1565), and re-exercised the blocked-attendee flow live at 390px against the real backend (Block Ada → blocked variant renders correctly with Show-QR/Unblock only → Unblock → reverts cleanly to checked-in variant).
 - Deferred to P6.4, non-blocking (per reviewer triage, all independently spot-checked): SheetContent hideClose-equivalent prop; /me nav entry point (role-gated); QrDisplay's hardcoded English "Expires in" countdown label (no RU translation — the one EN/RU parity gap on the branch, since keyParity.test.ts can't see packages/ui); ReadinessStrip overflow (pre-existing, confirmed via git log/merge-base, not a P6.3 regression); assorted Minors (duplicate attendees network request on phone, dead onSearchChange prop, aria-live countdown chattiness, sub-44px tap targets on 2 text buttons, QrDisplay presentation inconsistency across consumers, AttendeeCard empty-company separator).
+
+### P6.4 — Mobile hardening & parity
+
+- Automated shared UI: PASS — `npm test -w @idento/ui` completed 37 files / 345 tests; `npm run typecheck -w @idento/ui` and `npm run lint -w @idento/ui` exited 0.
+- Panel Vitest consecutive run 1: PASS — 133 files / 1,601 tests, exit 0.
+- Panel Vitest consecutive run 2: PASS — 133 files / 1,601 tests, exit 0.
+- Panel typecheck/lint/build: PASS — all three commands exited 0; the production build transformed 3,241 modules.
+- Backend authorization scope: PASS — after the sandbox-only Go-cache/`httptest` port restriction was removed, fresh `go test ./...` exited 0 for every backend package; `go build ./...` exited 0; `golangci-lint run ./internal/...` reported 0 issues.
+- Package/lock/config integrity: PASS — offline `npm ci --ignore-scripts --dry-run` reported up to date; the bundle checker passed 1 file / 4 tests; both modified workflow YAML files parsed successfully; package and lockfile metadata agree for `@lhci/cli` and `puppeteer`; required bundle, E2E, Lighthouse-advisory, and `ci-success` wiring is present. `actionlint` was unavailable locally.
+- Bundle: PASS — raw 1,475,681 bytes versus 1,550,000; gzip 413,717 bytes versus 430,000.
+- Playwright desktop: NOT RUN — the required real backend on `:8008` and bootstrap credential environment are unavailable in this session.
+- Playwright mobile 390×844: NOT RUN — the required real backend on `:8008` and bootstrap credential environment are unavailable in this session.
+- Browser walk light: NOT RUN — the same real-backend/bootstrap preconditions are unavailable; no browser acceptance is claimed.
+- Browser walk dark: NOT RUN — the same real-backend/bootstrap preconditions are unavailable; no browser acceptance is claimed.
+- Lighthouse representative: NOT CAPTURED — collection was not started without its required real backend and bootstrap credential environment.
+- Physical iOS Safari: NOT RUN — no physical iOS device was available.
+- Physical Android Chrome: NOT RUN — no physical Android device was available.
+- KMP staff/station QR scans: NOT RUN — no KMP device/scanner hardware was available.
+- Real cellular/venue-Wi-Fi SSE transition: NOT RUN — no physical network-transition environment was available.
+
+### P6.4 — Final post-review verification addendum (`63cc132`)
+
+- Verified source HEAD before the run: `63cc1324f6a01298e1cbab75a8b15b31492c9c15`; the baseline worktree was clean.
+- Shared UI: PASS — 37 files / 347 tests; typecheck and lint both exited 0.
+- Panel consecutive run 1: PASS — 134 files / 1,607 tests, exit 0.
+- Panel consecutive run 2: PASS — 134 files / 1,607 tests, exit 0 immediately after run 1. Before the counted pair, one full run exposed the existing fixed-60ms `ZoneFormDialog` pending-dismissal timing race (1 failed / 1,606 passed); the exact file passed 14/14 in isolation. No code was changed, and the counter was restarted rather than treating the isolated rerun as a substitute.
+- Panel typecheck/lint/build: PASS — all exited 0; Vite transformed 3,241 modules. Bundle budget: PASS — raw 1,476,005 / 1,550,000 bytes; gzip 413,768 / 430,000 bytes.
+- Backend: PASS — fresh uncached `go test -count=1 ./...` passed every package; `go build ./...` exited 0; unrestricted `golangci-lint run ./internal/...` reported `0 issues.` The first sandboxed lint attempt failed to load package context (exit 5), so it was not counted.
+- E2E static/discovery gates: PASS — strict standalone TypeScript compilation of the Playwright config, specs, assertions, and fixtures exited 0; discovery found exactly 10 tests: 7 desktop under `chromium` and 3 mobile under `mobile-chromium`.
+- Package/lock/OpenAPI/config integrity: PASS — offline `npm ci --ignore-scripts --dry-run` reported up to date; package and lock metadata agree for `@lhci/cli` and `puppeteer`; generated OpenAPI client produced no diff; both workflow YAML files parsed; targeted CI/Playwright/Lighthouse wiring assertions passed. `actionlint` was unavailable.
+- Diff integrity: the final working-tree `git diff --check` passed. The historical branch range `b4c36a1..63cc132` reports three trailing-whitespace lines in the already-committed design-spec header; these are Markdown hard-breaks, not newly introduced final-verification changes.
+- Real-backend Playwright desktop/mobile, light/dark browser walk, and Lighthouse collection: NOT RUN / NOT CAPTURED — required backend/bootstrap prerequisites were not provided, and no substitute acceptance is claimed.
+- Physical iOS Safari, Android Chrome, KMP QR scanning, and cellular/venue-Wi-Fi SSE transition: NOT RUN — the required devices, scanners, and network environment were unavailable.
+
+### P6.4 — Station assignee correction final verification (`e1ced5c`)
+
+- Baseline: clean worktree on `e1ced5c`; the required full panel consecutive counter started at zero.
+- Panel consecutive run 1: PASS — 135/135 files and 1,622/1,622 tests, exit 0, 53.37s.
+- Panel consecutive run 2, immediately after run 1: PASS — 135/135 files and 1,622/1,622 tests, exit 0, 49.47s. Required counter: 2/2.
+- Shared UI: PASS — 37/37 files and 348/348 tests; typecheck and lint both exited 0.
+- Panel static/build: PASS — typecheck, lint, and production build exited 0; Vite transformed 3,241 modules.
+- Bundle: PASS — 1,479,807 raw bytes versus 1,550,000; 414,713 gzip bytes versus 430,000.
+- E2E static/discovery: PASS — authorized ESNext/Bundler standalone TypeScript compile exited 0; discovery found exactly 7 desktop `chromium` and 3 `mobile-chromium` tests.
+- Real-backend mobile Chromium 390x844: reused fresh, isolated, independently reviewed Task 3 PASS evidence — 3/3 serial tests in 57.7s (14.7s, 6.3s, 34.6s). It was not rerun because doing so would unnecessarily mint credential-bearing station/QR data.
+- Real-backend desktop Chromium: NOT RUN in this verification; discovery is not reported as execution.
+- Physical iOS Safari, Android Chrome, KMP QR scanning, printer/scanner acceptance, and real cellular/venue-Wi-Fi SSE transition: NOT RUN.
+- No password, token, QR value, bearer body, trace, screenshot, or credential artifact was recorded.
+- Integrity: initial worktree was clean. The exact historical-range `git diff --check origin/main...HEAD` exits 2 only for the same three already documented Markdown hard-break lines in the committed design-spec header; Task 13 introduced no whitespace change.
+- Push, PR #113 reconciliation, CI monitoring, and manual GitGuardian incident `35916563` disposition were pending when this local record was written.
+
+### P6.4 — Task 19 fresh final verification (`75591c4`)
+
+- Baseline: clean source worktree at `75591c4`; no pre-Task-18 diagnostic result was reused.
+- Panel consecutive run 1: PASS — 135/135 files and 1,625/1,625 tests in 50.53s (command wall time 50.92s).
+- Panel consecutive run 2, immediately after run 1: PASS — 135/135 files and 1,625/1,625 tests in 50.04s (command wall time 50.48s). Required counter: 2/2 with no reset.
+- Backend: PASS — fresh `go test -count=1 ./...` passed every package in 3.28s; `go build ./...` passed in 1.31s; unrestricted `golangci-lint run ./internal/...` reported 0 issues in 0.94s.
+- Shared UI: PASS — 37/37 files and 348/348 tests in 8.71s; typecheck and lint passed.
+- Panel static/build: PASS — typecheck, lint, and production build passed; Vite transformed 3,241 modules. Bundle budget passed at 1,480,778 raw / 414,954 gzip bytes.
+- E2E static/discovery: PASS — authorized ESNext/Bundler compile exited 0; discovery found exactly 7 desktop `chromium` and 3 `mobile-chromium` tests.
+- Fresh real-backend mobile acceptance: PASS — isolated PostgreSQL 16 applied migration `000026`; all three serial 390x844 mobile journeys passed in 56.7s (14.5s, 6.2s, 34.6s; command wall time 57.23s).
+- Credential/resource hygiene: generated secrets stayed inside the shared execution shell; no credential/QR/bearer value or response body was recorded; mobile trace/screenshot/video stayed off; exact PostgreSQL/backend/browser artifacts were cleaned; ports 55441/8008/5174 were free; stopped `idento_db` remained untouched.
+- Real-backend desktop Chromium, separate manual browser/Lighthouse capture, physical iOS/Android, KMP QR scanning, printer/scanner hardware, and real cellular/venue-Wi-Fi transition: NOT RUN / NOT CAPTURED.
+- Publication, PR #113 reconciliation, final independent review, and manual GitGuardian incident `35916563` disposition remained pending at the time of this local record.

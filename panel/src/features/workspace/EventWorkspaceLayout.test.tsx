@@ -113,7 +113,9 @@ describe("EventWorkspaceLayout", () => {
     renderAt("/events/evt-1");
 
     expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
-    expect(screen.getByText("overview content")).toBeInTheDocument();
+    const overviewContent = screen.getByText("overview content");
+    expect(overviewContent).toBeInTheDocument();
+    expect(overviewContent.parentElement).toHaveClass("min-w-0");
     // Rail is mounted (Task 1 component) — its static Settings nav item is
     // present, and Overview is marked active for the index route.
     expect(within(getRail()).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");

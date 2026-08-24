@@ -185,7 +185,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate a QR-card login token for a staff user (admin only) */
+        /** Generate a QR-card login token (admin for members; staff for self) */
         post: operations["generateQRToken"];
         delete?: never;
         options?: never;
@@ -1265,7 +1265,7 @@ export interface components {
             /** Format: date-time */
             deleted_at?: string | null;
         };
-        /** @description A staff-to-event assignment record — the response shape for POST /api/events/{event_id}/staff. Distinct from GET .../staff, which returns full User records (store.GetEventStaff joins through the event_staff table back to users, not this assignment row shape). */
+        /** @description A staff-to-event assignment record — the response shape for POST /api/events/{event_id}/staff. Distinct from GET .../staff, which returns full User records projected into the event tenant with each user's current membership role (not this assignment row shape). */
         EventStaff: {
             /** Format: uuid */
             id: string;
@@ -1982,7 +1982,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Authenticated as the staff user's own tenant/role. */
+            /** @description Authenticated in the tenant/role persisted with the QR credential, after that tenant membership and role are revalidated live. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2000,7 +2000,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description Unknown or expired QR token (echo.NewHTTPError shape). */
+            /** @description Unknown, expired, legacy/unscoped, or stale-membership QR token (echo.NewHTTPError shape). */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2398,7 +2398,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description New QR token for the target user. */
+            /** @description New QR token bound to the caller's active tenant and the target's current role in that tenant. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2416,7 +2416,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPError"];
                 };
             };
-            /** @description Caller is not admin (HTTPError), or tenant_suspended from the tenant gate (Error). */
+            /** @description Caller is a manager; is staff targeting another user; or has a stale staff claim while their live active-tenant role is no longer staff (HTTPError); or tenant_suspended from the tenant gate (Error). */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3738,7 +3738,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Assigned staff, as full User records — store.GetEventStaff joins event_staff back to users, so this is an array of User, NOT the EventStaff assignment shape (see POST on this same path, which does return EventStaff). */
+            /** @description Assigned staff, as full User records projected into the event tenant: tenant_id is the event tenant and role is the user's current membership role in that tenant. Assignments without a current event-tenant membership are omitted. This is an array of User, NOT the EventStaff assignment shape (see POST on this same path, which does return EventStaff). */
             200: {
                 headers: {
                     [name: string]: unknown;

@@ -7,11 +7,10 @@ import { MoreSheet } from "./MoreSheet";
 import { $api } from "../../shared/api/query";
 import { stationStaleness } from "../monitor/liveness";
 
-// Recheck cadence for the cache-only attention dot below — well under
-// STATION_STALE_MS (45s) so a station crossing the threshold lights the
-// dot promptly even if nothing else re-renders this component, but coarse
-// enough to stay a trivial local recompute (no network — see the dot's own
-// comment).
+// Recheck cadence for the cache-only attention dot below. The evaluation is
+// capped at the snapshot's successful cache timestamp, so this local tick
+// never invents newer monitor knowledge; it remains useful for cache records
+// without a timestamp and stays a trivial recompute (no network).
 const STALENESS_RECHECK_MS = 10_000;
 
 type EventTab = "overview" | "monitor" | "attendees" | "staff" | "other";
@@ -50,19 +49,20 @@ export function EventTabBar({ eventId }: { eventId: string }) {
     { params: { path: { event_id: eventId } } },
     { enabled: false },
   );
-  // A station can cross STATION_STALE_MS purely by the clock advancing,
-  // with no cache update at all (e.g. sitting on Overview with nothing
-  // else re-rendering this bar) — without a local recheck, the dot would
-  // stay off until some unrelated re-render happened to notice. This tick
-  // is purely local re-render bookkeeping, never a fetch: `enabled: false`
-  // above is untouched, so network behavior is unchanged.
+  // This tick is purely local re-render bookkeeping, never a fetch:
+  // `enabled: false` above is untouched. Retained data is evaluated only as
+  // of its last successful cache update below, so wall time alone cannot
+  // turn a station stale after the monitor stopped supplying observations.
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), STALENESS_RECHECK_MS);
     return () => window.clearInterval(timer);
   }, []);
+  const evaluationTime = snapshot.dataUpdatedAt > 0
+    ? Math.min(now, snapshot.dataUpdatedAt)
+    : now;
   const hasStaleStation = (snapshot.data?.stations ?? []).some(
-    (station) => station.last_seen_at && stationStaleness(station.last_seen_at, now).stale,
+    (station) => station.last_seen_at && stationStaleness(station.last_seen_at, evaluationTime).stale,
   );
 
   return (

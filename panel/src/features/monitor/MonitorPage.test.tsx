@@ -24,6 +24,7 @@ import {
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { delay, http, HttpResponse } from "msw";
 import { MonitorPage } from "./MonitorPage";
+import { MONITOR_SNAPSHOT_KEY } from "./hooks";
 import { startMswServer } from "../../test/msw";
 import "../../shared/i18n";
 
@@ -268,6 +269,10 @@ describe("MonitorPage", () => {
     expect(screen.getByText("62")).toBeInTheDocument();
     expect(screen.getByText("Backstage")).toBeInTheDocument();
     expect(screen.getByText("32")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Event check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Main hall check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "VIP check-in progress" })).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Backstage check-in progress" })).toBeInTheDocument();
 
     // Right column: Task 8's placeholders, present but empty.
     expect(screen.getByTestId("monitor-stations-placeholder")).toBeInTheDocument();
@@ -339,6 +344,7 @@ describe("MonitorPage", () => {
     await screen.findByRole("heading", { name: "Partner Day — Autumn" });
 
     expect(await screen.findByTestId("monitor-snapshot-error")).toBeInTheDocument();
+    expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
     expect(screen.queryByText(/0 \/ 0/)).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-totals-card")).not.toBeInTheDocument();
   });
@@ -394,10 +400,13 @@ describe("MonitorPage -- Stations card (liveness)", () => {
     expect(screen.queryByTestId("monitor-station-stale-st-1")).not.toBeInTheDocument();
     expect(screen.queryByText(/stale/i)).not.toBeInTheDocument();
     // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
-    // row now ALSO renders its own visible muted "Online" status word next
+    // row now ALSO renders its own visible "Online" status word next
     // to the dot -- the green dot is never the sole channel conveying
     // liveness (never color alone).
-    expect(screen.getByTestId("monitor-station-online-st-1")).toHaveTextContent("Online");
+    const online = screen.getByTestId("monitor-station-online-st-1");
+    expect(online).toHaveTextContent("Online");
+    expect(online).toHaveClass("text-foreground");
+    expect(online).not.toHaveClass("text-muted-foreground");
     expect(screen.getByText("12")).toBeInTheDocument();
   });
 
@@ -444,9 +453,9 @@ describe("MonitorPage -- Stations card (liveness)", () => {
 
   // PR #81 round-3 convergence, UI Finding 4 (CodeRabbit facet): a fresh
   // row's dot alone must never be the ONLY channel conveying "online" --
-  // this station's row also carries its own separate, VISIBLE muted status
+  // this station's row also carries its own separate, VISIBLE status
   // word (distinct from the dot's own sr-only label above).
-  it("shows a fresh station's own visible muted 'Online' status word, not just a colored dot", async () => {
+  it("shows a fresh station's own visible 'Online' status word, not just a colored dot", async () => {
     monitorSnapshot = snapshotBody({
       stations: [
         { id: "st-4", name: "Kiosk D", zone_id: null, last_seen_at: new Date().toISOString(), checkin_count: 5 },
@@ -493,6 +502,9 @@ describe("MonitorPage -- Recent feed card (read-only)", () => {
     const row = await screen.findByTestId("monitor-recent-row-act-1");
     expect(row).toHaveTextContent("Ada Lovelace");
     expect(row).toHaveTextContent("09:05:03");
+    const timestamp = screen.getByText("09:05:03");
+    expect(timestamp).toHaveClass("text-foreground");
+    expect(timestamp).not.toHaveClass("text-muted-foreground");
 
     const icon = row.querySelector("svg");
     expect(icon).toHaveClass("text-verdict-allowed");
@@ -742,7 +754,10 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
 
       streamConnections[0].close();
       await waitFor(() => expect(screen.getByTestId("monitor-reconnecting-badge")).toBeInTheDocument());
-      expect(screen.getByTestId("monitor-body")).toHaveClass("opacity-60");
+      expect(screen.getByTestId("monitor-body")).toHaveClass(
+        "opacity-60",
+        "[&_.text-muted-foreground]:text-foreground",
+      );
 
       // Backoff is 1s base +/-25% jitter (max 1250ms) -- bounded wait for
       // the retried connect() to land as a brand-new request, same as the
@@ -751,6 +766,7 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
       streamConnections[1].push("event: hello\ndata: {}\n\n");
       await waitFor(() => expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument());
       expect(screen.getByTestId("monitor-body")).not.toHaveClass("opacity-60");
+      expect(screen.getByTestId("monitor-body")).not.toHaveClass("[&_.text-muted-foreground]:text-foreground");
     },
     8000,
   );
@@ -780,6 +796,7 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     expect(region).toHaveAttribute("aria-live", "polite");
     expect(region).toHaveClass("sr-only");
     expect(region).toHaveTextContent("Reconnecting");
+    expect(screen.getByTestId("monitor-updated-ago")).not.toHaveAttribute("aria-live");
   });
 
   // Fix round 1 (P6.2 T2 review finding): before the SSE hello frame
@@ -793,11 +810,55 @@ describe("MonitorPage -- stream status (connecting/live/reconnecting/error)", ()
     renderCorrectAt("/events/evt-1/monitor");
 
     await screen.findByText("1,284 / 2,410");
-    expect(liveRing()).not.toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-live-pill")?.querySelector(".animate-ping") ?? null).not.toBeInTheDocument();
     expect(screen.queryByTestId("monitor-reconnecting-badge")).not.toBeInTheDocument();
 
     const announcer = await screen.findByTestId("monitor-stream-announcer");
     expect(announcer).toHaveTextContent("");
+  });
+
+  // Task 21 (PR #113 review): freshness used to be derived from the
+  // transport alone, so an SSE hello landing BEFORE the initial snapshot
+  // resolved rendered the pulsing live ring and announced "LIVE" over a
+  // body that had no numbers at all. Freshness additionally requires a
+  // usable successful snapshot.
+  it("does not render or announce LIVE when the hello frame arrives before the initial snapshot, then goes live once the snapshot lands", async () => {
+    let releaseSnapshot!: () => void;
+    const snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    server.use(
+      http.get("http://api.test/api/events/:eventId/monitor", async () => {
+        await snapshotGate;
+        return HttpResponse.json(monitorSnapshot);
+      }),
+    );
+
+    try {
+      renderCorrectAt("/events/evt-1/monitor");
+
+      expect(await screen.findByTestId("monitor-live-pill")).toBeInTheDocument();
+      await waitFor(() => expect(streamConnections.length).toBe(1));
+      streamConnections[0].push("event: hello\ndata: {}\n\n");
+
+      // Bounded settle window: the hello frame is processed asynchronously
+      // and a correctly-silent monitor has no positive signal to await
+      // here -- the release below retroactively proves the transport was
+      // genuinely live during this window.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(liveRing()).not.toBeInTheDocument();
+      expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("");
+      expect(screen.queryByText("1,284 / 2,410")).not.toBeInTheDocument();
+    } finally {
+      releaseSnapshot();
+    }
+
+    // Positive completion proof: with the SAME connection and no further
+    // hello frames, the ring appears as soon as the snapshot arrives -- so
+    // only the missing snapshot was holding LIVE back above.
+    await screen.findByText("1,284 / 2,410");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
+    expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("LIVE");
   });
 
   it("renders the updated-ago counter in warning tone with a clock icon while the stream is degraded", async () => {
@@ -831,40 +892,49 @@ describe("MonitorPage -- retains stale data across a failed background refetch (
     localStorage.clear();
     localStorage.setItem("token", "jwt-test");
     monitorSnapshot = snapshotBody();
+    streamConnections = [];
+    server.use(controlledMonitorStreamHandler());
   });
 
-  it("keeps rendering the snapshot content after a background refetch fails", async () => {
+  it("marks retained live data stale when the snapshot background refetch fails", async () => {
     const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
 
+    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(await screen.findByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
+    await waitFor(() => expect(streamConnections.length).toBe(1));
+    streamConnections[0].push("event: hello\ndata: {}\n\n");
+    await waitFor(() => expect(liveRing()).toBeInTheDocument());
 
     server.use(
+      http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })),
       http.get("http://api.test/api/events/:eventId/monitor", () => new HttpResponse(null, { status: 500 })),
     );
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{event_id}/monitor"] });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["get", "/api/events/{id}", { params: { path: { id: "evt-1" } } }],
+        }),
+        queryClient.invalidateQueries({ queryKey: MONITOR_SNAPSHOT_KEY("evt-1") }),
+      ]);
     });
 
     // The failed refetch must not have replaced the content with the
     // snapshot-error card -- `getBy` (not `findBy`) proves it's the SAME
     // still-mounted content, not a fresh success re-render.
+    expect(queryClient.getQueryState(MONITOR_SNAPSHOT_KEY("evt-1"))?.status).toBe("error");
+    expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByText("1,284 / 2,410")).toBeInTheDocument();
     expect(screen.getByText("Main hall")).toBeInTheDocument();
     expect(screen.queryByTestId("monitor-snapshot-error")).not.toBeInTheDocument();
-  });
-
-  it("keeps rendering the event header after a background event refetch fails", async () => {
-    const { queryClient } = renderCorrectAt("/events/evt-1/monitor");
-
-    expect(await screen.findByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
-
-    server.use(http.get("http://api.test/api/events/:id", () => new HttpResponse(null, { status: 500 })));
-    await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["get", "/api/events/{id}"] });
-    });
-
-    expect(screen.getByRole("heading", { name: "Partner Day — Autumn" })).toBeInTheDocument();
     expect(screen.getByTestId("monitor-page")).toBeInTheDocument();
+    expect(await screen.findByTestId("monitor-data-stale-badge")).toHaveTextContent("Data refresh failed");
+    expect(screen.getByTestId("monitor-body")).toHaveClass(
+      "opacity-60",
+      "[&_.text-muted-foreground]:text-foreground",
+    );
+    expect(screen.getByTestId("monitor-updated-ago")).toHaveClass("text-warning");
+    expect(screen.queryByTestId("monitor-live-pill")).not.toBeInTheDocument();
+    expect(screen.getByTestId("monitor-stream-announcer")).toHaveTextContent("Data refresh failed");
   });
 });

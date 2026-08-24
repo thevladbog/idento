@@ -71,14 +71,18 @@ export function TotalsCard({ totals }: TotalsCardProps) {
             {numberFmt.format(totals.checked_in)} / {numberFmt.format(totals.total)}
           </span>
           {/* Boards 7e/8f both right-align the percent. */}
-          <span className="ml-auto text-body font-semibold text-muted-foreground">{percent}%</span>
+          <span className="ml-auto text-body font-semibold text-foreground">{percent}%</span>
         </div>
-        <Progress value={totals.checked_in} max={totals.total} />
+        <Progress
+          value={totals.checked_in}
+          max={totals.total}
+          ariaLabel={t("checkInProgressLabel")}
+        />
         {/* Board 8f — the rate stats spread edge-to-edge as separate spans
             (was one "·"-joined string); flex-wrap keeps long locales safe. */}
         <div
           data-testid="monitor-rate-row"
-          className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-caption text-muted-foreground"
+          className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-caption text-foreground"
         >
           {rateParts.map((part) => (
             <span key={part}>{part}</span>

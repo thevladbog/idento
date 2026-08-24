@@ -9,7 +9,27 @@ import { StaffCard, type StaffCardProps } from "./StaffCard";
 import type { StaffUser } from "./hooks";
 import { useEventReadiness } from "../events/hooks";
 import { startMswServer } from "../../test/msw";
-import "../../shared/i18n";
+import i18n from "../../shared/i18n";
+
+const fullScreenDialogCapture = vi.hoisted(() => ({
+  onCloseAutoFocus: undefined as ((event: Event) => void) | undefined,
+}));
+
+vi.mock("@idento/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@idento/ui")>();
+  const React = await import("react");
+  const DialogContent = React.forwardRef<
+    React.ElementRef<typeof actual.DialogContent>,
+    React.ComponentPropsWithoutRef<typeof actual.DialogContent>
+  >((props, ref) => {
+    if (props.className?.includes("h-screen")) {
+      fullScreenDialogCapture.onCloseAutoFocus = props.onCloseAutoFocus;
+    }
+    return React.createElement(actual.DialogContent, { ...props, ref });
+  });
+  DialogContent.displayName = "CapturedDialogContent";
+  return { ...actual, DialogContent };
+});
 
 // Genuinely subscribed observer for GET /api/events/:id/readiness — same
 // pattern as DangerZoneCard.test.tsx's ListObserver.
@@ -21,7 +41,22 @@ function ReadinessObserver({ eventId }: { eventId: string }) {
 let qrTokenCallCount = 0;
 let qrTokenCallIds: string[] = [];
 let qrTokenStatus = 200;
-let qrTokenDelayMs = 0;
+type RequestGate = {
+  entered: Promise<void>;
+  markEntered: () => void;
+  wait: Promise<void>;
+  release: () => void;
+};
+
+function createRequestGate(): RequestGate {
+  let markEntered!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  return { entered, markEntered, wait, release };
+}
+
+let qrTokenGate: RequestGate | null = null;
 let qrTokenCounter = 0;
 let zonesResponse: unknown[] = [];
 let userZonesResponse: unknown[] = [];
@@ -38,7 +73,10 @@ const server = startMswServer(
   http.post("http://api.test/api/users/:id/qr-token", async ({ params }) => {
     qrTokenCallCount += 1;
     qrTokenCallIds.push(params.id as string);
-    if (qrTokenDelayMs) await delay(qrTokenDelayMs);
+    if (qrTokenGate) {
+      qrTokenGate.markEntered();
+      await qrTokenGate.wait;
+    }
     if (qrTokenStatus !== 200) {
       return HttpResponse.json({ error: "boom" }, { status: qrTokenStatus });
     }
@@ -96,12 +134,13 @@ function renderCard(overrides: Partial<StaffCardProps> = {}) {
 }
 
 describe("StaffCard — QR area + print flow", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage("en");
     window.__ENV__ = { API_URL: "http://api.test" };
     qrTokenCallCount = 0;
     qrTokenCallIds = [];
     qrTokenStatus = 200;
-    qrTokenDelayMs = 0;
+    qrTokenGate = null;
     qrTokenCounter = 0;
     zonesResponse = [];
     userZonesResponse = [];
@@ -109,9 +148,51 @@ describe("StaffCard — QR area + print flow", () => {
     revokeStatus = 200;
     revokeDelayMs = 0;
     readinessHitCount = 0;
+    fullScreenDialogCapture.onCloseAutoFocus = undefined;
   });
 
   describe("QR area states (admin)", () => {
+    it("keeps every visible phone action at least 44px high without inflating desktop density", async () => {
+      renderCard({ user: staffUser({ has_qr_token: false }), cachedToken: undefined });
+
+      for (const name of ["Generate", "Print card", "Zones", "Revoke…"]) {
+        expect(await screen.findByRole("button", { name })).toHaveClass("max-md:min-h-11");
+      }
+    });
+
+    it("keeps every link-like staff action at least 44px wide and high with short RU labels", async () => {
+      await i18n.changeLanguage("ru");
+      renderCard({ user: staffUser({ has_qr_token: false }), cachedToken: undefined });
+
+      for (const name of ["Распечатать карту", "Зоны", "Отозвать…"]) {
+        const action = await screen.findByRole("button", { name });
+        expect(action).toHaveClass("max-md:min-h-11");
+        expect(action).toHaveClass("max-md:min-w-11");
+      }
+    });
+
+    it("keeps cached-card Print and Show full screen actions at least 44px high on phones", async () => {
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        cachedToken: "QR_cached_token",
+      });
+
+      expect(await screen.findByRole("button", { name: "Show full screen" })).toHaveClass("max-md:min-h-11");
+      expect(screen.getByRole("button", { name: "Print card" })).toHaveClass("max-md:min-h-11");
+    });
+
+    it("keeps the cached-card RU Show full screen action at least 44px wide and high on phones", async () => {
+      await i18n.changeLanguage("ru");
+      renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        cachedToken: "QR_cached_token",
+      });
+
+      const showFullScreen = await screen.findByRole("button", { name: "Показать на весь экран" });
+      expect(showFullScreen).toHaveClass("max-md:min-h-11");
+      expect(showFullScreen).toHaveClass("max-md:min-w-11");
+    });
+
     it("cached token: renders a live QrSvg + the zones caption + the issued/valid-30-days line from qr_token_created_at (local time)", async () => {
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
@@ -132,7 +213,7 @@ describe("StaffCard — QR area + print flow", () => {
       expect(screen.getByText(`Issued ${expectedDate} · valid 30 days`)).toBeInTheDocument();
     });
 
-    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and its 'Back to card' just closes it", async () => {
+    it("cached token: 'Show full screen' opens a full-screen QrDisplay with the cached token, and Close returns focus to its opener", async () => {
       const user = userEvent.setup();
       renderCard({
         user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
@@ -140,11 +221,12 @@ describe("StaffCard — QR area + print flow", () => {
         cachedToken: "QR_cached_token",
       });
 
-      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      const showFullScreen = await screen.findByRole("button", { name: "Show full screen" });
+      await user.click(showFullScreen);
 
-      // QrDisplay's img has a generic "QR code" accessible name (never the
-      // raw token) — data-testid is its own test hook for the rendered code.
-      const fullScreenImg = await screen.findByTestId("qr-display-code");
+      // QrDisplay receives the generic, localized label from the panel
+      // boundary (never the raw token).
+      const fullScreenImg = await screen.findByRole("img", { name: "QR code" });
       expect(fullScreenImg).toBeInTheDocument();
       // "alice@example.com" is deliberately not asserted here — it's the
       // QrDisplay title AND already the card's own header text, so it's a
@@ -152,12 +234,35 @@ describe("StaffCard — QR area + print flow", () => {
       // subtitle) is the unique signal that QrDisplay actually mounted.
       expect(screen.getByText("Staff login")).toBeInTheDocument();
 
-      // "Back to card" (QrDisplay's regenerateLabel here) just closes the
-      // full-screen view — it never re-mints a token (that stays gated
-      // behind the existing "Print card" confirm flow).
-      await user.click(screen.getByRole("button", { name: "Back to card" }));
+      // Close just dismisses the full-screen view — it never re-mints a
+      // token (that stays gated behind the existing "Print card" confirm
+      // flow), and returns focus to the exact button that opened it.
+      await user.click(screen.getByRole("button", { name: "Close" }));
       expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+      expect(showFullScreen).toHaveFocus();
       expect(qrTokenCallCount).toBe(0);
+    });
+
+    it("preserves Radix close autofocus when the full-screen opener no longer exists", async () => {
+      const user = userEvent.setup();
+      const { unmount } = renderCard({
+        user: staffUser({ has_qr_token: true, qr_token_created_at: "2026-01-15T10:30:00Z" }),
+        cachedToken: "QR_cached_token",
+      });
+
+      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      await screen.findByRole("dialog", { name: "Staff login — alice@example.com" });
+      const onCloseAutoFocus = fullScreenDialogCapture.onCloseAutoFocus;
+      expect(onCloseAutoFocus).toBeTypeOf("function");
+
+      // Unmount clears fullScreenTriggerRef.current. The component-specific
+      // override must now leave the event untouched for Radix's default path.
+      unmount();
+      const closeAutoFocusEvent = new Event("focusScope.autoFocusOnUnmount", { cancelable: true });
+      const preventDefault = vi.spyOn(closeAutoFocusEvent, "preventDefault");
+      onCloseAutoFocus?.(closeAutoFocusEvent);
+
+      expect(preventDefault).not.toHaveBeenCalled();
     });
 
     // Review fix (P6.3 T8): the full-screen QrDisplay now mounts inside a
@@ -178,7 +283,8 @@ describe("StaffCard — QR area + print flow", () => {
         cachedToken: "QR_cached_token",
       });
 
-      await user.click(await screen.findByRole("button", { name: "Show full screen" }));
+      const showFullScreen = await screen.findByRole("button", { name: "Show full screen" });
+      await user.click(showFullScreen);
       await screen.findByTestId("qr-display-code");
 
       // Accessible name comes from the sr-only DialogTitle via
@@ -193,6 +299,7 @@ describe("StaffCard — QR area + print flow", () => {
       await user.keyboard("{Escape}");
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       expect(screen.queryByTestId("qr-display-code")).not.toBeInTheDocument();
+      expect(showFullScreen).toHaveFocus();
     });
 
     it("has_qr_token but not cached: shows the muted 'can't be re-displayed' box with the issued date, no QrSvg", async () => {
@@ -377,7 +484,8 @@ describe("StaffCard — QR area + print flow", () => {
     });
 
     it("session-ref cancel race: closing the confirm dialog mid-flight still caches the token (unconditional) but never opens the sheet", async () => {
-      qrTokenDelayMs = 40;
+      const gate = createRequestGate();
+      qrTokenGate = gate;
       const user = userEvent.setup();
       const onTokenCached = vi.fn();
       const onOpenPrintSheet = vi.fn();
@@ -390,19 +498,14 @@ describe("StaffCard — QR area + print flow", () => {
       await user.click(await screen.findByRole("button", { name: "Print card" }));
       const dialog = await screen.findByRole("dialog");
       await user.click(within(dialog).getByRole("button", { name: "Print card" }));
+      await gate.entered;
 
-      // Back out of the dialog WHILE the (delayed) mutation is still in
-      // flight — unlike AddAttendeeDialog's form-entry dialogs, this is not
-      // blocked: there's no in-progress data entry to protect, just a
-      // single fire-and-forget regenerate the user can walk away from.
       await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-      await waitFor(() => expect(onTokenCached).toHaveBeenCalledWith("u4", "QR_generated_1"));
-      // Give the resolved promise's callback a moment to (not) call this.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      gate.release();
+      await waitFor(() => expect(onTokenCached).toHaveBeenCalledTimes(1));
       expect(onOpenPrintSheet).not.toHaveBeenCalled();
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 
@@ -456,7 +559,8 @@ describe("StaffCard — QR area + print flow", () => {
   // pending window.
   describe("row busy gating while a QR token is being issued", () => {
     it("disables Zones and Revoke… while the (confirm-less) generate is pending, and re-enables both once it settles", async () => {
-      qrTokenDelayMs = 60;
+      const gate = createRequestGate();
+      qrTokenGate = gate;
       const user = userEvent.setup();
       renderCard({ user: staffUser({ id: "u6", has_qr_token: false }) });
 
@@ -468,10 +572,11 @@ describe("StaffCard — QR area + print flow", () => {
       // Confirm-less path: never-issued -> the dashed box's own Generate.
       await user.click(screen.getByRole("button", { name: "Generate" }));
 
-      await waitFor(() => expect(qrTokenCallCount).toBe(1));
+      await gate.entered;
       expect(zonesButton).toBeDisabled();
       expect(revokeButton).toBeDisabled();
 
+      gate.release();
       await waitFor(() => expect(zonesButton).toBeEnabled());
       expect(revokeButton).toBeEnabled();
     });

@@ -27,9 +27,10 @@ type FieldErrors = Partial<Record<"name" | "startDate" | "endDate" | "location",
 export type CreateEventDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 };
 
-export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps) {
+export function CreateEventDialog({ open, onOpenChange, returnFocusRef }: CreateEventDialogProps) {
   const { t, i18n } = useTranslation();
   const dateLocale = i18n.language.startsWith("ru") ? "ru" : "en";
   const navigate = useNavigate();
@@ -100,7 +101,14 @@ export function CreateEventDialog({ open, onOpenChange }: CreateEventDialogProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={t("createEventCancel")}>
+      <DialogContent
+        closeLabel={t("createEventCancel")}
+        onCloseAutoFocus={(event) => {
+          if (!returnFocusRef?.current) return;
+          event.preventDefault();
+          returnFocusRef.current.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t("createEventTitle")}</DialogTitle>
         </DialogHeader>

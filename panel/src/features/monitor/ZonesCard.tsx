@@ -39,7 +39,12 @@ export function ZonesCard({ zones, unattributed, checkedInTotal }: ZonesCardProp
               <span>{zone.name}</span>
               <span className="font-medium text-foreground">{numberFmt.format(zone.checked_in)}</span>
             </div>
-            <Progress value={zone.checked_in} max={checkedInTotal} className="h-1.5" />
+            <Progress
+              value={zone.checked_in}
+              max={checkedInTotal}
+              ariaLabel={t("monitorZoneProgressLabel", { zone: zone.name })}
+              className="h-1.5"
+            />
           </div>
         ))}
         {unattributed > 0 ? (
@@ -48,7 +53,12 @@ export function ZonesCard({ zones, unattributed, checkedInTotal }: ZonesCardProp
               <span>{t("monitorUnattributed")}</span>
               <span className="font-medium text-foreground">{numberFmt.format(unattributed)}</span>
             </div>
-            <Progress value={unattributed} max={checkedInTotal} className="h-1.5" />
+            <Progress
+              value={unattributed}
+              max={checkedInTotal}
+              ariaLabel={t("monitorZoneProgressLabel", { zone: t("monitorUnattributed") })}
+              className="h-1.5"
+            />
           </div>
         ) : null}
       </CardContent>

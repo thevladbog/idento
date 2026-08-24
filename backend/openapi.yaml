@@ -181,8 +181,8 @@ components:
       description: >
         A staff-to-event assignment record — the response shape for POST
         /api/events/{event_id}/staff. Distinct from GET .../staff, which
-        returns full User records (store.GetEventStaff joins through the
-        event_staff table back to users, not this assignment row shape).
+        returns full User records projected into the event tenant with each
+        user's current membership role (not this assignment row shape).
       properties:
         id: { type: string, format: uuid }
         event_id: { type: string, format: uuid }
@@ -1176,7 +1176,9 @@ paths:
               required: [qr_token]
       responses:
         "200":
-          description: Authenticated as the staff user's own tenant/role.
+          description: >
+            Authenticated in the tenant/role persisted with the QR credential,
+            after that tenant membership and role are revalidated live.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QrLoginResponse" }
@@ -1186,7 +1188,9 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "401":
-          description: Unknown or expired QR token (echo.NewHTTPError shape).
+          description: >
+            Unknown, expired, legacy/unscoped, or stale-membership QR token
+            (echo.NewHTTPError shape).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/HTTPError" }
@@ -1456,7 +1460,7 @@ paths:
   /api/users/{id}/qr-token:
     post:
       operationId: generateQRToken
-      summary: Generate a QR-card login token for a staff user (admin only)
+      summary: Generate a QR-card login token (admin for members; staff for self)
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -1465,7 +1469,9 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         "200":
-          description: New QR token for the target user.
+          description: >
+            New QR token bound to the caller's active tenant and the target's
+            current role in that tenant.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/QRTokenResponse" }
@@ -1476,8 +1482,9 @@ paths:
               schema: { $ref: "#/components/schemas/HTTPError" }
         "403":
           description: >
-            Caller is not admin (HTTPError), or tenant_suspended from the
-            tenant gate (Error).
+            Caller is a manager; is staff targeting another user; or has a
+            stale staff claim while their live active-tenant role is no longer
+            staff (HTTPError); or tenant_suspended from the tenant gate (Error).
           content:
             application/json:
               schema:
@@ -2599,10 +2606,12 @@ paths:
       responses:
         "200":
           description: >
-            Assigned staff, as full User records — store.GetEventStaff joins
-            event_staff back to users, so this is an array of User, NOT the
-            EventStaff assignment shape (see POST on this same path, which
-            does return EventStaff).
+            Assigned staff, as full User records projected into the event
+            tenant: tenant_id is the event tenant and role is the user's
+            current membership role in that tenant. Assignments without a
+            current event-tenant membership are omitted. This is an array of
+            User, NOT the EventStaff assignment shape (see POST on this same
+            path, which does return EventStaff).
           content:
             application/json:
               schema:

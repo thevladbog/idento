@@ -107,6 +107,16 @@ const server = startMswServer(
   http.get("http://api.test/api/events/:id/readiness", () => HttpResponse.json(readinessResponse)),
   http.get("http://api.test/api/events/:eventId/stats", () => HttpResponse.json(statsResponse)),
   http.get("http://api.test/api/events/:eventId/zones", () => HttpResponse.json(zonesResponse)),
+  http.get("http://api.test/api/events/:eventId/staff", () => HttpResponse.json([{
+    id: "staff-1",
+    tenant_id: "t1",
+    email: "staff@example.test",
+    role: "staff",
+    is_super_admin: false,
+    has_qr_token: false,
+    created_at: "2026-08-09T00:00:00Z",
+    updated_at: "2026-08-09T00:00:00Z",
+  }])),
 );
 void server;
 

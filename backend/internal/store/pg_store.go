@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -389,9 +391,26 @@ func (s *PGStore) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, 
 	return &u, nil
 }
 
+// qrTokenDigest reduces a plaintext QR bearer to the deterministic SHA-256
+// hex digest that is the only credential form ever sent to or stored in the
+// database. The bearer is high-entropy, so an unsalted one-way digest both
+// prevents plaintext-at-rest and keeps lookups exact-match.
+func qrTokenDigest(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// GetUsersByTenantID lists the CURRENT user_tenants memberships of the
+// requested tenant, projecting each row with that membership's own tenant id
+// and role (never the user's home-tenant columns). Users without a live
+// membership row are omitted -- fail closed.
 func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([]*models.User, error) {
-	query := `SELECT id, tenant_id, email, role, is_super_admin, qr_token, qr_token_created_at, created_at, updated_at 
-			  FROM users WHERE tenant_id = $1 ORDER BY created_at DESC`
+	query := `SELECT u.id, ut.tenant_id, u.email, ut.role, u.is_super_admin,
+	                 (q.user_id IS NOT NULL), q.created_at, u.created_at, u.updated_at
+			  FROM users u
+			  INNER JOIN user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = $1
+			  LEFT JOIN user_qr_credentials q ON q.user_id = u.id AND q.tenant_id = $1
+			  ORDER BY u.created_at DESC`
 	rows, err := s.db.Query(ctx, query, tenantID)
 	if err != nil {
 		return nil, err
@@ -401,7 +420,7 @@ func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 	users := []*models.User{}
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.HasQRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, &u)
@@ -411,20 +430,34 @@ func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 
 func (s *PGStore) GetUserByQRToken(ctx context.Context, token string) (*models.User, error) {
 	var u models.User
-	query := `SELECT id, tenant_id, email, password_hash, role, is_super_admin, qr_token, qr_token_created_at, created_at, updated_at 
-			  FROM users WHERE qr_token = $1`
-	err := s.db.QueryRow(ctx, query, token).Scan(
-		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt,
+	query := `SELECT u.id, u.tenant_id, u.email, u.password_hash, u.role, u.is_super_admin,
+	                 c.created_at, c.tenant_id, c.role, u.created_at, u.updated_at
+			  FROM user_qr_credentials c
+			  INNER JOIN users u ON u.id = c.user_id
+			  WHERE c.token_digest = $1`
+	err := s.db.QueryRow(ctx, query, qrTokenDigest(token)).Scan(
+		&u.ID, &u.TenantID, &u.Email, &u.PasswordHash, &u.Role, &u.IsSuperAdmin,
+		&u.QRTokenCreatedAt, &u.QRTokenTenantID, &u.QRTokenRole, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
+	u.HasQRToken = true
 	return &u, nil
 }
 
-func (s *PGStore) UpdateUserQRToken(ctx context.Context, userID uuid.UUID, token string, createdAt time.Time) error {
-	query := `UPDATE users SET qr_token = $1, qr_token_created_at = $2, updated_at = NOW() WHERE id = $3`
-	_, err := s.db.Exec(ctx, query, token, createdAt, userID)
+func (s *PGStore) UpdateUserQRToken(ctx context.Context, userID, tenantID uuid.UUID, role, token string, createdAt time.Time) error {
+	query := `INSERT INTO user_qr_credentials (user_id, tenant_id, role, token_digest, created_at)
+	          VALUES ($1, $2, $3, $4, $5)
+	          ON CONFLICT (user_id) DO UPDATE
+	          SET tenant_id = EXCLUDED.tenant_id,
+	              role = EXCLUDED.role,
+	              token_digest = EXCLUDED.token_digest,
+	              created_at = EXCLUDED.created_at`
+	_, err := s.db.Exec(ctx, query, userID, tenantID, role, qrTokenDigest(token), createdAt)
 	return err
 }
 
@@ -437,9 +470,13 @@ func (s *PGStore) AssignStaffToEvent(ctx context.Context, assignment *models.Eve
 }
 
 func (s *PGStore) GetEventStaff(ctx context.Context, eventID uuid.UUID) ([]*models.User, error) {
-	query := `SELECT u.id, u.tenant_id, u.email, u.role, u.is_super_admin, u.qr_token, u.qr_token_created_at, u.created_at, u.updated_at
+	query := `SELECT u.id, e.tenant_id, u.email, ut.role, u.is_super_admin,
+	                 (q.user_id IS NOT NULL), q.created_at, u.created_at, u.updated_at
 			  FROM users u
 			  INNER JOIN event_staff es ON u.id = es.user_id
+			  INNER JOIN events e ON e.id = es.event_id
+			  INNER JOIN user_tenants ut ON ut.user_id = u.id AND ut.tenant_id = e.tenant_id
+			  LEFT JOIN user_qr_credentials q ON q.user_id = u.id AND q.tenant_id = e.tenant_id
 			  WHERE es.event_id = $1
 			  ORDER BY es.assigned_at DESC`
 	rows, err := s.db.Query(ctx, query, eventID)
@@ -451,7 +488,7 @@ func (s *PGStore) GetEventStaff(ctx context.Context, eventID uuid.UUID) ([]*mode
 	users := []*models.User{}
 	for rows.Next() {
 		var u models.User
-		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.QRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.TenantID, &u.Email, &u.Role, &u.IsSuperAdmin, &u.HasQRToken, &u.QRTokenCreatedAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, &u)

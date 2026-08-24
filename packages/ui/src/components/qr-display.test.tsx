@@ -37,6 +37,8 @@ describe("QrDisplay", () => {
         value="https://example.test/token/abc"
         title="Anna Smirnova"
         subtitle="Staff login · Registration desk"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
         expiresAt={future(300)}
         expiredLabel="Code expired"
         regenerateLabel="Regenerate"
@@ -51,10 +53,20 @@ describe("QrDisplay", () => {
     // A generic, non-secret accessible name — the raw token value must never
     // land in the DOM/a11y tree as plain text (see qr-display.tsx's own
     // comment). `data-testid` is the test hook instead.
-    expect(await screen.findByRole("img", { name: "QR code" })).toBeInTheDocument();
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.getByTestId("qr-display-code")).toBeInTheDocument();
     expect(screen.queryByText("https://example.test/token/abc")).not.toBeInTheDocument();
-    expect(screen.getByText(/Have Anna scan this/)).toBeInTheDocument();
+    const hint = screen.getByText(/Have Anna scan this/);
+    expect(hint).toHaveClass("text-black/60");
+    expect(hint).not.toHaveClass("text-black/50");
+    const timer = screen.getByRole("timer", { name: /Истекает через 5:00/ });
+    expect(timer).not.toHaveAttribute("aria-live");
+    expect(screen.getByRole("button", { name: "Regenerate" })).toHaveClass("min-h-11");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(301_000);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent("Code expired");
   });
 
   it("counts down toward expiry and flips to the expired state with only a regenerate action", async () => {
@@ -64,6 +76,8 @@ describe("QrDisplay", () => {
         value="tok"
         title="t"
         subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
         expiresAt={future(2)}
         expiredLabel="Code expired"
         regenerateLabel="Regenerate"
@@ -76,7 +90,10 @@ describe("QrDisplay", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2500);
     });
-    expect(screen.getByText("Code expired")).toBeInTheDocument();
+    const expiredStatus = screen.getByRole("status");
+    expect(expiredStatus).toHaveTextContent("Code expired");
+    expect(expiredStatus).toHaveClass("text-warning");
+    expect(expiredStatus.querySelector("svg")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     fireEventClickRegenerate();
     expect(onRegenerate).toHaveBeenCalledTimes(1);
@@ -86,12 +103,36 @@ describe("QrDisplay", () => {
     }
   });
 
+  it("disables regeneration while a token request is already pending", async () => {
+    render(
+      <QrDisplay
+        value="tok"
+        title="t"
+        subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
+        expiresAt={null}
+        expiredLabel="Code expired"
+        regenerateLabel="Regenerate"
+        closeLabel="Close"
+        onClose={() => {}}
+        onRegenerate={() => {}}
+        isRegenerating
+      />,
+    );
+
+    await screen.findByRole("img", { name: "QR-код" });
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
+  });
+
   it("renders no countdown chrome when expiresAt is null", () => {
     render(
       <QrDisplay
         value="tok"
         title="t"
         subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
         expiresAt={null}
         expiredLabel="Code expired"
         regenerateLabel="Regenerate"
@@ -100,7 +141,7 @@ describe("QrDisplay", () => {
         onRegenerate={() => {}}
       />,
     );
-    expect(screen.queryByText(/Expires in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Истекает через/)).not.toBeInTheDocument();
   });
 
   it("renders no regenerate control when showRegenerate is false, even with a non-empty regenerateLabel", () => {
@@ -109,6 +150,8 @@ describe("QrDisplay", () => {
         value="tok"
         title="t"
         subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
         expiresAt={null}
         expiredLabel="Code expired"
         regenerateLabel="regenerate"
@@ -129,6 +172,8 @@ describe("QrDisplay", () => {
         value="tok"
         title="t"
         subtitle="s"
+        codeLabel="QR-код"
+        expiresInLabel="Истекает через"
         expiresAt={null}
         expiredLabel="Code expired"
         regenerateLabel="Regenerate"

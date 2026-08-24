@@ -47,10 +47,10 @@ export function DesktopOnlyGate({
       <div className={cn("mb-3 flex size-12 items-center justify-center rounded-xl", iconClassName)}>
         <Icon aria-hidden className="size-6" />
       </div>
-      <h2 className="text-section-title">{title}</h2>
+      <h1 className="text-section-title">{title}</h1>
       <p className="max-w-xs text-body text-muted-foreground">{reason}</p>
       <Button
-        className="mt-4"
+        className="mt-4 min-h-11"
         onClick={() => {
           void (async () => {
             try {

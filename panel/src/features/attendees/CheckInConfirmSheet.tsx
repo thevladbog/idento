@@ -93,6 +93,7 @@ export function CheckInConfirmSheet({
       <SheetContent
         side="bottom"
         closeLabel={t("moreSheetCloseLabel")}
+        hideClose={checkin.isPending}
         onEscapeKeyDown={preventDismissWhilePending}
         onPointerDownOutside={preventDismissWhilePending}
         onInteractOutside={preventDismissWhilePending}
@@ -115,7 +116,7 @@ export function CheckInConfirmSheet({
         <div className="flex gap-2.5">
           <Button
             variant="outline"
-            className="flex-1"
+            className="min-h-11 flex-1"
             disabled={checkin.isPending}
             onClick={() => onOpenChange(false)}
           >
@@ -127,7 +128,11 @@ export function CheckInConfirmSheet({
               the primary action leaves Cancel/X as the one clear path back
               to closing, rather than adding a second differently-labeled
               button for the exact same "close" behavior. */}
-          <Button className="flex-[1.4]" onClick={handleConfirm} disabled={checkin.isPending || blockedOutcome}>
+          <Button
+            className="min-h-11 flex-[1.4]"
+            onClick={handleConfirm}
+            disabled={checkin.isPending || blockedOutcome}
+          >
             {t("checkinConfirmAction")}
           </Button>
         </div>

@@ -39,6 +39,15 @@ function Harness(props: HarnessProps) {
 }
 
 describe("ConfirmDialog tier 1 (plain)", () => {
+  it("keeps cancel and confirm actions at least 44px high on phones", async () => {
+    const user = userEvent.setup();
+    render(<Harness onConfirm={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Trigger" }));
+
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("max-md:min-h-11");
+    expect(screen.getByRole("button", { name: "Delete event" })).toHaveClass("max-md:min-h-11");
+  });
+
   it("fires onConfirm on click", async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

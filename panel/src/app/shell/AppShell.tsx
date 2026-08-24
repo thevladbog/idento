@@ -3,6 +3,7 @@ import type * as React from "react";
 import { useTranslation } from "react-i18next";
 import { OrgSwitcher } from "./OrgSwitcher";
 import { NavDrawer } from "./NavDrawer";
+import { useActiveTenantRole } from "./useActiveTenantRole";
 import { ImpersonationBanner } from "../../features/impersonation/ImpersonationBanner";
 import { LanguageSwitcher } from "../../shared/ui/LanguageSwitcher";
 import { ThemeSwitcher } from "../../shared/ui/ThemeSwitcher";
@@ -11,11 +12,12 @@ import { useInstance } from "../../shared/api/useInstance";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const instance = useInstance();
+  const showSelfService = useActiveTenantRole() === "staff";
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <ImpersonationBanner />
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:gap-4">
-        <NavDrawer />
+        <NavDrawer showSelfService={showSelfService} />
         <span className="flex items-center gap-2">
           <img src="/logo-mark.svg" alt="" aria-hidden="true" className="h-6 w-auto" />
           <span className="text-section-title">{t("appName")}</span>
@@ -42,6 +44,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link to="/organization" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
             {t("navOrganization")}
           </Link>
+          {showSelfService ? (
+            <Link to="/me" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+              {t("navMyProfile")}
+            </Link>
+          ) : null}
         </nav>
         <div className="ml-auto flex items-center gap-1">
           <LanguageSwitcher />

@@ -119,7 +119,7 @@ describe("LiveStrip", () => {
     expect(screen.getByText("Tech Summit")).toBeInTheDocument();
     expect(await screen.findByText("120")).toBeInTheDocument();
     expect(screen.getByText(/200/)).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Event check-in progress" })).toBeInTheDocument();
 
     const openEventLink = screen.getByRole("link", { name: /Open event/ });
     expect(openEventLink).toHaveAttribute("href", "/events/evt-running");

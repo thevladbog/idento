@@ -175,7 +175,7 @@ func TestContractGenerateQRToken(t *testing.T) {
 	h := New(&fakeStore{
 		getUserByID:       func(uuid.UUID) (*models.User, error) { return targetUser, nil },
 		getUserTenantRole: func(_, _ uuid.UUID) (string, error) { return "staff", nil },
-		updateUserQRToken: func(uuid.UUID, string, time.Time) error { return nil },
+		updateUserQRToken: func(uuid.UUID, uuid.UUID, string, string, time.Time) error { return nil },
 	})
 	e := echo.New()
 	c, rec := newAuthedContext(e, http.MethodPost, "/api/users/"+targetUser.ID.String()+"/qr-token", "", tenantID.String(), "admin")

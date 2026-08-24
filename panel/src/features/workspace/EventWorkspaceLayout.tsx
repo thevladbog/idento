@@ -101,7 +101,7 @@ export function EventWorkspaceLayout() {
         <div className="hidden md:flex">
           <WorkspaceRail eventId={eventId} readiness={readiness.data} active={active} />
         </div>
-        <div className="flex-1 p-4 pb-24 md:p-6">
+        <div className="min-w-0 flex-1 p-4 pb-24 md:p-6">
           <Outlet />
         </div>
       </div>

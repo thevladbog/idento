@@ -82,6 +82,18 @@ describe("AttendeeCard — not checked in", () => {
     expect(screen.getByText("Не зарегистрирован")).toBeInTheDocument();
     const button = screen.getByRole("button", { name: /Зарегистрировать вручную/ });
     expect(button).toHaveTextContent("бейдж не будет напечатан");
+    const subcaption = screen.getByText("бейдж не будет напечатан");
+    expect(subcaption).toHaveClass("text-primary-foreground");
+    expect(subcaption).not.toHaveClass("text-primary-foreground/85");
+  });
+
+  it("does not render an orphan separator when the attendee has no company", async () => {
+    server.use(http.get("http://api.test/api/attendees/:id", () =>
+      HttpResponse.json({ ...NOT_CHECKED_IN, company: "" }),
+    ));
+    renderCard();
+    await screen.findByText("Иванова Мария");
+    expect(screen.getByText("QR-11730").parentElement).toHaveTextContent(/^QR-11730$/);
   });
 
   it("opens the check-in confirm sheet when the primary button is tapped", async () => {
@@ -108,6 +120,7 @@ describe("AttendeeCard — not checked in", () => {
     const user = userEvent.setup();
     renderCard();
     await user.click(await screen.findByRole("button", { name: /Показать QR/ }));
+    expect(await screen.findByRole("img", { name: "QR-код" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "" })).not.toBeInTheDocument();
   });
 });
