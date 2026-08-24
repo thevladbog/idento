@@ -30,6 +30,11 @@ export function ConfirmActionDialog({
   const locked = requireText && (confirmText === '' || typed !== confirmText);
 
   const close = (o: boolean) => {
+    // While the confirmed action is in flight, every dismissal path
+    // (Cancel, Escape, outside click, the X button) is inert -- closing
+    // would detach the busy state from the only surface reporting it while
+    // the mutation still lands (or fails) invisibly.
+    if (!o && busy) return;
     setTyped('');
     onOpenChange(o);
   };
@@ -52,7 +57,7 @@ export function ConfirmActionDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => close(false)}>{t('cancel')}</Button>
+          <Button variant="outline" disabled={busy} onClick={() => close(false)}>{t('cancel')}</Button>
           <Button variant={destructive ? 'destructive' : 'default'} disabled={locked || busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
