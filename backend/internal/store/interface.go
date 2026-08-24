@@ -415,6 +415,11 @@ type Store interface {
 	CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 
 	// Audit
+	// WithTx runs fn against a store whose every operation shares one
+	// database transaction: committed if fn returns nil, rolled back
+	// otherwise. Used by admin-mutation handlers so a mutation and its
+	// audit row land together or not at all.
+	WithTx(ctx context.Context, fn func(Store) error) error
 	// LogAdminAction records a platform-operator action with request
 	// attribution (ip/user_agent from the HTTP request that caused it).
 	LogAdminAction(ctx context.Context, adminID uuid.UUID, action string, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error

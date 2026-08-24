@@ -1,9 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"idento/backend/internal/models"
-	"log"
+	"idento/backend/internal/store"
 	"net/http"
 	"slices"
 	"strconv"
@@ -13,6 +14,28 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
+
+// txFail carries the exact status/message a step inside a Store.WithTx
+// closure wants the handler to return once the transaction rolls back.
+type txFail struct {
+	code int
+	msg  string
+}
+
+func (e *txFail) Error() string { return e.msg }
+
+// respondTxError maps a WithTx error to the HTTP response: a *txFail keeps
+// its step-specific status/message; anything else (the audit insert,
+// BEGIN/COMMIT) is a plain 500 -- an admin mutation whose audit row cannot
+// be written must not report success, that swallowed-log gap is the whole
+// reason these handlers are transactional now.
+func respondTxError(c echo.Context, err error) error {
+	var tf *txFail
+	if errors.As(err, &tf) {
+		return c.JSON(tf.code, map[string]string{"error": tf.msg})
+	}
+	return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to persist admin action"})
+}
 
 // GetAllTenants returns list of all organizations with stats
 func (h *Handler) GetAllTenants(c echo.Context) error {
@@ -113,79 +136,91 @@ func (h *Handler) UpdateTenantSubscription(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "reason is required"})
 	}
 
-	// Get existing subscription; create one if the tenant has none (upsert).
-	sub, err := h.Store.GetSubscriptionByTenantID(c.Request().Context(), tenantID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to load subscription",
-		})
-	}
-	isNew := false
-	if sub == nil {
-		if req.PlanID == nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{
-				"error": "Tenant has no subscription; plan_id is required to create one",
-			})
-		}
-		sub = &models.Subscription{TenantID: tenantID, Status: "active", StartDate: time.Now()}
-		isNew = true
-	}
-
-	// Capture changes for audit
-	oldSub := *sub
-
-	// Update fields
+	// Only request-shape validation happens outside the transaction; the
+	// read -> mutate -> audit sequence below is atomic (Batch-3 deferred
+	// fix: an admin mutation and its audit row land together or not at
+	// all).
+	var planID *uuid.UUID
 	if req.PlanID != nil {
-		planID, err := uuid.Parse(*req.PlanID)
+		parsed, err := uuid.Parse(*req.PlanID)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{
 				"error": "Invalid plan ID format",
 			})
 		}
-		sub.PlanID = &planID
-	}
-	if req.Status != nil {
-		sub.Status = *req.Status
-	}
-	if req.EndDate != nil {
-		sub.EndDate = req.EndDate
-	}
-	if req.CustomLimits != nil {
-		sub.CustomLimits = *req.CustomLimits
-	}
-	if req.CustomFeatures != nil {
-		sub.CustomFeatures = *req.CustomFeatures
-	}
-	if req.AdminNotes != nil {
-		sub.AdminNotes = req.AdminNotes
-	}
-
-	if isNew {
-		if err := h.Store.UpsertSubscription(c.Request().Context(), sub); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create subscription"})
-		}
-	} else {
-		if err := h.Store.UpdateSubscription(c.Request().Context(), sub); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update subscription"})
-		}
-	}
-
-	// Log admin action
-	action := "update_subscription"
-	if isNew {
-		action = "create_subscription"
+		planID = &parsed
 	}
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action, "tenant", tenantID, map[string]interface{}{
-		"old":    oldSub,
-		"new":    sub,
-		"reason": req.Reason,
-	}, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+
+	var sub *models.Subscription
+	txErr := h.Store.WithTx(c.Request().Context(), func(tx store.Store) error {
+		// Get existing subscription; create one if the tenant has none.
+		existing, err := tx.GetSubscriptionByTenantID(c.Request().Context(), tenantID)
+		if err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to load subscription"}
+		}
+		isNew := false
+		if existing == nil {
+			if planID == nil {
+				return &txFail{http.StatusBadRequest, "Tenant has no subscription; plan_id is required to create one"}
+			}
+			existing = &models.Subscription{TenantID: tenantID, Status: "active", StartDate: time.Now()}
+			isNew = true
+		}
+
+		// Capture changes for audit
+		oldSub := *existing
+
+		// Update fields
+		if planID != nil {
+			existing.PlanID = planID
+		}
+		if req.Status != nil {
+			existing.Status = *req.Status
+		}
+		if req.EndDate != nil {
+			existing.EndDate = req.EndDate
+		}
+		if req.CustomLimits != nil {
+			existing.CustomLimits = *req.CustomLimits
+		}
+		if req.CustomFeatures != nil {
+			existing.CustomFeatures = *req.CustomFeatures
+		}
+		if req.AdminNotes != nil {
+			existing.AdminNotes = req.AdminNotes
+		}
+
+		if isNew {
+			if err := tx.UpsertSubscription(c.Request().Context(), existing); err != nil {
+				return &txFail{http.StatusInternalServerError, "Failed to create subscription"}
+			}
+		} else {
+			if err := tx.UpdateSubscription(c.Request().Context(), existing); err != nil {
+				return &txFail{http.StatusInternalServerError, "Failed to update subscription"}
+			}
+		}
+
+		action := "update_subscription"
+		if isNew {
+			action = "create_subscription"
+		}
+		if err := tx.LogAdminAction(c.Request().Context(), adminID, action, "tenant", tenantID, map[string]interface{}{
+			"old":    oldSub,
+			"new":    existing,
+			"reason": req.Reason,
+		}, c.RealIP(), c.Request().UserAgent()); err != nil {
+			return err
+		}
+		sub = existing
+		return nil
+	})
+	if txErr != nil {
+		return respondTxError(c, txErr)
 	}
 
 	return c.JSON(http.StatusOK, sub)
@@ -214,22 +249,22 @@ func (h *Handler) CreateSubscriptionPlan(c echo.Context) error {
 		})
 	}
 
-	if err := h.Store.CreateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to create plan",
-		})
-	}
-
-	// Log admin action
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
-		"plan": plan,
-	}, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+
+	txErr := h.Store.WithTx(c.Request().Context(), func(tx store.Store) error {
+		if err := tx.CreateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to create plan"}
+		}
+		return tx.LogAdminAction(c.Request().Context(), adminID, "create_plan", "subscription_plan", plan.ID, map[string]interface{}{
+			"plan": plan,
+		}, c.RealIP(), c.Request().UserAgent())
+	})
+	if txErr != nil {
+		return respondTxError(c, txErr)
 	}
 
 	return c.JSON(http.StatusCreated, plan)
@@ -253,30 +288,27 @@ func (h *Handler) UpdateSubscriptionPlanSuper(c echo.Context) error {
 
 	plan.ID = planID
 
-	oldPlan, err := h.Store.GetSubscriptionPlanByID(c.Request().Context(), planID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to load plan",
-		})
-	}
-
-	if err := h.Store.UpdateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to update plan",
-		})
-	}
-
-	// Log admin action
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
-		"old": oldPlan,
-		"new": plan,
-	}, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+
+	txErr := h.Store.WithTx(c.Request().Context(), func(tx store.Store) error {
+		oldPlan, err := tx.GetSubscriptionPlanByID(c.Request().Context(), planID)
+		if err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to load plan"}
+		}
+		if err := tx.UpdateSubscriptionPlan(c.Request().Context(), &plan); err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to update plan"}
+		}
+		return tx.LogAdminAction(c.Request().Context(), adminID, "update_plan", "subscription_plan", plan.ID, map[string]interface{}{
+			"old": oldPlan,
+			"new": plan,
+		}, c.RealIP(), c.Request().UserAgent())
+	})
+	if txErr != nil {
+		return respondTxError(c, txErr)
 	}
 
 	return c.JSON(http.StatusOK, plan)
@@ -401,16 +433,23 @@ func (h *Handler) CreateTenantSuper(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
 	}
 	tenant := &models.Tenant{Name: strings.TrimSpace(req.Name)}
-	if err := h.Store.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create tenant"})
-	}
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+
+	// CreateTenantWithDefaultSubscription opens its own transaction, which
+	// nests inside WithTx's as a savepoint (pgx.Tx.Begin) -- its internal
+	// atomicity is preserved, and the audit row joins the same outer commit.
+	txErr := h.Store.WithTx(c.Request().Context(), func(tx store.Store) error {
+		if err := tx.CreateTenantWithDefaultSubscription(c.Request().Context(), tenant); err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to create tenant"}
+		}
+		return tx.LogAdminAction(c.Request().Context(), adminID, "create_tenant", "tenant", tenant.ID, map[string]interface{}{"name": tenant.Name}, c.RealIP(), c.Request().UserAgent())
+	})
+	if txErr != nil {
+		return respondTxError(c, txErr)
 	}
 	return c.JSON(http.StatusCreated, tenant)
 }
@@ -438,32 +477,35 @@ func (h *Handler) setTenantStatus(c echo.Context, action string) error {
 	}
 	//nolint:errcheck
 	_ = c.Bind(&body) // optional body; malformed/absent JSON leaves body.Reason == ""
-	current, err := h.Store.GetTenantStatus(c.Request().Context(), tenantID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to load tenant"})
-	}
-	if current == "" {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Tenant not found"})
-	}
-	if !slices.Contains(tr.froms, current) {
-		return c.JSON(http.StatusConflict, map[string]string{
-			"error": fmt.Sprintf(`cannot %s a tenant in state %q (requires "%s")`, action, current, strings.Join(tr.froms, `" or "`)),
-		})
-	}
-	if err := h.Store.UpdateTenantStatus(c.Request().Context(), tenantID, tr.to); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update tenant status"})
-	}
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
 	}
 	adminID := uuid.MustParse(claims.UserID)
-	changes := map[string]interface{}{"from": current, "to": tr.to}
-	if body.Reason != "" {
-		changes["reason"] = body.Reason
-	}
-	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, changes, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+
+	txErr := h.Store.WithTx(c.Request().Context(), func(tx store.Store) error {
+		current, err := tx.GetTenantStatus(c.Request().Context(), tenantID)
+		if err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to load tenant"}
+		}
+		if current == "" {
+			return &txFail{http.StatusNotFound, "Tenant not found"}
+		}
+		if !slices.Contains(tr.froms, current) {
+			return &txFail{http.StatusConflict,
+				fmt.Sprintf(`cannot %s a tenant in state %q (requires "%s")`, action, current, strings.Join(tr.froms, `" or "`))}
+		}
+		if err := tx.UpdateTenantStatus(c.Request().Context(), tenantID, tr.to); err != nil {
+			return &txFail{http.StatusInternalServerError, "Failed to update tenant status"}
+		}
+		changes := map[string]interface{}{"from": current, "to": tr.to}
+		if body.Reason != "" {
+			changes["reason"] = body.Reason
+		}
+		return tx.LogAdminAction(c.Request().Context(), adminID, action+"_tenant", "tenant", tenantID, changes, c.RealIP(), c.Request().UserAgent())
+	})
+	if txErr != nil {
+		return respondTxError(c, txErr)
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": tr.to})
 }
@@ -518,8 +560,11 @@ func (h *Handler) ImpersonateTenant(c echo.Context) error {
 	if body.Reason != "" {
 		changes["reason"] = body.Reason
 	}
+	// No DB mutation here, but an impersonation token minted WITHOUT its
+	// audit row is an accountability hole -- fail closed before the token
+	// ever leaves the server.
 	if err := h.Store.LogAdminAction(c.Request().Context(), adminID, "impersonate_tenant", "tenant", tenantID, changes, c.RealIP(), c.Request().UserAgent()); err != nil {
-		log.Printf("Failed to log admin action: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to record audit log"})
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"token":      token,

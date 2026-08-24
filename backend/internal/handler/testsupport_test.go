@@ -93,6 +93,8 @@ type fakeStore struct {
 	addUserToTenant                     func(ut *models.UserTenant) error
 	getUserTenants                      func(userID uuid.UUID) ([]*models.Tenant, error)
 
+	withTx                    func(fn func(store.Store) error) error
+	createSubscriptionPlan    func(plan *models.SubscriptionPlan) error
 	getSubscriptionByTenantID func(id uuid.UUID) (*models.Subscription, error)
 	upsertSubscription        func(sub *models.Subscription) error
 	updateSubscription        func(sub *models.Subscription) error
@@ -407,6 +409,21 @@ func (f *fakeStore) GetSubscriptionPlanByID(_ context.Context, id uuid.UUID) (*m
 func (f *fakeStore) UpdateSubscriptionPlan(_ context.Context, plan *models.SubscriptionPlan) error {
 	return f.updateSubscriptionPlan(plan)
 }
+
+// WithTx defaults to a pass-through against the same fake: transactional
+// mechanics are the store's concern, handler tests only assert sequencing.
+// Tests that need the tx seam override withTx to hand fn a separate fake.
+func (f *fakeStore) WithTx(_ context.Context, fn func(store.Store) error) error {
+	if f.withTx != nil {
+		return f.withTx(fn)
+	}
+	return fn(f)
+}
+
+func (f *fakeStore) CreateSubscriptionPlan(_ context.Context, plan *models.SubscriptionPlan) error {
+	return f.createSubscriptionPlan(plan)
+}
+
 func (f *fakeStore) LogAdminAction(_ context.Context, adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 	return f.logAdminAction(adminID, action, targetType, targetID, changes, ip, userAgent)
 }
