@@ -38,6 +38,33 @@ type PGStore struct {
 	db dbConn
 }
 
+// txConn adapts a pgx.Tx to dbConn so a PGStore can run entirely inside an
+// open transaction (Close is a no-op: the transaction's lifecycle belongs
+// to WithTx, and the underlying pool is closed elsewhere).
+type txConn struct {
+	pgx.Tx
+}
+
+func (txConn) Close() {}
+
+// WithTx implements Store.WithTx: fn's store shares one transaction --
+// commit on nil, rollback on error. A store method that begins its own
+// transaction inside fn (e.g. CreateTenantWithDefaultSubscription) nests as
+// a savepoint via pgx.Tx.Begin, preserving its own atomicity.
+func (s *PGStore) WithTx(ctx context.Context, fn func(Store) error) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if err := fn(&PGStore{db: txConn{tx}}); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
+			log.Printf("rollback WithTx: %v", rbErr)
+		}
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func NewPGStore(dbURL string) (*PGStore, error) {
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
