@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Building2, ClipboardList, FileText, Search, Users } from 'lucide-react';
+import { BarChart3, Building2, ClipboardList, FileText, Search, ShoppingCart, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ export default function SuperAdminLayout() {
     { icon: BarChart3, label: t('dashboard'), path: '/' },
     { icon: Building2, label: t('organizations'), path: '/organizations' },
     { icon: FileText, label: t('subscriptionPlans'), path: '/plans' },
+    { icon: ShoppingCart, label: t('billingCatalog'), path: '/billing/catalog' },
     { icon: Users, label: t('allUsers'), path: '/users' },
     { icon: ClipboardList, label: t('auditLog'), path: '/audit' },
   ];

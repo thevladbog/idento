@@ -5,6 +5,7 @@ import SuperAdminDashboard from "./pages/super-admin/Dashboard";
 import Organizations from "./pages/super-admin/Organizations";
 import OrganizationDetail from "./pages/super-admin/OrganizationDetail";
 import SubscriptionPlans from "./pages/super-admin/SubscriptionPlans";
+import BillingCatalog from "./pages/super-admin/BillingCatalog";
 import AllUsers from "./pages/super-admin/AllUsers";
 import Analytics from "./pages/super-admin/Analytics";
 import AuditLog from "./pages/super-admin/AuditLog";
@@ -50,6 +51,7 @@ function App() {
           <Route path="organizations/:id" element={<OrganizationDetail />} />
           <Route path="users" element={<AllUsers />} />
           <Route path="plans" element={<SubscriptionPlans />} />
+          <Route path="billing/catalog" element={<BillingCatalog />} />
           <Route path="analytics" element={<Analytics />} />
           <Route path="audit" element={<AuditLog />} />
         </Route>
