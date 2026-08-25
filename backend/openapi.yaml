@@ -1524,6 +1524,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to load the billing profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
     put:
       operationId: putBillingProfile
       summary: Create or replace the caller's tenant billing (buyer) profile
@@ -1556,6 +1561,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Store failed to persist the profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/billing/catalog:
     get:
       operationId: getBillingCatalog
@@ -1574,6 +1584,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to load catalog items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/billing/invoices:
     get:
       operationId: listTenantInvoices
@@ -1589,6 +1604,11 @@ paths:
                 items: { $ref: "#/components/schemas/Invoice" }
         "403":
           description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to list invoices.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
@@ -1636,6 +1656,11 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to issue the invoice.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/billing/invoices/{id}:
     get:
       operationId: getTenantInvoice
@@ -1662,6 +1687,11 @@ paths:
             id is not a UUID, the invoice does not exist, or the invoice
             belongs to a different tenant (no existence oracle — all three
             are 404).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "500":
+          description: Failed to load the invoice.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }

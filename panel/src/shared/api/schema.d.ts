@@ -2521,6 +2521,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Failed to load the billing profile. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     putBillingProfile: {
@@ -2570,6 +2579,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Store failed to persist the profile. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getBillingCatalog: {
@@ -2599,6 +2617,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Failed to load catalog items. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listTenantInvoices: {
@@ -2621,6 +2648,15 @@ export interface operations {
             };
             /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Failed to list invoices. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2686,6 +2722,15 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            /** @description Failed to issue the invoice. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     getTenantInvoice: {
@@ -2719,6 +2764,15 @@ export interface operations {
             };
             /** @description id is not a UUID, the invoice does not exist, or the invoice belongs to a different tenant (no existence oracle — all three are 404). */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Failed to load the invoice. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
