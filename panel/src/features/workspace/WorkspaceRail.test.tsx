@@ -134,11 +134,14 @@ describe("WorkspaceRail", () => {
     expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
   });
 
-  it("renders the still-locked equipment step row as a non-link (no screen behind it yet)", () => {
+  it("renders the equipment step as a live link to the org-level /equipment page", () => {
     renderRail(<WorkspaceRail eventId="evt-1" readiness={FULL_READINESS} active="overview" />);
-
-    const linkNames = screen.getAllByRole("link").map((link) => link.textContent);
-    expect(linkNames.some((name) => name?.includes("Equipment"))).toBe(false);
+    // The rail's original "no screen behind it yet" placeholder predates the
+    // equipment initiative -- /equipment (EquipmentPage + printer/scanner
+    // wizards) has long been a real top-level page, so the readiness step
+    // must open it like every other step opens its screen.
+    const link = screen.getByRole("link", { name: /Equipment/ });
+    expect(link).toHaveAttribute("href", "/equipment");
   });
 
   it("renders the Check-in row as a locked non-link when the event isn't ready", () => {
