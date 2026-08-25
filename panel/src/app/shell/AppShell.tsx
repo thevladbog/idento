@@ -44,6 +44,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link to="/organization" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
             {t("navOrganization")}
           </Link>
+          <Link to="/billing" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+            {t("navBilling")}
+          </Link>
           {showSelfService ? (
             <Link to="/me" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
               {t("navMyProfile")}

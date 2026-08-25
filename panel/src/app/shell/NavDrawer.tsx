@@ -34,6 +34,9 @@ export function NavDrawer({ showSelfService }: { showSelfService: boolean }) {
           <Link to="/organization" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
             {t("navOrganization")}
           </Link>
+          <Link to="/billing" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
+            {t("navBilling")}
+          </Link>
           {showSelfService ? (
             <Link to="/me" onClick={() => setOpen(false)} className="flex min-h-11 items-center rounded-md px-3 py-2 text-body hover:bg-muted">
               {t("navMyProfile")}

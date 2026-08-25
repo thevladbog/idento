@@ -157,7 +157,8 @@ describe("AppShell", () => {
     await waitFor(() => expect(screen.getAllByText("My profile")).toHaveLength(2));
     const drawer = screen.getByRole("dialog");
     const drawerRows = within(drawer).getAllByRole("link");
-    expect(drawerRows).toHaveLength(5);
+    // Events, Team, Equipment, Organization, Billing, My profile.
+    expect(drawerRows).toHaveLength(6);
     for (const row of drawerRows) expect(row).toHaveClass("min-h-11");
     const profileLabels = screen.getAllByText("My profile");
     expect(profileLabels[1].closest("a")).toHaveAttribute("href", "/me");
