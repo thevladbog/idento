@@ -26,6 +26,12 @@ import api from '@/lib/api';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
 
+// Single-currency system: the bare plan prices are rubles (see
+// docs/superpowers/specs/2026-08-25-ruble-plans-design.md).
+function formatRub(value: number): string {
+  return `${value.toLocaleString('ru-RU')} ₽`;
+}
+
 interface SubscriptionPlan {
   id?: string;
   name: string;
@@ -217,11 +223,11 @@ export default function SubscriptionPlans() {
             <CardContent className="space-y-4">
               <div>
                 <div className="text-3xl font-bold">
-                  ${plan.price_monthly}
+                  {formatRub(plan.price_monthly)}
                   <span className="text-sm text-muted-foreground font-normal">{t('perMonth')}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  ${plan.price_yearly}{t('perYear')}
+                  {formatRub(plan.price_yearly)}{t('perYear')}
                 </div>
               </div>
 
@@ -312,7 +318,7 @@ export default function SubscriptionPlans() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>{t('priceMonthly')} ($)</Label>
+                <Label>{t('priceMonthly')} (₽)</Label>
                 <Input
                   type="number"
                   value={formData.price_monthly}
@@ -320,7 +326,7 @@ export default function SubscriptionPlans() {
                 />
               </div>
               <div>
-                <Label>{t('priceYearly')} ($)</Label>
+                <Label>{t('priceYearly')} (₽)</Label>
                 <Input
                   type="number"
                   value={formData.price_yearly}
