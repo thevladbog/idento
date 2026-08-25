@@ -6,6 +6,8 @@ import Organizations from "./pages/super-admin/Organizations";
 import OrganizationDetail from "./pages/super-admin/OrganizationDetail";
 import SubscriptionPlans from "./pages/super-admin/SubscriptionPlans";
 import BillingCatalog from "./pages/super-admin/BillingCatalog";
+import BillingInvoices from "./pages/super-admin/BillingInvoices";
+import InvoicePrint from "./pages/super-admin/InvoicePrint";
 import AllUsers from "./pages/super-admin/AllUsers";
 import Analytics from "./pages/super-admin/Analytics";
 import AuditLog from "./pages/super-admin/AuditLog";
@@ -52,9 +54,23 @@ function App() {
           <Route path="users" element={<AllUsers />} />
           <Route path="plans" element={<SubscriptionPlans />} />
           <Route path="billing/catalog" element={<BillingCatalog />} />
+          <Route path="billing/invoices" element={<BillingInvoices />} />
           <Route path="analytics" element={<Analytics />} />
           <Route path="audit" element={<AuditLog />} />
         </Route>
+        {/* Invoice print view: deliberately OUTSIDE the SuperAdminLayout route
+            so it renders without console chrome (nav/header) — it's a
+            standalone RF payment document meant to be printed or saved as
+            PDF, not part of the console shell. Still behind the same
+            requireSuperAdmin guard. */}
+        <Route
+          path="billing/invoices/:id/print"
+          element={
+            <ProtectedRoute requireSuperAdmin>
+              <InvoicePrint />
+            </ProtectedRoute>
+          }
+        />
         {/* Unknown → console dashboard (ProtectedRoute redirects to /login if
             unauthenticated, same guard as before) */}
         <Route path="*" element={<Navigate to="/" replace />} />
