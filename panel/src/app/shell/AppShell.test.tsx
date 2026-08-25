@@ -209,6 +209,19 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
   });
 
+  it("hides Billing for the admin role while the instance mode is still pending", async () => {
+    // The instance query never resolves here, mirroring the moment right
+    // after mount before /api/instance responds. `showBilling` must be a
+    // positive `mode === "saas"` check — `mode !== "onprem"` would be true
+    // for `undefined` and flash the link before the mode is confirmed.
+    server.use(http.get("http://api.test/api/instance", () => new Promise(() => {})));
+    tenantRole = "admin";
+    renderShell();
+
+    await waitFor(() => expect(tenantRequestCount).toBe(1));
+    expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
+  });
+
   it("hides My profile when the live tenant request fails", async () => {
     tenantStatus = 500;
     const queryClient = renderShell();

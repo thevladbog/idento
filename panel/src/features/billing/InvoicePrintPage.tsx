@@ -138,7 +138,12 @@ export function InvoicePrintPage() {
         </div>
         <div className="mb-8 text-sm font-bold">{invoice.total_in_words}</div>
 
-        <div className="mb-12 text-xs text-muted-foreground">
+        {/* Fixed neutral, not the theme's `text-muted-foreground`: this sheet
+        pins `text-black bg-white` regardless of the active theme (it's a
+        printable document, not themed UI chrome). `text-muted-foreground`
+        resolves to a light color in dark mode, which would be invisible on
+        this always-white sheet. Mirrors web's InvoicePrint.tsx exactly. */}
+        <div className="mb-12 text-xs text-neutral-600">
           Оплата данного счёта означает согласие с условиями поставки услуг.
         </div>
 

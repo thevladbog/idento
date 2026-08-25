@@ -193,4 +193,24 @@ describe('BillingCatalog', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Fill in all required fields'));
     expect(api.post).not.toHaveBeenCalled();
   });
+
+  it('blocks save for an addon left at the default limit_delta=0, without calling the API', async () => {
+    render(<BillingCatalog />);
+    await waitFor(() => expect(screen.getByText('Pro Monthly')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Extra attendees' } });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Type' }));
+    const kindListbox = await screen.findByRole('listbox');
+    fireEvent.click(within(kindListbox).getByText('Add-on'));
+
+    // setKind seeds limit_delta: 0 for a fresh addon — that must fail
+    // client-side validation the same way the server rejects it (limit_delta
+    // must be greater than 0), instead of only being caught by the 400.
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Fill in all required fields'));
+    expect(api.post).not.toHaveBeenCalled();
+  });
 });

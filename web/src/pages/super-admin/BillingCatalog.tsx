@@ -165,8 +165,12 @@ export default function BillingCatalog() {
       if (!formData.plan_id || !formData.period || !formData.default_activation) return false;
     }
     if (formData.kind === 'addon') {
-      if (!formData.limit_key || formData.limit_delta === null || !formData.validity) return false;
-      if (formData.validity === 'fixed_days' && !formData.validity_days) return false;
+      if (!formData.limit_key || formData.limit_delta === null || formData.limit_delta <= 0 || !formData.validity) {
+        return false;
+      }
+      if (formData.validity === 'fixed_days' && (!formData.validity_days || formData.validity_days <= 0)) {
+        return false;
+      }
     }
     return true;
   };

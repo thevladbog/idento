@@ -14,7 +14,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const instance = useInstance();
   const activeTenantRole = useActiveTenantRole();
   const showSelfService = activeTenantRole === "staff";
-  const showBilling = activeTenantRole === "admin" && instance.data?.mode !== "onprem";
+  const showBilling = activeTenantRole === "admin" && instance.data?.mode === "saas";
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <ImpersonationBanner />

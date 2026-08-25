@@ -337,8 +337,16 @@ const STATUS_LABEL_KEYS: Record<Invoice["status"], string> = {
 };
 
 // Board-agnostic CSS-grid row, mirroring AttendeeTable.tsx's pattern:
-// Номер / Дата / Сумма / Статус / «Открыть».
-const INVOICE_ROW_GRID = "grid grid-cols-[1fr_140px_140px_140px_100px] items-center gap-3";
+// Номер / Дата / Сумма / Статус / «Открыть». Below `md` the fixed 140px
+// columns (520px+ total) overflow a 390px phone viewport, so the Date
+// column is dropped there (`hidden md:inline` on its cells — display:none
+// removes it from grid auto-placement entirely, so the remaining 4 items
+// cleanly fill the 4-column mobile template) and the surviving columns use
+// `minmax(0, …fr)` instead of a fixed px width so long content can't force
+// the grid wider than the viewport. The `md:` desktop template is the exact
+// original fixed-px value, so desktop rendering is unchanged.
+const INVOICE_ROW_GRID =
+  "grid grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_44px] items-center gap-2 md:grid-cols-[1fr_140px_140px_140px_100px] md:gap-3";
 
 function BillingInvoicesCard() {
   const { t } = useTranslation();
@@ -362,7 +370,7 @@ function BillingInvoicesCard() {
           )}
         >
           <span>{t("billingInvoiceNumberCol")}</span>
-          <span>{t("billingInvoiceDateCol")}</span>
+          <span className="hidden md:inline">{t("billingInvoiceDateCol")}</span>
           <span>{t("billingInvoiceAmountCol")}</span>
           <span>{t("billingInvoiceStatusCol")}</span>
           <span />
@@ -370,8 +378,8 @@ function BillingInvoicesCard() {
         <ul className="flex flex-col divide-y divide-border">
           {invoices.map((invoice) => (
             <li key={invoice.id} className={cn(INVOICE_ROW_GRID, "px-3.5 py-2 text-body")}>
-              <span className="font-mono text-caption">{invoice.number}</span>
-              <span className="text-muted-foreground">{new Date(invoice.issued_at).toLocaleDateString()}</span>
+              <span className="truncate font-mono text-caption">{invoice.number}</span>
+              <span className="hidden text-muted-foreground md:inline">{new Date(invoice.issued_at).toLocaleDateString()}</span>
               <span>{formatRub(invoice.total)}</span>
               <span>{t(STATUS_LABEL_KEYS[invoice.status])}</span>
               <Link
@@ -416,7 +424,12 @@ export function BillingPage() {
     <div data-testid="billing-page" className="flex flex-col gap-5 p-4 md:p-6">
       <h2 className="text-page-title">{t("billingTitle")}</h2>
       <div className="flex gap-6">
-        <nav className="flex w-[200px] shrink-0 flex-col gap-0.5">
+        {/* Hidden below `md`: at a 390px phone width the fixed 200px rail plus
+        the content column overflows; content sections stack full-width on
+        their own since this is the only sibling left in the flex row once
+        the rail is display:none. Returns at `md` (single cutover, matching
+        the AppShell header pattern). */}
+        <nav className="hidden w-[200px] shrink-0 flex-col gap-0.5 md:flex">
           {RAIL_ITEMS.map((item) => (
             <a
               key={item.id}
