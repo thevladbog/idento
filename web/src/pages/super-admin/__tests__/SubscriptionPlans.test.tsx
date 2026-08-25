@@ -66,8 +66,10 @@ describe('SubscriptionPlans Unlimited toggle', () => {
     await waitFor(() => expect(screen.getByText('Starter')).toBeInTheDocument());
     // 2990 formatted by Intl for ru-RU + the ruble sign; no dollar anywhere.
     // Pattern: 2 (narrow space) 990 (regular space) ₽
+    // testing-library's default normalizer collapses the NBSP thousands separator
+    // to a plain space before matching, so build a whitespace-tolerant regex.
     const expected = `${(2990).toLocaleString('ru-RU')} ₽`;
-    expect(screen.getByText(/2\s+990\s+₽/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(expected.replace(/\s+/g, '\\s+')))).toBeInTheDocument();
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 });
