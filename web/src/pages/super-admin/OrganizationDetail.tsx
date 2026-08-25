@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Users, Calendar, UserCheck } from 'lucide-react';
 import api from '@/lib/api';
 import { toast } from 'sonner';
@@ -24,6 +25,12 @@ import type { AuditLogEntry } from '@/lib/auditFormat';
 
 type TenantUser = { id: string; email: string; role: string; created_at: string };
 
+type ActiveBoost = {
+  limit_key: 'attendees_per_event' | 'events_per_month' | 'users';
+  delta: number;
+  valid_until: string;
+};
+
 interface TenantDetail {
   tenant?: { id?: string; name?: string; status?: string; website?: string; contact_email?: string; created_at?: string };
   subscription?: {
@@ -38,13 +45,25 @@ interface TenantDetail {
   attendees_count?: number;
   events_this_month?: number;
   max_attendees_per_event?: number;
+  active_boosts?: ActiveBoost[];
 }
 
 type Plan = { id: string; name: string; price_monthly?: number };
 
+type InvoiceStatus = 'issued' | 'paid' | 'cancelled';
+
+type Invoice = {
+  id: string;
+  number: string;
+  issued_at: string;
+  total: number;
+  status: InvoiceStatus;
+};
+
 const SECTIONS: Array<{ id: string; labelKey: string }> = [
   { id: 'summary', labelKey: 'td_nav_summary' },
   { id: 'subscription', labelKey: 'td_nav_subscription' },
+  { id: 'invoices', labelKey: 'td_nav_invoices' },
   { id: 'lifecycle', labelKey: 'td_nav_lifecycle' },
   { id: 'users', labelKey: 'td_nav_users' },
   { id: 'activity', labelKey: 'td_nav_activity' },
@@ -59,6 +78,7 @@ export default function OrganizationDetail() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [auditEntries, setAuditEntries] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<TenantUser[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
 
@@ -87,11 +107,12 @@ export default function OrganizationDetail() {
   const loadData = async () => {
     const requestId = id;
     try {
-      const [tenantResponse, plansResponse, auditResponse, usersResponse] = await Promise.all([
+      const [tenantResponse, plansResponse, auditResponse, usersResponse, invoicesResponse] = await Promise.all([
         api.get(`/api/super-admin/tenants/${id}/stats`),
         api.get('/api/super-admin/plans'),
         api.get(`/api/super-admin/audit-log?target_id=${id}&limit=100`),
         api.get(`/api/super-admin/users?tenant_id=${id}`),
+        api.get(`/api/super-admin/billing/invoices?tenant_id=${id}`),
       ]);
 
       if (latestIdRef.current !== requestId) return; // superseded by a newer navigation
@@ -100,6 +121,7 @@ export default function OrganizationDetail() {
       setPlans(plansResponse.data);
       setAuditEntries(auditResponse.data.logs || []);
       setUsers(usersResponse.data.users || []);
+      setInvoices(invoicesResponse.data || []);
 
       if (tenantResponse.data.subscription) {
         const sub = tenantResponse.data.subscription;
@@ -249,6 +271,18 @@ export default function OrganizationDetail() {
 
   const planNames = Object.fromEntries(plans.map((p) => [p.id, p.name]));
   const subscriptionAudit = auditEntries.filter((e) => e.action === 'update_subscription' || e.action === 'create_subscription');
+
+  const limitKeyLabel = (key: ActiveBoost['limit_key']) => {
+    if (key === 'attendees_per_event') return t('billingLimitAttendees');
+    if (key === 'events_per_month') return t('billingLimitEvents');
+    return t('billingLimitUsers');
+  };
+
+  const invoiceStatusLabel = (status: InvoiceStatus) => {
+    if (status === 'issued') return t('billingStatusIssued');
+    if (status === 'paid') return t('billingStatusPaid');
+    return t('billingStatusCancelled');
+  };
 
   return (
     <div className="flex gap-8 p-8">
@@ -427,6 +461,15 @@ export default function OrganizationDetail() {
                     className="font-mono text-sm"
                   />
                   <p className="text-xs text-muted-foreground">{t('customLimitsHint')}</p>
+                  {(tenant.active_boosts ?? []).length > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {(tenant.active_boosts ?? []).map((boost, i) => (
+                        <Badge key={`${boost.limit_key}-${i}`} variant="secondary" className="font-normal">
+                          {`+${boost.delta.toLocaleString('ru-RU')} · ${limitKeyLabel(boost.limit_key)} · ${t('billingBoostUntil', { date: new Date(boost.valid_until).toLocaleDateString('ru-RU') })}`}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -462,6 +505,56 @@ export default function OrganizationDetail() {
               </CardHeader>
               <CardContent>
                 <AuditEntryList entries={subscriptionAudit} planNames={planNames} emptyLabel={t('td_subscriptionHistoryEmpty')} />
+              </CardContent>
+            </Card>
+          </section>
+
+          <section id="invoices">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">{t('td_nav_invoices')}</h2>
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/billing/invoices">{t('billingInvoiceCreate')}</Link>
+              </Button>
+            </div>
+            <Card>
+              <CardContent className="pt-6">
+                {invoices.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('billingNoInvoices')}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('billingInvoiceNumber')}</TableHead>
+                        <TableHead>{t('created')}</TableHead>
+                        <TableHead>{t('billingInvoiceAmount')}</TableHead>
+                        <TableHead>{t('status')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {invoices.map((invoice) => (
+                        <TableRow key={invoice.id}>
+                          <TableCell className="font-medium">
+                            <Link
+                              to={`/billing/invoices/${invoice.id}/print`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline-offset-4 hover:underline"
+                            >
+                              {invoice.number}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{new Date(invoice.issued_at).toLocaleDateString('ru-RU')}</TableCell>
+                          <TableCell>{`${invoice.total.toLocaleString('ru-RU')} ₽`}</TableCell>
+                          <TableCell>
+                            <Badge variant={invoice.status === 'issued' ? 'default' : invoice.status === 'paid' ? 'secondary' : 'outline'}>
+                              {invoiceStatusLabel(invoice.status)}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </section>

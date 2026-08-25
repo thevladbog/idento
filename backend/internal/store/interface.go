@@ -414,6 +414,44 @@ type Store interface {
 	CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) // allowed, current, max
 	CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 
+	// Billing — profiles & catalog (spec 2026-08-25-billing-invoices-design.md)
+	UpsertTenantBillingProfile(ctx context.Context, p *models.TenantBillingProfile) error
+	// GetTenantBillingProfile returns (nil, nil) when the tenant has no profile.
+	GetTenantBillingProfile(ctx context.Context, tenantID uuid.UUID) (*models.TenantBillingProfile, error)
+	CreateCatalogItem(ctx context.Context, item *models.BillingCatalogItem) error
+	UpdateCatalogItem(ctx context.Context, item *models.BillingCatalogItem) error
+	// GetCatalogItems: publicOnly=true → is_public AND is_active only (tenant view).
+	GetCatalogItems(ctx context.Context, publicOnly bool) ([]*models.BillingCatalogItem, error)
+	// GetCatalogItemByID returns (nil, nil) when absent.
+	GetCatalogItemByID(ctx context.Context, id uuid.UUID) (*models.BillingCatalogItem, error)
+	// CreateInvoice assigns inv.Number (СЧ-<year>-<NNNN>, per-year counter),
+	// inserts the invoice and its lines atomically, and fills inv.ID/IssuedAt.
+	// Lines must arrive with Position/snapshot fields/Quantity/Amount set.
+	CreateInvoice(ctx context.Context, inv *models.Invoice, lines []*models.InvoiceLine) error
+	// GetInvoiceByID returns the invoice with Lines loaded, (nil, nil) when absent.
+	GetInvoiceByID(ctx context.Context, id uuid.UUID) (*models.Invoice, error)
+	// ListInvoices returns invoices (no lines) newest-first with TenantName joined.
+	ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.Invoice, error)
+	// ApplyInvoicePayment marks invoice paid (issued→paid guard) and applies
+	// every line per the billing-invoices spec's Application semantics. Runs
+	// in ONE transaction: any per-line failure (e.g. ErrBoostNeedsEndDate)
+	// rolls back the whole thing, leaving the invoice issued. Lines apply in
+	// KIND order (plan, then addon, then service — not invoice-position
+	// order), so an until_period_end addon always sees a same-invoice
+	// plan line's new end_date; see the PGStore implementation's doc
+	// comment for the full ordering contract.
+	ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []AppliedLineEffect, error)
+	// CancelInvoice: issued→cancelled guard, sets cancelled_at.
+	CancelInvoice(ctx context.Context, invoiceID uuid.UUID) error
+	// GetActiveLimitBoosts returns boosts with valid_until > now, newest first.
+	GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) ([]*models.LimitBoost, error)
+	// ExpireOverdueSubscriptions flips trial subscriptions past trial_end_date
+	// and active subscriptions past end_date to status='expired', writing one
+	// admin_audit_log row per expired subscription with admin_user_id NULL
+	// (system-initiated, not LogAdminAction — there is no admin actor). Idle
+	// passes affect zero rows. Returns the number of subscriptions expired.
+	ExpireOverdueSubscriptions(ctx context.Context) (int, error)
+
 	// Audit
 	// WithTx runs fn against a store whose every operation shares one
 	// database transaction: committed if fn returns nil, rolled back
@@ -612,6 +650,29 @@ type AttendeeFilter struct {
 	Status  *bool
 	Page    int
 	PerPage int
+}
+
+// InvoiceFilter narrows ListInvoices. Zero value = all invoices.
+type InvoiceFilter struct {
+	TenantID *uuid.UUID
+	Status   string // "", "issued", "paid", "cancelled"
+	Limit    int    // 0 → 100
+	Offset   int
+}
+
+// Sentinel errors for mark-paid/cancel guards (handlers map them to 409).
+var (
+	ErrInvoiceNotFound   = errors.New("invoice not found")
+	ErrInvoiceNotIssued  = errors.New("invoice is not in issued status")
+	ErrBoostNeedsEndDate = errors.New("addon is until_period_end but subscription has no end_date")
+)
+
+// AppliedLineEffect describes what one paid line did (for the audit row and
+// the operator confirmation response).
+type AppliedLineEffect struct {
+	LineID uuid.UUID `json:"line_id"`
+	Kind   string    `json:"kind"`
+	Effect string    `json:"effect"` // human-readable machine summary, e.g. "plan pro extended to 2026-10-01", "boost attendees_per_event +1000 until 2026-09-12", "service (no effect)", "manual (operator applies)"
 }
 
 // CheckinActionAttendee is the slim attendee projection embedded in a

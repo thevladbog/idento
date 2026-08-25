@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Deployment modes. OnPrem is the default: a binary running outside our
@@ -29,6 +30,41 @@ type Config struct {
 	// TenantRetentionDays is how long an archived tenant is kept before the
 	// purge job deletes it permanently. 0 disables auto-purge.
 	TenantRetentionDays int
+	// SubscriptionLifecycleInterval is how often (SaaS mode only) the
+	// lifecycle ticker checks for overdue trial/active subscriptions to
+	// expire. 0 disables the ticker.
+	SubscriptionLifecycleInterval time.Duration
+	// Seller requisites for RF invoices ("сумма прописью" / «Продавец»
+	// block). All optional at Load time; BillingSellerConfigured reports
+	// whether enough are set to render an invoice.
+	BillingSellerName            string // BILLING_SELLER_NAME
+	BillingSellerINN             string // BILLING_SELLER_INN
+	BillingSellerBankName        string // BILLING_SELLER_BANK_NAME
+	BillingSellerBankAccount     string // BILLING_SELLER_BANK_ACCOUNT (р/с)
+	BillingSellerBankBIK         string // BILLING_SELLER_BANK_BIK
+	BillingSellerBankCorrAccount string // BILLING_SELLER_BANK_CORR_ACCOUNT (к/с, optional)
+}
+
+// BillingSellerConfigured reports whether all required seller requisites are
+// set. The correspondent account (к/с) is optional — not every bank
+// relationship uses one.
+func (c *Config) BillingSellerConfigured() bool {
+	return c.BillingSellerName != "" &&
+		c.BillingSellerINN != "" &&
+		c.BillingSellerBankName != "" &&
+		c.BillingSellerBankAccount != "" &&
+		c.BillingSellerBankBIK != ""
+}
+
+// SellerRequisites is the seller ("Продавец") block rendered on RF invoices.
+type SellerRequisites struct {
+	Name            string
+	INN             string
+	BankName        string
+	BankAccount     string
+	BankBIK         string
+	BankCorrAccount string
+	Configured      bool
 }
 
 var current *Config
@@ -44,6 +80,13 @@ func Load() (*Config, error) {
 		AdminEmail:     os.Getenv("IDENTO_ADMIN_EMAIL"),
 		AdminPassword:  os.Getenv("IDENTO_ADMIN_PASSWORD"),
 		AdminOrgName:   os.Getenv("IDENTO_ORG_NAME"),
+
+		BillingSellerName:            os.Getenv("BILLING_SELLER_NAME"),
+		BillingSellerINN:             os.Getenv("BILLING_SELLER_INN"),
+		BillingSellerBankName:        os.Getenv("BILLING_SELLER_BANK_NAME"),
+		BillingSellerBankAccount:     os.Getenv("BILLING_SELLER_BANK_ACCOUNT"),
+		BillingSellerBankBIK:         os.Getenv("BILLING_SELLER_BANK_BIK"),
+		BillingSellerBankCorrAccount: os.Getenv("BILLING_SELLER_BANK_CORR_ACCOUNT"),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -82,6 +125,19 @@ func Load() (*Config, error) {
 		cfg.TenantRetentionDays = n
 	}
 
+	switch raw := os.Getenv("SUBSCRIPTION_LIFECYCLE_INTERVAL"); raw {
+	case "":
+		cfg.SubscriptionLifecycleInterval = time.Hour
+	case "0":
+		cfg.SubscriptionLifecycleInterval = 0
+	default:
+		d, err := time.ParseDuration(raw)
+		if err != nil || d < 0 {
+			return nil, fmt.Errorf("SUBSCRIPTION_LIFECYCLE_INTERVAL must be a Go duration (e.g. 1h) or 0 to disable, got %q", raw)
+		}
+		cfg.SubscriptionLifecycleInterval = d
+	}
+
 	current = cfg
 	return cfg, nil
 }
@@ -93,4 +149,38 @@ func JWTSecret() string {
 		return current.JWTSecret
 	}
 	return os.Getenv("JWT_SECRET")
+}
+
+// Seller returns the loaded config's seller requisites block for invoice
+// handlers. Before Load (unit tests that exercise handlers directly) it
+// falls back to direct environment reads, mirroring JWTSecret().
+func Seller() SellerRequisites {
+	if current != nil {
+		return SellerRequisites{
+			Name:            current.BillingSellerName,
+			INN:             current.BillingSellerINN,
+			BankName:        current.BillingSellerBankName,
+			BankAccount:     current.BillingSellerBankAccount,
+			BankBIK:         current.BillingSellerBankBIK,
+			BankCorrAccount: current.BillingSellerBankCorrAccount,
+			Configured:      current.BillingSellerConfigured(),
+		}
+	}
+	c := Config{
+		BillingSellerName:            os.Getenv("BILLING_SELLER_NAME"),
+		BillingSellerINN:             os.Getenv("BILLING_SELLER_INN"),
+		BillingSellerBankName:        os.Getenv("BILLING_SELLER_BANK_NAME"),
+		BillingSellerBankAccount:     os.Getenv("BILLING_SELLER_BANK_ACCOUNT"),
+		BillingSellerBankBIK:         os.Getenv("BILLING_SELLER_BANK_BIK"),
+		BillingSellerBankCorrAccount: os.Getenv("BILLING_SELLER_BANK_CORR_ACCOUNT"),
+	}
+	return SellerRequisites{
+		Name:            c.BillingSellerName,
+		INN:             c.BillingSellerINN,
+		BankName:        c.BillingSellerBankName,
+		BankAccount:     c.BillingSellerBankAccount,
+		BankBIK:         c.BillingSellerBankBIK,
+		BankCorrAccount: c.BillingSellerBankCorrAccount,
+		Configured:      c.BillingSellerConfigured(),
+	}
 }

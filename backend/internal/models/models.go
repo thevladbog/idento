@@ -180,6 +180,10 @@ type TenantWithStats struct {
 	EventsThisMonth      int        `json:"events_this_month"`
 	MaxAttendeesPerEvent int        `json:"max_attendees_per_event"`
 	LastActivity         *time.Time `json:"last_activity"`
+	// ActiveBoosts surfaces any currently-valid limit add-ons (billing
+	// catalog kind="addon" invoices, once paid) on the platform console's
+	// tenant detail view — set by GetTenantStats via GetActiveLimitBoosts.
+	ActiveBoosts []*LimitBoost `json:"active_boosts,omitempty"`
 }
 
 type AdminAuditLog struct {
@@ -452,4 +456,99 @@ type CheckinAction struct {
 	Action      string     `json:"action"` // "checkin" | "undo" | "reprint"
 	StaffUserID *uuid.UUID `json:"staff_user_id,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// --- Billing (bank-transfer invoicing; spec 2026-08-25) ---
+
+type TenantBillingProfile struct {
+	TenantID     uuid.UUID `json:"tenant_id"`
+	LegalName    string    `json:"legal_name"`
+	INN          string    `json:"inn"`
+	KPP          *string   `json:"kpp"`
+	LegalAddress string    `json:"legal_address"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type BillingCatalogItem struct {
+	ID          uuid.UUID `json:"id"`
+	Kind        string    `json:"kind"` // plan, service, addon
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Price       float64   `json:"price"`
+	VATRate     *float64  `json:"vat_rate"` // nil = «Без НДС»; value = included in price
+	IsPublic    bool      `json:"is_public"`
+	IsActive    bool      `json:"is_active"`
+	SortOrder   int       `json:"sort_order"`
+	// kind == "plan"
+	PlanID            *uuid.UUID `json:"plan_id"`
+	Period            *string    `json:"period"`             // month, year
+	DefaultActivation *string    `json:"default_activation"` // on_payment, after_current, manual
+	// kind == "addon"
+	LimitKey     *string   `json:"limit_key"` // attendees_per_event, events_per_month, users
+	LimitDelta   *int      `json:"limit_delta"`
+	Validity     *string   `json:"validity"` // until_period_end, fixed_days
+	ValidityDays *int      `json:"validity_days"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type Invoice struct {
+	ID                    uuid.UUID  `json:"id"`
+	Number                string     `json:"number"`
+	TenantID              uuid.UUID  `json:"tenant_id"`
+	Status                string     `json:"status"` // issued, paid, cancelled
+	IssuedAt              time.Time  `json:"issued_at"`
+	PaidAt                *time.Time `json:"paid_at"`
+	CancelledAt           *time.Time `json:"cancelled_at"`
+	BuyerName             string     `json:"buyer_name"`
+	BuyerINN              string     `json:"buyer_inn"`
+	BuyerKPP              *string    `json:"buyer_kpp"`
+	BuyerAddress          string     `json:"buyer_address"`
+	SellerName            string     `json:"seller_name"`
+	SellerINN             string     `json:"seller_inn"`
+	SellerBankName        string     `json:"seller_bank_name"`
+	SellerBankAccount     string     `json:"seller_bank_account"`
+	SellerBankBIK         string     `json:"seller_bank_bik"`
+	SellerBankCorrAccount *string    `json:"seller_bank_corr_account"`
+	Total                 float64    `json:"total"`
+	Comment               *string    `json:"comment"`
+	CreatedBy             *uuid.UUID `json:"created_by"`
+	// TenantName is joined for operator list views; empty elsewhere.
+	TenantName string         `json:"tenant_name,omitempty"`
+	Lines      []*InvoiceLine `json:"lines,omitempty"`
+	// TotalInWords is computed by handlers (billing.AmountInWords), never stored.
+	TotalInWords string    `json:"total_in_words,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type InvoiceLine struct {
+	ID            uuid.UUID  `json:"id"`
+	InvoiceID     uuid.UUID  `json:"invoice_id"`
+	Position      int        `json:"position"`
+	CatalogItemID *uuid.UUID `json:"catalog_item_id"`
+	Kind          string     `json:"kind"`
+	Name          string     `json:"name"`
+	Price         float64    `json:"price"`
+	VATRate       *float64   `json:"vat_rate"`
+	PlanID        *uuid.UUID `json:"plan_id"`
+	Period        *string    `json:"period"`
+	Activation    *string    `json:"activation"`
+	LimitKey      *string    `json:"limit_key"`
+	LimitDelta    *int       `json:"limit_delta"`
+	Validity      *string    `json:"validity"`
+	ValidityDays  *int       `json:"validity_days"`
+	Quantity      int        `json:"quantity"`
+	Amount        float64    `json:"amount"`
+}
+
+type LimitBoost struct {
+	ID                  uuid.UUID  `json:"id"`
+	TenantID            uuid.UUID  `json:"tenant_id"`
+	LimitKey            string     `json:"limit_key"`
+	Delta               int        `json:"delta"`
+	ValidUntil          time.Time  `json:"valid_until"`
+	SourceInvoiceLineID *uuid.UUID `json:"source_invoice_line_id"`
+	CreatedAt           time.Time  `json:"created_at"`
 }

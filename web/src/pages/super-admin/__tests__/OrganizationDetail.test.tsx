@@ -19,6 +19,20 @@ const mockStats = {
 const mockPlans = [{ id: 'plan-pro', name: 'Professional', price_monthly: 99 }];
 const mockAudit = { logs: [] };
 const mockUsers = { users: [{ id: 'u1', email: 'staff@acme.test', role: 'admin', created_at: '2026-02-01T00:00:00Z' }], total: 1 };
+const mockInvoices = [
+  { id: 'inv1', number: 'INV-0001', issued_at: '2026-08-01T00:00:00Z', total: 5000, status: 'issued' },
+];
+
+function mockApiGet(overrides: { invoices?: unknown; stats?: unknown } = {}) {
+  vi.mocked(api.get).mockImplementation((url: string) => {
+    if (url.includes('/stats')) return Promise.resolve({ data: overrides.stats ?? mockStats });
+    if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
+    if (url.includes('/audit-log')) return Promise.resolve({ data: mockAudit });
+    if (url.includes('/billing/invoices')) return Promise.resolve({ data: overrides.invoices ?? mockInvoices });
+    if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
+    return Promise.reject(new Error('unexpected url ' + url));
+  });
+}
 
 function renderPage() {
   return render(
@@ -56,13 +70,7 @@ function renderPageWithNavCapture() {
 
 describe('OrganizationDetail', () => {
   beforeEach(() => {
-    vi.mocked(api.get).mockImplementation((url: string) => {
-      if (url.includes('/stats')) return Promise.resolve({ data: mockStats });
-      if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
-      if (url.includes('/audit-log')) return Promise.resolve({ data: mockAudit });
-      if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
-      return Promise.reject(new Error('unexpected url ' + url));
-    });
+    mockApiGet();
   });
 
   it('renders the tenant identity header and usage meters', async () => {
@@ -112,6 +120,7 @@ describe('OrganizationDetail', () => {
       if (url.includes('/stats')) return Promise.resolve({ data: mockStats });
       if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
       if (url.includes('/audit-log')) return Promise.resolve({ data: auditWithEntries });
+      if (url.includes('/billing/invoices')) return Promise.resolve({ data: mockInvoices });
       if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
       return Promise.reject(new Error('unexpected url ' + url));
     });
@@ -152,6 +161,7 @@ describe('OrganizationDetail', () => {
       if (url.includes('/tenants/t2/stats')) return Promise.resolve({ data: t2Stats });
       if (url.includes('/plans')) return Promise.resolve({ data: mockPlans });
       if (url.includes('/audit-log')) return Promise.resolve({ data: mockAudit });
+      if (url.includes('/billing/invoices')) return Promise.resolve({ data: mockInvoices });
       if (url.includes('/users')) return Promise.resolve({ data: mockUsers });
       return Promise.reject(new Error('unexpected url ' + url));
     });
@@ -167,5 +177,40 @@ describe('OrganizationDetail', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.getByText('Second Tenant')).toBeInTheDocument();
     expect(screen.queryByText('Acme Corp')).not.toBeInTheDocument();
+  });
+
+  it('renders the Invoices section with the tenant-scoped invoices and an active boost chip near the limits', async () => {
+    const futureDate = '2026-12-31T00:00:00Z';
+    const statsWithBoost = {
+      ...mockStats,
+      active_boosts: [{ limit_key: 'attendees_per_event', delta: 1000, valid_until: futureDate }],
+    };
+    mockApiGet({ stats: statsWithBoost, invoices: mockInvoices });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+
+    // Invoices section renders with the mocked invoice's number.
+    expect(screen.getByRole('heading', { name: 'Invoices' })).toBeInTheDocument();
+    expect(screen.getByText('INV-0001')).toBeInTheDocument();
+
+    // Boost chip renders near the limits, with grouped (ru-RU, NBSP) delta,
+    // the existing limit-key label, and the "until <date>" text -- delta and
+    // date are always formatted with ru-RU locale rules regardless of UI language.
+    // testing-library's default text normalizer collapses the NBSP grouping
+    // separator to a plain space, so match against a space-normalized regex
+    // rather than the raw NBSP that toLocaleString produces.
+    const expectedDelta = `\\+${(1000).toLocaleString('ru-RU').replace(/\u00a0/g, ' ')}`;
+    expect(screen.getByText(new RegExp(expectedDelta))).toBeInTheDocument();
+    expect(screen.getByText(/Attendees per event/)).toBeInTheDocument();
+    expect(screen.getByText(/until/)).toBeInTheDocument();
+  });
+
+  it('shows the empty-invoices state when the tenant has no invoices', async () => {
+    mockApiGet({ invoices: [] });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Acme Corp')).toBeInTheDocument());
+    expect(screen.getByText('No invoices yet')).toBeInTheDocument();
   });
 });

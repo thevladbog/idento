@@ -2350,6 +2350,14 @@ func (s *PGStore) GetSubscriptionByTenantID(ctx context.Context, tenantID uuid.U
 		return nil, err
 	}
 
+	if planID != nil {
+		parsed, err := uuid.Parse(*planID)
+		if err != nil {
+			return nil, fmt.Errorf("parse subscription plan_id: %w", err)
+		}
+		sub.PlanID = &parsed
+	}
+
 	if len(customLimitsJSON) > 0 && string(customLimitsJSON) != "null" {
 		if err := json.Unmarshal(customLimitsJSON, &sub.CustomLimits); err != nil {
 			fmt.Printf("Failed to unmarshal custom limits: %v\n", err)
@@ -2527,6 +2535,19 @@ func (s *PGStore) resolveTenantLimit(ctx context.Context, tenantID uuid.UUID, li
 			}
 			maxLimit = floatVal
 		}
+	}
+	// Active limit_boosts (billing add-ons paid for and not yet expired)
+	// add on top of the resolved custom/plan limit — unless that limit is
+	// already unlimited (-1), which boosts cannot exceed or need not extend.
+	if maxLimit != -1 {
+		var boost float64
+		if err := s.db.QueryRow(ctx,
+			`SELECT COALESCE(SUM(delta), 0) FROM limit_boosts
+			 WHERE tenant_id = $1 AND limit_key = $2 AND valid_until > NOW()`,
+			tenantID, limitType).Scan(&boost); err != nil {
+			return 0, err
+		}
+		maxLimit += boost
 	}
 	return maxLimit, nil
 }

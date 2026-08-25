@@ -144,7 +144,7 @@ describe("AppShell", () => {
     expect(await screen.findByText("ON-PREM · v2.4.1")).toBeInTheDocument();
   });
 
-  it("shows My profile in desktop and drawer navigation for the live staff role", async () => {
+  it("shows My profile in desktop and drawer navigation for the live staff role, and hides Billing (staff is not admin)", async () => {
     tenantRole = "staff";
     const user = userEvent.setup();
     renderShell();
@@ -152,11 +152,13 @@ describe("AppShell", () => {
     expect(screen.queryByRole("link", { name: "My profile" })).not.toBeInTheDocument();
     const desktopLink = await screen.findByRole("link", { name: "My profile" });
     expect(desktopLink).toHaveAttribute("href", "/me");
+    expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Menu" }));
     await waitFor(() => expect(screen.getAllByText("My profile")).toHaveLength(2));
     const drawer = screen.getByRole("dialog");
     const drawerRows = within(drawer).getAllByRole("link");
+    // Events, Team, Equipment, Organization, My profile (no Billing: staff is not admin).
     expect(drawerRows).toHaveLength(5);
     for (const row of drawerRows) expect(row).toHaveClass("min-h-11");
     const profileLabels = screen.getAllByText("My profile");
@@ -174,6 +176,51 @@ describe("AppShell", () => {
       expect(screen.queryByRole("link", { name: "My profile" })).not.toBeInTheDocument();
     },
   );
+
+  it("shows Billing for the live admin role on saas", async () => {
+    tenantRole = "admin";
+    const queryClient = renderShell();
+
+    await waitFor(() => expect(tenantRequestCount).toBe(1));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(await screen.findByRole("link", { name: "Billing" })).toHaveAttribute("href", "/billing");
+  });
+
+  it("hides Billing for the live manager role", async () => {
+    tenantRole = "manager";
+    const queryClient = renderShell();
+
+    await waitFor(() => expect(tenantRequestCount).toBe(1));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
+  });
+
+  it("hides Billing on-prem even for the admin role", async () => {
+    server.use(
+      http.get("http://api.test/api/instance", () =>
+        HttpResponse.json({ mode: "onprem", version: "2.4.1", license: null }),
+      ),
+    );
+    tenantRole = "admin";
+    const queryClient = renderShell();
+
+    await waitFor(() => expect(tenantRequestCount).toBe(1));
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
+  });
+
+  it("hides Billing for the admin role while the instance mode is still pending", async () => {
+    // The instance query never resolves here, mirroring the moment right
+    // after mount before /api/instance responds. `showBilling` must be a
+    // positive `mode === "saas"` check — `mode !== "onprem"` would be true
+    // for `undefined` and flash the link before the mode is confirmed.
+    server.use(http.get("http://api.test/api/instance", () => new Promise(() => {})));
+    tenantRole = "admin";
+    renderShell();
+
+    await waitFor(() => expect(tenantRequestCount).toBe(1));
+    expect(screen.queryByRole("link", { name: "Billing" })).not.toBeInTheDocument();
+  });
 
   it("hides My profile when the live tenant request fails", async () => {
     tenantStatus = 500;

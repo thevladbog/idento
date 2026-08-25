@@ -138,6 +138,20 @@ type fakeStore struct {
 	setDefaultEquipmentPrinter     func(tenantID, machineID uuid.UUID, deviceID *uuid.UUID) error
 	markEquipmentDeviceTestPassed  func(tenantID, deviceID uuid.UUID) error
 	tenantHasTestedDefaultPrinter  func(tenantID uuid.UUID) (bool, error)
+
+	getTenantBillingProfile    func(tenantID uuid.UUID) (*models.TenantBillingProfile, error)
+	upsertTenantBillingProfile func(p *models.TenantBillingProfile) error
+	getCatalogItems            func(publicOnly bool) ([]*models.BillingCatalogItem, error)
+	getCatalogItemByID         func(id uuid.UUID) (*models.BillingCatalogItem, error)
+	createCatalogItem          func(item *models.BillingCatalogItem) error
+	updateCatalogItem          func(item *models.BillingCatalogItem) error
+	createInvoice              func(inv *models.Invoice, lines []*models.InvoiceLine) error
+	getInvoiceByID             func(id uuid.UUID) (*models.Invoice, error)
+	listInvoices               func(f store.InvoiceFilter) ([]*models.Invoice, error)
+	applyInvoicePayment        func(invoiceID uuid.UUID, now time.Time) (*models.Invoice, []store.AppliedLineEffect, error)
+	cancelInvoice              func(invoiceID uuid.UUID) error
+	getActiveLimitBoosts       func(tenantID uuid.UUID) ([]*models.LimitBoost, error)
+	getTenantStats             func(tenantID uuid.UUID) (*models.TenantWithStats, error)
 }
 
 func (f *fakeStore) GetEventByID(_ context.Context, id uuid.UUID) (*models.Event, error) {
@@ -523,6 +537,46 @@ func (f *fakeStore) MarkEquipmentDeviceTestPassed(_ context.Context, tenantID, d
 }
 func (f *fakeStore) TenantHasTestedDefaultPrinter(_ context.Context, tenantID uuid.UUID) (bool, error) {
 	return f.tenantHasTestedDefaultPrinter(tenantID)
+}
+
+func (f *fakeStore) GetTenantBillingProfile(_ context.Context, tenantID uuid.UUID) (*models.TenantBillingProfile, error) {
+	return f.getTenantBillingProfile(tenantID)
+}
+func (f *fakeStore) UpsertTenantBillingProfile(_ context.Context, p *models.TenantBillingProfile) error {
+	return f.upsertTenantBillingProfile(p)
+}
+func (f *fakeStore) GetCatalogItems(_ context.Context, publicOnly bool) ([]*models.BillingCatalogItem, error) {
+	return f.getCatalogItems(publicOnly)
+}
+func (f *fakeStore) GetCatalogItemByID(_ context.Context, id uuid.UUID) (*models.BillingCatalogItem, error) {
+	return f.getCatalogItemByID(id)
+}
+func (f *fakeStore) CreateCatalogItem(_ context.Context, item *models.BillingCatalogItem) error {
+	return f.createCatalogItem(item)
+}
+func (f *fakeStore) UpdateCatalogItem(_ context.Context, item *models.BillingCatalogItem) error {
+	return f.updateCatalogItem(item)
+}
+func (f *fakeStore) CreateInvoice(_ context.Context, inv *models.Invoice, lines []*models.InvoiceLine) error {
+	return f.createInvoice(inv, lines)
+}
+func (f *fakeStore) GetInvoiceByID(_ context.Context, id uuid.UUID) (*models.Invoice, error) {
+	return f.getInvoiceByID(id)
+}
+func (f *fakeStore) ListInvoices(_ context.Context, filter store.InvoiceFilter) ([]*models.Invoice, error) {
+	return f.listInvoices(filter)
+}
+func (f *fakeStore) ApplyInvoicePayment(_ context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []store.AppliedLineEffect, error) {
+	return f.applyInvoicePayment(invoiceID, now)
+}
+func (f *fakeStore) CancelInvoice(_ context.Context, invoiceID uuid.UUID) error {
+	return f.cancelInvoice(invoiceID)
+}
+func (f *fakeStore) GetActiveLimitBoosts(_ context.Context, tenantID uuid.UUID) ([]*models.LimitBoost, error) {
+	return f.getActiveLimitBoosts(tenantID)
+}
+func (f *fakeStore) GetTenantStats(_ context.Context, tenantID uuid.UUID) (*models.TenantWithStats, error) {
+	return f.getTenantStats(tenantID)
 }
 
 // newAuthedContext builds an echo.Context with JWT claims already set under "user",

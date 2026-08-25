@@ -14,6 +14,8 @@ import { WorkspaceOverview } from "../features/workspace/WorkspaceOverview";
 import { EventSettingsPage } from "../features/workspace/settings/EventSettingsPage";
 import { BadgeEditorPage } from "../features/badge/BadgeEditorPage";
 import { OrganizationPage } from "../features/organization/OrganizationPage";
+import { BillingPage } from "../features/billing/BillingPage";
+import { InvoicePrintPage } from "../features/billing/InvoicePrintPage";
 import { StationPage } from "../features/checkin/StationPage";
 import { checkinStationBeforeLoad, validateCheckinStationSearch } from "../features/checkin/searchParams";
 import { LaunchCeremony } from "../features/checkin/LaunchCeremony";
@@ -104,6 +106,16 @@ const organizationRoute = createRoute({
   getParentRoute: () => protectedLayoutRoute,
   path: "/organization",
   component: OrganizationPage,
+});
+
+// Task 13 — the tenant panel's «Оплата» page. A TOP-LEVEL protected route,
+// a SIBLING of teamRoute/equipmentRoute/organizationRoute, so it renders
+// inside the same AppShell/NavDrawer chrome any authenticated user gets —
+// exactly like those other single-page destinations.
+const billingRoute = createRoute({
+  getParentRoute: () => protectedLayoutRoute,
+  path: "/billing",
+  component: BillingPage,
 });
 
 // P6.3 Task 10 -- staff self-service page (board 8q). A TOP-LEVEL protected
@@ -230,12 +242,39 @@ const eventMonitorRoute = createRoute({
   component: MonitorPage,
 });
 
+// Task 13 — the invoice print view. Every OTHER protected route in this
+// tree (billingRoute included) is a child of `protectedLayoutRoute`, whose
+// `component` (ProtectedLayout) always wraps its `<Outlet/>` in
+// `AppShell` — the header bar, NavDrawer, OrgSwitcher, etc. A print
+// document must render WITHOUT any of that chrome (it's meant to be
+// printed/exported as a clean счёт, not browsed inside the app shell), so
+// nesting it under `protectedLayoutRoute` like every other page isn't an
+// option here — there's no "opt out of the parent's component" escape
+// hatch in this route tree, only "don't nest under it".
+//
+// Registered instead as a SIBLING of `protectedLayoutRoute` — a child of
+// `rootRoute`, the one shared ancestor every route in this file already
+// has — reusing `protectedBeforeLoad` directly (the same auth guard
+// `protectedLayoutRoute` itself uses) so an unauthenticated visitor still
+// gets redirected to `/login` before the invoice ever renders, without
+// requiring `ProtectedLayout`'s own component (and its AppShell wrapping)
+// in the render tree at all. Same seam `eventCheckinRoute`/
+// `eventMonitorRoute` use to escape the (different, nested) workspace-rail
+// shell, one structural layer further out.
+const invoicePrintRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/billing/invoices/$invoiceId/print",
+  beforeLoad: protectedBeforeLoad,
+  component: InvoicePrintPage,
+});
+
 const routeTree = rootRoute.addChildren([
   protectedLayoutRoute.addChildren([
     indexRoute,
     teamRoute,
     equipmentRoute,
     organizationRoute,
+    billingRoute,
     selfServiceRoute,
     eventWorkspaceRoute.addChildren([
       eventOverviewRoute, eventSettingsRoute, eventAttendeesRoute, eventZonesRoute, eventStaffRoute, eventBadgeRoute,
@@ -244,6 +283,7 @@ const routeTree = rootRoute.addChildren([
     eventCheckinLaunchRoute,
     eventMonitorRoute,
   ]),
+  invoicePrintRoute,
   loginRoute,
   registerRoute,
   qrLoginRoute,

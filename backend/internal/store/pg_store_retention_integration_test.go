@@ -53,9 +53,10 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 	}
 
 	now := time.Now()
-	tenantPurge := uuid.New() // archived 100 days ago -> purged at 90-day retention
-	tenantKeep := uuid.New()  // active -> untouched
-	tenantFresh := uuid.New() // archived 10 days ago -> still within retention
+	tenantPurge := uuid.New()    // archived 100 days ago -> purged at 90-day retention
+	tenantKeep := uuid.New()     // active -> untouched
+	tenantFresh := uuid.New()    // archived 10 days ago -> still within retention
+	tenantInvoiced := uuid.New() // archived 100 days ago but HAS an invoice -> must be skipped, not purged
 
 	mustExec := func(what, sql string, args ...any) {
 		t.Helper()
@@ -73,6 +74,20 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 	mustExec("insert fresh-archived tenant",
 		`INSERT INTO tenants (id, name, status, archived_at, created_at, updated_at) VALUES ($1, $2, 'archived', $3, $4, $4)`,
 		tenantFresh, "Purge Too-Fresh "+tenantFresh.String(), now.AddDate(0, 0, -10), now)
+	mustExec("insert invoiced archived tenant",
+		`INSERT INTO tenants (id, name, status, archived_at, created_at, updated_at) VALUES ($1, $2, 'archived', $3, $4, $4)`,
+		tenantInvoiced, "Purge Invoiced "+tenantInvoiced.String(), now.AddDate(0, 0, -100), now)
+
+	// A retained financial document (migration 000030: invoices.tenant_id is
+	// ON DELETE RESTRICT) that must block the hard-purge of tenantInvoiced
+	// even though it's otherwise past retention.
+	invoiceID := uuid.New()
+	mustExec("insert invoice blocking purge",
+		`INSERT INTO invoices (id, number, tenant_id, status, buyer_name, buyer_inn, buyer_address,
+		    seller_name, seller_inn, seller_bank_name, seller_bank_account, seller_bank_bik, total, created_at, updated_at)
+		 VALUES ($1, $2, $3, 'issued', 'Buyer LLC', '7700000000', 'Addr',
+		    'Seller LLC', '7711111111', 'Bank', '40702810000000000001', '044525225', 1000, $4, $4)`,
+		invoiceID, "СЧ-PURGE-ITEST-"+invoiceID.String()[:8], tenantInvoiced, now)
 
 	// Four users homed in the doomed tenant, one per survival rule:
 	//   solo  — no other memberships, not special -> cascades away entirely.
@@ -135,11 +150,16 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 	t.Cleanup(func() {
 		cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer ccancel()
+		// Invoice first: it's what keeps tenantInvoiced alive via RESTRICT, so
+		// it must go before the tenant delete below.
+		if _, err := pool.Exec(cctx, `DELETE FROM invoices WHERE id = $1`, invoiceID); err != nil {
+			t.Logf("cleanup invoice: %v", err)
+		}
 		for _, sql := range []string{
-			`DELETE FROM tenants WHERE id IN ($1, $2, $3)`,
-			`DELETE FROM admin_audit_log WHERE target_id IN ($1, $2, $3)`,
+			`DELETE FROM tenants WHERE id IN ($1, $2, $3, $4)`,
+			`DELETE FROM admin_audit_log WHERE target_id IN ($1, $2, $3, $4)`,
 		} {
-			if _, err := pool.Exec(cctx, sql, tenantPurge, tenantKeep, tenantFresh); err != nil {
+			if _, err := pool.Exec(cctx, sql, tenantPurge, tenantKeep, tenantFresh, tenantInvoiced); err != nil {
 				t.Logf("cleanup %q: %v", sql, err)
 			}
 		}
@@ -155,7 +175,7 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 	}
 	// The shared dev DB may contain other stale archived tenants; assert on
 	// OUR fixtures, not on the global list length.
-	foundPurge, foundFresh := false, false
+	foundPurge, foundFresh, foundInvoiced := false, false, false
 	for _, p := range purged {
 		if p.ID == tenantPurge {
 			foundPurge = true
@@ -166,12 +186,18 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 		if p.ID == tenantFresh {
 			foundFresh = true
 		}
+		if p.ID == tenantInvoiced {
+			foundInvoiced = true
+		}
 	}
 	if !foundPurge {
 		t.Fatal("the 100-day-archived tenant was not purged")
 	}
 	if foundFresh {
 		t.Fatal("the 10-day-archived tenant was purged despite being within retention")
+	}
+	if foundInvoiced {
+		t.Fatal("the invoiced archived tenant was purged despite having a retained invoice")
 	}
 
 	countRows := func(what, sql string, args ...any) int {
@@ -201,6 +227,15 @@ func TestPurgeExpiredTenants_RealPostgres_CascadeDetachAndAudit(t *testing.T) {
 		}
 		if n := countRows("purged QR credentials", `SELECT COUNT(*) FROM user_qr_credentials WHERE user_id = $1`, solo); n != 0 {
 			t.Errorf("qr credential rows = %d, want 0", n)
+		}
+	})
+
+	t.Run("an archived tenant past retention with an invoice is skipped, invoice and tenant both survive", func(t *testing.T) {
+		if n := countRows("invoiced tenant", `SELECT COUNT(*) FROM tenants WHERE id = $1`, tenantInvoiced); n != 1 {
+			t.Errorf("invoiced tenant rows = %d, want 1 (must survive purge despite being past retention)", n)
+		}
+		if n := countRows("blocking invoice", `SELECT COUNT(*) FROM invoices WHERE id = $1`, invoiceID); n != 1 {
+			t.Errorf("invoice rows = %d, want 1 (financial record must survive)", n)
 		}
 	})
 

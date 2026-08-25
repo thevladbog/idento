@@ -60,6 +60,20 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		}),
 	})
 
+	// Separate in-memory rate limiter for billing invoice creation: 10
+	// requests / minute per client IP. This must NOT share authLimiter's
+	// bucket — invoice creation is behind auth (a tenant admin JWT) and has
+	// nothing to do with login/provisioning abuse, so mixing them would let
+	// normal invoice traffic starve out login attempts (or vice versa) for
+	// the same IP.
+	billingInvoiceLimiter := echomw.RateLimiterWithConfig(echomw.RateLimiterConfig{
+		Store: echomw.NewRateLimiterMemoryStoreWithConfig(echomw.RateLimiterMemoryStoreConfig{
+			Rate:      rate.Limit(10.0 / 60.0), // 10 per minute
+			Burst:     10,
+			ExpiresIn: 3 * time.Minute,
+		}),
+	})
+
 	// Auth routes
 	auth := e.Group("/auth")
 	if mode == config.ModeSaaS {
@@ -208,6 +222,16 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	public := e.Group("/api/public")
 	public.POST("/import", h.ExternalImport, middleware.APIKeyAuth(h.Store))
 
+	// Billing (bank-transfer invoicing) — SaaS-only surface, spec 2026-08-25
+	if mode == config.ModeSaaS {
+		api.GET("/billing/profile", h.GetBillingProfile)
+		api.PUT("/billing/profile", h.PutBillingProfile)
+		api.GET("/billing/catalog", h.GetBillingCatalog)
+		api.GET("/billing/invoices", h.GetTenantInvoices)
+		api.POST("/billing/invoices", h.CreateTenantInvoice, billingInvoiceLimiter)
+		api.GET("/billing/invoices/:id", h.GetTenantInvoice)
+	}
+
 	// Super Admin routes (platform console) — SaaS-only surface
 	if mode == config.ModeSaaS {
 		superAdmin := api.Group("/super-admin")
@@ -235,5 +259,15 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		superAdmin.GET("/usage/:tenantId", h.GetTenantUsage)
 		superAdmin.GET("/analytics", h.GetSystemAnalytics)
 		superAdmin.GET("/audit-log", h.GetAuditLog)
+
+		// Billing
+		superAdmin.GET("/billing/catalog", h.GetCatalogSuper)
+		superAdmin.POST("/billing/catalog", h.CreateCatalogItemSuper)
+		superAdmin.PUT("/billing/catalog/:id", h.UpdateCatalogItemSuper)
+		superAdmin.GET("/billing/invoices", h.ListInvoicesSuper)
+		superAdmin.POST("/billing/invoices", h.CreateInvoiceSuper)
+		superAdmin.GET("/billing/invoices/:id", h.GetInvoiceSuper)
+		superAdmin.POST("/billing/invoices/:id/mark-paid", h.MarkInvoicePaidSuper)
+		superAdmin.POST("/billing/invoices/:id/cancel", h.CancelInvoiceSuper)
 	}
 }

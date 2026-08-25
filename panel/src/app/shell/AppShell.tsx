@@ -12,12 +12,14 @@ import { useInstance } from "../../shared/api/useInstance";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const instance = useInstance();
-  const showSelfService = useActiveTenantRole() === "staff";
+  const activeTenantRole = useActiveTenantRole();
+  const showSelfService = activeTenantRole === "staff";
+  const showBilling = activeTenantRole === "admin" && instance.data?.mode === "saas";
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <ImpersonationBanner />
       <header className="flex items-center gap-2 border-b border-border px-4 py-3 md:gap-4">
-        <NavDrawer showSelfService={showSelfService} />
+        <NavDrawer showSelfService={showSelfService} showBilling={showBilling} />
         <span className="flex items-center gap-2">
           <img src="/logo-mark.svg" alt="" aria-hidden="true" className="h-6 w-auto" />
           <span className="text-section-title">{t("appName")}</span>
@@ -44,6 +46,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link to="/organization" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
             {t("navOrganization")}
           </Link>
+          {showBilling ? (
+            <Link to="/billing" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
+              {t("navBilling")}
+            </Link>
+          ) : null}
           {showSelfService ? (
             <Link to="/me" className="text-body text-muted-foreground hover:text-foreground [&.active]:text-foreground">
               {t("navMyProfile")}

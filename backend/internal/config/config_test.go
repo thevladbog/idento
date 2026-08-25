@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
@@ -108,6 +111,95 @@ func TestLoadTenantRetentionDays(t *testing.T) {
 			}
 			if cfg.TenantRetentionDays != tc.want {
 				t.Errorf("TenantRetentionDays = %d, want %d", cfg.TenantRetentionDays, tc.want)
+			}
+		})
+	}
+}
+
+func setSellerEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("BILLING_SELLER_NAME", "OOO Idento")
+	t.Setenv("BILLING_SELLER_INN", "7700000000")
+	t.Setenv("BILLING_SELLER_BANK_NAME", "AO Bank")
+	t.Setenv("BILLING_SELLER_BANK_ACCOUNT", "40702810000000000001")
+	t.Setenv("BILLING_SELLER_BANK_BIK", "044525225")
+	t.Setenv("BILLING_SELLER_BANK_CORR_ACCOUNT", "30101810000000000225")
+}
+
+func TestBillingSellerConfigured(t *testing.T) {
+	setRequiredEnv(t)
+	setSellerEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = false, want true when all seller vars are set")
+	}
+}
+
+func TestBillingSellerConfiguredFalseWhenBIKMissing(t *testing.T) {
+	setRequiredEnv(t)
+	setSellerEnv(t)
+	t.Setenv("BILLING_SELLER_BANK_BIK", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = true, want false when BIK is missing")
+	}
+}
+
+func TestLoadSucceedsWithoutSellerVars(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("BILLING_SELLER_NAME", "")
+	t.Setenv("BILLING_SELLER_INN", "")
+	t.Setenv("BILLING_SELLER_BANK_NAME", "")
+	t.Setenv("BILLING_SELLER_BANK_ACCOUNT", "")
+	t.Setenv("BILLING_SELLER_BANK_BIK", "")
+	t.Setenv("BILLING_SELLER_BANK_CORR_ACCOUNT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v, want billing to be unconfigured, not a Load failure", err)
+	}
+	if cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = true, want false when no seller vars are set")
+	}
+}
+
+func TestLoadSubscriptionLifecycleInterval(t *testing.T) {
+	cases := []struct {
+		name    string
+		env     string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "unset defaults to 1h", env: "", want: time.Hour},
+		{name: "explicit value honored", env: "30m", want: 30 * time.Minute},
+		{name: "zero disables ticker", env: "0", want: 0},
+		{name: "negative rejected", env: "-1h", wantErr: true},
+		{name: "invalid duration rejected", env: "soon", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredEnv(t)
+			t.Setenv("SUBSCRIPTION_LIFECYCLE_INTERVAL", tc.env)
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Load() succeeded with SUBSCRIPTION_LIFECYCLE_INTERVAL=%q, want error", tc.env)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.SubscriptionLifecycleInterval != tc.want {
+				t.Errorf("SubscriptionLifecycleInterval = %v, want %v", cfg.SubscriptionLifecycleInterval, tc.want)
 			}
 		})
 	}

@@ -10,17 +10,21 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
-  description: string;
+  description: React.ReactNode;
   confirmLabel: string;
   onConfirm: () => void | Promise<void>;
   /** When set, the confirm button unlocks only after this exact text is typed. */
   confirmText?: string;
   destructive?: boolean;
   busy?: boolean;
+  /** Extra content rendered between the description and the footer (e.g. a required-reason textarea). */
+  children?: React.ReactNode;
+  /** External gate ORed with the confirmText lock -- e.g. a required reason left empty. */
+  confirmDisabled?: boolean;
 };
 
 export function ConfirmActionDialog({
-  open, onOpenChange, title, description, confirmLabel, onConfirm, confirmText, destructive, busy,
+  open, onOpenChange, title, description, confirmLabel, onConfirm, confirmText, destructive, busy, children, confirmDisabled,
 }: Props) {
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
@@ -36,7 +40,7 @@ export function ConfirmActionDialog({
   // Fail closed: an accidental empty-string confirmText must LOCK the confirm
   // button entirely, not silently bypass the typed gate.
   const requireText = confirmText !== undefined;
-  const locked = requireText && (confirmText === '' || typed !== confirmText);
+  const locked = (requireText && (confirmText === '' || typed !== confirmText)) || !!confirmDisabled;
 
   const close = (o: boolean) => {
     // While the confirmed action is in flight, every dismissal path
@@ -54,7 +58,12 @@ export function ConfirmActionDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          {/* asChild + div: description can be rich content (lists, etc.), and
+              Radix's Description renders a <p> by default, which cannot
+              legally contain block-level children. */}
+          <DialogDescription asChild>
+            <div>{description}</div>
+          </DialogDescription>
         </DialogHeader>
         {requireText && confirmText !== '' && (
           <div className="space-y-2">
@@ -62,6 +71,7 @@ export function ConfirmActionDialog({
             <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={confirmText} />
           </div>
         )}
+        {children}
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => close(false)}>{t('cancel')}</Button>
           <Button variant={destructive ? 'destructive' : 'default'} disabled={locked || busy} onClick={onConfirm}>
