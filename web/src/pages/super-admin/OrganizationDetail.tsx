@@ -83,11 +83,6 @@ export default function OrganizationDetail() {
   // route pattern is unchanged, so this isn't a remount — it's a real race).
   const latestIdRef = useRef(id);
 
-  useEffect(() => {
-    latestIdRef.current = id;
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when id changes
-  }, [id]);
 
   const loadData = async () => {
     const requestId = id;
@@ -128,6 +123,13 @@ export default function OrganizationDetail() {
       }
     }
   };
+
+  useEffect(() => {
+    latestIdRef.current = id;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when id changes
+  }, [id]);
 
   const updateSubscription = async () => {
     if (subscriptionReason.trim() === '') return; // defense-in-depth; the button is also disabled

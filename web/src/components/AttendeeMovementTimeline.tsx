@@ -15,10 +15,6 @@ export function AttendeeMovementTimeline({ attendeeId }: AttendeeMovementTimelin
   const [history, setHistory] = useState<MovementHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when attendeeId changes
-  }, [attendeeId]);
 
   const loadHistory = async () => {
     try {
@@ -33,6 +29,12 @@ export function AttendeeMovementTimeline({ attendeeId }: AttendeeMovementTimelin
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
+    loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when attendeeId changes
+  }, [attendeeId]);
 
   if (loading) {
     return (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -17,7 +17,6 @@ export default function Organizations() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [tenants, setTenants] = useState<TenantStat[]>([]);
-  const [filteredTenants, setFilteredTenants] = useState<TenantStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
@@ -30,21 +29,12 @@ export default function Organizations() {
   const [tenantName, setTenantName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    loadTenants();
-  }, []);
 
-  useEffect(() => {
-    setPage(1);
-    filterTenants();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filter when search/plan/status/savedQueue/tenants change
-  }, [searchQuery, planFilter, statusFilter, savedQueue, tenants]);
 
   const loadTenants = async () => {
     try {
       const response = await api.get('/api/super-admin/tenants');
       setTenants(response.data);
-      setFilteredTenants(response.data);
     } catch (error) {
       console.error('Failed to load tenants:', error);
     } finally {
@@ -93,7 +83,11 @@ export default function Organizations() {
     }
   }
 
-  const filterTenants = () => {
+  // Derived, not state: the filtered list is a pure function of the loaded
+  // tenants + the 4 filter inputs, so the old filterTenants()-into-state
+  // effect (flagged by react-hooks/set-state-in-effect) is now a useMemo --
+  // no filter effect, no stale-copy state to keep in sync.
+  const filteredTenants = useMemo(() => {
     type TenantRow = { tenant?: { name?: string; contact_email?: string; status?: string }; subscription?: { plan?: { slug?: string }; status?: string } };
     let filtered = [...applySavedQueue(tenants)];
 
@@ -119,8 +113,19 @@ export default function Organizations() {
       );
     }
 
-    setFilteredTenants(filtered);
-  };
+    return filtered;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applySavedQueue is a stable-by-construction helper reading only savedQueue, which IS listed
+  }, [searchQuery, planFilter, statusFilter, savedQueue, tenants]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine's state writes live behind awaits, but the compiler rule doesn't model async boundaries; the fetch-effect pattern is this console's established data layer (no query library here)
+    loadTenants();
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- any of the 5 independent filter inputs changing must also reset pagination; centralizing the reset here (instead of duplicating it in every setter call site) is deliberate
+    setPage(1);
+  }, [searchQuery, planFilter, statusFilter, savedQueue, tenants]);
 
   const getPlanBadgeVariant = (tier: string) => {
     switch (tier) {

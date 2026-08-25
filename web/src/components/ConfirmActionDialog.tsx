@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -24,6 +24,15 @@ export function ConfirmActionDialog({
 }: Props) {
   const { t } = useTranslation();
   const [typed, setTyped] = useState('');
+  // Reset the typed gate whenever the dialog (re)opens -- the canonical
+  // adjust-state-during-render pattern (React "You Might Not Need an
+  // Effect"), replacing the previous reset effect: no extra commit with a
+  // stale typed value.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setTyped('');
+  }
   // Fail closed: an accidental empty-string confirmText must LOCK the confirm
   // button entirely, not silently bypass the typed gate.
   const requireText = confirmText !== undefined;
@@ -39,9 +48,6 @@ export function ConfirmActionDialog({
     onOpenChange(o);
   };
 
-  useEffect(() => {
-    if (open) setTyped('');
-  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={close}>

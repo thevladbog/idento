@@ -33,10 +33,6 @@ export default function AllUsers() {
   const [page, setPage] = useState(1);
   const pageSize = 50;
 
-  useEffect(() => {
-    loadUsers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when page/search change
-  }, [page, search]);
 
   const loadUsers = async () => {
     try {
@@ -53,6 +49,12 @@ export default function AllUsers() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load when page/search change
+  }, [page, search]);
 
   const handleSearch = (value: string) => {
     setSearch(value);

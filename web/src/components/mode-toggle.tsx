@@ -1,5 +1,5 @@
 import { Moon, Sun } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
@@ -12,24 +12,23 @@ import {
 
 export function ModeToggle() {
   const { t } = useTranslation()
-  const [, setTheme] = useState<"light" | "dark" | "system">("light")
-
   useEffect(() => {
     const isDark = 
       localStorage.theme === 'dark' || 
       (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
     
+    // The component keeps no theme state: the icons swap via CSS `dark:`
+    // classes, so the only real work is toggling the root class. (A `theme`
+    // useState lived here before, destructured away and never read -- the
+    // react-hooks/set-state-in-effect burn-down deleted it as dead weight.)
     if (isDark) {
       document.documentElement.classList.add('dark');
-      setTheme('dark');
     } else {
       document.documentElement.classList.remove('dark');
-      setTheme('light');
     }
   }, []);
 
   const setMode = (mode: "light" | "dark" | "system") => {
-    setTheme(mode);
     if (mode === 'system') {
       localStorage.removeItem('theme');
       if (window.matchMedia('(prefers-color-scheme: dark)').matches) {

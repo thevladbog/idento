@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 /**
  * Typed-confirm gating logic shared by LifecycleActionDialog and
@@ -8,12 +8,15 @@ import { useEffect, useState } from 'react';
  */
 export function useTypedConfirmGate(open: boolean, confirmText: string | undefined) {
   const [typed, setTyped] = useState('');
+  // Adjust-state-during-render reset on (re)open -- see
+  // ConfirmActionDialog.tsx for the rationale.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) setTyped('');
+  }
   const requireText = confirmText !== undefined;
   const locked = requireText && (confirmText === '' || typed !== confirmText);
-
-  useEffect(() => {
-    if (open) setTyped('');
-  }, [open]);
 
   return { typed, setTyped, locked, requireText };
 }

@@ -104,10 +104,6 @@ export default function SubscriptionPlans() {
     sort_order: 0,
   });
 
-  useEffect(() => {
-    loadPlans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
-  }, []);
 
   const loadPlans = async () => {
     try {
@@ -120,6 +116,12 @@ export default function SubscriptionPlans() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
+    loadPlans();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+  }, []);
 
   const openCreateDialog = () => {
     setEditingPlan(null);
