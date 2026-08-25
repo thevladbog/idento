@@ -116,6 +116,61 @@ func TestLoadTenantRetentionDays(t *testing.T) {
 	}
 }
 
+func setSellerEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("BILLING_SELLER_NAME", "OOO Idento")
+	t.Setenv("BILLING_SELLER_INN", "7700000000")
+	t.Setenv("BILLING_SELLER_BANK_NAME", "AO Bank")
+	t.Setenv("BILLING_SELLER_BANK_ACCOUNT", "40702810000000000001")
+	t.Setenv("BILLING_SELLER_BANK_BIK", "044525225")
+	t.Setenv("BILLING_SELLER_BANK_CORR_ACCOUNT", "30101810000000000225")
+}
+
+func TestBillingSellerConfigured(t *testing.T) {
+	setRequiredEnv(t)
+	setSellerEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = false, want true when all seller vars are set")
+	}
+}
+
+func TestBillingSellerConfiguredFalseWhenBIKMissing(t *testing.T) {
+	setRequiredEnv(t)
+	setSellerEnv(t)
+	t.Setenv("BILLING_SELLER_BANK_BIK", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = true, want false when BIK is missing")
+	}
+}
+
+func TestLoadSucceedsWithoutSellerVars(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("BILLING_SELLER_NAME", "")
+	t.Setenv("BILLING_SELLER_INN", "")
+	t.Setenv("BILLING_SELLER_BANK_NAME", "")
+	t.Setenv("BILLING_SELLER_BANK_ACCOUNT", "")
+	t.Setenv("BILLING_SELLER_BANK_BIK", "")
+	t.Setenv("BILLING_SELLER_BANK_CORR_ACCOUNT", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v, want billing to be unconfigured, not a Load failure", err)
+	}
+	if cfg.BillingSellerConfigured() {
+		t.Error("BillingSellerConfigured() = true, want false when no seller vars are set")
+	}
+}
+
 func TestLoadSubscriptionLifecycleInterval(t *testing.T) {
 	cases := []struct {
 		name    string
