@@ -38,6 +38,7 @@ export function CheckInConfirmSheet({
   // blocked/error verdict from a previous open never leaks into the next one.
   React.useEffect(() => {
     if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setBlockedOutcome(false);
     checkin.reset();
     // checkin is a fresh mutation object each render; including it in the

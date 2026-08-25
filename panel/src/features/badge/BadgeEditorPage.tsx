@@ -142,7 +142,12 @@ export function BadgeEditorPage() {
   // happen (the dirty guard deliberately lets navigation proceed during a
   // pending save).
   const currentEventIdRef = React.useRef(eventId);
-  currentEventIdRef.current = eventId;
+  React.useEffect(() => {
+    // Mirror assignment lives in an effect (react-hooks/refs): every reader
+    // is an async save-response handler, which only ever runs post-commit,
+    // so effect timing is equivalent to the old during-render write.
+    currentEventIdRef.current = eventId;
+  }, [eventId]);
 
   // Which event's template has already been loaded into the reducer. This
   // single piece of state does TWO jobs:
@@ -173,6 +178,7 @@ export function BadgeEditorPage() {
       doc: parseTemplateDoc(templateQuery.data.template),
       version: templateQuery.data.version,
     });
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope-change reset that deliberately relies on effect declaration order relative to sibling effects (see the comment above)
     setInitializedForEventId(eventId);
   }, [eventId, initialized, templateQuery.isSuccess, templateQuery.data]);
 
@@ -227,6 +233,7 @@ export function BadgeEditorPage() {
   // the target event changes (the reducer itself is re-seeded by the load
   // effect above; this covers the save-model state the reducer doesn't own).
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope-change reset that deliberately relies on effect declaration order relative to sibling effects (see the comment above)
     setConflict(false);
     setSaveErrorVisible(false);
     setReloadDialogOpen(false);
@@ -686,6 +693,7 @@ export function BadgeEditorPage() {
       <ZplPreviewModal
         open={zplPreviewOpen}
         onOpenChange={setZplPreviewOpen}
+        // eslint-disable-next-line react-hooks/refs -- render-time read is deliberate here (see the reconciliation comment above): the serialized doc must be derived from the exact same render's state
         doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
         config={state.doc}
         previewData={preview.data}
@@ -699,6 +707,7 @@ export function BadgeEditorPage() {
       <TestPrintDialog
         open={testPrintOpen}
         onOpenChange={setTestPrintOpen}
+        // eslint-disable-next-line react-hooks/refs -- render-time read is deliberate here (see the reconciliation comment above): the serialized doc must be derived from the exact same render's state
         doc={serializeTemplateDoc(state.doc, originalRawRef.current)}
         config={state.doc}
         previewData={preview.data}

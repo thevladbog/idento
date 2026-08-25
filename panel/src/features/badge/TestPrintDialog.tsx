@@ -77,6 +77,7 @@ export function TestPrintDialog({
     // Await font readiness before ever generating (reconciliation #9) --
     // same terminal-status gate ZplPreviewModal.tsx uses.
     if (fontFaces.status !== "ready" && fontFaces.status !== "error") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the external-system synchronization (subscription/async generation lifecycle); the synchronous write is its status/reset step
       setGeneration({ status: "loading" });
       return;
     }
@@ -126,6 +127,7 @@ export function TestPrintDialog({
   React.useEffect(() => {
     if (!open) return;
     if (selectedPrinter && agent.printers.some((printer) => printer.name === selectedPrinter)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- converge-once printer preselection against the live agent snapshot (guards above); syncing local choice with an external device list is effect work
     setSelectedPrinter(agent.defaultPrinter);
   }, [open, agent.defaultPrinter, agent.printers, selectedPrinter]);
 
@@ -145,6 +147,7 @@ export function TestPrintDialog({
   React.useEffect(() => {
     if (open) return;
     sessionRef.current += 1;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setPrinting(false);
     setPrintError(null);
     setSentTo(null);

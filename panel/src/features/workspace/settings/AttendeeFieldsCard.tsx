@@ -74,6 +74,7 @@ export function AttendeeFieldsCard({ event }: AttendeeFieldsCardProps) {
   }
 
   const [baseline, setBaseline] = React.useState<string[]>(() => event.field_schema ?? []);
+  // eslint-disable-next-line react-hooks/refs -- lazy useState initializer allocating monotonic row ids from a counter ref -- runs once per mount, never during a re-render
   const [rows, setRows] = React.useState<FieldRow[]>(() => freshRows(event.field_schema ?? []));
   const [newFieldValue, setNewFieldValue] = React.useState("");
   const [saved, setSaved] = React.useState(false);

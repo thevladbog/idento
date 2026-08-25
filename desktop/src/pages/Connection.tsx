@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PreflightShell, KioskButton, KioskInput } from "@idento/ui/kiosk";
@@ -12,7 +12,9 @@ export default function ConnectionPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const steps = usePreflightSteps();
-  const [url, setUrl] = useState(getBackendUrl());
+    // Initialized lazily from the persisted backend URL -- reading external
+  // storage once at mount is initializer work, not effect work.
+  const [url, setUrl] = useState(() => getBackendUrl());
   const [status, setStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
   const [message, setMessage] = useState("");
 
@@ -41,10 +43,6 @@ export default function ConnectionPage() {
     api.defaults.baseURL = normalizedBase;
     navigate("/login");
   };
-
-  useEffect(() => {
-    setUrl(getBackendUrl());
-  }, []);
 
   return (
     <PreflightShell

@@ -101,6 +101,7 @@ export function ApiKeysCard({ eventId }: ApiKeysCardProps) {
     // permanently stale — a later reopen gets a new session id, so it can
     // never match again.
     createSessionRef.current += 1;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setName("");
     setPlainKey(null);
     setCopied(false);

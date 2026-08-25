@@ -61,6 +61,7 @@ export function AttendeesPage() {
   // Keep the local input in sync when the URL's `search` param changes from
   // outside this input (e.g. the "clear filters" link, or back/forward nav).
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     setSearchInput(search.search ?? "");
   }, [search.search]);
 

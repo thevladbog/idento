@@ -152,6 +152,7 @@ export function BulkBar({ selected, eventId, onClear }: BulkBarProps) {
     if (!printOpen) return;
     if (printConfiguredDefault) return;
     if (printerSelection && agent.printers.some((printer) => printer.name === printerSelection)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- converge-once printer preselection against the live agent snapshot (guards above); syncing local choice with an external device list is effect work
     setPrinterSelection(agent.defaultPrinter);
   }, [printOpen, printConfiguredDefault, agent.defaultPrinter, agent.printers, printerSelection]);
 

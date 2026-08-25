@@ -81,6 +81,7 @@ export function ZonesPage() {
   // entirely), any stale hint from an earlier blocked attempt no longer
   // applies.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     if (!rulesDirty) setShowUnsavedHint(false);
   }, [rulesDirty]);
 
@@ -101,6 +102,7 @@ export function ZonesPage() {
     if (expandedZoneId === null || !zonesQuery.isSuccess) return;
     const stillExists = (zonesQuery.data ?? []).some((entry) => zoneIdentity(entry).id === expandedZoneId);
     if (stillExists) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     setExpandedZoneId(null);
     setRulesDirty(false);
     setRulesBusy(false);

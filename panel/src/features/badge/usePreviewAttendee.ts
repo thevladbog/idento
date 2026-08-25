@@ -136,6 +136,7 @@ export function usePreviewAttendee(eventId: string): UsePreviewAttendeeResult {
   // re-fetch on their own (eventId is part of their query key); only this
   // hook's own local state needs an explicit reset.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope-change reset that deliberately relies on effect declaration order relative to sibling effects (see the comment above)
     setSearchState("");
     setDebouncedSearch("");
     setSelectedAttendee(null);
@@ -197,6 +198,7 @@ export function usePreviewAttendee(eventId: string): UsePreviewAttendeeResult {
   // would otherwise linger and silently resurrect if the same id ever
   // reappeared in a later refetch -- clear it for real.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     if (selectionVerifiablyGone) setSelectedAttendee(null);
   }, [selectionVerifiablyGone]);
 

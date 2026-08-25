@@ -139,6 +139,7 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // so reopening never resumes a stale file/preview from a previous run.
   React.useEffect(() => {
     if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setState(createInitialWizardState());
     setIsImporting(false);
     setChunkFailure(null);
@@ -545,13 +546,17 @@ export function ImportWizard({ eventId, open, onOpenChange }: ImportWizardProps)
   // arrays (what's actually needed to index into them). Built once per
   // bulkPayload change, reused by both the per-row Retry handler and the
   // failed-rows CSV download.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- the React Compiler cannot prove it can preserve this memo and skips optimizing the component; the manual useMemo itself still works at runtime, which is all this map needs
   const postDedupIndexByOriginalRow = React.useMemo(() => {
     const map = new Map<number, number>();
     bulkPayload.originalRowIndices.forEach((originalRow, index) => {
       map.set(originalRow, index);
     });
     return map;
-  }, [bulkPayload]);
+    // Dep is the exact array the memo reads -- the coarser [bulkPayload]
+    // dep made the React Compiler skip this memo (preserve-manual-
+    // memoization) because it could not prove equivalence.
+  }, [bulkPayload.originalRowIndices]);
 
   // Fix 2 (CodeRabbit, PR #65): genuine "still busy" for step 1, mirroring
   // isStep3Busy's naming/reasoning below — covers every in-flight step-1

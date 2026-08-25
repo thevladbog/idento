@@ -50,11 +50,13 @@ export default function ModePage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the locally-editable settings form from the server snapshot once the query lands -- server data is only observable post-commit
     if (settingsQuery.data) setSettings(settingsQuery.data);
   }, [settingsQuery.data]);
 
   useEffect(() => {
     if (stationType === "self" && settings.scan_input === "manual") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- invariant clamp (self-service mode cannot use manual input) reacting to either input changing; guarded functional update converges in one pass
       setSettings((prev) => (prev.scan_input === "manual" ? { ...prev, scan_input: "wedge" } : prev));
     }
   }, [stationType, settings.scan_input]);

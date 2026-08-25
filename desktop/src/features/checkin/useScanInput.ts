@@ -58,7 +58,12 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
 
   const wedgeActive = mode === "wedge" && enabled;
   const wedgeActiveRef = useRef(wedgeActive);
-  wedgeActiveRef.current = wedgeActive;
+  useEffect(() => {
+    // Mirror assignment in an effect (react-hooks/refs): the only reader is
+    // the blur-refocus timeout below -- post-commit by definition, so
+    // effect timing is equivalent to the old during-render write.
+    wedgeActiveRef.current = wedgeActive;
+  }, [wedgeActive]);
 
   useEffect(() => {
     if (!wedgeActive) return;
@@ -93,6 +98,7 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
 
   useEffect(() => {
     if (mode !== "scanner" || !enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the scanner-poll subscription; the synchronous write is its mode-gate reset step
       setDegraded(false);
       return;
     }
