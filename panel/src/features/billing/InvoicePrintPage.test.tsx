@@ -58,6 +58,57 @@ const INVOICE_NO_VAT: Invoice = {
   total_in_words: "Одна тысяча пятьсот рублей 00 копеек",
 };
 
+// Mixed invoice: one taxed line (vat_rate 20, amount 120 -> 20.00 included
+// VAT) and one untaxed line (vat_rate null, amount 100) -- mirrors web's
+// InvoicePrint.test.tsx mockInvoice exactly (M9: both print views must
+// render identical documents).
+const INVOICE_MIXED_VAT: Invoice = {
+  ...INVOICE_NO_VAT,
+  number: "INV-0008",
+  total: 220,
+  lines: [
+    {
+      id: "line-1",
+      invoice_id: "inv-1",
+      position: 1,
+      catalog_item_id: "cat-1",
+      kind: "service",
+      name: "Печать бейджей",
+      price: 120,
+      vat_rate: 20,
+      plan_id: null,
+      period: null,
+      activation: null,
+      limit_key: null,
+      limit_delta: null,
+      validity: null,
+      validity_days: null,
+      quantity: 1,
+      amount: 120,
+    },
+    {
+      id: "line-2",
+      invoice_id: "inv-1",
+      position: 2,
+      catalog_item_id: "cat-2",
+      kind: "service",
+      name: "Настройка",
+      price: 100,
+      vat_rate: null,
+      plan_id: null,
+      period: null,
+      activation: null,
+      limit_key: null,
+      limit_delta: null,
+      validity: null,
+      validity_days: null,
+      quantity: 1,
+      amount: 100,
+    },
+  ],
+  total_in_words: "Двести двадцать рублей 00 копеек",
+};
+
 let invoiceOverride: Invoice = INVOICE_NO_VAT;
 
 const server = startMswServer(
@@ -106,5 +157,20 @@ describe("InvoicePrintPage", () => {
     expect(screen.getByText("Без НДС")).toBeInTheDocument();
     expect(screen.getByText("Одна тысяча пятьсот рублей 00 копеек")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Print" })).toBeInTheDocument();
+    // No duplicate "г." suffix on the document date.
+    const heading = screen.getByText(/Счёт на оплату/);
+    expect(heading.textContent).not.toMatch(/г\.\s*г\./);
+  });
+
+  it("shows a distinct \"Без НДС: Y\" totals row for a mixed invoice (some lines taxed, some not), 2-decimal kopecks throughout, without touching the pure \"В том числе НДС\" row", async () => {
+    invoiceOverride = INVOICE_MIXED_VAT;
+    renderAt("inv-1");
+
+    expect(await screen.findByText(/Счёт на оплату № INV-0008/)).toBeInTheDocument();
+    // 2 decimal places everywhere (M5).
+    expect(screen.getByText("В том числе НДС: 20,00 ₽")).toBeInTheDocument();
+    expect(screen.getByText("Без НДС: 100,00 ₽")).toBeInTheDocument();
+    expect(screen.getByText("Итого: 220,00 ₽")).toBeInTheDocument();
+    expect(screen.getByText("Всего к оплате: 220,00 ₽")).toBeInTheDocument();
   });
 });

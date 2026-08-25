@@ -85,8 +85,53 @@ describe('InvoicePrint', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText(/Счёт на оплату № СЧ-2026-0007/)).toBeInTheDocument());
-    expect(screen.getByText(/В том числе НДС: 20 ₽/)).toBeInTheDocument();
+    // 2 decimal places everywhere (M5) -- a счёт always shows kopecks, and
+    // this keeps figures consistent with total_in_words which always emits
+    // kopecks ("...рублей 00 копеек").
+    expect(screen.getByText(/В том числе НДС: 20,00 ₽/)).toBeInTheDocument();
     expect(screen.getByText('Двести двадцать рублей 00 копеек')).toBeInTheDocument();
     expect(document.querySelector('nav')).not.toBeInTheDocument();
+  });
+
+  it('shows a distinct "Без НДС" totals row for a mixed invoice (some lines taxed, some not) without touching the "В том числе НДС" row', async () => {
+    // mockInvoice already mixes a VAT line (l1, vat_rate 20) with a
+    // non-VAT line (l2, vat_rate null, amount 100) -- exercise both rows.
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/Счёт на оплату № СЧ-2026-0007/)).toBeInTheDocument());
+    expect(screen.getByText('В том числе НДС: 20,00 ₽')).toBeInTheDocument();
+    expect(screen.getByText('Без НДС: 100,00 ₽')).toBeInTheDocument();
+  });
+
+  it('keeps the pure no-VAT case as a plain "Без НДС" label with no amount row', async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url.includes('/billing/invoices/inv-1')) {
+        return Promise.resolve({
+          data: {
+            ...mockInvoice,
+            total: 100,
+            lines: [{ ...mockInvoice.lines[1], amount: 100 }],
+            total_in_words: 'Сто рублей 00 копеек',
+          },
+        });
+      }
+      return Promise.reject(new Error('unexpected url ' + url));
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/Счёт на оплату № СЧ-2026-0007/)).toBeInTheDocument());
+    expect(screen.getByText('Без НДС')).toBeInTheDocument();
+    expect(screen.queryByText(/В том числе НДС/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Без НДС:/)).not.toBeInTheDocument();
+  });
+
+  it('does not append a duplicate "г." to the document date', async () => {
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText(/Счёт на оплату № СЧ-2026-0007/)).toBeInTheDocument());
+    const heading = screen.getByText(/Счёт на оплату/);
+    expect(heading.textContent).not.toMatch(/г\.\s*г\./);
+    expect(heading.textContent).toMatch(/г\.$/);
   });
 });

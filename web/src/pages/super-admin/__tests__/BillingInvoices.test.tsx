@@ -117,6 +117,18 @@ function renderPage() {
   );
 }
 
+function buildInvoices(count: number, offsetStart: number) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `inv-p-${offsetStart + i}`,
+    number: `СЧ-P-${offsetStart + i}`,
+    tenant_id: 't1',
+    tenant_name: 'Acme Corp',
+    status: 'issued',
+    issued_at: '2026-08-01T00:00:00Z',
+    total: 100,
+  }));
+}
+
 describe('BillingInvoices', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -171,5 +183,65 @@ describe('BillingInvoices', () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('addon requires the subscription to have an end date')
     );
+  });
+
+  it('cancel flow posts the cancel reason and shows the distinct cancelled toast (not the button label)', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('СЧ-2026-0007')).toBeInTheDocument());
+
+    const row = screen.getByText('СЧ-2026-0007').closest('tr') as HTMLElement;
+    fireEvent.click(within(row).getByRole('button', { name: 'Cancel invoice' }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Reason (required, visible in the audit log)'), {
+      target: { value: 'Duplicate invoice' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel invoice' }));
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith(expect.stringContaining('/cancel'), { reason: 'Duplicate invoice' })
+    );
+    // Distinct from the "Cancel invoice" button label (M7) -- confirms the
+    // toast text itself, not just that some success toast fired.
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Invoice cancelled'));
+  });
+
+  it('shows a "Show more" button after a full 100-row page and fetches the next offset page on click', async () => {
+    const firstPage = buildInvoices(100, 0);
+    const secondPage = buildInvoices(5, 100);
+    vi.mocked(api.get).mockImplementation((url: string, config?: Parameters<typeof api.get>[1]) => {
+      if (url.includes('/billing/invoices')) {
+        const params = config?.params as { offset?: number } | undefined;
+        const offset = params?.offset ?? 0;
+        return Promise.resolve({ data: offset === 0 ? firstPage : secondPage });
+      }
+      if (url.includes('/billing/catalog')) return Promise.resolve({ data: mockCatalog });
+      if (url.includes('/tenants')) return Promise.resolve({ data: mockTenants });
+      return Promise.reject(new Error('unexpected url ' + url));
+    });
+
+    renderPage();
+    await waitFor(() => expect(screen.getByText('СЧ-P-0')).toBeInTheDocument());
+
+    const showMoreButton = screen.getByRole('button', { name: 'Show more' });
+    expect(showMoreButton).toBeInTheDocument();
+
+    fireEvent.click(showMoreButton);
+
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(
+        '/api/super-admin/billing/invoices',
+        expect.objectContaining({ params: expect.objectContaining({ offset: 100, limit: 100 }) })
+      )
+    );
+    await waitFor(() => expect(screen.getByText('СЧ-P-100')).toBeInTheDocument());
+    // The appended second page still shows the first page's rows too.
+    expect(screen.getByText('СЧ-P-0')).toBeInTheDocument();
+  });
+
+  it('hides the "Show more" button when the page comes back short (fewer than 100 rows)', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getByText('СЧ-2026-0007')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument();
   });
 });

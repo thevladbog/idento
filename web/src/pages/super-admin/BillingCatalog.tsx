@@ -160,6 +160,7 @@ export default function BillingCatalog() {
 
   const validate = (): boolean => {
     if (!formData.name.trim()) return false;
+    if (formData.price < 0) return false;
     if (formData.kind === 'plan') {
       if (!formData.plan_id || !formData.period || !formData.default_activation) return false;
     }
@@ -184,9 +185,10 @@ export default function BillingCatalog() {
       toast.success(t('billingItemSaved'));
       setShowDialog(false);
       loadItems();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Failed to save catalog item:', error);
-      toast.error(t('billingSaveFailed'));
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || t('billingSaveFailed'));
     }
   };
 

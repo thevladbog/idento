@@ -38,8 +38,13 @@ interface Invoice {
   total_in_words?: string;
 }
 
+// Print-only formatter: an RF счёт always shows kopecks (2 decimal places),
+// which also keeps figures consistent with total_in_words (always emits
+// kopecks, e.g. "...рублей 00 копеек"). Scoped to this print view — the
+// list views elsewhere in this console intentionally keep whole-ruble
+// display via their own local formatRub.
 function formatRub(value: number): string {
-  return `${value.toLocaleString('ru-RU')} ₽`;
+  return `${value.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₽`;
 }
 
 export default function InvoicePrint() {
@@ -81,8 +86,15 @@ export default function InvoicePrint() {
   });
 
   const vatLines = lines.filter((l) => l.vat_rate !== null);
+  const noVatLines = lines.filter((l) => l.vat_rate === null);
   const vatTotal = vatLines.reduce((sum, l) => sum + includedVat(l.amount, l.vat_rate as number), 0);
+  const noVatTotal = noVatLines.reduce((sum, l) => sum + l.amount, 0);
   const hasVat = vatLines.length > 0;
+  // Mixed invoice: some lines carry VAT, some don't. The pure cases (all
+  // lines VAT / no lines VAT) are unchanged below; only the mixed case gets
+  // a second totals row annotating the untaxed portion, since otherwise
+  // nothing on the document marks which part of "Итого" is VAT-free.
+  const isMixedVat = hasVat && noVatLines.length > 0;
 
   return (
     <div className="min-h-screen bg-white">
@@ -106,7 +118,7 @@ export default function InvoicePrint() {
         </div>
 
         <h1 className="text-xl font-bold text-center my-6">
-          Счёт на оплату № {invoice.number} от {dateStr} г.
+          Счёт на оплату № {invoice.number} от {dateStr}
         </h1>
 
         <div className="mb-4 text-sm">
@@ -147,6 +159,7 @@ export default function InvoicePrint() {
         <div className="text-right text-sm space-y-1 mb-4">
           <div>Итого: {formatRub(invoice.total)}</div>
           <div>{hasVat ? `В том числе НДС: ${formatRub(vatTotal)}` : 'Без НДС'}</div>
+          {isMixedVat && <div>Без НДС: {formatRub(noVatTotal)}</div>}
           <div className="font-semibold">Всего к оплате: {formatRub(invoice.total)}</div>
         </div>
 

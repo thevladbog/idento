@@ -82,11 +82,21 @@ interface CatalogItem {
 
 const STATUS_FILTERS: Array<'all' | InvoiceStatus> = ['all', 'issued', 'paid', 'cancelled'];
 
+// Backend page size (backend/openapi.yaml ListInvoicesSuper: ?limit=, default
+// 100, max 500). The list used to be silently capped at the backend default
+// with no way to see older invoices past the first 100 — this keeps the
+// same page size but paginates via ?offset= behind a "Show more" button
+// instead of capping.
+const PAGE_SIZE = 100;
+
 export default function BillingInvoices() {
   const { t } = useTranslation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | InvoiceStatus>('all');
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
 
   const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
@@ -107,17 +117,35 @@ export default function BillingInvoices() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelBusy, setCancelBusy] = useState(false);
 
-  const loadInvoices = async (status: 'all' | InvoiceStatus) => {
+  const loadInvoices = async (status: 'all' | InvoiceStatus, requestOffset: number, append: boolean) => {
     try {
-      const params = status === 'all' ? {} : { status };
+      const params = { ...(status === 'all' ? {} : { status }), limit: PAGE_SIZE, offset: requestOffset };
       const res = await api.get('/api/super-admin/billing/invoices', { params });
-      setInvoices(res.data || []);
+      const rows: Invoice[] = res.data || [];
+      setInvoices((prev) => (append ? [...prev, ...rows] : rows));
+      setHasMore(rows.length === PAGE_SIZE);
     } catch (error) {
       console.error('Failed to load invoices:', error);
       toast.error(t('failedToLoadData'));
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
+  };
+
+  // Resets to the first page — used whenever the status filter changes or an
+  // action (mark-paid/cancel/create) mutates the list, so the view doesn't
+  // end up showing a stale offset mixed with newly-changed rows.
+  const reloadFirstPage = (status: 'all' | InvoiceStatus) => {
+    setOffset(0);
+    loadInvoices(status, 0, false);
+  };
+
+  const loadMore = () => {
+    const nextOffset = offset + PAGE_SIZE;
+    setLoadingMore(true);
+    setOffset(nextOffset);
+    loadInvoices(statusFilter, nextOffset, true);
   };
 
   const loadAuxData = async () => {
@@ -139,7 +167,7 @@ export default function BillingInvoices() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
-    loadInvoices(statusFilter);
+    reloadFirstPage(statusFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch only when the status filter changes
   }, [statusFilter]);
 
@@ -217,7 +245,7 @@ export default function BillingInvoices() {
       toast.success(t('billingInvoicePaidToast', { count: effects.length }));
       setMarkPaidOpen(false);
       setMarkPaidInvoice(null);
-      loadInvoices(statusFilter);
+      reloadFirstPage(statusFilter);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
       toast.error(err.response?.data?.error || t('failedToLoadData'));
@@ -238,10 +266,10 @@ export default function BillingInvoices() {
     setCancelBusy(true);
     try {
       await api.post(`/api/super-admin/billing/invoices/${cancelInvoice.id}/cancel`, { reason: cancelReason });
-      toast.success(t('billingCancelInvoice'));
+      toast.success(t('billingInvoiceCancelledToast'));
       setCancelOpen(false);
       setCancelInvoice(null);
-      loadInvoices(statusFilter);
+      reloadFirstPage(statusFilter);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
       toast.error(err.response?.data?.error || t('failedToLoadData'));
@@ -281,7 +309,7 @@ export default function BillingInvoices() {
       });
       toast.success(t('billingInvoiceCreated', { number: res.data?.number }));
       setShowCreateDialog(false);
-      loadInvoices(statusFilter);
+      reloadFirstPage(statusFilter);
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } };
       toast.error(err.response?.data?.error || t('billingSaveFailed'));
@@ -380,6 +408,14 @@ export default function BillingInvoices() {
           )}
         </TableBody>
       </Table>
+
+      {hasMore && (
+        <div className="mt-4 flex justify-center">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {t('billingShowMore')}
+          </Button>
+        </div>
+      )}
 
       {/* Create invoice dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

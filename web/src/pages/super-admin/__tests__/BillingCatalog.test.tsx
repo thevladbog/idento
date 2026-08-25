@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import BillingCatalog from '../BillingCatalog';
 import api from '@/lib/api';
+import { toast } from 'sonner';
 import '../../../i18n';
 
 vi.mock('@/lib/api', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const mockItems = [
@@ -83,6 +88,7 @@ function mockApiGet() {
 
 describe('BillingCatalog', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     mockApiGet();
     vi.mocked(api.post).mockResolvedValue({ data: {} });
     vi.mocked(api.put).mockResolvedValue({ data: {} });
@@ -141,5 +147,50 @@ describe('BillingCatalog', () => {
       price: 150,
       vat_rate: null,
     });
+  });
+
+  it('surfaces the server field-specific error text in a toast when save fails with 400', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({
+      response: { status: 400, data: { error: 'limit_delta must be greater than 0' } },
+    });
+
+    render(<BillingCatalog />);
+    await waitFor(() => expect(screen.getByText('Pro Monthly')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Badge reprint' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('limit_delta must be greater than 0')
+    );
+  });
+
+  it('falls back to the generic save-failed message when the server error has no field-specific text', async () => {
+    vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 500, data: {} } });
+
+    render(<BillingCatalog />);
+    await waitFor(() => expect(screen.getByText('Pro Monthly')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Badge reprint' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to save catalog item'));
+  });
+
+  it('blocks save with a negative price client-side, without calling the API', async () => {
+    render(<BillingCatalog />);
+    await waitFor(() => expect(screen.getByText('Pro Monthly')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add item' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Badge reprint' } });
+    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '-5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Fill in all required fields'));
+    expect(api.post).not.toHaveBeenCalled();
   });
 });
