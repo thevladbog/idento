@@ -92,6 +92,13 @@ export function EventWorkspaceLayout() {
             <Button variant="outline" disabled aria-disabled="true">
               <Lock aria-hidden className="size-4" />
               {t("workspaceLaunchCheckin")}
+              {/* Explicit space: JSX strips the newline-indent before the
+                  span, and under jsdom 27+ (real computed display:inline,
+                  no sr-only stylesheet loaded) the accessible name would
+                  concatenate as "…check-inlocked". Real browsers DO get the
+                  space (sr-only is absolutely positioned), so the explicit
+                  space makes the test environment match reality. */}
+              {" "}
               <span className="sr-only">{t("workspaceCheckinLocked")}</span>
             </Button>
           )}
