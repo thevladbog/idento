@@ -15,8 +15,8 @@ const mockPlans = [
     slug: 'starter',
     tier: 'starter',
     description: '',
-    price_monthly: 29,
-    price_yearly: 290,
+    price_monthly: 2990,
+    price_yearly: 29900,
     limits: { events_per_month: 10, attendees_per_event: 100, users: 3 },
     features: { custom_branding: false, api_access: false, priority_support: false },
     is_active: true,
@@ -59,5 +59,17 @@ describe('SubscriptionPlans Unlimited toggle', () => {
     const unlimitedToggle = screen.getByLabelText(/events.*month.*unlimited/i);
     expect(unlimitedToggle).toHaveAttribute('data-state', 'checked');
     expect(screen.getByPlaceholderText(/unlimited/i)).toBeDisabled();
+  });
+
+  it('renders prices as ru-RU-formatted rubles, not dollars', async () => {
+    render(<SubscriptionPlans />);
+    await waitFor(() => expect(screen.getByText('Starter')).toBeInTheDocument());
+    // 2990 formatted by Intl for ru-RU + the ruble sign; no dollar anywhere.
+    // Pattern: 2 (narrow space) 990 (regular space) ₽
+    // testing-library's default normalizer collapses the NBSP thousands separator
+    // to a plain space before matching, so build a whitespace-tolerant regex.
+    const expected = `${(2990).toLocaleString('ru-RU')} ₽`;
+    expect(screen.getByText(new RegExp(expected.replace(/\s+/g, '\\s+')))).toBeInTheDocument();
+    expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 });

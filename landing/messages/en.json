@@ -176,15 +176,15 @@
     "toggle": {
       "monthly": "Monthly",
       "annual": "Annual",
-      "save": "Save 20%"
+      "save": "Save 17%"
     },
     "plans": {
       "free": {
         "name": "Free",
         "description": "Perfect for small events and getting started",
         "price": {
-          "monthly": "$0",
-          "annual": "$0"
+          "monthly": "0 ₽",
+          "annual": "0 ₽"
         },
         "period": "forever",
         "features": {
@@ -200,8 +200,8 @@
         "name": "Professional",
         "description": "For event organizers and growing businesses",
         "price": {
-          "monthly": "$49",
-          "annual": "$39"
+          "monthly": "9 990 ₽",
+          "annual": "8 325 ₽"
         },
         "period": "month",
         "features": {
