@@ -214,7 +214,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		api.PUT("/billing/profile", h.PutBillingProfile)
 		api.GET("/billing/catalog", h.GetBillingCatalog)
 		api.GET("/billing/invoices", h.GetTenantInvoices)
-		api.POST("/billing/invoices", h.CreateTenantInvoice)
+		api.POST("/billing/invoices", h.CreateTenantInvoice, authLimiter)
 		api.GET("/billing/invoices/:id", h.GetTenantInvoice)
 	}
 

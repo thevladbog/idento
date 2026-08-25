@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 
 	"idento/backend/internal/models"
@@ -112,7 +113,7 @@ func (s *PGStore) GetCatalogItems(ctx context.Context, publicOnly bool) ([]*mode
 	}
 	defer rows.Close()
 
-	var items []*models.BillingCatalogItem
+	items := []*models.BillingCatalogItem{}
 	for rows.Next() {
 		item, err := scanBillingCatalogItem(rows)
 		if err != nil {
@@ -202,11 +203,15 @@ func (s *PGStore) CreateInvoice(ctx context.Context, inv *models.Invoice, lines 
 		}
 	}()
 
-	year := time.Now().Year()
-	var n int
-	if err := tx.QueryRow(ctx, `INSERT INTO invoice_counters (year, last_value) VALUES ($1, 1)
+	// The counter year comes from the DB clock (NOW()), not Go local time:
+	// the app server and the database can run in different timezones/clock
+	// settings, and the invoice number must agree with issued_at (also a DB
+	// NOW()-derived column) about what year it is.
+	var year, n int
+	if err := tx.QueryRow(ctx, `INSERT INTO invoice_counters (year, last_value)
+	    VALUES (EXTRACT(YEAR FROM NOW())::int, 1)
 	    ON CONFLICT (year) DO UPDATE SET last_value = invoice_counters.last_value + 1
-	    RETURNING last_value`, year).Scan(&n); err != nil {
+	    RETURNING year, last_value`).Scan(&year, &n); err != nil {
 		return fmt.Errorf("assign invoice number: %w", err)
 	}
 	inv.Number = fmt.Sprintf("СЧ-%d-%04d", year, n)
@@ -321,7 +326,7 @@ func (s *PGStore) ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.
 	}
 	defer rows.Close()
 
-	var invoices []*models.Invoice
+	invoices := []*models.Invoice{}
 	for rows.Next() {
 		var inv models.Invoice
 		if err := rows.Scan(
@@ -352,6 +357,24 @@ func addBillingPeriod(base time.Time, period string, quantity int) time.Time {
 		return base.AddDate(quantity, 0, 0)
 	}
 	return base.AddDate(0, quantity, 0)
+}
+
+// applyKindRank orders invoice lines for ApplyInvoicePayment per its
+// documented ordering contract: plan (0), then addon (1), then service (2).
+// Anything else sorts last — such a line already fails in the switch inside
+// ApplyInvoicePayment's application loop, so its relative position doesn't
+// matter.
+func applyKindRank(kind string) int {
+	switch kind {
+	case "plan":
+		return 0
+	case "addon":
+		return 1
+	case "service":
+		return 2
+	default:
+		return 3
+	}
 }
 
 // subscriptionLock is the FOR-UPDATE-locked view of a tenant's subscription
@@ -439,7 +462,14 @@ func (s *PGStore) applyAddonLine(ctx context.Context, tx pgx.Tx, tenantID uuid.U
 	var validUntil time.Time
 	switch validity {
 	case "until_period_end":
-		if !sub.exists || sub.endDate == nil {
+		// The subscription's end_date must exist AND be strictly in the
+		// future relative to now: a boost anchored to a past end_date would
+		// be inserted already-expired — invisible to resolveTenantLimit and
+		// GetActiveLimitBoosts forever (money taken, nothing delivered).
+		// This also guards a same-invoice plan+addon combo where the plan
+		// line hasn't run yet (it should have, per ApplyInvoicePayment's
+		// ordering contract — this is the defensive backstop).
+		if !sub.exists || sub.endDate == nil || !sub.endDate.After(now) {
 			return "", ErrBoostNeedsEndDate
 		}
 		validUntil = *sub.endDate
@@ -478,6 +508,15 @@ func (s *PGStore) applyAddonLine(ctx context.Context, tx pgx.Tx, tenantID uuid.U
 // in ONE transaction: an addon line needing an end_date the subscription
 // doesn't have (ErrBoostNeedsEndDate) rolls back everything, leaving the
 // invoice issued and no boost/subscription rows changed.
+//
+// Ordering contract: lines are applied in KIND order — every 'plan' line
+// first (among themselves, in invoice position order), then every 'addon'
+// line (in position order), then every 'service' line — NOT in raw
+// invoice-position order. This lets a same-invoice «тариф + надбавка until
+// the period end» combo work regardless of which line was listed first: the
+// plan line sets the subscription's new end_date before any addon line
+// reads it for its until_period_end boost. AppliedLineEffect's output order
+// mirrors this application order (not invoice position order).
 func (s *PGStore) ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []AppliedLineEffect, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -539,8 +578,17 @@ func (s *PGStore) ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, 
 		sub.exists = true
 	}
 
-	effects := make([]AppliedLineEffect, 0, len(lines))
-	for _, line := range lines {
+	// Reorder to the application-order contract documented above: plan
+	// lines, then addon lines, then service lines, each group preserving
+	// its original invoice-position order (sort.SliceStable).
+	ordered := make([]*models.InvoiceLine, len(lines))
+	copy(ordered, lines)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return applyKindRank(ordered[i].Kind) < applyKindRank(ordered[j].Kind)
+	})
+
+	effects := make([]AppliedLineEffect, 0, len(ordered))
+	for _, line := range ordered {
 		var effect string
 		switch line.Kind {
 		case "service":
@@ -623,7 +671,7 @@ func (s *PGStore) GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) 
 	}
 	defer rows.Close()
 
-	var boosts []*models.LimitBoost
+	boosts := []*models.LimitBoost{}
 	for rows.Next() {
 		var b models.LimitBoost
 		if err := rows.Scan(&b.ID, &b.TenantID, &b.LimitKey, &b.Delta, &b.ValidUntil, &b.SourceInvoiceLineID, &b.CreatedAt); err != nil {

@@ -212,8 +212,8 @@ func (h *Handler) CreateTenantInvoice(c echo.Context) error {
 		return writeErr(c, newHTTPError(http.StatusBadRequest, "At least one line is required"))
 	}
 	for _, l := range req.Lines {
-		if l.Quantity < 1 {
-			return writeErr(c, newHTTPError(http.StatusBadRequest, "Every line quantity must be at least 1"))
+		if l.Quantity < 1 || l.Quantity > 100 {
+			return writeErr(c, newHTTPError(http.StatusBadRequest, "quantity must be between 1 and 100"))
 		}
 	}
 

@@ -48,9 +48,16 @@ func tenantGateWithTTL(s store.Store, ttl time.Duration) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			path := c.Request().URL.Path
-			// Exempt: the caller must still be able to see who they are and
-			// (in SaaS) platform operators must never be locked out.
-			if path == "/api/me" || strings.HasPrefix(path, "/api/super-admin") {
+			// Exempt: the caller must still be able to see who they are,
+			// (in SaaS) platform operators must never be locked out, and a
+			// lapsed (expired/suspended) tenant must still be able to reach
+			// self-service billing to pay for renewal — otherwise a tenant
+			// blocked here can never clear the very invoice that would
+			// unblock it. Safe because every /api/billing handler applies
+			// its own admin-role guard and scopes every query to the
+			// caller's own tenant via JWT claims — nothing here widens
+			// access beyond "act on your own tenant's billing".
+			if path == "/api/me" || strings.HasPrefix(path, "/api/super-admin") || strings.HasPrefix(path, "/api/billing") {
 				return next(c)
 			}
 			claims, ok := c.Get("user").(*models.JWTCustomClaims)

@@ -60,13 +60,17 @@ func awTriple(n int64, feminine bool) string {
 
 // AmountInWords renders a ruble amount for the invoice's «сумма прописью»
 // line: capitalized words for rubles, two digits for kopecks.
-// Supports amounts below a billion rubles (invoice totals).
+// Supports amounts up to (and including) the NUMERIC(12,2) range used by
+// invoices.total — i.e. up to 999 billion rubles.
 func AmountInWords(amount float64) string {
 	kop := int64(math.Round(amount * 100))
 	rub := kop / 100
 	kop = kop % 100
 
 	var words []string
+	if b := rub / 1_000_000_000 % 1000; b > 0 {
+		words = append(words, awTriple(b, false), awPlural(b, "миллиард", "миллиарда", "миллиардов"))
+	}
 	if m := rub / 1_000_000 % 1000; m > 0 {
 		words = append(words, awTriple(m, false), awPlural(m, "миллион", "миллиона", "миллионов"))
 	}

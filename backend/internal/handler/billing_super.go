@@ -8,6 +8,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,8 +60,16 @@ func validateCatalogItem(item *models.BillingCatalogItem) string {
 		if item.LimitKey == nil || item.LimitDelta == nil || item.Validity == nil {
 			return "addon items require limit_key, limit_delta and validity"
 		}
-		if *item.Validity == "fixed_days" && item.ValidityDays == nil {
-			return "fixed_days addon items require validity_days"
+		if *item.LimitDelta <= 0 {
+			return "limit_delta must be greater than 0"
+		}
+		if *item.Validity == "fixed_days" {
+			if item.ValidityDays == nil {
+				return "fixed_days addon items require validity_days"
+			}
+			if *item.ValidityDays <= 0 {
+				return "validity_days must be greater than 0"
+			}
 		}
 		if item.PlanID != nil || item.Period != nil || item.DefaultActivation != nil {
 			return "addon items must not set plan_id, period or default_activation"
@@ -205,8 +214,8 @@ func (h *Handler) CreateInvoiceSuper(c echo.Context) error {
 		return writeErr(c, newHTTPError(http.StatusBadRequest, "At least one line is required"))
 	}
 	for _, l := range req.Lines {
-		if l.Quantity < 1 {
-			return writeErr(c, newHTTPError(http.StatusBadRequest, "Every line quantity must be at least 1"))
+		if l.Quantity < 1 || l.Quantity > 100 {
+			return writeErr(c, newHTTPError(http.StatusBadRequest, "quantity must be between 1 and 100"))
 		}
 	}
 
@@ -296,6 +305,22 @@ func (h *Handler) ListInvoicesSuper(c echo.Context) error {
 		default:
 			return writeErr(c, newHTTPError(http.StatusBadRequest, "status must be issued, paid or cancelled"))
 		}
+	}
+	if raw := c.QueryParam("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > 500 {
+			return writeErr(c, newHTTPError(http.StatusBadRequest, "limit must be between 1 and 500"))
+		}
+		filter.Limit = limit
+	} else {
+		filter.Limit = 100
+	}
+	if raw := c.QueryParam("offset"); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return writeErr(c, newHTTPError(http.StatusBadRequest, "offset must be 0 or greater"))
+		}
+		filter.Offset = offset
 	}
 	invoices, err := h.Store.ListInvoices(c.Request().Context(), filter)
 	if err != nil {

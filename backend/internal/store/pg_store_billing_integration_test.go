@@ -878,8 +878,11 @@ func TestApplyInvoicePaymentAddonAndManual(t *testing.T) {
 	if len(effects) != 3 {
 		t.Fatalf("len(effects) = %d, want 3", len(effects))
 	}
-	if effects[0].Kind != "addon" || effects[1].Kind != "plan" || effects[2].Kind != "service" {
-		t.Fatalf("effect kinds = [%s, %s, %s], want [addon, plan, service]",
+	// Application order is KIND order (plan, then addon, then service), not
+	// invoice-position order — even though addon was listed first (position
+	// 1) and the manual plan second (position 2).
+	if effects[0].Kind != "plan" || effects[1].Kind != "addon" || effects[2].Kind != "service" {
+		t.Fatalf("effect kinds = [%s, %s, %s], want [plan, addon, service] (kind order, not position order)",
 			effects[0].Kind, effects[1].Kind, effects[2].Kind)
 	}
 
@@ -952,6 +955,116 @@ func TestApplyInvoicePaymentAddonUntilPeriodEndRequiresEndDate(t *testing.T) {
 	}
 	if len(boosts) != 0 {
 		t.Fatalf("len(boosts) = %d, want 0 (rolled back)", len(boosts))
+	}
+}
+
+// TestApplyInvoicePaymentAddonUntilPeriodEndRejectsPastEndDate pins the
+// expire→pay walk (live-reproduced money-path bug, invoice СЧ-2026-0156): a
+// subscription whose end_date has already lapsed must not let an
+// until_period_end addon silently insert an already-expired boost. Without
+// the past-date guard, ErrBoostNeedsEndDate previously fired only for a nil
+// end_date — a ticker-expired subscription (end_date set but in the past)
+// slipped through, taking the tenant's money for a boost that
+// resolveTenantLimit/GetActiveLimitBoosts would never see.
+func TestApplyInvoicePaymentAddonUntilPeriodEndRejectsPastEndDate(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	pastEnd := now.Add(-3 * 24 * time.Hour)
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID,
+		PlanID:    &planID,
+		Status:    "expired",
+		StartDate: now.Add(-60 * 24 * time.Hour),
+		EndDate:   &pastEnd,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	addon := newAddonLine(1, "users", 5, 1, "until_period_end", nil)
+	inv := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{addon}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	_, _, err := s.ApplyInvoicePayment(ctx, inv.ID, now)
+	if !errors.Is(err, ErrBoostNeedsEndDate) {
+		t.Fatalf("ApplyInvoicePayment error = %v, want ErrBoostNeedsEndDate (past end_date must be rejected)", err)
+	}
+
+	got, err := s.GetInvoiceByID(ctx, inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvoiceByID: %v", err)
+	}
+	if got.Status != "issued" {
+		t.Fatalf("Status = %q, want issued (whole tx rolled back)", got.Status)
+	}
+
+	boosts, err := s.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetActiveLimitBoosts: %v", err)
+	}
+	if len(boosts) != 0 {
+		t.Fatalf("len(boosts) = %d, want 0 (rolled back, no money-taken-nothing-delivered boost)", len(boosts))
+	}
+}
+
+// TestApplyInvoicePaymentPlanBeforeAddonSameInvoice pins the ordering fix
+// (live-reproduced, invoice СЧ-2026-0156): «тариф + надбавка until_period_end»
+// on one invoice must succeed regardless of which line was listed first.
+// Here the addon is at position 1 (before the plan at position 2) — under
+// the old raw-position application order this 409ed (ErrBoostNeedsEndDate)
+// because the addon ran before the plan line had set any end_date at all.
+func TestApplyInvoicePaymentPlanBeforeAddonSameInvoice(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	// No pre-existing subscription: the plan line (on_payment) must create
+	// one and set its end_date before the addon line (position 1, listed
+	// first) reads it.
+	addon := newAddonLine(1, "users", 5, 1, "until_period_end", nil)
+	plan := newPlanLine(2, planID, "month", "on_payment", 1)
+	inv := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{addon, plan}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	paid, effects, err := s.ApplyInvoicePayment(ctx, inv.ID, now)
+	if err != nil {
+		t.Fatalf("ApplyInvoicePayment: %v (want success — plan line must apply before addon regardless of invoice position)", err)
+	}
+	if paid.Status != "paid" {
+		t.Fatalf("Status = %q, want paid", paid.Status)
+	}
+	if len(effects) != 2 || effects[0].Kind != "plan" || effects[1].Kind != "addon" {
+		t.Fatalf("effects = %+v, want [plan, addon] (kind order)", effects)
+	}
+
+	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID: %v", err)
+	}
+	if sub.Status != "active" {
+		t.Fatalf("subscription Status = %q, want active", sub.Status)
+	}
+	if sub.EndDate == nil {
+		t.Fatal("subscription EndDate not set")
+	}
+
+	boosts, err := s.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetActiveLimitBoosts: %v", err)
+	}
+	if len(boosts) != 1 {
+		t.Fatalf("len(boosts) = %d, want 1", len(boosts))
+	}
+	if diff := boosts[0].ValidUntil.Sub(*sub.EndDate); diff < -time.Second || diff > time.Second {
+		t.Fatalf("boost ValidUntil = %v, want == subscription EndDate %v (the NEW end_date set by the plan line)",
+			boosts[0].ValidUntil, sub.EndDate)
 	}
 }
 

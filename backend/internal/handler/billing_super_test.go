@@ -54,6 +54,46 @@ func TestCatalogSuperCreate_FixedDaysWithoutValidityDays_400(t *testing.T) {
 	}
 }
 
+func TestCatalogSuperCreate_LimitDeltaNonPositive_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	body := `{"kind":"addon","name":"Boost","price":5,"limit_key":"users","limit_delta":0,"validity":"until_period_end"}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", body, uuid.New().String(), "admin")
+	if err := h.CreateCatalogItemSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := "limit_delta must be greater than 0"; resp["error"] != want {
+		t.Errorf("error=%q; want %q", resp["error"], want)
+	}
+}
+
+func TestCatalogSuperCreate_ValidityDaysNonPositive_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	body := `{"kind":"addon","name":"Boost","price":5,"limit_key":"users","limit_delta":10,"validity":"fixed_days","validity_days":0}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", body, uuid.New().String(), "admin")
+	if err := h.CreateCatalogItemSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := "validity_days must be greater than 0"; resp["error"] != want {
+		t.Errorf("error=%q; want %q", resp["error"], want)
+	}
+}
+
 func TestCatalogSuperCreate_VATRateZero_400(t *testing.T) {
 	e := echo.New()
 	h := &Handler{Store: &fakeStore{}}
@@ -381,6 +421,76 @@ func TestCancelInvoiceSuper_HappyPath(t *testing.T) {
 	changesMap, ok := gotChanges.(map[string]interface{})
 	if !ok || changesMap["reason"] != "дубль счёта" {
 		t.Errorf("audit changes=%#v; want reason recorded", gotChanges)
+	}
+}
+
+// --- ListInvoicesSuper pagination ---
+
+func TestListInvoicesSuper_PaginationParamsPassThrough(t *testing.T) {
+	e := echo.New()
+	var got store.InvoiceFilter
+	fs := &fakeStore{
+		listInvoices: func(f store.InvoiceFilter) ([]*models.Invoice, error) {
+			got = f
+			return []*models.Invoice{}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x?limit=2&offset=1", "", uuid.New().String(), "admin")
+	if err := h.ListInvoicesSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s; want 200", rec.Code, rec.Body.String())
+	}
+	if got.Limit != 2 || got.Offset != 1 {
+		t.Errorf("filter = %+v; want Limit=2 Offset=1", got)
+	}
+}
+
+func TestListInvoicesSuper_InvalidLimit_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x?limit=0", "", uuid.New().String(), "admin")
+	if err := h.ListInvoicesSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListInvoicesSuper_InvalidOffset_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	c, rec := newAuthedContext(e, http.MethodGet, "/x?offset=-1", "", uuid.New().String(), "admin")
+	if err := h.ListInvoicesSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+}
+
+// --- CreateInvoiceSuper quantity cap ---
+
+func TestCreateInvoiceSuper_QuantityOver100_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	body := `{"tenant_id":"` + uuid.New().String() + `","lines":[{"catalog_item_id":"` + uuid.New().String() + `","quantity":101}]}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", body, uuid.New().String(), "admin")
+	if err := h.CreateInvoiceSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+	var resp map[string]string
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if want := "quantity must be between 1 and 100"; resp["error"] != want {
+		t.Errorf("error=%q; want %q", resp["error"], want)
 	}
 }
 

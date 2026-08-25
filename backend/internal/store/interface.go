@@ -435,7 +435,11 @@ type Store interface {
 	// ApplyInvoicePayment marks invoice paid (issued→paid guard) and applies
 	// every line per the billing-invoices spec's Application semantics. Runs
 	// in ONE transaction: any per-line failure (e.g. ErrBoostNeedsEndDate)
-	// rolls back the whole thing, leaving the invoice issued.
+	// rolls back the whole thing, leaving the invoice issued. Lines apply in
+	// KIND order (plan, then addon, then service — not invoice-position
+	// order), so an until_period_end addon always sees a same-invoice
+	// plan line's new end_date; see the PGStore implementation's doc
+	// comment for the full ordering contract.
 	ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []AppliedLineEffect, error)
 	// CancelInvoice: issued→cancelled guard, sets cancelled_at.
 	CancelInvoice(ctx context.Context, invoiceID uuid.UUID) error

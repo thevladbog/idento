@@ -115,10 +115,10 @@ resolving custom/plan limit, if the value is not unlimited (-1), add
 One code path feeds both `CheckTenantLimit` and `CheckAttendeeLimit`, so
 every existing enforcement point (users/events/attendees middleware, bulk
 import, API keys, sync) honors boosts with no per-callsite changes.
-`GetTenantStats`/`GetAllTenants` expose `active_boosts` (key, delta,
-valid_until) so the console's limit meters can show «9 990 (тариф) + 1 000
-(надбавка до 12.09)»-style truth; the panel's own usage surfaces read the
-same effective numbers through existing endpoints.
+`GetTenantStats` exposes `active_boosts` (key, delta, valid_until)
+(list-level boost exposure deferred) so the console's limit meters can show
+«9 990 (тариф) + 1 000 (надбавка до 12.09)»-style truth; the panel's own
+usage surfaces read the same effective numbers through existing endpoints.
 
 ## Lifecycle ticker (`internal/billing` or extend `internal/retention` pattern)
 

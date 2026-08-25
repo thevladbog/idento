@@ -133,6 +133,20 @@ func TestGateSkipsExemptPaths(t *testing.T) {
 	}
 }
 
+// TestGateExemptsBillingForLapsedTenant pins the /api/billing exemption: a
+// tenant whose subscription has expired must still reach self-service
+// billing (to pay for renewal) but stays blocked everywhere else.
+func TestGateExemptsBillingForLapsedTenant(t *testing.T) {
+	past := time.Now().Add(-24 * time.Hour)
+	fs := &gateFakeStore{status: "active", sub: &models.Subscription{Status: "expired", EndDate: &past}}
+	if rec := gateRequest(t, fs, 0, "/api/billing/profile"); rec.Code != http.StatusOK {
+		t.Fatalf("/api/billing/profile status = %d, want 200 (billing exempt for lapsed tenant)", rec.Code)
+	}
+	if rec := gateRequest(t, fs, 0, "/api/events"); rec.Code != http.StatusForbidden {
+		t.Fatalf("/api/events status = %d, want 403 (lapsed tenant still blocked elsewhere)", rec.Code)
+	}
+}
+
 func TestGateCachesDecision(t *testing.T) {
 	fs := &gateFakeStore{status: "active", sub: &models.Subscription{Status: "active"}}
 	gate := tenantGateWithTTL(fs, time.Minute)
