@@ -14,7 +14,7 @@ export default [
   globalIgnores(['dist', 'public']),
   js.configs.recommended,
   ...tsRecommended,
-  reactHooks.configs['recommended-latest'],
+  reactHooks.configs.flat['recommended-latest'],
   reactRefresh.configs.vite,
   {
     files: ['**/*.{ts,tsx}'],
@@ -26,6 +26,14 @@ export default [
       },
     },
     rules: {
+      // Same rationale as panel/eslint.config.js: react-hooks v7's
+      // compiler-powered rules stay visible as warnings pending a
+      // dedicated burn-down.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/globals': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },

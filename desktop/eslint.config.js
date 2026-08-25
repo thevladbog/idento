@@ -11,7 +11,7 @@ export default [
   globalIgnores(['dist', 'src-tauri']),
   js.configs.recommended,
   ...tseslint.configs.recommended,
-  reactHooks.configs['recommended-latest'],
+  reactHooks.configs.flat['recommended-latest'],
   reactRefresh.configs.vite,
   {
     files: ['**/*.{ts,tsx}'],
@@ -23,6 +23,13 @@ export default [
       },
     },
     rules: {
+      // Same rationale as panel/eslint.config.js: v7's compiler-powered
+      // rules stay visible as warnings pending a dedicated burn-down.
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/globals': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
