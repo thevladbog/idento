@@ -20,5 +20,10 @@ UPDATE subscription_plans SET description = 'Для профессиональн
 UPDATE subscription_plans SET description = 'Индивидуальное решение для крупных организаций' WHERE slug = 'enterprise' AND description = 'Custom solution for large organizations';
 UPDATE subscription_plans SET description = 'Безлимитный тариф для самостоятельного развёртывания' WHERE slug = 'unlimited' AND description = 'Self-hosted unlimited plan';
 
+-- Deliberately conservative: both old price columns must match the seed
+-- defaults before either is touched. If an operator already customized only
+-- one of the two price fields, this guard leaves both untouched rather than
+-- repricing just the other one — a safe failure direction that avoids a
+-- partial, inconsistent reprice.
 UPDATE subscription_plans SET price_monthly = 2990, price_yearly = 29900 WHERE slug = 'starter' AND price_monthly = 29 AND price_yearly = 290;
 UPDATE subscription_plans SET price_monthly = 9990, price_yearly = 99900 WHERE slug = 'pro' AND price_monthly = 99 AND price_yearly = 990;

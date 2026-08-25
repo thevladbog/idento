@@ -1,5 +1,6 @@
 -- Restore the English seed defaults with the same guarded shape (only rows
 -- still at the 000028 values are touched).
+-- Note: this restores the pre-000028 (English seed-era) defaults; on installs first seeded after this change, the guards below simply match no rows and are a no-op.
 UPDATE subscription_plans SET name = 'Free' WHERE slug = 'free' AND name = 'Бесплатный';
 UPDATE subscription_plans SET name = 'Starter' WHERE slug = 'starter' AND name = 'Стартовый';
 UPDATE subscription_plans SET name = 'Professional' WHERE slug = 'pro' AND name = 'Профессиональный';
