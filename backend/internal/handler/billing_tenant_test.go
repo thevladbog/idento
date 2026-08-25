@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"idento/backend/internal/models"
@@ -33,7 +34,10 @@ func clearBillingSellerEnv(t *testing.T) {
 func setBillingSellerEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("BILLING_SELLER_NAME", "OOO Idento")
-	t.Setenv("BILLING_SELLER_INN", "7700000000")
+	// Deliberately distinct from the "7700000000" buyer INN used throughout
+	// this file's fixtures, so seller-INN assertions can't pass by
+	// accidentally matching the buyer INN instead.
+	t.Setenv("BILLING_SELLER_INN", "771234567890")
 	t.Setenv("BILLING_SELLER_BANK_NAME", "Bank")
 	t.Setenv("BILLING_SELLER_BANK_ACCOUNT", "40702810000000000001")
 	t.Setenv("BILLING_SELLER_BANK_BIK", "044525225")
@@ -335,6 +339,46 @@ func TestCreateTenantInvoice_InactiveItem(t *testing.T) {
 	}
 }
 
+func TestCreateTenantInvoice_TooManyLines(t *testing.T) {
+	setBillingSellerEnv(t)
+	tenantID := uuid.New()
+	profile := &models.TenantBillingProfile{TenantID: tenantID, LegalName: "Acme", INN: "7700000000", LegalAddress: "Addr"}
+	itemID := uuid.New()
+	getCatalogItemCalls := 0
+	fs := &fakeStore{
+		getTenantBillingProfile: func(id uuid.UUID) (*models.TenantBillingProfile, error) {
+			return profile, nil
+		},
+		getCatalogItemByID: func(id uuid.UUID) (*models.BillingCatalogItem, error) {
+			getCatalogItemCalls++
+			return &models.BillingCatalogItem{ID: itemID, Name: "Plan", Price: 100, IsActive: true, IsPublic: true}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	var linesJSON strings.Builder
+	for i := 0; i < 51; i++ {
+		if i > 0 {
+			linesJSON.WriteString(",")
+		}
+		linesJSON.WriteString(`{"catalog_item_id":"` + itemID.String() + `","quantity":1}`)
+	}
+	body := `{"lines":[` + linesJSON.String() + `]}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/api/billing/invoices", body, tenantID.String(), "admin")
+	_ = h.CreateTenantInvoice(c)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var respBody map[string]string
+	_ = jsonUnmarshalBody(rec, &respBody)
+	if respBody["error"] != "an invoice can have at most 50 lines" {
+		t.Fatalf("unexpected error message: %q", respBody["error"])
+	}
+	if getCatalogItemCalls != 0 {
+		t.Fatalf("expected the line cap to reject before any catalog lookups, got %d calls", getCatalogItemCalls)
+	}
+}
+
 func TestCreateTenantInvoice_HappyPath(t *testing.T) {
 	setBillingSellerEnv(t)
 	tenantID := uuid.New()
@@ -387,7 +431,7 @@ func TestCreateTenantInvoice_HappyPath(t *testing.T) {
 	if createdInv.BuyerName != "Acme" || createdInv.BuyerINN != "7700000000" || createdInv.BuyerAddress != "Addr" {
 		t.Fatalf("buyer snapshot not filled from profile: %+v", createdInv)
 	}
-	if createdInv.SellerName != "OOO Idento" || createdInv.SellerINN != "7700000000" {
+	if createdInv.SellerName != "OOO Idento" || createdInv.SellerINN != "771234567890" {
 		t.Fatalf("seller snapshot not filled from config: %+v", createdInv)
 	}
 	if createdInv.CreatedBy == nil || *createdInv.CreatedBy != userID {

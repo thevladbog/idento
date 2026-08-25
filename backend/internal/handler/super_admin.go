@@ -68,6 +68,15 @@ func (h *Handler) GetTenantStats(c echo.Context) error {
 			"error": "Failed to get tenant stats",
 		})
 	}
+	// Defensive: the PGStore implementation always pairs a nil result with a
+	// non-nil error (row-not-found surfaces as err != nil above), but the
+	// Store interface doesn't guarantee that for every implementation —
+	// guard against a nil stats value before dereferencing it below.
+	if stats == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{
+			"error": "Tenant not found",
+		})
+	}
 
 	// Surface any currently-valid limit boosts (paid addon invoices) on the
 	// tenant detail view — additive to the existing response shape.

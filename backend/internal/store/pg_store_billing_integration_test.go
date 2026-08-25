@@ -511,6 +511,34 @@ func TestCreateInvoiceRollsBackOnLineFailure(t *testing.T) {
 	}
 }
 
+// TestCreateInvoiceForcesIssuedStatus pins that CreateInvoice always inserts
+// a new invoice with status "issued", regardless of whatever Status the
+// caller pre-set on the *models.Invoice passed in. The only supported paths
+// to "paid"/"cancelled" are ApplyInvoicePayment/CancelInvoice; a caller must
+// never be able to bypass those by pre-setting Status before creation.
+func TestCreateInvoiceForcesIssuedStatus(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchAnyPlanID(t, s, ctx)
+
+	inv := newTestInvoice(tenantID)
+	inv.Status = "paid" // attempt to bypass ApplyInvoicePayment
+	if err := s.CreateInvoice(ctx, inv, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+	if inv.Status != "issued" {
+		t.Fatalf("Invoice.Status (returned) = %q, want forced %q", inv.Status, "issued")
+	}
+
+	var dbStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM invoices WHERE id = $1`, inv.ID).Scan(&dbStatus); err != nil {
+		t.Fatalf("query invoice status: %v", err)
+	}
+	if dbStatus != "issued" {
+		t.Fatalf("invoices.status in DB = %q, want forced %q despite caller pre-setting %q", dbStatus, "issued", "paid")
+	}
+}
+
 func TestGetInvoiceByIDLoadsLinesInOrder(t *testing.T) {
 	s, pool, ctx := newBillingTestStore(t)
 	tenantID := createBillingTestTenant(t, s, pool, ctx)

@@ -60,6 +60,20 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		}),
 	})
 
+	// Separate in-memory rate limiter for billing invoice creation: 10
+	// requests / minute per client IP. This must NOT share authLimiter's
+	// bucket — invoice creation is behind auth (a tenant admin JWT) and has
+	// nothing to do with login/provisioning abuse, so mixing them would let
+	// normal invoice traffic starve out login attempts (or vice versa) for
+	// the same IP.
+	billingInvoiceLimiter := echomw.RateLimiterWithConfig(echomw.RateLimiterConfig{
+		Store: echomw.NewRateLimiterMemoryStoreWithConfig(echomw.RateLimiterMemoryStoreConfig{
+			Rate:      rate.Limit(10.0 / 60.0), // 10 per minute
+			Burst:     10,
+			ExpiresIn: 3 * time.Minute,
+		}),
+	})
+
 	// Auth routes
 	auth := e.Group("/auth")
 	if mode == config.ModeSaaS {
@@ -214,7 +228,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		api.PUT("/billing/profile", h.PutBillingProfile)
 		api.GET("/billing/catalog", h.GetBillingCatalog)
 		api.GET("/billing/invoices", h.GetTenantInvoices)
-		api.POST("/billing/invoices", h.CreateTenantInvoice, authLimiter)
+		api.POST("/billing/invoices", h.CreateTenantInvoice, billingInvoiceLimiter)
 		api.GET("/billing/invoices/:id", h.GetTenantInvoice)
 	}
 

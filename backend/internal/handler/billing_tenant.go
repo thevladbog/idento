@@ -152,7 +152,12 @@ type createTenantInvoiceRequest struct {
 // against any active catalog item regardless of public visibility. Returns
 // an *httpError (400, "Unknown or unavailable catalog item") when a line's
 // item doesn't qualify, or the store's raw error on a lookup failure.
+const maxInvoiceLines = 50
+
 func buildInvoiceLines(ctx context.Context, s store.Store, inputs []invoiceLineInput, requirePublic bool) ([]*models.InvoiceLine, float64, error) {
+	if len(inputs) > maxInvoiceLines {
+		return nil, 0, newHTTPError(http.StatusBadRequest, "an invoice can have at most 50 lines")
+	}
 	lines := make([]*models.InvoiceLine, 0, len(inputs))
 	var total float64
 	for i, l := range inputs {

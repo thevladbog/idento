@@ -60,3 +60,38 @@ func TestBillingMigrationShape(t *testing.T) {
 		}
 	}
 }
+
+// TestInvoicesRestrictTenantDeleteMigrationShape pins migration 000030:
+// invoices.tenant_id switches from ON DELETE CASCADE (000029) to ON DELETE
+// RESTRICT so a tenant with invoices can never be hard-deleted and silently
+// take its financial records with it; the down migration restores CASCADE.
+func TestInvoicesRestrictTenantDeleteMigrationShape(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller could not locate migration test")
+	}
+	dir := filepath.Join(filepath.Dir(currentFile), "..", "..", "migrations")
+	upBytes, err := os.ReadFile(filepath.Join(dir, "000030_invoices_restrict_tenant_delete.up.sql"))
+	if err != nil {
+		t.Fatalf("read up migration: %v", err)
+	}
+	downBytes, err := os.ReadFile(filepath.Join(dir, "000030_invoices_restrict_tenant_delete.down.sql"))
+	if err != nil {
+		t.Fatalf("read down migration: %v", err)
+	}
+	up := strings.Join(strings.Fields(strings.ToLower(string(upBytes))), " ")
+	down := strings.Join(strings.Fields(strings.ToLower(string(downBytes))), " ")
+
+	if !strings.Contains(up, "drop constraint invoices_tenant_id_fkey") {
+		t.Error("up migration missing drop of invoices_tenant_id_fkey")
+	}
+	if !strings.Contains(up, "foreign key (tenant_id) references tenants(id) on delete restrict") {
+		t.Error("up migration missing RESTRICT re-add of invoices_tenant_id_fkey")
+	}
+	if !strings.Contains(down, "drop constraint invoices_tenant_id_fkey") {
+		t.Error("down migration missing drop of invoices_tenant_id_fkey")
+	}
+	if !strings.Contains(down, "foreign key (tenant_id) references tenants(id) on delete cascade") {
+		t.Error("down migration missing CASCADE restore of invoices_tenant_id_fkey")
+	}
+}

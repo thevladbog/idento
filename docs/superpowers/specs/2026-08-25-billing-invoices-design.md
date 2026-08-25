@@ -160,6 +160,16 @@ number/date. Server-side PDF generation is deliberately out of scope.
 - Storage_mb enforcement (still display-only; separate decision later).
 - Editing issued invoices (cancel + reissue instead).
 
+**Retention interplay:** invoices are retained financial documents (РФ:
+обязательное хранение бухгалтерских документов), so they must survive tenant
+hard-purge. Migration 000030 switches `invoices.tenant_id` from `ON DELETE
+CASCADE` to `ON DELETE RESTRICT`, and `PurgeExpiredTenants`
+(`internal/store/pg_store_retention.go`) skips any archived tenant past
+retention that still has invoices — such a tenant stays archived
+indefinitely until an operator handles it manually. This is by design:
+tenant hard-purge and invoice retention are deliberately in tension, and
+invoices win.
+
 ## Testing
 
 - Store: migration content test (guards/CHECKs per 000026-28 precedent);

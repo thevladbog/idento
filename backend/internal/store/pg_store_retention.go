@@ -33,8 +33,15 @@ func (s *PGStore) PurgeExpiredTenants(ctx context.Context, retentionDays int) ([
 	if retentionDays <= 0 {
 		return nil, nil
 	}
+	// invoices.tenant_id is ON DELETE RESTRICT (migration 000030) because
+	// invoices are retained financial documents (РФ: обязательное хранение
+	// бухгалтерских документов) that must survive tenant hard-purge. Exclude
+	// any tenant that still has invoices from the purge candidates so the
+	// DELETE below never trips that RESTRICT; such a tenant stays archived
+	// indefinitely for an operator to handle manually.
 	rows, err := s.db.Query(ctx, `SELECT id, name, archived_at FROM tenants
-		WHERE status = 'archived' AND archived_at < NOW() - make_interval(days => $1)`, retentionDays)
+		WHERE status = 'archived' AND archived_at < NOW() - make_interval(days => $1)
+		  AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.tenant_id = tenants.id)`, retentionDays)
 	if err != nil {
 		return nil, fmt.Errorf("list expired archived tenants: %w", err)
 	}

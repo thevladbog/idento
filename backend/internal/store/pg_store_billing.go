@@ -216,9 +216,12 @@ func (s *PGStore) CreateInvoice(ctx context.Context, inv *models.Invoice, lines 
 	}
 	inv.Number = fmt.Sprintf("СЧ-%d-%04d", year, n)
 
-	if inv.Status == "" {
-		inv.Status = "issued"
-	}
+	// Every invoice is created "issued" — unconditionally, ignoring whatever
+	// status the caller may have set on inv. The only supported paths to
+	// "paid" or "cancelled" are ApplyInvoicePayment and CancelInvoice; a
+	// caller must never be able to insert a pre-paid/cancelled invoice and
+	// bypass those code paths (and their side effects, e.g. limit boosts).
+	inv.Status = "issued"
 
 	query := `INSERT INTO invoices
 	          (number, tenant_id, status, buyer_name, buyer_inn, buyer_kpp, buyer_address,
@@ -317,7 +320,7 @@ func (s *PGStore) ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.
 	          LEFT JOIN tenants t ON t.id = i.tenant_id
 	          WHERE ($1::uuid IS NULL OR i.tenant_id = $1)
 	            AND ($2::text = '' OR i.status = $2)
-	          ORDER BY i.issued_at DESC
+	          ORDER BY i.issued_at DESC, i.id DESC
 	          LIMIT $3 OFFSET $4`
 
 	rows, err := s.db.Query(ctx, query, f.TenantID, f.Status, limit, f.Offset)
