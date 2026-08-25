@@ -441,6 +441,12 @@ type Store interface {
 	CancelInvoice(ctx context.Context, invoiceID uuid.UUID) error
 	// GetActiveLimitBoosts returns boosts with valid_until > now, newest first.
 	GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) ([]*models.LimitBoost, error)
+	// ExpireOverdueSubscriptions flips trial subscriptions past trial_end_date
+	// and active subscriptions past end_date to status='expired', writing one
+	// admin_audit_log row per expired subscription with admin_user_id NULL
+	// (system-initiated, not LogAdminAction — there is no admin actor). Idle
+	// passes affect zero rows. Returns the number of subscriptions expired.
+	ExpireOverdueSubscriptions(ctx context.Context) (int, error)
 
 	// Audit
 	// WithTx runs fn against a store whose every operation shares one

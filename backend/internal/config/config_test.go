@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func setRequiredEnv(t *testing.T) {
 	t.Helper()
@@ -108,6 +111,40 @@ func TestLoadTenantRetentionDays(t *testing.T) {
 			}
 			if cfg.TenantRetentionDays != tc.want {
 				t.Errorf("TenantRetentionDays = %d, want %d", cfg.TenantRetentionDays, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadSubscriptionLifecycleInterval(t *testing.T) {
+	cases := []struct {
+		name    string
+		env     string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "unset defaults to 1h", env: "", want: time.Hour},
+		{name: "explicit value honored", env: "30m", want: 30 * time.Minute},
+		{name: "zero disables ticker", env: "0", want: 0},
+		{name: "negative rejected", env: "-1h", wantErr: true},
+		{name: "invalid duration rejected", env: "soon", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			setRequiredEnv(t)
+			t.Setenv("SUBSCRIPTION_LIFECYCLE_INTERVAL", tc.env)
+			cfg, err := Load()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Load() succeeded with SUBSCRIPTION_LIFECYCLE_INTERVAL=%q, want error", tc.env)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Load() error: %v", err)
+			}
+			if cfg.SubscriptionLifecycleInterval != tc.want {
+				t.Errorf("SubscriptionLifecycleInterval = %v, want %v", cfg.SubscriptionLifecycleInterval, tc.want)
 			}
 		})
 	}

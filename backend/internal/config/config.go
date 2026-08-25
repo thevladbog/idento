@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Deployment modes. OnPrem is the default: a binary running outside our
@@ -29,6 +30,10 @@ type Config struct {
 	// TenantRetentionDays is how long an archived tenant is kept before the
 	// purge job deletes it permanently. 0 disables auto-purge.
 	TenantRetentionDays int
+	// SubscriptionLifecycleInterval is how often (SaaS mode only) the
+	// lifecycle ticker checks for overdue trial/active subscriptions to
+	// expire. 0 disables the ticker.
+	SubscriptionLifecycleInterval time.Duration
 }
 
 var current *Config
@@ -80,6 +85,19 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("TENANT_RETENTION_DAYS must be a non-negative integer (0 disables auto-purge), got %q", raw)
 		}
 		cfg.TenantRetentionDays = n
+	}
+
+	switch raw := os.Getenv("SUBSCRIPTION_LIFECYCLE_INTERVAL"); raw {
+	case "":
+		cfg.SubscriptionLifecycleInterval = time.Hour
+	case "0":
+		cfg.SubscriptionLifecycleInterval = 0
+	default:
+		d, err := time.ParseDuration(raw)
+		if err != nil || d < 0 {
+			return nil, fmt.Errorf("SUBSCRIPTION_LIFECYCLE_INTERVAL must be a Go duration (e.g. 1h) or 0 to disable, got %q", raw)
+		}
+		cfg.SubscriptionLifecycleInterval = d
 	}
 
 	current = cfg

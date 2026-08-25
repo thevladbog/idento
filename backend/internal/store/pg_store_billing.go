@@ -636,3 +636,32 @@ func (s *PGStore) GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) 
 	}
 	return boosts, nil
 }
+
+// ExpireOverdueSubscriptions is the query behind the subscription lifecycle
+// ticker (billing.StartLifecycle, SaaS-only): trial subscriptions past
+// trial_end_date and active subscriptions past end_date flip to 'expired',
+// and one admin_audit_log row per expired subscription is written in the
+// same statement with admin_user_id NULL — this is a system-initiated
+// action with no admin actor, so LogAdminAction (which requires one) does
+// not apply. admin_audit_log.admin_user_id has been nullable since
+// migration 000017 for exactly this reason (the retention purge job).
+// Idle passes (nothing overdue) affect zero rows and are cheap/idempotent.
+func (s *PGStore) ExpireOverdueSubscriptions(ctx context.Context) (int, error) {
+	query := `WITH expired AS (
+	    UPDATE subscriptions
+	       SET status = 'expired', updated_at = NOW()
+	     WHERE (status = 'trial'  AND trial_end_date IS NOT NULL AND trial_end_date < NOW())
+	        OR (status = 'active' AND end_date       IS NOT NULL AND end_date       < NOW())
+	    RETURNING id, tenant_id, plan_id
+	)
+	INSERT INTO admin_audit_log (admin_user_id, action, target_type, target_id, changes)
+	SELECT NULL, 'subscription_expired', 'tenant', tenant_id,
+	       jsonb_build_object('subscription_id', id, 'plan_id', plan_id, 'new_status', 'expired')
+	  FROM expired`
+
+	tag, err := s.db.Exec(ctx, query)
+	if err != nil {
+		return 0, fmt.Errorf("expire overdue subscriptions: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}

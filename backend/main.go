@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"idento/backend/internal/billing"
 	"idento/backend/internal/bootstrap"
 	"idento/backend/internal/broker"
 	"idento/backend/internal/config"
@@ -92,6 +93,13 @@ func main() {
 	// Tenant retention purge (P1.4 soft-delete): first pass a minute after
 	// boot, then daily. Logs and no-ops when retention is 0.
 	retention.Start(pgStore, cfg.TenantRetentionDays, time.Minute, 24*time.Hour)
+
+	// Subscription lifecycle ticker (billing-invoices spec): flips overdue
+	// trial/active subscriptions to expired. SaaS-only — on-prem installs
+	// are not metered. Logs and no-ops when the interval is 0.
+	if cfg.DeploymentMode == config.ModeSaaS {
+		billing.StartLifecycle(pgStore, cfg.SubscriptionLifecycleInterval, time.Minute)
+	}
 
 	// Initialize Echo
 	e := echo.New()

@@ -1054,3 +1054,147 @@ func TestResolveTenantLimitAddsActiveBoosts(t *testing.T) {
 		t.Fatalf("max2 = %d, want -1 (unlimited ignores boosts)", max2)
 	}
 }
+
+// TestExpireOverdueSubscriptions exercises the store method behind the
+// subscription lifecycle ticker (billing.StartLifecycle / Task 5 of the
+// billing-invoices plan) against a real Postgres database.
+//
+// The shared dev DB this test runs against may already contain OTHER
+// overdue subscriptions left over from earlier test runs, so this test
+// deliberately does NOT assert the method's global return count equals
+// exactly the number of fixtures it creates here — only that it's at least
+// that many, and that ITS OWN three fixture tenants land in the right
+// states.
+func TestExpireOverdueSubscriptions(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	planID := fetchAnyPlanID(t, s, ctx)
+	now := time.Now()
+
+	tenantTrialOverdue := createBillingTestTenant(t, s, pool, ctx)
+	tenantActiveOverdue := createBillingTestTenant(t, s, pool, ctx)
+	tenantActiveCurrent := createBillingTestTenant(t, s, pool, ctx)
+
+	yesterday := now.Add(-24 * time.Hour)
+	tomorrow := now.Add(24 * time.Hour)
+
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:     tenantTrialOverdue,
+		PlanID:       &planID,
+		Status:       "trial",
+		StartDate:    now.Add(-7 * 24 * time.Hour),
+		TrialEndDate: &yesterday,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription (trial overdue): %v", err)
+	}
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantActiveOverdue,
+		PlanID:    &planID,
+		Status:    "active",
+		StartDate: now.Add(-30 * 24 * time.Hour),
+		EndDate:   &yesterday,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription (active overdue): %v", err)
+	}
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantActiveCurrent,
+		PlanID:    &planID,
+		Status:    "active",
+		StartDate: now.Add(-30 * 24 * time.Hour),
+		EndDate:   &tomorrow,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription (active current): %v", err)
+	}
+
+	assertSubscriptionStatus := func(t *testing.T, tenantID uuid.UUID, want string) {
+		t.Helper()
+		var got string
+		if err := pool.QueryRow(ctx, `SELECT status FROM subscriptions WHERE tenant_id = $1`, tenantID).Scan(&got); err != nil {
+			t.Fatalf("query subscription status for %s: %v", tenantID, err)
+		}
+		if got != want {
+			t.Errorf("subscription status for tenant %s = %q, want %q", tenantID, got, want)
+		}
+	}
+
+	countAuditRows := func(t *testing.T, tenantID uuid.UUID) (n int, adminIDIsNull bool) {
+		t.Helper()
+		rows, err := pool.Query(ctx,
+			`SELECT admin_user_id IS NULL FROM admin_audit_log
+			  WHERE action = 'subscription_expired' AND target_type = 'tenant' AND target_id = $1`,
+			tenantID)
+		if err != nil {
+			t.Fatalf("query admin_audit_log for %s: %v", tenantID, err)
+		}
+		defer rows.Close()
+		adminIDIsNull = true
+		for rows.Next() {
+			var isNull bool
+			if err := rows.Scan(&isNull); err != nil {
+				t.Fatalf("scan admin_audit_log row: %v", err)
+			}
+			n++
+			adminIDIsNull = adminIDIsNull && isNull
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("iterate admin_audit_log rows: %v", err)
+		}
+		return n, adminIDIsNull
+	}
+
+	// First pass: expires the two overdue fixtures, leaves the current one
+	// alone. Other leftover overdue subscriptions in the shared dev DB may
+	// also be expired in the same pass, so only assert a lower bound.
+	n, err := s.ExpireOverdueSubscriptions(ctx)
+	if err != nil {
+		t.Fatalf("ExpireOverdueSubscriptions: %v", err)
+	}
+	if n < 2 {
+		t.Fatalf("ExpireOverdueSubscriptions returned %d, want >= 2 (this test's own two overdue fixtures)", n)
+	}
+
+	assertSubscriptionStatus(t, tenantTrialOverdue, "expired")
+	assertSubscriptionStatus(t, tenantActiveOverdue, "expired")
+	assertSubscriptionStatus(t, tenantActiveCurrent, "active")
+
+	trialAuditCount, trialAuditNullActor := countAuditRows(t, tenantTrialOverdue)
+	if trialAuditCount != 1 {
+		t.Fatalf("admin_audit_log rows for trial-overdue tenant = %d, want 1", trialAuditCount)
+	}
+	if !trialAuditNullActor {
+		t.Errorf("admin_audit_log row for trial-overdue tenant has non-NULL admin_user_id, want NULL")
+	}
+
+	activeAuditCount, activeAuditNullActor := countAuditRows(t, tenantActiveOverdue)
+	if activeAuditCount != 1 {
+		t.Fatalf("admin_audit_log rows for active-overdue tenant = %d, want 1", activeAuditCount)
+	}
+	if !activeAuditNullActor {
+		t.Errorf("admin_audit_log row for active-overdue tenant has non-NULL admin_user_id, want NULL")
+	}
+
+	currentAuditCount, _ := countAuditRows(t, tenantActiveCurrent)
+	if currentAuditCount != 0 {
+		t.Fatalf("admin_audit_log rows for untouched tenant = %d, want 0", currentAuditCount)
+	}
+
+	// Second pass: idempotent. This test's own tenants must not change
+	// again or gain additional audit rows (the global return count can
+	// still be nonzero because of unrelated leftover overdue rows in the
+	// shared dev DB, so it isn't asserted here).
+	if _, err := s.ExpireOverdueSubscriptions(ctx); err != nil {
+		t.Fatalf("ExpireOverdueSubscriptions (second pass): %v", err)
+	}
+
+	assertSubscriptionStatus(t, tenantTrialOverdue, "expired")
+	assertSubscriptionStatus(t, tenantActiveOverdue, "expired")
+	assertSubscriptionStatus(t, tenantActiveCurrent, "active")
+
+	trialAuditCount2, _ := countAuditRows(t, tenantTrialOverdue)
+	if trialAuditCount2 != 1 {
+		t.Fatalf("admin_audit_log rows for trial-overdue tenant after second pass = %d, want 1 (idempotent, no new row)", trialAuditCount2)
+	}
+	activeAuditCount2, _ := countAuditRows(t, tenantActiveOverdue)
+	if activeAuditCount2 != 1 {
+		t.Fatalf("admin_audit_log rows for active-overdue tenant after second pass = %d, want 1 (idempotent, no new row)", activeAuditCount2)
+	}
+}
