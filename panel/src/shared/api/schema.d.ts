@@ -158,6 +158,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's tenant billing (buyer) profile */
+        get: operations["getBillingProfile"];
+        /** Create or replace the caller's tenant billing (buyer) profile */
+        put: operations["putBillingProfile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Public, active catalog items tenants can request invoices for */
+        get: operations["getBillingCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All invoices for the caller's tenant */
+        get: operations["listTenantInvoices"];
+        put?: never;
+        /** Request a bank-transfer invoice for one or more catalog items */
+        post: operations["createTenantInvoice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/billing/invoices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A single invoice scoped to the caller's tenant */
+        get: operations["getTenantInvoice"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -1238,6 +1308,128 @@ export interface components {
             updated_at: string;
             role: string;
         };
+        /** @description Tenant billing (buyer) profile — the legal requisites used on invoices. GET /api/billing/profile 404s until one is set via PUT. */
+        BillingProfile: {
+            /** Format: uuid */
+            tenant_id: string;
+            legal_name: string;
+            /** @description 10 digits (organization) or 12 digits (individual entrepreneur). */
+            inn: string;
+            /** @description 9 digits; omitted for individual entrepreneurs. */
+            kpp: string | null;
+            legal_address: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description A public, active catalog entry (plan/service/addon) tenants can request a bank-transfer invoice for. kind == "plan" fields (plan_id/period/default_activation) and kind == "addon" fields (limit_key/limit_delta/validity/validity_days) are nullable and only populated for their respective kind. */
+        BillingCatalogItem: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            kind: "plan" | "service" | "addon";
+            name: string;
+            description: string;
+            /** Format: double */
+            price: number;
+            /**
+             * Format: double
+             * @description null = «Без НДС»; a value is included in price.
+             */
+            vat_rate: number | null;
+            is_public: boolean;
+            is_active: boolean;
+            sort_order: number;
+            /** Format: uuid */
+            plan_id: string | null;
+            /** @enum {string|null} */
+            period: "month" | "year" | null;
+            /** @enum {string|null} */
+            default_activation: "on_payment" | "after_current" | "manual" | null;
+            /** @enum {string|null} */
+            limit_key: "attendees_per_event" | "events_per_month" | "users" | null;
+            limit_delta: number | null;
+            /** @enum {string|null} */
+            validity: "until_period_end" | "fixed_days" | null;
+            validity_days: number | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description One catalog item, quantity, and computed amount within an Invoice. */
+        InvoiceLine: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            invoice_id: string;
+            position: number;
+            /** Format: uuid */
+            catalog_item_id: string | null;
+            /** @enum {string} */
+            kind: "plan" | "service" | "addon";
+            name: string;
+            /** Format: double */
+            price: number;
+            /** Format: double */
+            vat_rate: number | null;
+            /** Format: uuid */
+            plan_id: string | null;
+            /** @enum {string|null} */
+            period: "month" | "year" | null;
+            /** @enum {string|null} */
+            activation: "on_payment" | "after_current" | "manual" | null;
+            /** @enum {string|null} */
+            limit_key: "attendees_per_event" | "events_per_month" | "users" | null;
+            limit_delta: number | null;
+            /** @enum {string|null} */
+            validity: "until_period_end" | "fixed_days" | null;
+            validity_days: number | null;
+            quantity: number;
+            /** Format: double */
+            amount: number;
+        };
+        /** @description A bank-transfer invoice request, snapshotting the buyer/seller requisites and catalog item details at creation time. */
+        Invoice: {
+            /** Format: uuid */
+            id: string;
+            number: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** @enum {string} */
+            status: "issued" | "paid" | "cancelled";
+            /** Format: date-time */
+            issued_at: string;
+            /** Format: date-time */
+            paid_at: string | null;
+            /** Format: date-time */
+            cancelled_at: string | null;
+            buyer_name: string;
+            buyer_inn: string;
+            buyer_kpp: string | null;
+            buyer_address: string;
+            seller_name: string;
+            seller_inn: string;
+            seller_bank_name: string;
+            seller_bank_account: string;
+            seller_bank_bik: string;
+            seller_bank_corr_account: string | null;
+            /** Format: double */
+            total: number;
+            comment: string | null;
+            /** Format: uuid */
+            created_by: string | null;
+            /** @description Joined for operator list views; omitted elsewhere. */
+            tenant_name?: string;
+            lines?: components["schemas"]["InvoiceLine"][];
+            /** @description Computed by handlers (billing.AmountInWords), never stored; omitted on list responses. */
+            total_in_words?: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
         QRTokenResponse: {
             qr_token: string;
             user_id: string;
@@ -2284,6 +2476,249 @@ export interface operations {
             };
             /** @description Store failed to persist the update. */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBillingProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Billing profile for the caller's tenant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingProfile"];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Billing profile is not set for this tenant yet. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    putBillingProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    legal_name: string;
+                    /** @description 10 digits (organization) or 12 digits (individual entrepreneur). */
+                    inn: string;
+                    /** @description 9 digits; omit for individual entrepreneurs. */
+                    kpp?: string | null;
+                    legal_address: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The upserted billing profile. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingProfile"];
+                };
+            };
+            /** @description Malformed body, blank legal_name/legal_address, or invalid inn/kpp. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBillingCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active, public catalog items. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingCatalogItem"][];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTenantInvoices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invoices for the caller's tenant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"][];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createTenantInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    lines: {
+                        /** Format: uuid */
+                        catalog_item_id: string;
+                        quantity: number;
+                    }[];
+                    comment?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The created invoice, with lines and total_in_words populated. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            /** @description Malformed body, no lines, a line quantity below 1, or a line references an unknown/inactive/non-public catalog item. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Seller requisites are not configured, or the tenant has no billing profile yet. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTenantInvoice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invoice, with lines and total_in_words populated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Invoice"];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description id is not a UUID, the invoice does not exist, or the invoice belongs to a different tenant (no existence oracle — all three are 404). */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

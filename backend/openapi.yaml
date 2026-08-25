@@ -154,6 +154,125 @@ components:
         updated_at: { type: string, format: date-time }
         role: { type: string }
       required: [id, name, settings, logo_url, website, contact_email, created_at, updated_at, role]
+    BillingProfile:
+      type: object
+      description: >
+        Tenant billing (buyer) profile — the legal requisites used on
+        invoices. GET /api/billing/profile 404s until one is set via PUT.
+      properties:
+        tenant_id: { type: string, format: uuid }
+        legal_name: { type: string }
+        inn: { type: string, description: "10 digits (organization) or 12 digits (individual entrepreneur)." }
+        kpp: { type: string, nullable: true, description: "9 digits; omitted for individual entrepreneurs." }
+        legal_address: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [tenant_id, legal_name, inn, kpp, legal_address, created_at, updated_at]
+    BillingCatalogItem:
+      type: object
+      description: >
+        A public, active catalog entry (plan/service/addon) tenants can
+        request a bank-transfer invoice for. kind == "plan" fields
+        (plan_id/period/default_activation) and kind == "addon" fields
+        (limit_key/limit_delta/validity/validity_days) are nullable and only
+        populated for their respective kind.
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string, enum: [plan, service, addon] }
+        name: { type: string }
+        description: { type: string }
+        price: { type: number, format: double }
+        vat_rate: { type: number, format: double, nullable: true, description: "null = «Без НДС»; a value is included in price." }
+        is_public: { type: boolean }
+        is_active: { type: boolean }
+        sort_order: { type: integer }
+        plan_id: { type: string, format: uuid, nullable: true }
+        period: { type: string, enum: [month, year], nullable: true }
+        default_activation: { type: string, enum: [on_payment, after_current, manual], nullable: true }
+        limit_key: { type: string, enum: [attendees_per_event, events_per_month, users], nullable: true }
+        limit_delta: { type: integer, nullable: true }
+        validity: { type: string, enum: [until_period_end, fixed_days], nullable: true }
+        validity_days: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required:
+        [
+          id, kind, name, description, price, vat_rate, is_public, is_active,
+          sort_order, plan_id, period, default_activation, limit_key,
+          limit_delta, validity, validity_days, created_at, updated_at,
+        ]
+    InvoiceLine:
+      type: object
+      description: One catalog item, quantity, and computed amount within an Invoice.
+      properties:
+        id: { type: string, format: uuid }
+        invoice_id: { type: string, format: uuid }
+        position: { type: integer }
+        catalog_item_id: { type: string, format: uuid, nullable: true }
+        kind: { type: string, enum: [plan, service, addon] }
+        name: { type: string }
+        price: { type: number, format: double }
+        vat_rate: { type: number, format: double, nullable: true }
+        plan_id: { type: string, format: uuid, nullable: true }
+        period: { type: string, enum: [month, year], nullable: true }
+        activation: { type: string, enum: [on_payment, after_current, manual], nullable: true }
+        limit_key: { type: string, enum: [attendees_per_event, events_per_month, users], nullable: true }
+        limit_delta: { type: integer, nullable: true }
+        validity: { type: string, enum: [until_period_end, fixed_days], nullable: true }
+        validity_days: { type: integer, nullable: true }
+        quantity: { type: integer }
+        amount: { type: number, format: double }
+      required:
+        [
+          id, invoice_id, position, catalog_item_id, kind, name, price,
+          vat_rate, plan_id, period, activation, limit_key, limit_delta,
+          validity, validity_days, quantity, amount,
+        ]
+    Invoice:
+      type: object
+      description: >
+        A bank-transfer invoice request, snapshotting the buyer/seller
+        requisites and catalog item details at creation time.
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string }
+        tenant_id: { type: string, format: uuid }
+        status: { type: string, enum: [issued, paid, cancelled] }
+        issued_at: { type: string, format: date-time }
+        paid_at: { type: string, format: date-time, nullable: true }
+        cancelled_at: { type: string, format: date-time, nullable: true }
+        buyer_name: { type: string }
+        buyer_inn: { type: string }
+        buyer_kpp: { type: string, nullable: true }
+        buyer_address: { type: string }
+        seller_name: { type: string }
+        seller_inn: { type: string }
+        seller_bank_name: { type: string }
+        seller_bank_account: { type: string }
+        seller_bank_bik: { type: string }
+        seller_bank_corr_account: { type: string, nullable: true }
+        total: { type: number, format: double }
+        comment: { type: string, nullable: true }
+        created_by: { type: string, format: uuid, nullable: true }
+        tenant_name:
+          type: string
+          description: Joined for operator list views; omitted elsewhere.
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/InvoiceLine" }
+        total_in_words:
+          type: string
+          description: Computed by handlers (billing.AmountInWords), never stored; omitted on list responses.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required:
+        [
+          id, number, tenant_id, status, issued_at, paid_at, cancelled_at,
+          buyer_name, buyer_inn, buyer_kpp, buyer_address, seller_name,
+          seller_inn, seller_bank_name, seller_bank_account, seller_bank_bik,
+          seller_bank_corr_account, total, comment, created_by, created_at,
+          updated_at,
+        ]
     QRTokenResponse:
       type: object
       properties:
@@ -1381,6 +1500,168 @@ paths:
               schema: { $ref: "#/components/schemas/Error" }
         "500":
           description: Store failed to persist the update.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/billing/profile:
+    get:
+      operationId: getBillingProfile
+      summary: The caller's tenant billing (buyer) profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Billing profile for the caller's tenant.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BillingProfile" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Billing profile is not set for this tenant yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    put:
+      operationId: putBillingProfile
+      summary: Create or replace the caller's tenant billing (buyer) profile
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                legal_name: { type: string }
+                inn: { type: string, description: "10 digits (organization) or 12 digits (individual entrepreneur)." }
+                kpp: { type: string, nullable: true, description: "9 digits; omit for individual entrepreneurs." }
+                legal_address: { type: string }
+              required: [legal_name, inn, legal_address]
+      responses:
+        "200":
+          description: The upserted billing profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BillingProfile" }
+        "400":
+          description: Malformed body, blank legal_name/legal_address, or invalid inn/kpp.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/billing/catalog:
+    get:
+      operationId: getBillingCatalog
+      summary: Public, active catalog items tenants can request invoices for
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Active, public catalog items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BillingCatalogItem" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/billing/invoices:
+    get:
+      operationId: listTenantInvoices
+      summary: All invoices for the caller's tenant
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Invoices for the caller's tenant.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Invoice" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    post:
+      operationId: createTenantInvoice
+      summary: Request a bank-transfer invoice for one or more catalog items
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lines:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      catalog_item_id: { type: string, format: uuid }
+                      quantity: { type: integer, minimum: 1 }
+                    required: [catalog_item_id, quantity]
+                comment: { type: string, nullable: true }
+              required: [lines]
+      responses:
+        "201":
+          description: The created invoice, with lines and total_in_words populated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invoice" }
+        "400":
+          description: >
+            Malformed body, no lines, a line quantity below 1, or a line
+            references an unknown/inactive/non-public catalog item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Seller requisites are not configured, or the tenant has no billing profile yet.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+  /api/billing/invoices/{id}:
+    get:
+      operationId: getTenantInvoice
+      summary: A single invoice scoped to the caller's tenant
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The invoice, with lines and total_in_words populated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Invoice" }
+        "403":
+          description: Caller role is not admin, or tenant_suspended from the tenant gate.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: >
+            id is not a UUID, the invoice does not exist, or the invoice
+            belongs to a different tenant (no existence oracle — all three
+            are 404).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
