@@ -228,6 +228,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/billing/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's tenant subscription summary, plus currently-active limit boosts */
+        get: operations["getBillingSubscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users": {
         parameters: {
             query?: never;
@@ -1429,6 +1446,36 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        /** @description A currently-valid limit add-on (billing catalog kind="addon" invoice line, once paid). */
+        LimitBoost: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            tenant_id: string;
+            /** @enum {string} */
+            limit_key: "attendees_per_event" | "events_per_month" | "users";
+            delta: number;
+            /** Format: date-time */
+            valid_until: string;
+            /** Format: uuid */
+            source_invoice_line_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description Summary of the caller's tenant subscription: plan name/slug (nullable — a subscription can exist with no plan joined), status, lifecycle dates, and the currently-active limit boosts. */
+        BillingSubscription: {
+            plan_name: string | null;
+            plan_slug: string | null;
+            /** @enum {string} */
+            status: "active" | "expired" | "cancelled" | "trial";
+            /** Format: date-time */
+            start_date: string;
+            /** Format: date-time */
+            end_date: string | null;
+            /** Format: date-time */
+            trial_end_date: string | null;
+            active_boosts: components["schemas"]["LimitBoost"][];
         };
         QRTokenResponse: {
             qr_token: string;
@@ -2772,6 +2819,53 @@ export interface operations {
                 };
             };
             /** @description Failed to load the invoice. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getBillingSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subscription summary for the caller's tenant. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingSubscription"];
+                };
+            };
+            /** @description Caller role is not admin, or tenant_suspended from the tenant gate. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tenant has no subscription row. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Failed to load the subscription or its active boosts. */
             500: {
                 headers: {
                     [name: string]: unknown;

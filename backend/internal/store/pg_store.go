@@ -1982,6 +1982,45 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		return nil, err
 	}
 
+	// One grouped query for active-boost totals across every tenant, merged
+	// in-memory rather than joined into the main query above — limit_boosts
+	// rows are per-line-item and would multiply the main query's other
+	// COUNT(DISTINCT ...) joins if pulled in directly.
+	if len(tenants) > 0 {
+		byID := make(map[uuid.UUID]*models.TenantWithStats, len(tenants))
+		for _, tws := range tenants {
+			byID[tws.Tenant.ID] = tws
+		}
+		boostRows, err := s.db.Query(ctx, `
+			SELECT tenant_id, limit_key, COALESCE(SUM(delta), 0)
+			  FROM limit_boosts
+			 WHERE valid_until > NOW()
+			 GROUP BY tenant_id, limit_key`)
+		if err != nil {
+			return nil, err
+		}
+		defer boostRows.Close()
+		for boostRows.Next() {
+			var tenantID uuid.UUID
+			var limitKey string
+			var total int
+			if err := boostRows.Scan(&tenantID, &limitKey, &total); err != nil {
+				return nil, err
+			}
+			tws, ok := byID[tenantID]
+			if !ok {
+				continue
+			}
+			if tws.ActiveBoostTotals == nil {
+				tws.ActiveBoostTotals = make(map[string]int)
+			}
+			tws.ActiveBoostTotals[limitKey] = total
+		}
+		if err := boostRows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
 	return tenants, nil
 }
 

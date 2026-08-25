@@ -116,7 +116,7 @@ One code path feeds both `CheckTenantLimit` and `CheckAttendeeLimit`, so
 every existing enforcement point (users/events/attendees middleware, bulk
 import, API keys, sync) honors boosts with no per-callsite changes.
 `GetTenantStats` exposes `active_boosts` (key, delta, valid_until)
-(list-level boost exposure deferred) so the console's limit meters can show
+(list exposes per-key totals via active_boost_totals) so the console's limit meters can show
 «9 990 (тариф) + 1 000 (надбавка до 12.09)»-style truth; the panel's own
 usage surfaces read the same effective numbers through existing endpoints.
 

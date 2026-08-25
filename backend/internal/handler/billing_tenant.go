@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"idento/backend/internal/billing"
 	"idento/backend/internal/config"
@@ -263,8 +264,25 @@ func (h *Handler) CreateTenantInvoice(c echo.Context) error {
 		CreatedBy:             &createdBy,
 	}
 
-	if err := h.Store.CreateInvoice(ctx, inv, lines); err != nil {
-		return writeErr(c, err)
+	// Wrapped in a transaction so the audit row is atomic with invoice
+	// creation, matching the operator issuance path (CreateInvoiceSuper,
+	// billing_super.go). The action name is distinct
+	// ("create_invoice_self_service" vs. the operator flow's "create_invoice")
+	// so the audit trail can tell a tenant self-service request apart from an
+	// operator-issued one; the acting tenant admin is itself a users-row, so
+	// admin_user_id's FK is satisfied the same as any other admin action.
+	txErr := h.Store.WithTx(ctx, func(tx store.Store) error {
+		if err := tx.CreateInvoice(ctx, inv, lines); err != nil {
+			return err
+		}
+		return tx.LogAdminAction(ctx, createdBy, "create_invoice_self_service", "invoice", inv.ID, map[string]interface{}{
+			"number":    inv.Number,
+			"tenant_id": inv.TenantID,
+			"total":     inv.Total,
+		}, c.RealIP(), c.Request().UserAgent())
+	})
+	if txErr != nil {
+		return writeErr(c, txErr)
 	}
 	inv.Lines = lines
 	inv.TotalInWords = billing.AmountInWords(inv.Total)
@@ -314,4 +332,62 @@ func (h *Handler) GetTenantInvoice(c echo.Context) error {
 	}
 	inv.TotalInWords = billing.AmountInWords(inv.Total)
 	return c.JSON(http.StatusOK, inv)
+}
+
+// billingSubscriptionResponse is the GET /billing/subscription response
+// body: a plan/status/dates summary of the caller's tenant subscription plus
+// its currently-active limit boosts. plan_name/plan_slug are nullable — a
+// subscription can exist with no plan joined (PlanID nil or the joined plan
+// missing).
+type billingSubscriptionResponse struct {
+	PlanName     *string              `json:"plan_name"`
+	PlanSlug     *string              `json:"plan_slug"`
+	Status       string               `json:"status"`
+	StartDate    time.Time            `json:"start_date"`
+	EndDate      *time.Time           `json:"end_date"`
+	TrialEndDate *time.Time           `json:"trial_end_date"`
+	ActiveBoosts []*models.LimitBoost `json:"active_boosts"`
+}
+
+// GetBillingSubscription returns a summary of the caller's tenant
+// subscription — plan name/slug, status, and lifecycle dates — plus its
+// currently-active limit boosts. 404s ("No subscription") when the tenant
+// has no subscription row at all (GetSubscriptionByTenantID returns nil,
+// nil), which should not happen in practice (every tenant gets a default
+// subscription on creation) but is handled rather than assumed.
+func (h *Handler) GetBillingSubscription(c echo.Context) error {
+	tenantID, err := requireTenantAdminForBilling(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	ctx := c.Request().Context()
+
+	sub, err := h.Store.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	if sub == nil {
+		return writeErr(c, newHTTPError(http.StatusNotFound, "No subscription"))
+	}
+
+	boosts, err := h.Store.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		return writeErr(c, err)
+	}
+	if boosts == nil {
+		boosts = []*models.LimitBoost{}
+	}
+
+	resp := billingSubscriptionResponse{
+		Status:       sub.Status,
+		StartDate:    sub.StartDate,
+		EndDate:      sub.EndDate,
+		TrialEndDate: sub.TrialEndDate,
+		ActiveBoosts: boosts,
+	}
+	if sub.Plan != nil {
+		resp.PlanName = &sub.Plan.Name
+		resp.PlanSlug = &sub.Plan.Slug
+	}
+	return c.JSON(http.StatusOK, resp)
 }
