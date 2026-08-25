@@ -100,6 +100,7 @@ export function AddStaffDialog({
   React.useEffect(() => {
     if (open) return;
     sessionRef.current += 1;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setMode("existing");
     setSelectedUserId(null);
     setExistingError(false);
@@ -124,6 +125,7 @@ export function AddStaffDialog({
   // left reachable just because the tab buttons that would normally guard
   // it have disappeared.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     if (!isAdmin && mode === "create") setMode("existing");
   }, [isAdmin, mode]);
 

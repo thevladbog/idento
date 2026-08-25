@@ -96,6 +96,7 @@ export function useMonitorStream(eventId: string): { status: MonitorStreamStatus
     // mutable variable below lives inside this effect's closure, so a fresh
     // run gets fresh values for free; the cleanup at the bottom tears down
     // the OLD scope's controller/timers before React commits this one.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the external-system synchronization (subscription/async generation lifecycle); the synchronous write is its status/reset step
     setStatus("connecting");
 
     const controller = new AbortController();

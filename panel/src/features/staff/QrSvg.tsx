@@ -33,6 +33,7 @@ export function QrSvg({ value, className, label }: QrSvgProps) {
 
   React.useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the external-system synchronization (subscription/async generation lifecycle); the synchronous write is its status/reset step
     setSvgMarkup(null);
     QRCode.toString(value, { type: "svg", errorCorrectionLevel: "M", margin: 0 })
       .then((markup) => {

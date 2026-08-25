@@ -176,6 +176,10 @@ export default function EquipmentPage() {
     };
   }, []);
 
+  /* eslint-disable react-hooks/preserve-manual-memoization -- the React
+     Compiler cannot prove it can preserve this callback and skips optimizing
+     the component (it reports at both the callback and its deps); the manual
+     useCallback still works at runtime, which is all refresh needs. */
   const refresh = useCallback(async () => {
     if (!agentConnected) return;
     try {
@@ -191,6 +195,7 @@ export default function EquipmentPage() {
       setDefaultPrinter(null);
     }
   }, [agentConnected, fetchEquipmentData]);
+  /* eslint-enable react-hooks/preserve-manual-memoization */
 
   useEffect(() => {
     let cancelled = false;

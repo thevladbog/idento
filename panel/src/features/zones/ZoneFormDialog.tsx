@@ -96,6 +96,7 @@ export function ZoneFormDialog({
   React.useEffect(() => {
     if (!open || initializedRef.current) return;
     if (zone) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
       setName(zone.name);
       setColor(zoneColorKey(zone));
       setNameError(undefined);

@@ -19,6 +19,7 @@ export default function CheckinPage() {
   const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading effect synchronously clears its error flag before the async fetch; the fetch-effect pattern is this app's established data layer for this page
     setFetchError(false);
     api
       .get<CheckinEvent[]>("/api/events")

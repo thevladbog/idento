@@ -125,7 +125,12 @@ export function usePrintBadge(eventId: string): UsePrintBadgeResult {
   // queued waiter is resolved the moment an effect observes a terminal
   // status.
   const statusRef = React.useRef(fontFaces.status);
-  statusRef.current = fontFaces.status;
+  React.useEffect(() => {
+    // Mirror assignment in an effect (react-hooks/refs): readers are the
+    // queued awaitFonts waiters -- async by construction, so effect timing
+    // is equivalent to the old during-render write.
+    statusRef.current = fontFaces.status;
+  }, [fontFaces.status]);
   const waitersRef = React.useRef<Array<() => void>>([]);
 
   React.useEffect(() => {

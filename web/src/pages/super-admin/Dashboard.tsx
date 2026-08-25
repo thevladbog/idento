@@ -48,6 +48,7 @@ export default function SuperAdminDashboard() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the data-loading routine synchronously raises its loading flag before the async fetch; the fetch-effect pattern is this console's established data layer (no query library here)
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);

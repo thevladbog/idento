@@ -108,6 +108,7 @@ export function useEventFontFaces(eventId: string, enabled: boolean): UseEventFo
   // resetting every piece of per-event state before the main effect's own
   // guard/load logic evaluates it.
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope-change reset that deliberately relies on effect declaration order relative to sibling effects (see the comment above)
     setStatus("idle");
     setFamilies([]);
     loadedSignatureRef.current = null;

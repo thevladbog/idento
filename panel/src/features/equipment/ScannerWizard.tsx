@@ -201,6 +201,7 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
     sessionRef.current += 1;
     firedTestPassedRef.current = null;
     wedge.reset();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setComCode(null);
     if (!open) return;
     setKind("usb_wedge");
@@ -225,6 +226,7 @@ export function ScannerWizard({ open, onClose, machineId, retest }: ScannerWizar
   // -- still user-editable afterward (board 5c shows it as a normal
   // select, "Enter · detected" rather than a locked value).
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     if (wedge.detection) setTerminator(wedge.detection.terminator);
   }, [wedge.detection]);
 

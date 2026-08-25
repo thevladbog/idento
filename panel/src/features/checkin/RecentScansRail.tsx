@@ -128,6 +128,7 @@ export function RecentScansRail({ eventId, stationId, online = true }: RecentSca
     if (!reprintTarget) return;
     if (reprintConfiguredDefault) return;
     if (reprintPrinter && agent.printers.some((printer) => printer.name === reprintPrinter)) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- converge-once printer preselection against the live agent snapshot (guards above); syncing local choice with an external device list is effect work
     setReprintPrinter(agent.defaultPrinter);
   }, [reprintTarget, reprintConfiguredDefault, agent.defaultPrinter, agent.printers, reprintPrinter]);
 

@@ -26,14 +26,14 @@ export default [
       },
     },
     rules: {
-      // Same rationale as panel/eslint.config.js: react-hooks v7's
-      // compiler-powered rules stay visible as warnings pending a
-      // dedicated burn-down.
-      'react-hooks/set-state-in-effect': 'warn',
-      'react-hooks/refs': 'warn',
-      'react-hooks/preserve-manual-memoization': 'warn',
-      'react-hooks/immutability': 'warn',
-      'react-hooks/globals': 'warn',
+      // react-hooks v7 compiler rules at full severity: the burn-down
+      // resolved every finding (real refactors or a justified inline
+      // disable), so any new one is a genuine regression.
+      'react-hooks/set-state-in-effect': 'error',
+      'react-hooks/refs': 'error',
+      'react-hooks/preserve-manual-memoization': 'error',
+      'react-hooks/immutability': 'error',
+      'react-hooks/globals': 'error',
       '@typescript-eslint/no-unused-vars': [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -43,4 +43,18 @@ export default [
       'react-refresh/only-export-components': 'warn',
     },
   },
+  // Test files: the compiler rules target production components; tests
+  // legitimately reassign captured variables (MSW handlers, spies) and
+  // define throwaway components.
+  {
+    files: ['**/*.test.{ts,tsx}', 'src/test/**'],
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
+      'react-hooks/preserve-manual-memoization': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/globals': 'off',
+    },
+  },
+
 ]

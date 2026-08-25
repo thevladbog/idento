@@ -18,16 +18,14 @@ export default tseslint.config(
       globals: globals.browser,
     },
     rules: {
-      // eslint-plugin-react-hooks v7 ships React-Compiler-powered rules as
-      // errors. They flag real-but-established patterns (34 setState-in-
-      // effect sites, 6 render-time ref reads at upgrade time) whose fixes
-      // each need case-by-case analysis -- that burn-down is its own
-      // campaign, not a lint-upgrade side effect. Kept visible as warnings.
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
-      "react-hooks/immutability": "warn",
-      "react-hooks/globals": "warn",
+      // react-hooks v7 compiler rules at full severity: the burn-down
+      // resolved every finding (real refactors or a justified inline
+      // disable), so any new one is a genuine regression.
+      "react-hooks/set-state-in-effect": "error",
+      "react-hooks/refs": "error",
+      "react-hooks/preserve-manual-memoization": "error",
+      "react-hooks/immutability": "error",
+      "react-hooks/globals": "error",
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
@@ -41,6 +39,19 @@ export default tseslint.config(
         { selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='date']", message: "Use @idento/ui DatePicker, not <input type=\"date\">." },
         { selector: "JSXOpeningElement[name.name='input'] > JSXAttribute[name.name='type'][value.value='number']", message: "Use @idento/ui NumberInput, not <input type=\"number\">." },
       ],
+    },
+  },
+  // Test files: the compiler rules target production components; tests
+  // legitimately reassign captured variables (MSW handlers, spies) and
+  // define throwaway components.
+  {
+    files: ["src/**/*.test.{ts,tsx}", "src/test/**", "e2e/**"],
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/globals": "off",
     },
   },
 );

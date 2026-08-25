@@ -180,6 +180,7 @@ export function StationPage() {
   // check-ins are actually working again.
   const [offlineBlocked, setOfflineBlocked] = React.useState(false);
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reconciles local UI state against externally-changed data (rationale in the comment above); the external change is only observable post-commit
     if (connection.online) setOfflineBlocked(false);
   }, [connection.online]);
 

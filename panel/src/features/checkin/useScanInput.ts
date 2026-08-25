@@ -123,7 +123,12 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
   // render that scheduled the timeout) is what lets it re-check the CURRENT
   // value rather than an unmount-stale one.
   const wedgeActiveRef = React.useRef(wedgeActive);
-  wedgeActiveRef.current = wedgeActive;
+  React.useEffect(() => {
+    // Mirror assignment in an effect (react-hooks/refs): the only reader is
+    // the blur-refocus timeout below -- post-commit by definition, so
+    // effect timing is equivalent to the old during-render write.
+    wedgeActiveRef.current = wedgeActive;
+  }, [wedgeActive]);
 
   // Autofocus on mount/whenever the wedge input becomes active -- a
   // keyboard-wedge scanner only "types" into whatever element currently has
@@ -186,6 +191,7 @@ export function useScanInput({ mode, onCode, enabled }: UseScanInputOptions): Us
   // consumed it).
   React.useEffect(() => {
     if (mode !== "scanner" || !enabled) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the external-system synchronization (subscription/async generation lifecycle); the synchronous write is its status/reset step
       setDegraded(false);
       return;
     }

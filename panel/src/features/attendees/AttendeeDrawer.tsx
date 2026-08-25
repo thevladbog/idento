@@ -377,6 +377,7 @@ function DrawerBody({
     // `defaultPrinter` is still the right PRESELECTION for the <select> —
     // it degrades to "first printer" in exactly this no-(valid-)configured-
     // default case.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- converge-once printer preselection against the live agent snapshot (guards above); syncing local choice with an external device list is effect work
     setReprintPrinter(agent.defaultPrinter);
   }, [reprintOpen, reprintConfiguredDefault, agent.defaultPrinter, agent.printers, reprintPrinter]);
 

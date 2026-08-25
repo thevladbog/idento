@@ -163,6 +163,7 @@ export function useCheckinFlow({ eventId, stationId, settings, printerName }: Us
   // flight" flag left over from whatever the previous station was doing.
   React.useEffect(() => {
     busyRef.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope-change reset that deliberately relies on effect declaration order relative to sibling effects (see the comment above)
     clear();
   }, [eventId, stationId, clear]);
 

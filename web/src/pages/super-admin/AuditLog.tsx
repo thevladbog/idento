@@ -85,21 +85,6 @@ export default function AuditLog() {
   // and overwriting the newer, correct result with stale data.
   const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    const filtersChanged = prevFiltersKeyRef.current !== filtersKey;
-    prevFiltersKeyRef.current = filtersKey;
-    const effectiveOffset = filtersChanged ? 0 : offset;
-    if (filtersChanged && offset !== 0) {
-      setOffset(0); // keep pagination button state in sync; the fetch below doesn't wait for this
-    }
-    const already = lastFetchedRef.current;
-    if (already && already.filtersKey === filtersKey && already.offset === effectiveOffset) {
-      return;
-    }
-    lastFetchedRef.current = { filtersKey, offset: effectiveOffset };
-    loadLogs(effectiveOffset);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- filtersKey captures all filter deps; offset is read explicitly above
-  }, [filtersKey, offset]);
 
   const loadLogs = async (offsetToUse: number) => {
     const requestId = ++requestIdRef.current;
@@ -123,6 +108,22 @@ export default function AuditLog() {
       if (requestId === requestIdRef.current) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const filtersChanged = prevFiltersKeyRef.current !== filtersKey;
+    prevFiltersKeyRef.current = filtersKey;
+    const effectiveOffset = filtersChanged ? 0 : offset;
+    if (filtersChanged && offset !== 0) {
+      setOffset(0); // keep pagination button state in sync; the fetch below doesn't wait for this
+    }
+    const already = lastFetchedRef.current;
+    if (already && already.filtersKey === filtersKey && already.offset === effectiveOffset) {
+      return;
+    }
+    lastFetchedRef.current = { filtersKey, offset: effectiveOffset };
+    loadLogs(effectiveOffset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- filtersKey captures all filter deps; offset is read explicitly above
+  }, [filtersKey, offset]);
 
   return (
     <div className="p-8">

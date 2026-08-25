@@ -182,6 +182,7 @@ export function PrinterWizard({ open, onClose, machineId, prefill, retest, regis
   React.useEffect(() => {
     sessionRef.current += 1;
     firedForRef.current = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setPrinting(false);
     setPrintError(null);
     setSentTo(null);

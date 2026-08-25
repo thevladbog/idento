@@ -48,6 +48,7 @@ export function CreateEventDialog({ open, onOpenChange, returnFocusRef }: Create
   // show the stale server-error line before the user has submitted anything.
   React.useEffect(() => {
     if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setName("");
     setStartDate("");
     setEndDate("");

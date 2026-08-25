@@ -104,6 +104,7 @@ export function ZplPreviewModal({
     // unblocks generation. "idle"/"loading" just keep showing the
     // generating placeholder.
     if (fontFaces.status !== "ready" && fontFaces.status !== "error") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect IS the external-system synchronization (subscription/async generation lifecycle); the synchronous write is its status/reset step
       setGeneration({ status: "loading" });
       return;
     }
@@ -145,6 +146,7 @@ export function ZplPreviewModal({
   // "Copied" flag left over from a previous open.
   React.useEffect(() => {
     if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the repo's reset-on-close dialog convention (rationale in the comment above): session state must clear on the open->closed transition, which only an effect can observe
     setTab("zpl");
     setCopied(false);
     window.clearTimeout(copiedTimeoutRef.current);
