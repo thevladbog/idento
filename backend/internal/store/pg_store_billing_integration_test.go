@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -477,6 +478,39 @@ func TestCreateInvoiceAssignsSequentialNumbers(t *testing.T) {
 	}
 }
 
+// TestCreateInvoiceRollsBackOnLineFailure pins CreateInvoice's atomicity
+// guarantee (Task 3 review follow-up): a UNIQUE(invoice_id, position)
+// violation on the second line must roll back the whole transaction,
+// including the already-inserted invoice header row itself. The
+// invoice_counters gap this leaves behind is fine — numbering allows gaps.
+func TestCreateInvoiceRollsBackOnLineFailure(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchAnyPlanID(t, s, ctx)
+
+	var before int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM invoices WHERE tenant_id = $1`, tenantID).Scan(&before); err != nil {
+		t.Fatalf("count invoices (before): %v", err)
+	}
+
+	inv := newTestInvoice(tenantID)
+	lines := newTestInvoiceLines(planID)
+	// Force a UNIQUE(invoice_id, position) violation: duplicate the first line's position.
+	lines[1].Position = lines[0].Position
+
+	if err := s.CreateInvoice(ctx, inv, lines); err == nil {
+		t.Fatal("CreateInvoice with duplicate line position succeeded, want a UNIQUE-constraint error")
+	}
+
+	var after int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM invoices WHERE tenant_id = $1`, tenantID).Scan(&after); err != nil {
+		t.Fatalf("count invoices (after): %v", err)
+	}
+	if after != before {
+		t.Fatalf("invoice count for tenant changed after failed CreateInvoice: before=%d after=%d, want no committed row", before, after)
+	}
+}
+
 func TestGetInvoiceByIDLoadsLinesInOrder(t *testing.T) {
 	s, pool, ctx := newBillingTestStore(t)
 	tenantID := createBillingTestTenant(t, s, pool, ctx)
@@ -606,5 +640,417 @@ func TestListInvoicesFilters(t *testing.T) {
 		if !gotAll[want] {
 			t.Fatalf("ListInvoices (no filter) missing invoice %s", want)
 		}
+	}
+}
+
+// --- Mark-paid application semantics (Task 4 of the billing-invoices plan) ---
+//
+// ApplyInvoicePayment/CancelInvoice/GetActiveLimitBoosts and the boost term
+// resolveTenantLimit now adds are exercised against a real Postgres DB: the
+// SELECT ... FOR UPDATE locking, the subscriptions UPSERT-on-first-plan-line
+// semantics, and the limit_boosts CHECK constraints cannot be proven by
+// pgxmock.
+
+// fetchPlanIDBySlug returns a seeded subscription_plans.id by slug (e.g.
+// "free", "pro") — invoice_lines.plan_id and subscriptions.plan_id are both
+// FK-constrained to subscription_plans, so tests must reuse real seeded rows.
+func fetchPlanIDBySlug(t *testing.T, pool *pgxpool.Pool, ctx context.Context, slug string) uuid.UUID {
+	t.Helper()
+	var id uuid.UUID
+	if err := pool.QueryRow(ctx, `SELECT id FROM subscription_plans WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("fetch plan by slug %q: %v", slug, err)
+	}
+	return id
+}
+
+// newServiceLine/newPlanLine/newAddonLine build fresh *models.InvoiceLine
+// values (never share a pointer across two CreateInvoice calls: CreateInvoice
+// mutates line.ID/InvoiceID on its argument).
+func newServiceLine(position int) *models.InvoiceLine {
+	return &models.InvoiceLine{
+		Position: position,
+		Kind:     "service",
+		Name:     "Service line",
+		Price:    200,
+		Quantity: 1,
+		Amount:   200,
+	}
+}
+
+func newPlanLine(position int, planID uuid.UUID, period, activation string, quantity int) *models.InvoiceLine {
+	p, a := period, activation
+	return &models.InvoiceLine{
+		Position:   position,
+		Kind:       "plan",
+		Name:       "Plan line",
+		Price:      1000,
+		PlanID:     &planID,
+		Period:     &p,
+		Activation: &a,
+		Quantity:   quantity,
+		Amount:     float64(quantity) * 1000,
+	}
+}
+
+func newAddonLine(position int, limitKey string, limitDelta, quantity int, validity string, validityDays *int) *models.InvoiceLine {
+	lk, v := limitKey, validity
+	ld := limitDelta
+	return &models.InvoiceLine{
+		Position:     position,
+		Kind:         "addon",
+		Name:         "Addon line",
+		Price:        300,
+		LimitKey:     &lk,
+		LimitDelta:   &ld,
+		Validity:     &v,
+		ValidityDays: validityDays,
+		Quantity:     quantity,
+		Amount:       300,
+	}
+}
+
+func TestApplyInvoicePaymentOnPaymentUpgrade(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	freePlanID := fetchPlanIDBySlug(t, pool, ctx, "free")
+	proPlanID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID,
+		PlanID:    &freePlanID,
+		Status:    "active",
+		StartDate: now,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	inv := newTestInvoice(tenantID)
+	line := newPlanLine(1, proPlanID, "month", "on_payment", 1)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{line}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	paid, effects, err := s.ApplyInvoicePayment(ctx, inv.ID, now)
+	if err != nil {
+		t.Fatalf("ApplyInvoicePayment: %v", err)
+	}
+	if paid.Status != "paid" {
+		t.Fatalf("Status = %q, want paid", paid.Status)
+	}
+	if paid.PaidAt == nil {
+		t.Fatal("PaidAt not set")
+	}
+	if len(effects) != 1 || effects[0].Kind != "plan" {
+		t.Fatalf("effects = %+v, want 1 plan effect", effects)
+	}
+
+	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID: %v", err)
+	}
+	if sub.PlanID == nil || *sub.PlanID != proPlanID {
+		t.Fatalf("PlanID = %v, want %v", sub.PlanID, proPlanID)
+	}
+	if sub.Status != "active" {
+		t.Fatalf("Status = %q, want active", sub.Status)
+	}
+	if sub.EndDate == nil {
+		t.Fatal("EndDate not set")
+	}
+	wantEnd := now.AddDate(0, 1, 0)
+	if diff := sub.EndDate.Sub(wantEnd); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("EndDate = %v, want ~%v", sub.EndDate, wantEnd)
+	}
+}
+
+func TestApplyInvoicePaymentAfterCurrentChains(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	currentEnd := now.Add(10 * 24 * time.Hour)
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID,
+		PlanID:    &planID,
+		Status:    "active",
+		StartDate: now.Add(-30 * 24 * time.Hour),
+		EndDate:   &currentEnd,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	inv := newTestInvoice(tenantID)
+	line := newPlanLine(1, planID, "month", "after_current", 2)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{line}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	if _, _, err := s.ApplyInvoicePayment(ctx, inv.ID, now); err != nil {
+		t.Fatalf("ApplyInvoicePayment: %v", err)
+	}
+
+	sub, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID: %v", err)
+	}
+	if sub.EndDate == nil {
+		t.Fatal("EndDate not set")
+	}
+	wantEnd := currentEnd.AddDate(0, 2, 0)
+	if diff := sub.EndDate.Sub(wantEnd); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("EndDate = %v, want ~%v (chained onto current end_date)", sub.EndDate, wantEnd)
+	}
+
+	// Second sub-case: subscription already expired -> base=now, status revived to active.
+	tenantID2 := createBillingTestTenant(t, s, pool, ctx)
+	pastEnd := now.Add(-5 * 24 * time.Hour)
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID2,
+		PlanID:    &planID,
+		Status:    "expired",
+		StartDate: now.Add(-60 * 24 * time.Hour),
+		EndDate:   &pastEnd,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription (expired): %v", err)
+	}
+
+	inv2 := newTestInvoice(tenantID2)
+	line2 := newPlanLine(1, planID, "month", "after_current", 1)
+	if err := s.CreateInvoice(ctx, inv2, []*models.InvoiceLine{line2}); err != nil {
+		t.Fatalf("CreateInvoice (expired case): %v", err)
+	}
+	if _, _, err := s.ApplyInvoicePayment(ctx, inv2.ID, now); err != nil {
+		t.Fatalf("ApplyInvoicePayment (expired case): %v", err)
+	}
+
+	sub2, err := s.GetSubscriptionByTenantID(ctx, tenantID2)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID (expired case): %v", err)
+	}
+	if sub2.Status != "active" {
+		t.Fatalf("Status = %q, want active (revived)", sub2.Status)
+	}
+	if sub2.EndDate == nil {
+		t.Fatal("EndDate not set (expired case)")
+	}
+	wantEnd2 := now.AddDate(0, 1, 0)
+	if diff := sub2.EndDate.Sub(wantEnd2); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("EndDate = %v, want ~%v (base=now, expired case)", sub2.EndDate, wantEnd2)
+	}
+}
+
+func TestApplyInvoicePaymentAddonAndManual(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID,
+		PlanID:    &planID,
+		Status:    "active",
+		StartDate: now,
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	validityDays := 30
+	addon := newAddonLine(1, "attendees_per_event", 500, 2, "fixed_days", &validityDays)
+	manualPlan := newPlanLine(2, planID, "month", "manual", 1)
+	service := newServiceLine(3)
+
+	inv := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{addon, manualPlan, service}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	subBefore, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID (before): %v", err)
+	}
+
+	_, effects, err := s.ApplyInvoicePayment(ctx, inv.ID, now)
+	if err != nil {
+		t.Fatalf("ApplyInvoicePayment: %v", err)
+	}
+	if len(effects) != 3 {
+		t.Fatalf("len(effects) = %d, want 3", len(effects))
+	}
+	if effects[0].Kind != "addon" || effects[1].Kind != "plan" || effects[2].Kind != "service" {
+		t.Fatalf("effect kinds = [%s, %s, %s], want [addon, plan, service]",
+			effects[0].Kind, effects[1].Kind, effects[2].Kind)
+	}
+
+	boosts, err := s.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetActiveLimitBoosts: %v", err)
+	}
+	if len(boosts) != 1 {
+		t.Fatalf("len(boosts) = %d, want 1", len(boosts))
+	}
+	if boosts[0].Delta != 1000 {
+		t.Fatalf("Delta = %d, want 1000 (500 x quantity 2)", boosts[0].Delta)
+	}
+	wantValidUntil := now.Add(30 * 24 * time.Hour)
+	if diff := boosts[0].ValidUntil.Sub(wantValidUntil); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("ValidUntil = %v, want ~%v", boosts[0].ValidUntil, wantValidUntil)
+	}
+
+	// The manual plan line and the service line must not touch the subscription.
+	subAfter, err := s.GetSubscriptionByTenantID(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetSubscriptionByTenantID (after): %v", err)
+	}
+	if subAfter.Status != subBefore.Status {
+		t.Fatalf("subscription Status changed by manual/service lines: before=%q after=%q", subBefore.Status, subAfter.Status)
+	}
+	if (subAfter.EndDate == nil) != (subBefore.EndDate == nil) {
+		t.Fatalf("subscription EndDate presence changed by manual/service lines: before=%v after=%v", subBefore.EndDate, subAfter.EndDate)
+	}
+}
+
+func TestApplyInvoicePaymentAddonUntilPeriodEndRequiresEndDate(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "pro")
+
+	now := time.Now().UTC()
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:  tenantID,
+		PlanID:    &planID,
+		Status:    "active",
+		StartDate: now,
+		// EndDate deliberately left nil.
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	addon := newAddonLine(1, "users", 5, 1, "until_period_end", nil)
+	inv := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{addon}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	_, _, err := s.ApplyInvoicePayment(ctx, inv.ID, now)
+	if !errors.Is(err, ErrBoostNeedsEndDate) {
+		t.Fatalf("ApplyInvoicePayment error = %v, want ErrBoostNeedsEndDate", err)
+	}
+
+	got, err := s.GetInvoiceByID(ctx, inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvoiceByID: %v", err)
+	}
+	if got.Status != "issued" {
+		t.Fatalf("Status = %q, want issued (whole tx rolled back)", got.Status)
+	}
+
+	boosts, err := s.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		t.Fatalf("GetActiveLimitBoosts: %v", err)
+	}
+	if len(boosts) != 0 {
+		t.Fatalf("len(boosts) = %d, want 0 (rolled back)", len(boosts))
+	}
+}
+
+func TestApplyInvoicePaymentGuardsStatus(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	now := time.Now().UTC()
+
+	inv := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv, []*models.InvoiceLine{newServiceLine(1)}); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	if _, _, err := s.ApplyInvoicePayment(ctx, inv.ID, now); err != nil {
+		t.Fatalf("ApplyInvoicePayment (1st): %v", err)
+	}
+	if _, _, err := s.ApplyInvoicePayment(ctx, inv.ID, now); !errors.Is(err, ErrInvoiceNotIssued) {
+		t.Fatalf("ApplyInvoicePayment (2nd) error = %v, want ErrInvoiceNotIssued", err)
+	}
+	if err := s.CancelInvoice(ctx, inv.ID); !errors.Is(err, ErrInvoiceNotIssued) {
+		t.Fatalf("CancelInvoice (after paid) error = %v, want ErrInvoiceNotIssued", err)
+	}
+
+	inv2 := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv2, []*models.InvoiceLine{newServiceLine(1)}); err != nil {
+		t.Fatalf("CreateInvoice (2): %v", err)
+	}
+	if err := s.CancelInvoice(ctx, inv2.ID); err != nil {
+		t.Fatalf("CancelInvoice: %v", err)
+	}
+	got, err := s.GetInvoiceByID(ctx, inv2.ID)
+	if err != nil {
+		t.Fatalf("GetInvoiceByID: %v", err)
+	}
+	if got.Status != "cancelled" {
+		t.Fatalf("Status = %q, want cancelled", got.Status)
+	}
+	if got.CancelledAt == nil {
+		t.Fatal("CancelledAt not set")
+	}
+}
+
+func TestResolveTenantLimitAddsActiveBoosts(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchPlanIDBySlug(t, pool, ctx, "free")
+	now := time.Now().UTC()
+
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:     tenantID,
+		PlanID:       &planID,
+		Status:       "active",
+		StartDate:    now,
+		CustomLimits: map[string]interface{}{"users": float64(3)},
+	}); err != nil {
+		t.Fatalf("UpsertSubscription: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until) VALUES ($1, 'users', 2, $2)`,
+		tenantID, now.Add(time.Hour)); err != nil {
+		t.Fatalf("insert active boost: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until) VALUES ($1, 'users', 100, $2)`,
+		tenantID, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("insert expired boost: %v", err)
+	}
+
+	_, _, max, err := s.CheckTenantLimit(ctx, tenantID, "users")
+	if err != nil {
+		t.Fatalf("CheckTenantLimit: %v", err)
+	}
+	if max != 5 {
+		t.Fatalf("max = %d, want 5 (custom limit 3 + active boost 2, expired boost excluded)", max)
+	}
+
+	// custom_limits = -1 (unlimited) must ignore boosts entirely.
+	tenantID2 := createBillingTestTenant(t, s, pool, ctx)
+	if err := s.UpsertSubscription(ctx, &models.Subscription{
+		TenantID:     tenantID2,
+		PlanID:       &planID,
+		Status:       "active",
+		StartDate:    now,
+		CustomLimits: map[string]interface{}{"users": float64(-1)},
+	}); err != nil {
+		t.Fatalf("UpsertSubscription (unlimited): %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until) VALUES ($1, 'users', 10, $2)`,
+		tenantID2, now.Add(time.Hour)); err != nil {
+		t.Fatalf("insert boost (unlimited tenant): %v", err)
+	}
+
+	_, _, max2, err := s.CheckTenantLimit(ctx, tenantID2, "users")
+	if err != nil {
+		t.Fatalf("CheckTenantLimit (unlimited): %v", err)
+	}
+	if max2 != -1 {
+		t.Fatalf("max2 = %d, want -1 (unlimited ignores boosts)", max2)
 	}
 }

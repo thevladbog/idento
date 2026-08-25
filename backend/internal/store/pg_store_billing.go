@@ -340,3 +340,299 @@ func (s *PGStore) ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.
 	}
 	return invoices, nil
 }
+
+// addBillingPeriod applies quantity units of period ("month"/"year") to base,
+// per the spec: month -> AddDate(0,1,0) per unit, year -> AddDate(1,0,0) per
+// unit. Any other/empty period string is treated as "month" defensively —
+// invoice_lines.period is DB-unconstrained (it's a snapshot column), but
+// callers only ever reach here for kind='plan' lines, whose catalog source
+// is CHECK-constrained to month/year.
+func addBillingPeriod(base time.Time, period string, quantity int) time.Time {
+	if period == "year" {
+		return base.AddDate(quantity, 0, 0)
+	}
+	return base.AddDate(0, quantity, 0)
+}
+
+// subscriptionLock is the FOR-UPDATE-locked view of a tenant's subscription
+// row inside ApplyInvoicePayment's transaction; exists=false means the
+// tenant has no subscription row yet.
+type subscriptionLock struct {
+	exists    bool
+	id        uuid.UUID
+	planID    *uuid.UUID
+	status    string
+	startDate time.Time
+	endDate   *time.Time
+}
+
+// applyPlanLine applies one kind='plan' invoice line to sub (mutating it in
+// place to reflect the new state, so a second plan line on the same invoice
+// sees the first one's effect) and returns the human-readable effect
+// summary. manual activation is a no-op by design (spec: "manual (operator
+// applies)"); on_payment/after_current differ only in the base date the new
+// period is added to.
+func (s *PGStore) applyPlanLine(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, line *models.InvoiceLine, now time.Time, sub *subscriptionLock) (string, error) {
+	activation := ""
+	if line.Activation != nil {
+		activation = *line.Activation
+	}
+	if activation == "manual" {
+		return "manual (operator applies)", nil
+	}
+
+	period := ""
+	if line.Period != nil {
+		period = *line.Period
+	}
+
+	base := now
+	if activation == "after_current" && sub.exists && sub.endDate != nil && sub.endDate.After(now) {
+		base = *sub.endDate
+	}
+	endDate := addBillingPeriod(base, period, line.Quantity)
+
+	if sub.exists {
+		if _, err := tx.Exec(ctx,
+			`UPDATE subscriptions SET plan_id = $1, status = 'active', end_date = $2, updated_at = NOW() WHERE id = $3`,
+			line.PlanID, endDate, sub.id,
+		); err != nil {
+			return "", fmt.Errorf("update subscription for plan line: %w", err)
+		}
+	} else {
+		if err := tx.QueryRow(ctx,
+			`INSERT INTO subscriptions (tenant_id, plan_id, status, start_date, end_date)
+			 VALUES ($1, $2, 'active', $3, $4)
+			 RETURNING id`,
+			tenantID, line.PlanID, now, endDate,
+		).Scan(&sub.id); err != nil {
+			return "", fmt.Errorf("insert subscription for plan line: %w", err)
+		}
+		sub.exists = true
+		sub.startDate = now
+	}
+	sub.planID = line.PlanID
+	sub.status = "active"
+	sub.endDate = &endDate
+
+	planLabel := line.Name
+	if line.PlanID != nil {
+		var slug string
+		if err := tx.QueryRow(ctx, `SELECT slug FROM subscription_plans WHERE id = $1`, *line.PlanID).Scan(&slug); err == nil {
+			planLabel = slug
+		}
+	}
+	return fmt.Sprintf("plan %s extended to %s", planLabel, endDate.Format("2006-01-02")), nil
+}
+
+// applyAddonLine resolves the boost's valid_until per the spec (until the
+// current subscription period end, or a fixed number of days from now) and
+// inserts the limit_boosts row. Returns ErrBoostNeedsEndDate — which the
+// caller must let roll back the whole ApplyInvoicePayment transaction — when
+// validity is until_period_end but there is no subscription or no end_date.
+func (s *PGStore) applyAddonLine(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, line *models.InvoiceLine, now time.Time, sub *subscriptionLock) (string, error) {
+	validity := ""
+	if line.Validity != nil {
+		validity = *line.Validity
+	}
+
+	var validUntil time.Time
+	switch validity {
+	case "until_period_end":
+		if !sub.exists || sub.endDate == nil {
+			return "", ErrBoostNeedsEndDate
+		}
+		validUntil = *sub.endDate
+	case "fixed_days":
+		days := 0
+		if line.ValidityDays != nil {
+			days = *line.ValidityDays
+		}
+		validUntil = now.Add(time.Duration(days) * 24 * time.Hour)
+	default:
+		return "", fmt.Errorf("invoice line %s: unrecognized addon validity %q", line.ID, validity)
+	}
+
+	limitKey := ""
+	if line.LimitKey != nil {
+		limitKey = *line.LimitKey
+	}
+	delta := 0
+	if line.LimitDelta != nil {
+		delta = *line.LimitDelta * line.Quantity
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until, source_invoice_line_id)
+		 VALUES ($1, $2, $3, $4, $5)`,
+		tenantID, limitKey, delta, validUntil, line.ID,
+	); err != nil {
+		return "", fmt.Errorf("insert limit boost (line %s): %w", line.ID, err)
+	}
+
+	return fmt.Sprintf("boost %s +%d until %s", limitKey, delta, validUntil.Format("2006-01-02")), nil
+}
+
+// ApplyInvoicePayment marks the invoice paid (issued->paid guard) and
+// applies every line per the billing-invoices spec's Application semantics,
+// in ONE transaction: an addon line needing an end_date the subscription
+// doesn't have (ErrBoostNeedsEndDate) rolls back everything, leaving the
+// invoice issued and no boost/subscription rows changed.
+func (s *PGStore) ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []AppliedLineEffect, error) {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback ApplyInvoicePayment: %v", err)
+		}
+	}()
+
+	var status string
+	var tenantID uuid.UUID
+	if err := tx.QueryRow(ctx, `SELECT status, tenant_id FROM invoices WHERE id = $1 FOR UPDATE`, invoiceID).Scan(&status, &tenantID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, ErrInvoiceNotFound
+		}
+		return nil, nil, fmt.Errorf("lock invoice: %w", err)
+	}
+	if status != "issued" {
+		return nil, nil, ErrInvoiceNotIssued
+	}
+
+	lineRows, err := tx.Query(ctx,
+		`SELECT id, invoice_id, position, catalog_item_id, kind, name, price, vat_rate,
+		        plan_id, period, activation, limit_key, limit_delta, validity, validity_days,
+		        quantity, amount
+		 FROM invoice_lines WHERE invoice_id = $1 ORDER BY position`, invoiceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load invoice lines: %w", err)
+	}
+	var lines []*models.InvoiceLine
+	for lineRows.Next() {
+		var line models.InvoiceLine
+		if err := lineRows.Scan(
+			&line.ID, &line.InvoiceID, &line.Position, &line.CatalogItemID, &line.Kind, &line.Name, &line.Price, &line.VATRate,
+			&line.PlanID, &line.Period, &line.Activation, &line.LimitKey, &line.LimitDelta, &line.Validity, &line.ValidityDays,
+			&line.Quantity, &line.Amount,
+		); err != nil {
+			lineRows.Close()
+			return nil, nil, fmt.Errorf("scan invoice line: %w", err)
+		}
+		lines = append(lines, &line)
+	}
+	lineRows.Close()
+	if err := lineRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("load invoice lines: %w", err)
+	}
+
+	var sub subscriptionLock
+	if err := tx.QueryRow(ctx,
+		`SELECT id, plan_id, status, start_date, end_date FROM subscriptions WHERE tenant_id = $1 FOR UPDATE`,
+		tenantID,
+	).Scan(&sub.id, &sub.planID, &sub.status, &sub.startDate, &sub.endDate); err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, fmt.Errorf("lock subscription: %w", err)
+		}
+	} else {
+		sub.exists = true
+	}
+
+	effects := make([]AppliedLineEffect, 0, len(lines))
+	for _, line := range lines {
+		var effect string
+		switch line.Kind {
+		case "service":
+			effect = "service (no effect)"
+		case "plan":
+			effect, err = s.applyPlanLine(ctx, tx, tenantID, line, now, &sub)
+		case "addon":
+			effect, err = s.applyAddonLine(ctx, tx, tenantID, line, now, &sub)
+		default:
+			err = fmt.Errorf("invoice line %s: unrecognized kind %q", line.ID, line.Kind)
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		effects = append(effects, AppliedLineEffect{LineID: line.ID, Kind: line.Kind, Effect: effect})
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE invoices SET status = 'paid', paid_at = $2, updated_at = NOW() WHERE id = $1`,
+		invoiceID, now,
+	); err != nil {
+		return nil, nil, fmt.Errorf("mark invoice paid: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, nil, fmt.Errorf("commit ApplyInvoicePayment: %w", err)
+	}
+
+	inv, err := s.GetInvoiceByID(ctx, invoiceID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return inv, effects, nil
+}
+
+// CancelInvoice guards issued->cancelled and sets cancelled_at; applying
+// (or cancelling) an already-paid/cancelled invoice returns ErrInvoiceNotIssued.
+func (s *PGStore) CancelInvoice(ctx context.Context, invoiceID uuid.UUID) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback CancelInvoice: %v", err)
+		}
+	}()
+
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM invoices WHERE id = $1 FOR UPDATE`, invoiceID).Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInvoiceNotFound
+		}
+		return fmt.Errorf("lock invoice: %w", err)
+	}
+	if status != "issued" {
+		return ErrInvoiceNotIssued
+	}
+
+	if _, err := tx.Exec(ctx,
+		`UPDATE invoices SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1`,
+		invoiceID,
+	); err != nil {
+		return fmt.Errorf("cancel invoice: %w", err)
+	}
+
+	return tx.Commit(ctx)
+}
+
+// GetActiveLimitBoosts returns boosts with valid_until > now, newest first.
+func (s *PGStore) GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) ([]*models.LimitBoost, error) {
+	query := `SELECT id, tenant_id, limit_key, delta, valid_until, source_invoice_line_id, created_at
+	          FROM limit_boosts
+	          WHERE tenant_id = $1 AND valid_until > NOW()
+	          ORDER BY created_at DESC`
+
+	rows, err := s.db.Query(ctx, query, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var boosts []*models.LimitBoost
+	for rows.Next() {
+		var b models.LimitBoost
+		if err := rows.Scan(&b.ID, &b.TenantID, &b.LimitKey, &b.Delta, &b.ValidUntil, &b.SourceInvoiceLineID, &b.CreatedAt); err != nil {
+			return nil, err
+		}
+		boosts = append(boosts, &b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return boosts, nil
+}

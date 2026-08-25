@@ -432,6 +432,15 @@ type Store interface {
 	GetInvoiceByID(ctx context.Context, id uuid.UUID) (*models.Invoice, error)
 	// ListInvoices returns invoices (no lines) newest-first with TenantName joined.
 	ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.Invoice, error)
+	// ApplyInvoicePayment marks invoice paid (issued→paid guard) and applies
+	// every line per the billing-invoices spec's Application semantics. Runs
+	// in ONE transaction: any per-line failure (e.g. ErrBoostNeedsEndDate)
+	// rolls back the whole thing, leaving the invoice issued.
+	ApplyInvoicePayment(ctx context.Context, invoiceID uuid.UUID, now time.Time) (*models.Invoice, []AppliedLineEffect, error)
+	// CancelInvoice: issued→cancelled guard, sets cancelled_at.
+	CancelInvoice(ctx context.Context, invoiceID uuid.UUID) error
+	// GetActiveLimitBoosts returns boosts with valid_until > now, newest first.
+	GetActiveLimitBoosts(ctx context.Context, tenantID uuid.UUID) ([]*models.LimitBoost, error)
 
 	// Audit
 	// WithTx runs fn against a store whose every operation shares one
@@ -639,6 +648,21 @@ type InvoiceFilter struct {
 	Status   string // "", "issued", "paid", "cancelled"
 	Limit    int    // 0 → 100
 	Offset   int
+}
+
+// Sentinel errors for mark-paid/cancel guards (handlers map them to 409).
+var (
+	ErrInvoiceNotFound   = errors.New("invoice not found")
+	ErrInvoiceNotIssued  = errors.New("invoice is not in issued status")
+	ErrBoostNeedsEndDate = errors.New("addon is until_period_end but subscription has no end_date")
+)
+
+// AppliedLineEffect describes what one paid line did (for the audit row and
+// the operator confirmation response).
+type AppliedLineEffect struct {
+	LineID uuid.UUID `json:"line_id"`
+	Kind   string    `json:"kind"`
+	Effect string    `json:"effect"` // human-readable machine summary, e.g. "plan pro extended to 2026-10-01", "boost attendees_per_event +1000 until 2026-09-12", "service (no effect)", "manual (operator applies)"
 }
 
 // CheckinActionAttendee is the slim attendee projection embedded in a
