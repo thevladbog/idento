@@ -947,3 +947,10 @@ P6.3 FINAL WHOLE-BRANCH REVIEW: complete (fable model, merge-base a6f369e..cb822
 - Credential/resource hygiene: generated secrets stayed inside the shared execution shell; no credential/QR/bearer value or response body was recorded; mobile trace/screenshot/video stayed off; exact PostgreSQL/backend/browser artifacts were cleaned; ports 55441/8008/5174 were free; stopped `idento_db` remained untouched.
 - Real-backend desktop Chromium, separate manual browser/Lighthouse capture, physical iOS/Android, KMP QR scanning, printer/scanner hardware, and real cellular/venue-Wi-Fi transition: NOT RUN / NOT CAPTURED.
 - Publication, PR #113 reconciliation, final independent review, and manual GitGuardian incident `35916563` disposition remained pending at the time of this local record.
+
+## Ruble plans (feat/ruble-plans, plan 2026-08-25-ruble-plans.md)
+Task 1: complete (commits 50cc4e1..7751cd4, review clean: spec OK, quality approved)
+Task 2: complete (commits 7751cd4..c82a87f, review clean; Minor noted: test negative-check covers only 2/5 slugs — redundant defense-in-depth, positive checks cover all)
+Task 3: complete (commits c82a87f..6f0914e, 3 commits; review round 1 Critical: hand-typed regex → round 2 Critical regression: unused var/TS6133 → round 3 approved; final assertion Intl-derived with \s+ mapping for testing-library NBSP normalization)
+Task 4: complete (commits 6f0914e..1770bf9, review clean)
+Task 5: complete (verification inline; final whole-branch review opus: 2 Important fixed in 5e3d15c — false 20% savings badge → 17%, ru-locale console plan keys russified; 2 Minors = doc comments; Ready to merge YES)
