@@ -2,6 +2,10 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log"
+	"time"
 
 	"idento/backend/internal/models"
 
@@ -159,4 +163,180 @@ func scanBillingCatalogItem(row billingCatalogRowScanner) (*models.BillingCatalo
 		return nil, err
 	}
 	return &item, nil
+}
+
+// invoiceColumnsSQL is the invoices column list shared by GetInvoiceByID and
+// ListInvoices (minus ListInvoices' extra joined tenant_name).
+const invoiceColumnsSQL = `id, number, tenant_id, status, issued_at, paid_at, cancelled_at,
+	buyer_name, buyer_inn, buyer_kpp, buyer_address,
+	seller_name, seller_inn, seller_bank_name, seller_bank_account, seller_bank_bik, seller_bank_corr_account,
+	total, comment, created_by, created_at, updated_at`
+
+// scanInvoice scans one invoices row using invoiceColumnsSQL's column order.
+func scanInvoice(row billingCatalogRowScanner, inv *models.Invoice) error {
+	return row.Scan(
+		&inv.ID, &inv.Number, &inv.TenantID, &inv.Status, &inv.IssuedAt, &inv.PaidAt, &inv.CancelledAt,
+		&inv.BuyerName, &inv.BuyerINN, &inv.BuyerKPP, &inv.BuyerAddress,
+		&inv.SellerName, &inv.SellerINN, &inv.SellerBankName, &inv.SellerBankAccount, &inv.SellerBankBIK, &inv.SellerBankCorrAccount,
+		&inv.Total, &inv.Comment, &inv.CreatedBy, &inv.CreatedAt, &inv.UpdatedAt,
+	)
+}
+
+// CreateInvoice assigns inv.Number (СЧ-<year>-<NNNN>, incrementing a
+// per-year counter in invoice_counters) and inserts the invoice plus its
+// lines atomically, filling inv.ID/IssuedAt/CreatedAt/UpdatedAt and each
+// line's ID/InvoiceID. Lines must arrive with Position/snapshot fields/
+// Quantity/Amount already set — no validation/derivation happens here.
+//
+// Opens its own transaction (s.db.Begin): inside a handler's WithTx this
+// nests as a savepoint via pgx.Tx.Begin, the same established pattern as
+// CreateTenantWithDefaultSubscription.
+func (s *PGStore) CreateInvoice(ctx context.Context, inv *models.Invoice, lines []*models.InvoiceLine) error {
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Printf("rollback CreateInvoice: %v", err)
+		}
+	}()
+
+	year := time.Now().Year()
+	var n int
+	if err := tx.QueryRow(ctx, `INSERT INTO invoice_counters (year, last_value) VALUES ($1, 1)
+	    ON CONFLICT (year) DO UPDATE SET last_value = invoice_counters.last_value + 1
+	    RETURNING last_value`, year).Scan(&n); err != nil {
+		return fmt.Errorf("assign invoice number: %w", err)
+	}
+	inv.Number = fmt.Sprintf("СЧ-%d-%04d", year, n)
+
+	if inv.Status == "" {
+		inv.Status = "issued"
+	}
+
+	query := `INSERT INTO invoices
+	          (number, tenant_id, status, buyer_name, buyer_inn, buyer_kpp, buyer_address,
+	           seller_name, seller_inn, seller_bank_name, seller_bank_account, seller_bank_bik, seller_bank_corr_account,
+	           total, comment, created_by)
+	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	          RETURNING id, issued_at, created_at, updated_at`
+	if err := tx.QueryRow(ctx, query,
+		inv.Number, inv.TenantID, inv.Status, inv.BuyerName, inv.BuyerINN, inv.BuyerKPP, inv.BuyerAddress,
+		inv.SellerName, inv.SellerINN, inv.SellerBankName, inv.SellerBankAccount, inv.SellerBankBIK, inv.SellerBankCorrAccount,
+		inv.Total, inv.Comment, inv.CreatedBy,
+	).Scan(&inv.ID, &inv.IssuedAt, &inv.CreatedAt, &inv.UpdatedAt); err != nil {
+		return fmt.Errorf("insert invoice: %w", err)
+	}
+
+	lineQuery := `INSERT INTO invoice_lines
+	              (invoice_id, position, catalog_item_id, kind, name, price, vat_rate,
+	               plan_id, period, activation, limit_key, limit_delta, validity, validity_days,
+	               quantity, amount)
+	              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	              RETURNING id`
+	for _, line := range lines {
+		line.InvoiceID = inv.ID
+		if err := tx.QueryRow(ctx, lineQuery,
+			inv.ID, line.Position, line.CatalogItemID, line.Kind, line.Name, line.Price, line.VATRate,
+			line.PlanID, line.Period, line.Activation, line.LimitKey, line.LimitDelta, line.Validity, line.ValidityDays,
+			line.Quantity, line.Amount,
+		).Scan(&line.ID); err != nil {
+			return fmt.Errorf("insert invoice line (position %d): %w", line.Position, err)
+		}
+	}
+	inv.Lines = lines
+
+	return tx.Commit(ctx)
+}
+
+// GetInvoiceByID returns the invoice with Lines loaded ordered by position,
+// (nil, nil) when absent.
+func (s *PGStore) GetInvoiceByID(ctx context.Context, id uuid.UUID) (*models.Invoice, error) {
+	query := `SELECT ` + invoiceColumnsSQL + ` FROM invoices WHERE id = $1`
+
+	var inv models.Invoice
+	if err := scanInvoice(s.db.QueryRow(ctx, query, id), &inv); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	lineQuery := `SELECT id, invoice_id, position, catalog_item_id, kind, name, price, vat_rate,
+	                     plan_id, period, activation, limit_key, limit_delta, validity, validity_days,
+	                     quantity, amount
+	              FROM invoice_lines WHERE invoice_id = $1 ORDER BY position`
+	rows, err := s.db.Query(ctx, lineQuery, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var lines []*models.InvoiceLine
+	for rows.Next() {
+		var line models.InvoiceLine
+		if err := rows.Scan(
+			&line.ID, &line.InvoiceID, &line.Position, &line.CatalogItemID, &line.Kind, &line.Name, &line.Price, &line.VATRate,
+			&line.PlanID, &line.Period, &line.Activation, &line.LimitKey, &line.LimitDelta, &line.Validity, &line.ValidityDays,
+			&line.Quantity, &line.Amount,
+		); err != nil {
+			return nil, err
+		}
+		lines = append(lines, &line)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	inv.Lines = lines
+
+	return &inv, nil
+}
+
+// ListInvoices returns invoices (no lines) newest-first with TenantName
+// LEFT JOIN-ed from tenants (empty string when the tenant row is gone).
+// f.TenantID nil and f.Status "" each skip that filter; f.Limit<=0 defaults
+// to 100.
+func (s *PGStore) ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.Invoice, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `SELECT i.id, i.number, i.tenant_id, i.status, i.issued_at, i.paid_at, i.cancelled_at,
+	                 i.buyer_name, i.buyer_inn, i.buyer_kpp, i.buyer_address,
+	                 i.seller_name, i.seller_inn, i.seller_bank_name, i.seller_bank_account, i.seller_bank_bik, i.seller_bank_corr_account,
+	                 i.total, i.comment, i.created_by, i.created_at, i.updated_at,
+	                 COALESCE(t.name, '') AS tenant_name
+	          FROM invoices i
+	          LEFT JOIN tenants t ON t.id = i.tenant_id
+	          WHERE ($1::uuid IS NULL OR i.tenant_id = $1)
+	            AND ($2::text = '' OR i.status = $2)
+	          ORDER BY i.issued_at DESC
+	          LIMIT $3 OFFSET $4`
+
+	rows, err := s.db.Query(ctx, query, f.TenantID, f.Status, limit, f.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var invoices []*models.Invoice
+	for rows.Next() {
+		var inv models.Invoice
+		if err := rows.Scan(
+			&inv.ID, &inv.Number, &inv.TenantID, &inv.Status, &inv.IssuedAt, &inv.PaidAt, &inv.CancelledAt,
+			&inv.BuyerName, &inv.BuyerINN, &inv.BuyerKPP, &inv.BuyerAddress,
+			&inv.SellerName, &inv.SellerINN, &inv.SellerBankName, &inv.SellerBankAccount, &inv.SellerBankBIK, &inv.SellerBankCorrAccount,
+			&inv.Total, &inv.Comment, &inv.CreatedBy, &inv.CreatedAt, &inv.UpdatedAt,
+			&inv.TenantName,
+		); err != nil {
+			return nil, err
+		}
+		invoices = append(invoices, &inv)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return invoices, nil
 }

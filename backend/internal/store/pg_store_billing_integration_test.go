@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -311,5 +314,297 @@ func TestCatalogKindChecksRejectInconsistentRows(t *testing.T) {
 	}
 	if err := s.CreateCatalogItem(ctx, bad); err == nil {
 		t.Fatal("CreateCatalogItem with kind=service and non-nil PlanID succeeded, want a CHECK-constraint error")
+	}
+}
+
+// --- Invoices (Task 3 of the billing-invoices plan) ---
+//
+// TestCreateInvoiceAssignsSequentialNumbers, TestGetInvoiceByIDLoadsLinesInOrder
+// and TestListInvoicesFilters exercise CreateInvoice/GetInvoiceByID/ListInvoices
+// against a real Postgres DB — the invoice_counters per-year UPSERT semantics
+// and the invoice_lines FK/CHECK constraints cannot be proven by pgxmock.
+//
+// Other tests share this long-lived dev DB, so numbering assertions below are
+// relative (second == first+1), never absolute.
+
+// fetchAnyPlanID returns an existing subscription plan ID (invoice_lines.plan_id
+// is FK-constrained to subscription_plans, so tests must reuse a seeded plan
+// rather than inventing a random UUID).
+func fetchAnyPlanID(t *testing.T, s *PGStore, ctx context.Context) uuid.UUID {
+	t.Helper()
+	plans, err := s.GetSubscriptionPlans(ctx, true)
+	if err != nil {
+		t.Fatalf("GetSubscriptionPlans: %v", err)
+	}
+	if len(plans) == 0 {
+		t.Fatal("GetSubscriptionPlans returned no plans; EnsureSeedData should have seeded some")
+	}
+	return plans[0].ID
+}
+
+// newTestInvoice builds a fully-populated Invoice (buyer/seller requisites
+// snapshot) ready for CreateInvoice, minus Number/ID/IssuedAt/timestamps
+// which CreateInvoice fills in.
+func newTestInvoice(tenantID uuid.UUID) *models.Invoice {
+	kpp := "770101001"
+	corr := "30101810400000000225"
+	comment := "test invoice"
+	return &models.Invoice{
+		TenantID:              tenantID,
+		Status:                "issued",
+		BuyerName:             "ООО Покупатель " + uuid.NewString(),
+		BuyerINN:              "7701234567",
+		BuyerKPP:              &kpp,
+		BuyerAddress:          "г. Москва, ул. Тестовая, д. 1",
+		SellerName:            "ООО Идento",
+		SellerINN:             "9701234567",
+		SellerBankName:        "ПАО Тестбанк",
+		SellerBankAccount:     "40702810900000012345",
+		SellerBankBIK:         "044525225",
+		SellerBankCorrAccount: &corr,
+		Total:                 1500,
+		Comment:               &comment,
+	}
+}
+
+// newTestInvoiceLines builds one line per kind (plan/service/addon) at
+// positions 1..3, with VATRate populated on the plan line only.
+func newTestInvoiceLines(planID uuid.UUID) []*models.InvoiceLine {
+	vat := 20.0
+	period := "month"
+	activation := "on_payment"
+	limitKey := "attendees_per_event"
+	limitDelta := 50
+	validity := "until_period_end"
+	return []*models.InvoiceLine{
+		{
+			Position:   1,
+			Kind:       "plan",
+			Name:       "План Профи",
+			Price:      1000,
+			VATRate:    &vat,
+			PlanID:     &planID,
+			Period:     &period,
+			Activation: &activation,
+			Quantity:   1,
+			Amount:     1000,
+		},
+		{
+			Position: 2,
+			Kind:     "service",
+			Name:     "Настройка мероприятия",
+			Price:    200,
+			Quantity: 1,
+			Amount:   200,
+		},
+		{
+			Position:   3,
+			Kind:       "addon",
+			Name:       "Доп. участники",
+			Price:      300,
+			LimitKey:   &limitKey,
+			LimitDelta: &limitDelta,
+			Validity:   &validity,
+			Quantity:   1,
+			Amount:     300,
+		},
+	}
+}
+
+func TestCreateInvoiceAssignsSequentialNumbers(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchAnyPlanID(t, s, ctx)
+
+	inv1 := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv1, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice (1): %v", err)
+	}
+	if inv1.ID == uuid.Nil {
+		t.Fatal("CreateInvoice did not populate ID")
+	}
+	if inv1.IssuedAt.IsZero() {
+		t.Fatal("CreateInvoice did not populate IssuedAt")
+	}
+
+	year := inv1.IssuedAt.Year()
+	prefix := fmt.Sprintf("СЧ-%d-", year)
+	if !strings.HasPrefix(inv1.Number, prefix) {
+		t.Fatalf("Number = %q, want prefix %q", inv1.Number, prefix)
+	}
+	n1, err := strconv.Atoi(strings.TrimPrefix(inv1.Number, prefix))
+	if err != nil {
+		t.Fatalf("parse number suffix of %q: %v", inv1.Number, err)
+	}
+
+	inv2 := newTestInvoice(tenantID)
+	if err := s.CreateInvoice(ctx, inv2, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice (2): %v", err)
+	}
+	if !strings.HasPrefix(inv2.Number, prefix) {
+		t.Fatalf("Number = %q, want prefix %q", inv2.Number, prefix)
+	}
+	n2, err := strconv.Atoi(strings.TrimPrefix(inv2.Number, prefix))
+	if err != nil {
+		t.Fatalf("parse number suffix of %q: %v", inv2.Number, err)
+	}
+	if n2 != n1+1 {
+		t.Fatalf("second invoice number suffix = %d, want %d (first+1)", n2, n1+1)
+	}
+
+	// Pin the counter UPSERT's increment semantics directly: pre-seed year
+	// 2001 with last_value=41, exercise the exact SQL from the brief, expect 42.
+	if _, err := pool.Exec(ctx, `INSERT INTO invoice_counters (year, last_value) VALUES (2001, 41)
+		ON CONFLICT (year) DO UPDATE SET last_value = EXCLUDED.last_value`); err != nil {
+		t.Fatalf("seed invoice_counters year 2001: %v", err)
+	}
+	t.Cleanup(func() {
+		cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer ccancel()
+		if _, err := pool.Exec(cctx, `DELETE FROM invoice_counters WHERE year = 2001`); err != nil {
+			t.Logf("cleanup: failed to delete invoice_counters year 2001: %v", err)
+		}
+	})
+
+	var n int
+	if err := pool.QueryRow(ctx, `INSERT INTO invoice_counters (year, last_value) VALUES ($1, 1)
+	    ON CONFLICT (year) DO UPDATE SET last_value = invoice_counters.last_value + 1
+	    RETURNING last_value`, 2001).Scan(&n); err != nil {
+		t.Fatalf("counter UPSERT exercise: %v", err)
+	}
+	if n != 42 {
+		t.Fatalf("counter UPSERT for pre-seeded year 2001 (last_value=41) = %d, want 42", n)
+	}
+}
+
+func TestGetInvoiceByIDLoadsLinesInOrder(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantID := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchAnyPlanID(t, s, ctx)
+
+	inv := newTestInvoice(tenantID)
+	lines := newTestInvoiceLines(planID)
+	if err := s.CreateInvoice(ctx, inv, lines); err != nil {
+		t.Fatalf("CreateInvoice: %v", err)
+	}
+
+	got, err := s.GetInvoiceByID(ctx, inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvoiceByID: %v", err)
+	}
+	if got == nil {
+		t.Fatal("GetInvoiceByID returned nil for existing invoice")
+	}
+	if len(got.Lines) != 3 {
+		t.Fatalf("len(Lines) = %d, want 3", len(got.Lines))
+	}
+	for i, line := range got.Lines {
+		if line.Position != i+1 {
+			t.Fatalf("Lines[%d].Position = %d, want %d", i, line.Position, i+1)
+		}
+	}
+	if got.Lines[0].Kind != "plan" || got.Lines[0].VATRate == nil || *got.Lines[0].VATRate != 20.0 {
+		t.Fatalf("Lines[0] = %+v, want kind=plan VATRate=20", got.Lines[0])
+	}
+	if got.Lines[0].PlanID == nil || *got.Lines[0].PlanID != planID {
+		t.Fatalf("Lines[0].PlanID = %v, want %v", got.Lines[0].PlanID, planID)
+	}
+	if got.Lines[1].Kind != "service" {
+		t.Fatalf("Lines[1].Kind = %q, want service", got.Lines[1].Kind)
+	}
+	if got.Lines[1].VATRate != nil {
+		t.Fatalf("Lines[1].VATRate = %v, want nil", got.Lines[1].VATRate)
+	}
+	if got.Lines[2].Kind != "addon" || got.Lines[2].LimitKey == nil || *got.Lines[2].LimitKey != "attendees_per_event" {
+		t.Fatalf("Lines[2] = %+v, want kind=addon LimitKey=attendees_per_event", got.Lines[2])
+	}
+	if got.Lines[2].LimitDelta == nil || *got.Lines[2].LimitDelta != 50 {
+		t.Fatalf("Lines[2].LimitDelta = %v, want 50", got.Lines[2].LimitDelta)
+	}
+
+	missing, err := s.GetInvoiceByID(ctx, uuid.New())
+	if err != nil {
+		t.Fatalf("GetInvoiceByID (missing): %v", err)
+	}
+	if missing != nil {
+		t.Fatalf("GetInvoiceByID (missing) = %+v, want nil", missing)
+	}
+}
+
+func TestListInvoicesFilters(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantA := createBillingTestTenant(t, s, pool, ctx)
+	tenantB := createBillingTestTenant(t, s, pool, ctx)
+	planID := fetchAnyPlanID(t, s, ctx)
+
+	invA1 := newTestInvoice(tenantA)
+	if err := s.CreateInvoice(ctx, invA1, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice A1: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	invA2 := newTestInvoice(tenantA)
+	if err := s.CreateInvoice(ctx, invA2, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice A2: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	invB1 := newTestInvoice(tenantB)
+	if err := s.CreateInvoice(ctx, invB1, newTestInvoiceLines(planID)); err != nil {
+		t.Fatalf("CreateInvoice B1: %v", err)
+	}
+
+	// CreateInvoice always issues; mark invA2 paid directly to test the status filter.
+	if _, err := pool.Exec(ctx, `UPDATE invoices SET status = 'paid', paid_at = NOW() WHERE id = $1`, invA2.ID); err != nil {
+		t.Fatalf("mark invA2 paid: %v", err)
+	}
+
+	byTenant, err := s.ListInvoices(ctx, InvoiceFilter{TenantID: &tenantA})
+	if err != nil {
+		t.Fatalf("ListInvoices (tenant filter): %v", err)
+	}
+	if len(byTenant) != 2 {
+		t.Fatalf("ListInvoices(tenant A) len = %d, want 2", len(byTenant))
+	}
+	if byTenant[0].ID != invA2.ID || byTenant[1].ID != invA1.ID {
+		t.Fatalf("ListInvoices(tenant A) not newest-first: got [%s, %s], want [%s, %s]",
+			byTenant[0].ID, byTenant[1].ID, invA2.ID, invA1.ID)
+	}
+	for _, inv := range byTenant {
+		if inv.TenantName == "" {
+			t.Fatalf("ListInvoices TenantName not set for invoice %s", inv.ID)
+		}
+		if len(inv.Lines) != 0 {
+			t.Fatalf("ListInvoices should not load Lines, got %d for invoice %s", len(inv.Lines), inv.ID)
+		}
+	}
+
+	paid, err := s.ListInvoices(ctx, InvoiceFilter{Status: "paid"})
+	if err != nil {
+		t.Fatalf("ListInvoices (status filter): %v", err)
+	}
+	foundPaid := false
+	for _, inv := range paid {
+		if inv.ID == invA2.ID {
+			foundPaid = true
+		}
+		if inv.Status != "paid" {
+			t.Fatalf("ListInvoices(status=paid) returned non-paid invoice %s (status=%s)", inv.ID, inv.Status)
+		}
+	}
+	if !foundPaid {
+		t.Fatal("ListInvoices(status=paid) did not include invA2")
+	}
+
+	all, err := s.ListInvoices(ctx, InvoiceFilter{})
+	if err != nil {
+		t.Fatalf("ListInvoices (no filter): %v", err)
+	}
+	gotAll := map[uuid.UUID]bool{}
+	for _, inv := range all {
+		gotAll[inv.ID] = true
+	}
+	for _, want := range []uuid.UUID{invA1.ID, invA2.ID, invB1.ID} {
+		if !gotAll[want] {
+			t.Fatalf("ListInvoices (no filter) missing invoice %s", want)
+		}
 	}
 }

@@ -424,6 +424,14 @@ type Store interface {
 	GetCatalogItems(ctx context.Context, publicOnly bool) ([]*models.BillingCatalogItem, error)
 	// GetCatalogItemByID returns (nil, nil) when absent.
 	GetCatalogItemByID(ctx context.Context, id uuid.UUID) (*models.BillingCatalogItem, error)
+	// CreateInvoice assigns inv.Number (СЧ-<year>-<NNNN>, per-year counter),
+	// inserts the invoice and its lines atomically, and fills inv.ID/IssuedAt.
+	// Lines must arrive with Position/snapshot fields/Quantity/Amount set.
+	CreateInvoice(ctx context.Context, inv *models.Invoice, lines []*models.InvoiceLine) error
+	// GetInvoiceByID returns the invoice with Lines loaded, (nil, nil) when absent.
+	GetInvoiceByID(ctx context.Context, id uuid.UUID) (*models.Invoice, error)
+	// ListInvoices returns invoices (no lines) newest-first with TenantName joined.
+	ListInvoices(ctx context.Context, f InvoiceFilter) ([]*models.Invoice, error)
 
 	// Audit
 	// WithTx runs fn against a store whose every operation shares one
@@ -623,6 +631,14 @@ type AttendeeFilter struct {
 	Status  *bool
 	Page    int
 	PerPage int
+}
+
+// InvoiceFilter narrows ListInvoices. Zero value = all invoices.
+type InvoiceFilter struct {
+	TenantID *uuid.UUID
+	Status   string // "", "issued", "paid", "cancelled"
+	Limit    int    // 0 → 100
+	Offset   int
 }
 
 // CheckinActionAttendee is the slim attendee projection embedded in a
