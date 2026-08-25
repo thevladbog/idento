@@ -208,6 +208,16 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 	public := e.Group("/api/public")
 	public.POST("/import", h.ExternalImport, middleware.APIKeyAuth(h.Store))
 
+	// Billing (bank-transfer invoicing) — SaaS-only surface, spec 2026-08-25
+	if mode == config.ModeSaaS {
+		api.GET("/billing/profile", h.GetBillingProfile)
+		api.PUT("/billing/profile", h.PutBillingProfile)
+		api.GET("/billing/catalog", h.GetBillingCatalog)
+		api.GET("/billing/invoices", h.GetTenantInvoices)
+		api.POST("/billing/invoices", h.CreateTenantInvoice)
+		api.GET("/billing/invoices/:id", h.GetTenantInvoice)
+	}
+
 	// Super Admin routes (platform console) — SaaS-only surface
 	if mode == config.ModeSaaS {
 		superAdmin := api.Group("/super-admin")
