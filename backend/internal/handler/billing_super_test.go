@@ -54,6 +54,19 @@ func TestCatalogSuperCreate_FixedDaysWithoutValidityDays_400(t *testing.T) {
 	}
 }
 
+func TestCatalogSuperCreate_VATRateZero_400(t *testing.T) {
+	e := echo.New()
+	h := &Handler{Store: &fakeStore{}}
+	body := `{"kind":"service","name":"Onboarding","price":10,"vat_rate":0}`
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", body, uuid.New().String(), "admin")
+	if err := h.CreateCatalogItemSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s; want 400", rec.Code, rec.Body.String())
+	}
+}
+
 func TestCatalogSuperCreate_ValidAddon_Created(t *testing.T) {
 	e := echo.New()
 	var gotAction string
@@ -80,6 +93,105 @@ func TestCatalogSuperCreate_ValidAddon_Created(t *testing.T) {
 	}
 	if gotAction != "create_catalog_item" {
 		t.Errorf("audit action=%q; want create_catalog_item", gotAction)
+	}
+}
+
+// --- UpdateCatalogItemSuper ---
+
+func TestCatalogSuperUpdate_UnknownID_404(t *testing.T) {
+	e := echo.New()
+	fs := &fakeStore{
+		getCatalogItemByID: func(id uuid.UUID) (*models.BillingCatalogItem, error) {
+			return nil, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	body := `{"kind":"service","name":"Onboarding","price":10}`
+	c, rec := newAuthedContext(e, http.MethodPut, "/x", body, uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(uuid.New().String())
+	if err := h.UpdateCatalogItemSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s; want 404", rec.Code, rec.Body.String())
+	}
+}
+
+// TestCatalogSuperUpdate_HappyPath_PreservesCreatedAt covers the bug found in
+// review of 23a6dc4: the handler binds `item` from the PUT body (whose
+// created_at is always the zero value — clients don't send it), loads `old`
+// for the 404 check/audit diff, but never copied old.CreatedAt onto item
+// before persisting/echoing it back. UpdateCatalogItem's RETURNING only
+// refreshes UpdatedAt, so the 200 response echoed a zeroed created_at.
+func TestCatalogSuperUpdate_HappyPath_PreservesCreatedAt(t *testing.T) {
+	e := echo.New()
+	id := uuid.New()
+	oldCreatedAt := time.Now().Add(-72 * time.Hour).Truncate(time.Second)
+	oldItem := &models.BillingCatalogItem{
+		ID:        id,
+		Kind:      "service",
+		Name:      "Onboarding",
+		Price:     10,
+		CreatedAt: oldCreatedAt,
+		UpdatedAt: oldCreatedAt,
+	}
+	var gotAction string
+	var gotChanges interface{}
+	fs := &fakeStore{
+		getCatalogItemByID: func(gotID uuid.UUID) (*models.BillingCatalogItem, error) {
+			if gotID != id {
+				t.Fatalf("unexpected id %v", gotID)
+			}
+			return oldItem, nil
+		},
+		updateCatalogItem: func(item *models.BillingCatalogItem) error {
+			item.UpdatedAt = time.Now()
+			return nil
+		},
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+			gotAction = action
+			gotChanges = changes
+			return nil
+		},
+	}
+	h := &Handler{Store: fs}
+	body := `{"kind":"service","name":"Onboarding","price":15}`
+	c, rec := newAuthedContext(e, http.MethodPut, "/x", body, uuid.New().String(), "admin")
+	c.SetParamNames("id")
+	c.SetParamValues(id.String())
+	if err := h.UpdateCatalogItemSuper(c); err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s; want 200", rec.Code, rec.Body.String())
+	}
+	var resp models.BillingCatalogItem
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.CreatedAt.IsZero() {
+		t.Fatal("created_at is zero; want it preserved from the old item")
+	}
+	if !resp.CreatedAt.Equal(oldCreatedAt) {
+		t.Errorf("created_at=%v; want %v (old item's CreatedAt)", resp.CreatedAt, oldCreatedAt)
+	}
+	if gotAction != "update_catalog_item" {
+		t.Errorf("audit action=%q; want update_catalog_item", gotAction)
+	}
+	if gotChanges == nil {
+		t.Error("audit changes missing")
+	} else {
+		m, ok := gotChanges.(map[string]interface{})
+		if !ok {
+			t.Fatalf("changes not map[string]interface{}: %T", gotChanges)
+		}
+		if _, ok := m["old"]; !ok {
+			t.Error("changes missing old")
+		}
+		if _, ok := m["new"]; !ok {
+			t.Error("changes missing new")
+		}
 	}
 }
 

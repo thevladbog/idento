@@ -44,6 +44,9 @@ func validateCatalogItem(item *models.BillingCatalogItem) string {
 	if item.Price < 0 {
 		return "price must be non-negative"
 	}
+	if item.VATRate != nil && *item.VATRate <= 0 {
+		return "vat_rate must be greater than 0 (omit it for «Без НДС»)"
+	}
 	switch item.Kind {
 	case "plan":
 		if item.PlanID == nil || item.Period == nil || item.DefaultActivation == nil {
@@ -162,6 +165,7 @@ func (h *Handler) UpdateCatalogItemSuper(c echo.Context) error {
 		if old == nil {
 			return &txFail{http.StatusNotFound, "Catalog item not found"}
 		}
+		item.CreatedAt = old.CreatedAt
 		if err := tx.UpdateCatalogItem(ctx, &item); err != nil {
 			return &txFail{http.StatusInternalServerError, "Failed to update catalog item"}
 		}
