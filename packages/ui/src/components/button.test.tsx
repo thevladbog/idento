@@ -12,6 +12,11 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toHaveClass("bg-destructive");
   });
 
+  it("destructive variant carries a destructive focus ring (a green ring on a red button reads as approval)", () => {
+    render(<Button variant="destructive">Delete</Button>);
+    expect(screen.getByRole("button")).toHaveClass("focus-visible:ring-destructive");
+  });
+
   it("renders as child element with asChild", () => {
     render(
       <Button asChild>

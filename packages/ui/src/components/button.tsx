@@ -9,7 +9,10 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary-hover",
-        destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
+        // Ring matches the variant's own semantic color -- the base ring token
+        // is the brand green, and a green focus ring around a red destructive
+        // action reads as approval of the dangerous choice.
+        destructive: "bg-destructive text-destructive-foreground hover:opacity-90 focus-visible:ring-destructive",
         outline: "border border-border bg-card text-foreground hover:bg-muted",
         secondary: "bg-secondary text-secondary-foreground hover:opacity-90",
         ghost: "text-foreground hover:bg-muted",

@@ -1,6 +1,7 @@
 import {
   Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@idento/ui";
+import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 // Board §4c's "Unsaved-changes guard dialog" (P3.1 Task 11) -- a three-action
@@ -51,6 +52,7 @@ export function GuardDialog({
   open, busy, saveLabel, onDiscard, onKeep, onSave, saveDisabled,
 }: GuardDialogProps) {
   const { t } = useTranslation();
+  const keepRef = React.useRef<HTMLButtonElement>(null);
 
   return (
     <Dialog
@@ -66,7 +68,20 @@ export function GuardDialog({
         if (!next && !busy) onKeep();
       }}
     >
-      <DialogContent closeLabel={t("workspaceDialogClose")}>
+      <DialogContent
+        closeLabel={t("workspaceDialogClose")}
+        // Radix's default initial focus lands on the first tabbable element
+        // -- the DESTRUCTIVE Discard button, where one accidental Enter
+        // throws away the operator's unsaved work. Open on the safe Keep
+        // action instead: it matches what every passive dismiss vector
+        // (Escape / X / overlay click, see onOpenChange above) already means.
+        onOpenAutoFocus={(event) => {
+          if (keepRef.current) {
+            event.preventDefault();
+            keepRef.current.focus();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t("badgeGuardTitle")}</DialogTitle>
           <DialogDescription>{t("badgeGuardBody")}</DialogDescription>
@@ -80,7 +95,7 @@ export function GuardDialog({
             {t("badgeGuardDiscard")}
           </Button>
           <div className="hidden flex-1 sm:block" />
-          <Button type="button" variant="outline" disabled={busy} onClick={onKeep}>
+          <Button ref={keepRef} type="button" variant="outline" disabled={busy} onClick={onKeep}>
             {t("badgeGuardKeep")}
           </Button>
           <Button type="button" disabled={busy || saveDisabled} onClick={onSave}>

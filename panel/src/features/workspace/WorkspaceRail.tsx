@@ -176,11 +176,20 @@ function StepRow({
     </>
   );
 
-  // Attendees (Task 5 of P2.1), Zones (Task 2), Staff (Task 5 of P2.2), and
-  // Badge (Task 6 of P3.1) are the readiness steps with a real screen behind
-  // them so far — they become live Links while equipment stays exactly as
-  // it was (a plain, always-locked row) until its own screen lands in a
-  // later phase.
+  // Every readiness step has a real screen behind it: attendees/zones/
+  // staff/badge inside this event's workspace, and equipment as the
+  // ORG-LEVEL /equipment page (devices belong to the organization's print
+  // agent, not to one event -- so it can never be the rail's `active` step;
+  // the rail isn't even rendered there). The original "equipment stays a
+  // plain locked row until its screen lands" placeholder predated the
+  // equipment initiative and was never unlocked when EquipmentPage shipped.
+  if (step.key === "equipment") {
+    return (
+      <Link to="/equipment" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-body hover:bg-muted">
+        {content}
+      </Link>
+    );
+  }
   if (step.key === "attendees" || step.key === "zones" || step.key === "staff" || step.key === "badge") {
     const isActive = active === step.key;
     const to =
