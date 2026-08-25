@@ -390,6 +390,11 @@ func (h *Handler) CancelInvoiceSuper(c echo.Context) error {
 	if err != nil {
 		return writeErr(c, newHTTPError(http.StatusNotFound, "Invoice not found"))
 	}
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	//nolint:errcheck
+	_ = c.Bind(&body) // optional body; malformed/absent JSON leaves body.Reason == ""
 	claims, err := claimsFromContext(c)
 	if err != nil {
 		return writeErr(c, err)
@@ -399,6 +404,10 @@ func (h *Handler) CancelInvoiceSuper(c echo.Context) error {
 		return writeErr(c, newHTTPError(http.StatusUnauthorized, "Invalid token"))
 	}
 
+	var changes map[string]interface{}
+	if strings.TrimSpace(body.Reason) != "" {
+		changes = map[string]interface{}{"reason": body.Reason}
+	}
 	ctx := c.Request().Context()
 	txErr := h.Store.WithTx(ctx, func(tx store.Store) error {
 		if err := tx.CancelInvoice(ctx, id); err != nil {
@@ -411,7 +420,7 @@ func (h *Handler) CancelInvoiceSuper(c echo.Context) error {
 				return &txFail{http.StatusInternalServerError, "Failed to cancel invoice"}
 			}
 		}
-		if err := tx.LogAdminAction(ctx, adminID, "invoice_cancelled", "invoice", id, nil,
+		if err := tx.LogAdminAction(ctx, adminID, "invoice_cancelled", "invoice", id, changes,
 			c.RealIP(), c.Request().UserAgent()); err != nil {
 			return err
 		}

@@ -356,15 +356,17 @@ func TestCancelInvoiceSuper_NotFound_404(t *testing.T) {
 func TestCancelInvoiceSuper_HappyPath(t *testing.T) {
 	e := echo.New()
 	var gotAction string
+	var gotChanges interface{}
 	fs := &fakeStore{
 		cancelInvoice: func(id uuid.UUID) error { return nil },
 		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
 			gotAction = action
+			gotChanges = changes
 			return nil
 		},
 	}
 	h := &Handler{Store: fs}
-	c, rec := newAuthedContext(e, http.MethodPost, "/x", "", uuid.New().String(), "admin")
+	c, rec := newAuthedContext(e, http.MethodPost, "/x", `{"reason":"дубль счёта"}`, uuid.New().String(), "admin")
 	c.SetParamNames("id")
 	c.SetParamValues(uuid.New().String())
 	if err := h.CancelInvoiceSuper(c); err != nil {
@@ -375,6 +377,10 @@ func TestCancelInvoiceSuper_HappyPath(t *testing.T) {
 	}
 	if gotAction != "invoice_cancelled" {
 		t.Errorf("audit action=%q; want invoice_cancelled", gotAction)
+	}
+	changesMap, ok := gotChanges.(map[string]interface{})
+	if !ok || changesMap["reason"] != "дубль счёта" {
+		t.Errorf("audit changes=%#v; want reason recorded", gotChanges)
 	}
 }
 
