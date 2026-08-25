@@ -14,19 +14,30 @@ export type TenantStat = {
   /** Peak live-attendee count of any live event -- the comparand for attendees_per_event. */
   max_attendees_per_event?: number;
   last_activity?: string | null;
+  /**
+   * List-view counterpart of a tenant's active limit boosts: summed delta
+   * per limit_key across every currently-valid boost (set by the backend's
+   * GetAllTenants in one grouped query, see billing sweep b315272). Absent
+   * for a tenant with no active boosts.
+   */
+  active_boost_totals?: Record<string, number> | null;
 };
 
 const UNLIMITED = -1;
 
 export function resolvedLimit(
   sub: TenantStat['subscription'] | undefined,
-  key: 'events_per_month' | 'attendees_per_event' | 'users'
+  key: 'events_per_month' | 'attendees_per_event' | 'users',
+  boostTotals?: Record<string, number> | null
 ): number {
   const custom = sub?.custom_limits?.[key];
-  if (typeof custom === 'number') return custom;
-  const planLimit = sub?.plan?.limits?.[key];
-  if (typeof planLimit === 'number') return planLimit;
-  return UNLIMITED;
+  const base = typeof custom === 'number' ? custom : sub?.plan?.limits?.[key];
+  if (typeof base !== 'number' || base === UNLIMITED) return UNLIMITED;
+  // Boosts are additive on top of whichever base limit resolved (custom or
+  // plan) -- but never on an unlimited (-1) base, which already admits any
+  // count and would otherwise "gain" a meaningless +N.
+  const boost = boostTotals?.[key];
+  return typeof boost === 'number' ? base + boost : base;
 }
 
 export function trialsEndingWithinDays(tenants: TenantStat[], days: number): TenantStat[] {
@@ -50,7 +61,7 @@ function isOverLimit(t: TenantStat): boolean {
     ['users', t.users_count ?? 0],
   ];
   return checks.some(([key, count]) => {
-    const limit = resolvedLimit(t.subscription, key);
+    const limit = resolvedLimit(t.subscription, key, t.active_boost_totals);
     return limit !== UNLIMITED && count > limit;
   });
 }

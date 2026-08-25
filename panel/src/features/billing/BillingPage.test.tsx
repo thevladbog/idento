@@ -13,6 +13,7 @@ import type { components } from "../../shared/api/schema";
 type BillingProfile = components["schemas"]["BillingProfile"];
 type BillingCatalogItem = components["schemas"]["BillingCatalogItem"];
 type Invoice = components["schemas"]["Invoice"];
+type BillingSubscription = components["schemas"]["BillingSubscription"];
 
 const PROFILE: BillingProfile = {
   tenant_id: "t1",
@@ -123,12 +124,56 @@ let lastRequestBody: unknown;
 let requestStatusOverride: number | null = null;
 let createdInvoiceNumber = "INV-0003";
 
+// Controls the GET /api/billing/subscription mock across the whole suite:
+// "not-found" mirrors the backend's 404-when-no-subscription-row contract
+// (billing sweep b315272, GetBillingSubscription); "active"/"expiring"/
+// "expired" vary status + end_date to drive BillingSubscriptionCard's
+// warning-banner logic without needing a per-test MSW handler.
+let subscriptionMode: "active" | "expiring" | "expired" | "not-found" = "active";
+const SUBSCRIPTION_BASE: Omit<BillingSubscription, "status" | "end_date" | "trial_end_date"> = {
+  plan_name: "Профессиональный",
+  plan_slug: "pro",
+  start_date: "2026-01-01T00:00:00.000Z",
+  active_boosts: [],
+};
+
+function daysFromNow(days: number): string {
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 const server = startMswServer(
   http.get("http://api.test/api/billing/profile", () =>
     profileStatus === "found"
       ? HttpResponse.json(PROFILE)
       : HttpResponse.json({ error: "not found" }, { status: 404 }),
   ),
+  http.get("http://api.test/api/billing/subscription", () => {
+    if (subscriptionMode === "not-found") {
+      return HttpResponse.json({ error: "No subscription" }, { status: 404 });
+    }
+    if (subscriptionMode === "expired") {
+      return HttpResponse.json({
+        ...SUBSCRIPTION_BASE,
+        status: "expired",
+        end_date: daysFromNow(-3),
+        trial_end_date: null,
+      });
+    }
+    if (subscriptionMode === "expiring") {
+      return HttpResponse.json({
+        ...SUBSCRIPTION_BASE,
+        status: "active",
+        end_date: daysFromNow(7),
+        trial_end_date: null,
+      });
+    }
+    return HttpResponse.json({
+      ...SUBSCRIPTION_BASE,
+      status: "active",
+      end_date: daysFromNow(120),
+      trial_end_date: null,
+    });
+  }),
   http.put("http://api.test/api/billing/profile", async ({ request }) => {
     const body = (await request.json()) as Record<string, unknown>;
     return HttpResponse.json({
@@ -198,6 +243,7 @@ function renderWithProviders(ui: ReactNode) {
 describe("BillingPage", () => {
   beforeEach(() => {
     profileStatus = "found";
+    subscriptionMode = "active";
     lastRequestBody = undefined;
     requestStatusOverride = null;
     createdInvoiceNumber = "INV-0003";
@@ -301,5 +347,34 @@ describe("BillingPage", () => {
     expect(screen.getByText("Issued")).toBeInTheDocument();
     expect(screen.getByText("INV-0002")).toBeInTheDocument();
     expect(screen.getByText("Paid")).toBeInTheDocument();
+  });
+
+  it("renders the plan name and an expiring-soon warning when end_date is within 14 days", async () => {
+    subscriptionMode = "expiring";
+    renderWithProviders(<BillingPage />);
+
+    expect(await screen.findByText("Профессиональный")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/Subscription expires .* — request a renewal invoice/);
+    expect(screen.queryByText("No subscription found")).not.toBeInTheDocument();
+  });
+
+  it("renders a neutral not-found line (no crash, no banner) when the tenant has no subscription", async () => {
+    subscriptionMode = "not-found";
+    renderWithProviders(<BillingPage />);
+
+    // Page renders fully -- the 404 must not be treated as a load error.
+    expect(await screen.findByText("No subscription found")).toBeInTheDocument();
+    expect(screen.getByTestId("billing-page")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("renders the expired banner when subscription status is expired", async () => {
+    subscriptionMode = "expired";
+    renderWithProviders(<BillingPage />);
+
+    expect(await screen.findByText("Профессиональный")).toBeInTheDocument();
+    expect(screen.getByText("Expired")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Subscription has expired — request a renewal invoice");
   });
 });

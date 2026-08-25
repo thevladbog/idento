@@ -1,14 +1,16 @@
 import {
-  Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, Label, NumberInput, Skeleton, cn,
+  Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, Label, NumberInput, Skeleton, StatusPill, cn,
+  type StatusPillStatus,
 } from "@idento/ui";
 import { Link } from "@tanstack/react-router";
-import { Receipt } from "lucide-react";
+import { AlertTriangle, Receipt } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
 import {
-  useBillingCatalog, useBillingInvoices, useBillingProfile, useRequestInvoice, useSaveBillingProfile,
+  useBillingCatalog, useBillingInvoices, useBillingProfile, useBillingSubscription, useRequestInvoice,
+  useSaveBillingProfile,
 } from "./hooks";
 import { ApiError } from "../../shared/api/ApiError";
 import type { components } from "../../shared/api/schema";
@@ -17,14 +19,140 @@ import { useScrollSpy } from "../../shared/hooks/useScrollSpy";
 type BillingProfile = components["schemas"]["BillingProfile"];
 type BillingCatalogItem = components["schemas"]["BillingCatalogItem"];
 type Invoice = components["schemas"]["Invoice"];
+type BillingSubscription = components["schemas"]["BillingSubscription"];
+type LimitBoost = components["schemas"]["LimitBoost"];
 
-const SECTION_IDS = ["billing-profile", "billing-catalog", "billing-invoices"] as const;
+const SECTION_IDS = ["billing-subscription", "billing-profile", "billing-catalog", "billing-invoices"] as const;
 
 const RAIL_ITEMS: { id: (typeof SECTION_IDS)[number]; labelKey: string }[] = [
+  { id: "billing-subscription", labelKey: "billingSubSection" },
   { id: "billing-profile", labelKey: "billingProfileSection" },
   { id: "billing-catalog", labelKey: "billingCatalogSection" },
   { id: "billing-invoices", labelKey: "billingInvoicesSection" },
 ];
+
+// ---- Subscription card -----------------------------------------------
+
+const SUB_STATUS_LABEL_KEYS: Record<BillingSubscription["status"], string> = {
+  active: "billingSubStatusActive",
+  trial: "billingSubStatusTrial",
+  expired: "billingSubStatusExpired",
+  cancelled: "billingSubStatusCancelled",
+};
+
+const SUB_STATUS_PILL: Record<BillingSubscription["status"], StatusPillStatus> = {
+  active: "ready",
+  trial: "in_progress",
+  expired: "error",
+  cancelled: "empty",
+};
+
+const BOOST_LIMIT_LABEL_KEYS: Record<LimitBoost["limit_key"], string> = {
+  attendees_per_event: "billingLimitAttendeesPerEvent",
+  events_per_month: "billingLimitEventsPerMonth",
+  users: "billingLimitUsers",
+};
+
+// A subscription counts as "expiring soon" within this many days of its
+// end (or, for a trial, its trial_end_date) -- matches the console's own
+// trialsEndingWithinDays window convention (web/src/lib/tenantQueues.ts),
+// kept here as a plain constant since the panel has no shared queue-style
+// helper for it.
+const EXPIRY_WARNING_WINDOW_DAYS = 14;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+function daysUntil(dateStr: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - Date.now()) / MS_PER_DAY);
+}
+
+function BillingSubscriptionCard() {
+  const { t } = useTranslation();
+  const subQuery = useBillingSubscription();
+
+  const isNotFound = subQuery.isError && subQuery.error instanceof ApiError && subQuery.error.status === 404;
+  const loadFailed = subQuery.isError && !isNotFound;
+
+  let content: React.ReactNode;
+  if (subQuery.isLoading) {
+    content = <Skeleton className="h-32 w-full" />;
+  } else if (loadFailed) {
+    content = <p className="text-body text-destructive">{t("settingsLoadError")}</p>;
+  } else if (isNotFound || !subQuery.data) {
+    content = <p className="text-body text-muted-foreground">{t("billingSubNone")}</p>;
+  } else {
+    const sub = subQuery.data;
+    // Trial dates use trial_end_date; every other status uses end_date --
+    // the same lifecycle-date rule the backend's own lifecycle index
+    // migration (000031_subscriptions_lifecycle_index) is built around.
+    const relevantDate = sub.status === "trial" ? sub.trial_end_date : sub.end_date;
+    const expiringSoon =
+      sub.status !== "expired" && !!relevantDate && daysUntil(relevantDate) <= EXPIRY_WARNING_WINDOW_DAYS;
+
+    let warning: React.ReactNode = null;
+    if (sub.status === "expired") {
+      warning = (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-body text-destructive"
+        >
+          <AlertTriangle aria-hidden className="size-4 shrink-0" />
+          <span>{t("billingSubExpired")}</span>
+        </div>
+      );
+    } else if (expiringSoon && relevantDate) {
+      warning = (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-body text-warning"
+        >
+          <AlertTriangle aria-hidden className="size-4 shrink-0" />
+          <span>{t("billingSubExpiring", { date: new Date(relevantDate).toLocaleDateString() })}</span>
+        </div>
+      );
+    }
+
+    content = (
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-body font-medium text-foreground">{sub.plan_name ?? t("billingSubNoPlan")}</span>
+          <StatusPill status={SUB_STATUS_PILL[sub.status]} label={t(SUB_STATUS_LABEL_KEYS[sub.status])} />
+        </div>
+        {sub.status === "trial" && sub.trial_end_date ? (
+          <p className="text-caption text-muted-foreground">
+            {t("billingSubTrialUntil", { date: new Date(sub.trial_end_date).toLocaleDateString() })}
+          </p>
+        ) : sub.end_date ? (
+          <p className="text-caption text-muted-foreground">
+            {t("billingSubValidUntil", { date: new Date(sub.end_date).toLocaleDateString() })}
+          </p>
+        ) : null}
+        {sub.active_boosts.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {sub.active_boosts.map((boost) => (
+              <span
+                key={boost.id}
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-caption text-muted-foreground"
+              >
+                +{boost.delta} · {t(BOOST_LIMIT_LABEL_KEYS[boost.limit_key])} ·{" "}
+                {t("billingSubBoostUntil", { date: new Date(boost.valid_until).toLocaleDateString() })}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {warning}
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("billingSubSection")}</CardTitle>
+      </CardHeader>
+      <CardContent>{content}</CardContent>
+    </Card>
+  );
+}
 
 // ---- Profile card --------------------------------------------------------
 
@@ -445,6 +573,9 @@ export function BillingPage() {
           ))}
         </nav>
         <div className="flex max-w-3xl flex-1 flex-col gap-4">
+          <section id="billing-subscription">
+            <BillingSubscriptionCard />
+          </section>
           <section id="billing-profile">
             <BillingProfileCard onProfileChange={setProfile} />
           </section>

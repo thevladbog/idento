@@ -139,7 +139,7 @@ export default function SuperAdminDashboard() {
               // Same scope rule as isOverLimit itself: the per-event limit
               // is measured against the per-event peak, not the cumulative
               // lifetime total.
-              const limit = resolvedLimit(tn.subscription, 'attendees_per_event');
+              const limit = resolvedLimit(tn.subscription, 'attendees_per_event', tn.active_boost_totals);
               const tone = meterTone(tn.max_attendees_per_event ?? 0, limit);
               return (
                 <div key={tn.tenant?.id} className="flex items-center justify-between text-sm">
