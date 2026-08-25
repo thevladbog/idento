@@ -452,6 +452,9 @@ func (s *PGStore) GetUsersByTenantID(ctx context.Context, tenantID uuid.UUID) ([
 		}
 		users = append(users, &u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return users, nil
 }
 
@@ -520,6 +523,9 @@ func (s *PGStore) GetEventStaff(ctx context.Context, eventID uuid.UUID) ([]*mode
 		}
 		users = append(users, &u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return users, nil
 }
 
@@ -548,6 +554,9 @@ func (s *PGStore) GetUserEvents(ctx context.Context, userID uuid.UUID) ([]*model
 			return nil, err
 		}
 		events = append(events, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return events, nil
 }
@@ -611,6 +620,9 @@ func (s *PGStore) GetEventsByTenantID(ctx context.Context, tenantID uuid.UUID) (
 			}
 		}
 		events = append(events, &e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return events, nil
 }
@@ -1673,6 +1685,9 @@ func (s *PGStore) GetAPIKeysByEventID(ctx context.Context, eventID uuid.UUID) ([
 		}
 		keys = append(keys, &key)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return keys, nil
 }
 
@@ -1717,6 +1732,9 @@ func (s *PGStore) GetActiveAPIKeys(ctx context.Context) ([]*models.APIKey, error
 			return nil, err
 		}
 		keys = append(keys, &key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return keys, nil
 }
@@ -1765,6 +1783,9 @@ func (s *PGStore) GetFontsByEventID(ctx context.Context, eventID uuid.UUID) ([]*
 			return nil, err
 		}
 		fonts = append(fonts, &font)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return fonts, nil
 }
@@ -1836,6 +1857,9 @@ func (s *PGStore) GetUserTenants(ctx context.Context, userID uuid.UUID) ([]*mode
 			}
 		}
 		tenants = append(tenants, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return tenants, nil
 }
@@ -1953,6 +1977,9 @@ func (s *PGStore) GetAllTenants(ctx context.Context, filters map[string]interfac
 		}
 
 		tenants = append(tenants, &tws)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return tenants, nil
@@ -2204,6 +2231,9 @@ func (s *PGStore) GetSubscriptionPlans(ctx context.Context, includeInactive bool
 
 		plans = append(plans, &p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return plans, nil
 }
@@ -2420,6 +2450,9 @@ func (s *PGStore) GetExpiringSubscriptions(ctx context.Context, days int) ([]*mo
 
 		subs = append(subs, &sub)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	return subs, nil
 }
@@ -2461,6 +2494,9 @@ func (s *PGStore) GetUsageStats(ctx context.Context, tenantID uuid.UUID, startDa
 			return nil, err
 		}
 		stats[resourceType] = total
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return stats, nil
@@ -2606,7 +2642,7 @@ func (s *PGStore) GetAuditLog(ctx context.Context, filters map[string]interface{
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
 
-	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, ip_address::text, user_agent, created_at
+	query := fmt.Sprintf(`SELECT id, admin_user_id, action, target_type, target_id, changes, host(ip_address), user_agent, created_at
 	          FROM admin_audit_log %s
 	          ORDER BY created_at DESC
 	          LIMIT $%d OFFSET $%d`, where, len(args)+1, len(args)+2)
