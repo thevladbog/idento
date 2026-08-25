@@ -414,6 +414,17 @@ type Store interface {
 	CheckTenantLimit(ctx context.Context, tenantID uuid.UUID, limitType string) (bool, int, int, error) // allowed, current, max
 	CheckAttendeeLimit(ctx context.Context, tenantID, eventID uuid.UUID, adding int) (bool, int, int, error)
 
+	// Billing — profiles & catalog (spec 2026-08-25-billing-invoices-design.md)
+	UpsertTenantBillingProfile(ctx context.Context, p *models.TenantBillingProfile) error
+	// GetTenantBillingProfile returns (nil, nil) when the tenant has no profile.
+	GetTenantBillingProfile(ctx context.Context, tenantID uuid.UUID) (*models.TenantBillingProfile, error)
+	CreateCatalogItem(ctx context.Context, item *models.BillingCatalogItem) error
+	UpdateCatalogItem(ctx context.Context, item *models.BillingCatalogItem) error
+	// GetCatalogItems: publicOnly=true → is_public AND is_active only (tenant view).
+	GetCatalogItems(ctx context.Context, publicOnly bool) ([]*models.BillingCatalogItem, error)
+	// GetCatalogItemByID returns (nil, nil) when absent.
+	GetCatalogItemByID(ctx context.Context, id uuid.UUID) (*models.BillingCatalogItem, error)
+
 	// Audit
 	// WithTx runs fn against a store whose every operation shares one
 	// database transaction: committed if fn returns nil, rolled back
