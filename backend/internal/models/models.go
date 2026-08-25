@@ -180,6 +180,10 @@ type TenantWithStats struct {
 	EventsThisMonth      int        `json:"events_this_month"`
 	MaxAttendeesPerEvent int        `json:"max_attendees_per_event"`
 	LastActivity         *time.Time `json:"last_activity"`
+	// ActiveBoosts surfaces any currently-valid limit add-ons (billing
+	// catalog kind="addon" invoices, once paid) on the platform console's
+	// tenant detail view — set by GetTenantStats via GetActiveLimitBoosts.
+	ActiveBoosts []*LimitBoost `json:"active_boosts,omitempty"`
 }
 
 type AdminAuditLog struct {

@@ -5,6 +5,7 @@
 package handler
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"regexp"
@@ -128,16 +129,65 @@ func (h *Handler) GetBillingCatalog(c echo.Context) error {
 	return c.JSON(http.StatusOK, items)
 }
 
-// tenantInvoiceLineRequest is one line of the POST /billing/invoices body.
-type tenantInvoiceLineRequest struct {
+// invoiceLineInput is one line of a create-invoice request; shared by the
+// tenant self-service flow (CreateTenantInvoice, below) and the operator
+// flow (CreateInvoiceSuper, billing_super.go).
+type invoiceLineInput struct {
 	CatalogItemID uuid.UUID `json:"catalog_item_id"`
 	Quantity      int       `json:"quantity"`
 }
 
 // createTenantInvoiceRequest is the POST /billing/invoices request body.
 type createTenantInvoiceRequest struct {
-	Lines   []tenantInvoiceLineRequest `json:"lines"`
-	Comment *string                    `json:"comment"`
+	Lines   []invoiceLineInput `json:"lines"`
+	Comment *string            `json:"comment"`
+}
+
+// buildInvoiceLines resolves invoice line inputs against the catalog into
+// invoice line snapshots plus the invoice total, rounding each line to
+// kopecks and again after summing (spec rounding rule). requirePublic
+// additionally requires IsPublic — the tenant self-service catalog
+// (CreateTenantInvoice) only offers public items; the operator flow
+// (CreateInvoiceSuper) only requires IsActive, since operators can invoice
+// against any active catalog item regardless of public visibility. Returns
+// an *httpError (400, "Unknown or unavailable catalog item") when a line's
+// item doesn't qualify, or the store's raw error on a lookup failure.
+func buildInvoiceLines(ctx context.Context, s store.Store, inputs []invoiceLineInput, requirePublic bool) ([]*models.InvoiceLine, float64, error) {
+	lines := make([]*models.InvoiceLine, 0, len(inputs))
+	var total float64
+	for i, l := range inputs {
+		item, err := s.GetCatalogItemByID(ctx, l.CatalogItemID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if item == nil || !item.IsActive || (requirePublic && !item.IsPublic) {
+			return nil, 0, newHTTPError(http.StatusBadRequest, "Unknown or unavailable catalog item")
+		}
+
+		amount := math.Round(item.Price*float64(l.Quantity)*100) / 100
+		total += amount
+
+		catalogItemID := item.ID
+		lines = append(lines, &models.InvoiceLine{
+			Position:      i + 1,
+			CatalogItemID: &catalogItemID,
+			Kind:          item.Kind,
+			Name:          item.Name,
+			Price:         item.Price,
+			VATRate:       item.VATRate,
+			PlanID:        item.PlanID,
+			Period:        item.Period,
+			Activation:    item.DefaultActivation,
+			LimitKey:      item.LimitKey,
+			LimitDelta:    item.LimitDelta,
+			Validity:      item.Validity,
+			ValidityDays:  item.ValidityDays,
+			Quantity:      l.Quantity,
+			Amount:        amount,
+		})
+	}
+	total = math.Round(total*100) / 100
+	return lines, total, nil
 }
 
 // CreateTenantInvoice requests a bank-transfer invoice for one or more
@@ -181,40 +231,10 @@ func (h *Handler) CreateTenantInvoice(c echo.Context) error {
 		return writeErr(c, newHTTPError(http.StatusConflict, "Billing profile is required before requesting an invoice"))
 	}
 
-	lines := make([]*models.InvoiceLine, 0, len(req.Lines))
-	var total float64
-	for i, l := range req.Lines {
-		item, err := h.Store.GetCatalogItemByID(ctx, l.CatalogItemID)
-		if err != nil {
-			return writeErr(c, err)
-		}
-		if item == nil || !item.IsActive || !item.IsPublic {
-			return writeErr(c, newHTTPError(http.StatusBadRequest, "Unknown or unavailable catalog item"))
-		}
-
-		amount := math.Round(item.Price*float64(l.Quantity)*100) / 100
-		total += amount
-
-		catalogItemID := item.ID
-		lines = append(lines, &models.InvoiceLine{
-			Position:      i + 1,
-			CatalogItemID: &catalogItemID,
-			Kind:          item.Kind,
-			Name:          item.Name,
-			Price:         item.Price,
-			VATRate:       item.VATRate,
-			PlanID:        item.PlanID,
-			Period:        item.Period,
-			Activation:    item.DefaultActivation,
-			LimitKey:      item.LimitKey,
-			LimitDelta:    item.LimitDelta,
-			Validity:      item.Validity,
-			ValidityDays:  item.ValidityDays,
-			Quantity:      l.Quantity,
-			Amount:        amount,
-		})
+	lines, total, err := buildInvoiceLines(ctx, h.Store, req.Lines, true)
+	if err != nil {
+		return writeErr(c, err)
 	}
-	total = math.Round(total*100) / 100
 
 	createdBy, err := uuid.Parse(claims.UserID)
 	if err != nil {

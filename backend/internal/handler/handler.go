@@ -245,5 +245,15 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		superAdmin.GET("/usage/:tenantId", h.GetTenantUsage)
 		superAdmin.GET("/analytics", h.GetSystemAnalytics)
 		superAdmin.GET("/audit-log", h.GetAuditLog)
+
+		// Billing
+		superAdmin.GET("/billing/catalog", h.GetCatalogSuper)
+		superAdmin.POST("/billing/catalog", h.CreateCatalogItemSuper)
+		superAdmin.PUT("/billing/catalog/:id", h.UpdateCatalogItemSuper)
+		superAdmin.GET("/billing/invoices", h.ListInvoicesSuper)
+		superAdmin.POST("/billing/invoices", h.CreateInvoiceSuper)
+		superAdmin.GET("/billing/invoices/:id", h.GetInvoiceSuper)
+		superAdmin.POST("/billing/invoices/:id/mark-paid", h.MarkInvoicePaidSuper)
+		superAdmin.POST("/billing/invoices/:id/cancel", h.CancelInvoiceSuper)
 	}
 }

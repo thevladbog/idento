@@ -61,12 +61,23 @@ func (h *Handler) GetTenantStats(c echo.Context) error {
 		})
 	}
 
-	stats, err := h.Store.GetTenantStats(c.Request().Context(), tenantID)
+	ctx := c.Request().Context()
+	stats, err := h.Store.GetTenantStats(ctx, tenantID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to get tenant stats",
 		})
 	}
+
+	// Surface any currently-valid limit boosts (paid addon invoices) on the
+	// tenant detail view — additive to the existing response shape.
+	boosts, err := h.Store.GetActiveLimitBoosts(ctx, tenantID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to get tenant stats",
+		})
+	}
+	stats.ActiveBoosts = boosts
 
 	return c.JSON(http.StatusOK, stats)
 }
