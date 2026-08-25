@@ -4,7 +4,8 @@
  *   nginx templating at container start) → VITE_API_URL (build-time, local
  *   dev override) → http://localhost:8008 (default).
  * - Request interceptor adds Bearer token from localStorage.
- * - Response interceptor clears auth and redirects to /login on 401.
+ * - Response interceptor clears auth and redirects to the base-aware
+ *   login page on 401.
  */
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -52,11 +53,19 @@ api.interceptors.response.use(
       localStorage.removeItem('operator_token');
       localStorage.removeItem('impersonation');
       
-      // Only redirect if we're not already on login/register pages
-      if (!window.location.pathname.startsWith('/login') && 
-          !window.location.pathname.startsWith('/register') &&
-          !window.location.pathname.startsWith('/qr-login')) {
-        window.location.href = '/login';
+      // Only redirect if we're not already on an auth page. Both the guard
+      // and the destination are built from Vite's base (/super-admin/ in
+      // this app -- same base-awareness lesson as PR #94's asset URLs): a
+      // raw '/login' escapes the SPA in dev (Vite refuses paths outside
+      // the base) and lands on the TENANT PANEL's login in the combined
+      // production image, and a base-less guard never matches this app's
+      // pathnames, so it protected nothing.
+      const base = import.meta.env.BASE_URL;
+      const onAuthPage = ['login', 'register', 'qr-login'].some((page) =>
+        window.location.pathname.startsWith(base + page)
+      );
+      if (!onAuthPage) {
+        window.location.href = base + 'login';
       }
     }
     return Promise.reject(error);
