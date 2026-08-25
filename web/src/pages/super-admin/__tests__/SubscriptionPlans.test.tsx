@@ -65,7 +65,9 @@ describe('SubscriptionPlans Unlimited toggle', () => {
     render(<SubscriptionPlans />);
     await waitFor(() => expect(screen.getByText('Starter')).toBeInTheDocument());
     // 2990 formatted by Intl for ru-RU + the ruble sign; no dollar anywhere.
-    expect(screen.getByText(/990\s+₽/)).toBeInTheDocument();
+    // Pattern: 2 (narrow space) 990 (regular space) ₽
+    const expected = `${(2990).toLocaleString('ru-RU')} ₽`;
+    expect(screen.getByText(/2\s+990\s+₽/)).toBeInTheDocument();
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
   });
 });
