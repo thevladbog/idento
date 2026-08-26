@@ -11,6 +11,25 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// TestBatchCheckin_MissingClaimsReturns401 proves a request with no "user" in
+// context gets a clean 401 instead of panicking on the raw claims type
+// assertion.
+func TestBatchCheckin_MissingClaimsReturns401(t *testing.T) {
+	eventID := uuid.New()
+	h := &Handler{Store: &fakeStore{}}
+	e := echo.New()
+	body := `[{"client_uuid":"` + uuid.New().String() + `","attendee_id":"` + uuid.New().String() + `","at":"2026-07-10T10:00:00Z","device_number":1,"kind":"checkin"}]`
+	c, rec := newUnauthedContext(e, http.MethodPost, "/api/events/"+eventID.String()+"/checkins/batch", body)
+	c.SetParamNames("event_id")
+	c.SetParamValues(eventID.String())
+	if err := h.BatchCheckin(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing claims, got %d", rec.Code)
+	}
+}
+
 func TestBatchCheckin_RejectsAttendeeFromDifferentEvent(t *testing.T) {
 	eventID := uuid.New()
 	otherEventID := uuid.New()

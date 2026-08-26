@@ -11,6 +11,31 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// TestZoneScan_MissingClaimsReturns401 proves a request with no "user" in
+// context gets a clean 401 instead of panicking on the raw claims type
+// assertion. The zone lookup must succeed so the handler reaches the claims
+// check rather than failing earlier on "zone not found".
+func TestZoneScan_MissingClaimsReturns401(t *testing.T) {
+	zoneID := uuid.New()
+	eventID := uuid.New()
+	fs := &fakeStore{
+		getEventZoneByID: func(id uuid.UUID) (*models.EventZone, error) {
+			return &models.EventZone{ID: id, EventID: eventID, IsActive: true}, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newUnauthedContext(e, http.MethodPost, "/api/zones/"+zoneID.String()+"/scan", `{"code":"ABCD1234"}`)
+	c.SetParamNames("zone_id")
+	c.SetParamValues(zoneID.String())
+	if err := h.ZoneScan(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for missing claims, got %d", rec.Code)
+	}
+}
+
 func TestZoneScan_ForbidsForeignTenant(t *testing.T) {
 	ownerTenant := uuid.New()
 	caller := uuid.New()

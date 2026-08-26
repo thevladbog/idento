@@ -24,7 +24,10 @@ func (h *Handler) CreateStationProvisioningToken(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	if claims.Role != "admin" && claims.Role != "manager" {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "Only admins/managers can provision stations"})
 	}

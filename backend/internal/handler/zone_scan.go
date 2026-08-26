@@ -28,7 +28,10 @@ func (h *Handler) ZoneScan(c echo.Context) error {
 		return writeErr(c, err)
 	}
 
-	claims := c.Get("user").(*models.JWTCustomClaims)
+	claims, err := claimsFromContext(c)
+	if err != nil {
+		return writeErr(c, err)
+	}
 	callerID, err := uuid.Parse(claims.UserID)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token"})
