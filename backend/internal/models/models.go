@@ -184,6 +184,12 @@ type TenantWithStats struct {
 	// catalog kind="addon" invoices, once paid) on the platform console's
 	// tenant detail view — set by GetTenantStats via GetActiveLimitBoosts.
 	ActiveBoosts []*LimitBoost `json:"active_boosts,omitempty"`
+	// ActiveBoostTotals is the list-view counterpart of ActiveBoosts: summed
+	// delta per limit_key across every currently-valid boost, set by
+	// GetAllTenants via one grouped query so the console's tenant list can
+	// show truthful over-limit meters without an N+1 GetActiveLimitBoosts
+	// call per row. Absent/nil for a tenant with no active boosts.
+	ActiveBoostTotals map[string]int `json:"active_boost_totals,omitempty"`
 }
 
 type AdminAuditLog struct {

@@ -255,7 +255,7 @@ export default function Organizations() {
                 </TableCell>
               </TableRow>
             ) : (
-              pagedTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string; slug?: string; limits?: Record<string, number> }; status?: string; custom_limits?: Record<string, number> | null }; users_count?: number; events_count?: number; attendees_count?: number; events_this_month?: number; max_attendees_per_event?: number; last_activity?: string | null }) => (
+              pagedTenants.map((tenant: { tenant?: { id?: string; name?: string; status?: string; created_at?: string }; subscription?: { plan?: { name?: string; tier?: string; slug?: string; limits?: Record<string, number> }; status?: string; custom_limits?: Record<string, number> | null }; users_count?: number; events_count?: number; attendees_count?: number; events_this_month?: number; max_attendees_per_event?: number; last_activity?: string | null; active_boost_totals?: Record<string, number> | null }) => (
                 <TableRow key={tenant.tenant?.id ?? ''}>
                   <TableCell className="font-medium">{tenant.tenant?.name}</TableCell>
                   <TableCell>
@@ -278,7 +278,7 @@ export default function Organizations() {
                       // documented scope mismatch. Without a limit there is
                       // nothing to measure against, so the plain cumulative
                       // total stays (informational, as before).
-                      const limit = resolvedLimit(tenant.subscription, 'attendees_per_event');
+                      const limit = resolvedLimit(tenant.subscription, 'attendees_per_event', tenant.active_boost_totals);
                       if (limit === -1) {
                         return <span>{tenant.attendees_count ?? 0}</span>;
                       }

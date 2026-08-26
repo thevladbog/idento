@@ -1196,6 +1196,69 @@ func TestResolveTenantLimitAddsActiveBoosts(t *testing.T) {
 	}
 }
 
+// TestGetAllTenantsActiveBoostTotals pins the list-level boost exposure
+// (M10 follow-up to the billing-invoices spec, "list exposes per-key totals
+// via active_boost_totals"): GetAllTenants sums delta per limit_key across
+// every currently-valid limit_boosts row for a tenant, in one grouped query
+// merged onto the per-tenant result — expired boosts are excluded from the
+// sum, and a tenant with no active boosts gets no map entry at all (nil/
+// absent, not an empty map), matching ActiveBoostTotals' omitempty tag.
+func TestGetAllTenantsActiveBoostTotals(t *testing.T) {
+	s, pool, ctx := newBillingTestStore(t)
+	tenantWithBoosts := createBillingTestTenant(t, s, pool, ctx)
+	tenantWithoutBoosts := createBillingTestTenant(t, s, pool, ctx)
+	now := time.Now().UTC()
+
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until) VALUES ($1, 'attendees_per_event', 500, $2)`,
+		tenantWithBoosts, now.Add(time.Hour)); err != nil {
+		t.Fatalf("insert active boost: %v", err)
+	}
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO limit_boosts (tenant_id, limit_key, delta, valid_until) VALUES ($1, 'attendees_per_event', 9000, $2)`,
+		tenantWithBoosts, now.Add(-time.Hour)); err != nil {
+		t.Fatalf("insert expired boost: %v", err)
+	}
+
+	all, err := s.GetAllTenants(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetAllTenants: %v", err)
+	}
+
+	var gotWithBoosts, gotWithoutBoosts *models.TenantWithStats
+	for _, tws := range all {
+		if tws.Tenant == nil {
+			continue
+		}
+		switch tws.Tenant.ID {
+		case tenantWithBoosts:
+			gotWithBoosts = tws
+		case tenantWithoutBoosts:
+			gotWithoutBoosts = tws
+		}
+	}
+	if gotWithBoosts == nil {
+		t.Fatal("GetAllTenants did not return tenantWithBoosts")
+	}
+	if gotWithoutBoosts == nil {
+		t.Fatal("GetAllTenants did not return tenantWithoutBoosts")
+	}
+
+	if gotWithBoosts.ActiveBoostTotals == nil {
+		t.Fatal("ActiveBoostTotals is nil for tenant with an active boost")
+	}
+	if got, want := gotWithBoosts.ActiveBoostTotals["attendees_per_event"], 500; got != want {
+		t.Errorf("ActiveBoostTotals[attendees_per_event] = %d, want %d (active boost only, expired excluded)", got, want)
+	}
+	if len(gotWithBoosts.ActiveBoostTotals) != 1 {
+		t.Errorf("ActiveBoostTotals = %+v, want exactly 1 key", gotWithBoosts.ActiveBoostTotals)
+	}
+
+	if gotWithoutBoosts.ActiveBoostTotals != nil {
+		t.Errorf("ActiveBoostTotals for tenant with no boosts = %+v, want nil/absent", gotWithoutBoosts.ActiveBoostTotals)
+	}
+}
+
 // TestExpireOverdueSubscriptions exercises the store method behind the
 // subscription lifecycle ticker (billing.StartLifecycle / Task 5 of the
 // billing-invoices plan) against a real Postgres database.

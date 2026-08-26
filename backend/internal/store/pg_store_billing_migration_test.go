@@ -95,3 +95,40 @@ func TestInvoicesRestrictTenantDeleteMigrationShape(t *testing.T) {
 		t.Error("down migration missing CASCADE restore of invoices_tenant_id_fkey")
 	}
 }
+
+// TestSubscriptionsLifecycleIndexMigrationShape pins migration 000031: two
+// partial indexes backing the hourly ExpireOverdueSubscriptions ticker query
+// (WHERE (status='trial' AND trial_end_date < NOW()) OR (status='active' AND
+// end_date < NOW())), each scoped to the status branch it serves, plus a
+// full down-migration dropping both.
+func TestSubscriptionsLifecycleIndexMigrationShape(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller could not locate migration test")
+	}
+	dir := filepath.Join(filepath.Dir(currentFile), "..", "..", "migrations")
+	upBytes, err := os.ReadFile(filepath.Join(dir, "000031_subscriptions_lifecycle_index.up.sql"))
+	if err != nil {
+		t.Fatalf("read up migration: %v", err)
+	}
+	downBytes, err := os.ReadFile(filepath.Join(dir, "000031_subscriptions_lifecycle_index.down.sql"))
+	if err != nil {
+		t.Fatalf("read down migration: %v", err)
+	}
+	up := strings.Join(strings.Fields(strings.ToLower(string(upBytes))), " ")
+	down := strings.Join(strings.Fields(strings.ToLower(string(downBytes))), " ")
+
+	for _, fragment := range []string{
+		"create index if not exists idx_subscriptions_trial_expiry on subscriptions (trial_end_date) where status = 'trial'",
+		"create index if not exists idx_subscriptions_active_expiry on subscriptions (end_date) where status = 'active'",
+	} {
+		if !strings.Contains(up, fragment) {
+			t.Errorf("up migration missing %q", fragment)
+		}
+	}
+	for _, index := range []string{"idx_subscriptions_trial_expiry", "idx_subscriptions_active_expiry"} {
+		if !strings.Contains(down, "drop index if exists "+index) {
+			t.Errorf("down migration missing drop of %s", index)
+		}
+	}
+}

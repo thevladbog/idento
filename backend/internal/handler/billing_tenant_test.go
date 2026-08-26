@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"idento/backend/internal/models"
 	"idento/backend/internal/store"
@@ -101,6 +102,12 @@ func TestBillingEndpoints_NonAdminForbidden(t *testing.T) {
 				c.SetParamValues(invoiceID.String())
 			},
 			call: func(h *Handler, c echo.Context) error { return h.GetTenantInvoice(c) },
+		},
+		{
+			name:   "GetBillingSubscription",
+			method: http.MethodGet,
+			path:   "/api/billing/subscription",
+			call:   func(h *Handler, c echo.Context) error { return h.GetBillingSubscription(c) },
 		},
 	}
 
@@ -394,6 +401,9 @@ func TestCreateTenantInvoice_HappyPath(t *testing.T) {
 
 	var createdInv *models.Invoice
 	var createdLines []*models.InvoiceLine
+	var gotAction, gotTargetType string
+	var gotAdminID, gotTargetID uuid.UUID
+	var gotChanges interface{}
 	fs := &fakeStore{
 		getTenantBillingProfile: func(id uuid.UUID) (*models.TenantBillingProfile, error) {
 			return profile, nil
@@ -406,6 +416,14 @@ func TestCreateTenantInvoice_HappyPath(t *testing.T) {
 			createdLines = lines
 			inv.ID = uuid.New()
 			inv.Number = "СЧ-2026-0001"
+			return nil
+		},
+		logAdminAction: func(adminID uuid.UUID, action, targetType string, targetID uuid.UUID, changes interface{}, ip, userAgent string) error {
+			gotAdminID = adminID
+			gotAction = action
+			gotTargetType = targetType
+			gotTargetID = targetID
+			gotChanges = changes
 			return nil
 		},
 	}
@@ -464,6 +482,140 @@ func TestCreateTenantInvoice_HappyPath(t *testing.T) {
 	twStr, _ := respBody["total_in_words"].(string)
 	if twStr == "" {
 		t.Fatal("expected non-empty total_in_words in response")
+	}
+
+	if gotAction != "create_invoice_self_service" {
+		t.Errorf("audit action=%q; want create_invoice_self_service", gotAction)
+	}
+	if gotTargetType != "invoice" {
+		t.Errorf("audit target_type=%q; want invoice", gotTargetType)
+	}
+	if gotTargetID != createdInv.ID {
+		t.Errorf("audit target_id=%v; want %v", gotTargetID, createdInv.ID)
+	}
+	if gotAdminID != userID {
+		t.Errorf("audit admin_id=%v; want %v (the acting tenant admin)", gotAdminID, userID)
+	}
+	changes, ok := gotChanges.(map[string]interface{})
+	if !ok {
+		t.Fatalf("audit changes not map[string]interface{}: %T", gotChanges)
+	}
+	if changes["number"] != createdInv.Number {
+		t.Errorf("audit changes[number]=%v; want %v", changes["number"], createdInv.Number)
+	}
+	if changes["tenant_id"] != tenantID {
+		t.Errorf("audit changes[tenant_id]=%v; want %v", changes["tenant_id"], tenantID)
+	}
+	if changes["total"] != createdInv.Total {
+		t.Errorf("audit changes[total]=%v; want %v", changes["total"], createdInv.Total)
+	}
+}
+
+// --- GetBillingSubscription ---
+
+func TestGetBillingSubscription_NoSubscription_404(t *testing.T) {
+	tenantID := uuid.New()
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) {
+			return nil, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/billing/subscription", "", tenantID.String(), "admin")
+	_ = h.GetBillingSubscription(c)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var respBody map[string]string
+	_ = jsonUnmarshalBody(rec, &respBody)
+	if respBody["error"] != "No subscription" {
+		t.Fatalf("unexpected error message: %q", respBody["error"])
+	}
+}
+
+func TestGetBillingSubscription_HappyPath(t *testing.T) {
+	tenantID := uuid.New()
+	startDate := time.Now().Add(-24 * time.Hour)
+	endDate := time.Now().Add(30 * 24 * time.Hour)
+	sub := &models.Subscription{
+		TenantID:  tenantID,
+		Status:    "active",
+		StartDate: startDate,
+		EndDate:   &endDate,
+		Plan:      &models.SubscriptionPlan{Name: "Pro", Slug: "pro"},
+	}
+	boosts := []*models.LimitBoost{
+		{ID: uuid.New(), TenantID: tenantID, LimitKey: "attendees_per_event", Delta: 500, ValidUntil: endDate},
+	}
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) {
+			if id != tenantID {
+				t.Fatalf("unexpected tenant id %v", id)
+			}
+			return sub, nil
+		},
+		getActiveLimitBoosts: func(id uuid.UUID) ([]*models.LimitBoost, error) {
+			return boosts, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/billing/subscription", "", tenantID.String(), "admin")
+	if err := h.GetBillingSubscription(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp billingSubscriptionResponse
+	if err := jsonUnmarshalBody(rec, &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.PlanName == nil || *resp.PlanName != "Pro" {
+		t.Fatalf("plan_name=%v; want Pro", resp.PlanName)
+	}
+	if resp.PlanSlug == nil || *resp.PlanSlug != "pro" {
+		t.Fatalf("plan_slug=%v; want pro", resp.PlanSlug)
+	}
+	if resp.Status != "active" {
+		t.Fatalf("status=%q; want active", resp.Status)
+	}
+	if len(resp.ActiveBoosts) != 1 || resp.ActiveBoosts[0].LimitKey != "attendees_per_event" {
+		t.Fatalf("active_boosts=%+v; want 1 boost with limit_key attendees_per_event", resp.ActiveBoosts)
+	}
+}
+
+// TestGetBillingSubscription_EmptyBoostsIsEmptyArray pins that
+// active_boosts serializes as [] rather than null when the tenant has no
+// active boosts (GetActiveLimitBoosts returns an empty, non-nil slice in
+// production, but a fake/mocked store could return nil — the handler must
+// normalize either shape to []).
+func TestGetBillingSubscription_EmptyBoostsIsEmptyArray(t *testing.T) {
+	tenantID := uuid.New()
+	sub := &models.Subscription{TenantID: tenantID, Status: "trial", StartDate: time.Now()}
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(id uuid.UUID) (*models.Subscription, error) {
+			return sub, nil
+		},
+		getActiveLimitBoosts: func(id uuid.UUID) ([]*models.LimitBoost, error) {
+			return nil, nil
+		},
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/billing/subscription", "", tenantID.String(), "admin")
+	if err := h.GetBillingSubscription(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"active_boosts":[]`) {
+		t.Fatalf("expected active_boosts to serialize as [], got body=%s", rec.Body.String())
+	}
+	if resp := rec.Body.String(); resp == "" {
+		t.Fatal("empty response body")
 	}
 }
 

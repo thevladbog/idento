@@ -115,6 +115,49 @@ export function formatAuditDiff(entry: AuditLogEntry, planNames?: Record<string,
     }
     case 'create_tenant':
       return 'Tenant created';
+    case 'create_invoice':
+    case 'create_invoice_self_service': {
+      // Both super-admin-issued and tenant self-service invoice creation
+      // write { number, tenant_id, total } (billing sweep b315272 adds the
+      // self-service action so the audit trail can tell the two flows
+      // apart) -- the number is the durable human-facing identifier, so it
+      // leads the summary whenever it's present.
+      const number = typeof c.number === 'string' && c.number ? c.number : shortId(entry.target_id);
+      const total = typeof c.total === 'number' ? ` (${c.total})` : '';
+      const via = entry.action === 'create_invoice_self_service' ? ' — self-service' : '';
+      return `Invoice ${number} issued${total}${via}${reasonSuffix}`;
+    }
+    case 'invoice_paid': {
+      const number = typeof c.number === 'string' && c.number ? c.number : shortId(entry.target_id);
+      return `Invoice ${number} marked paid${reasonSuffix}`;
+    }
+    case 'invoice_cancelled': {
+      const number = typeof c.number === 'string' && c.number ? ` ${c.number}` : '';
+      return `Invoice${number} cancelled${reasonSuffix}`;
+    }
+    case 'create_catalog_item': {
+      const item = (c.item ?? {}) as Record<string, unknown>;
+      return `Catalog item created: ${typeof item.name === 'string' ? item.name : '?'}${reasonSuffix}`;
+    }
+    case 'update_catalog_item': {
+      const oldItem = (c.old ?? {}) as Record<string, unknown>;
+      const newItem = (c.new ?? {}) as Record<string, unknown>;
+      const parts: string[] = [];
+      if (oldItem.name !== newItem.name) {
+        parts.push(`Name: ${oldItem.name ?? '?'} → ${newItem.name ?? '?'}`);
+      }
+      if (oldItem.price !== newItem.price) {
+        parts.push(`Price: ${oldItem.price ?? '?'} → ${newItem.price ?? '?'}`);
+      }
+      if (oldItem.is_active !== newItem.is_active) {
+        parts.push(`Active: ${oldItem.is_active ? 'yes' : 'no'} → ${newItem.is_active ? 'yes' : 'no'}`);
+      }
+      if (oldItem.is_public !== newItem.is_public) {
+        parts.push(`Public: ${oldItem.is_public ? 'yes' : 'no'} → ${newItem.is_public ? 'yes' : 'no'}`);
+      }
+      if (parts.length === 0) parts.push('Catalog item updated');
+      return parts.join('; ') + reasonSuffix;
+    }
     case 'purge_tenant': {
       // Written by the retention job (system actor, admin_user_id NULL)
       // with { name, archived_at, retention_days } -- the row outlives the

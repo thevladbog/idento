@@ -884,5 +884,20 @@
   "billingInvoiceNumberCol": "Number",
   "billingInvoiceDateCol": "Date",
   "billingInvoiceAmountCol": "Amount",
-  "billingInvoiceStatusCol": "Status"
+  "billingInvoiceStatusCol": "Status",
+  "billingSubSection": "Subscription",
+  "billingSubNoPlan": "No plan",
+  "billingSubStatusActive": "Active",
+  "billingSubStatusTrial": "Trial",
+  "billingSubStatusExpired": "Expired",
+  "billingSubStatusCancelled": "Cancelled",
+  "billingSubValidUntil": "valid until {{date}}",
+  "billingSubTrialUntil": "trial until {{date}}",
+  "billingSubBoostUntil": "until {{date}}",
+  "billingSubExpired": "Subscription has expired — request a renewal invoice",
+  "billingSubExpiring": "Subscription expires {{date}} — request a renewal invoice",
+  "billingSubNone": "No subscription found",
+  "billingLimitAttendeesPerEvent": "Attendees per event",
+  "billingLimitEventsPerMonth": "Events per month",
+  "billingLimitUsers": "Users"
 }

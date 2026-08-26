@@ -886,5 +886,20 @@
   "billingInvoiceNumberCol": "Номер",
   "billingInvoiceDateCol": "Дата",
   "billingInvoiceAmountCol": "Сумма",
-  "billingInvoiceStatusCol": "Статус"
+  "billingInvoiceStatusCol": "Статус",
+  "billingSubSection": "Подписка",
+  "billingSubNoPlan": "Без тарифа",
+  "billingSubStatusActive": "Активна",
+  "billingSubStatusTrial": "Пробный период",
+  "billingSubStatusExpired": "Истекла",
+  "billingSubStatusCancelled": "Отменена",
+  "billingSubValidUntil": "действует до {{date}}",
+  "billingSubTrialUntil": "пробный период до {{date}}",
+  "billingSubBoostUntil": "до {{date}}",
+  "billingSubExpired": "Подписка истекла — запросите счёт на продление",
+  "billingSubExpiring": "Подписка истекает {{date}} — запросите счёт на продление",
+  "billingSubNone": "Подписка не найдена",
+  "billingLimitAttendeesPerEvent": "Участников на мероприятие",
+  "billingLimitEventsPerMonth": "Мероприятий в месяц",
+  "billingLimitUsers": "Пользователей"
 }

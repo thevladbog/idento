@@ -225,6 +225,7 @@ func TestContractCreateTenantInvoice(t *testing.T) {
 			}
 			return nil
 		},
+		logAdminAction: func(uuid.UUID, string, string, uuid.UUID, interface{}, string, string) error { return nil },
 	}
 	h := &Handler{Store: fs}
 	e := echo.New()
@@ -277,4 +278,59 @@ func TestContractGetTenantInvoice(t *testing.T) {
 		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 	validateResponse(t, http.MethodGet, "/api/billing/invoices/"+invoiceID.String(), rec)
+}
+
+// TestContractGetBillingSubscription exercises both the populated plan
+// (name/slug non-null, one active boost) and the null-plan branch (Plan not
+// joined) so both nullable states of plan_name/plan_slug are validated
+// against the schema, along with a non-empty active_boosts array.
+func TestContractGetBillingSubscription(t *testing.T) {
+	tenantID := uuid.New()
+	endDate := time.Now().Add(30 * 24 * time.Hour)
+	sub := &models.Subscription{
+		TenantID:  tenantID,
+		Status:    "active",
+		StartDate: time.Now().Add(-24 * time.Hour),
+		EndDate:   &endDate,
+		Plan:      &models.SubscriptionPlan{Name: "Pro", Slug: "pro"},
+	}
+	boosts := []*models.LimitBoost{
+		{
+			ID: uuid.New(), TenantID: tenantID, LimitKey: "attendees_per_event", Delta: 500,
+			ValidUntil: endDate, CreatedAt: time.Now(),
+		},
+	}
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(uuid.UUID) (*models.Subscription, error) { return sub, nil },
+		getActiveLimitBoosts:      func(uuid.UUID) ([]*models.LimitBoost, error) { return boosts, nil },
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/billing/subscription", "", tenantID.String(), "admin")
+	if err := h.GetBillingSubscription(c); err != nil {
+		t.Fatalf("GetBillingSubscription: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, "/api/billing/subscription", rec)
+}
+
+// TestContractGetBillingSubscription_NotFound exercises the 404 branch — no
+// subscription row exists for this tenant.
+func TestContractGetBillingSubscription_NotFound(t *testing.T) {
+	tenantID := uuid.New()
+	fs := &fakeStore{
+		getSubscriptionByTenantID: func(uuid.UUID) (*models.Subscription, error) { return nil, nil },
+	}
+	h := &Handler{Store: fs}
+	e := echo.New()
+	c, rec := newAuthedContext(e, http.MethodGet, "/api/billing/subscription", "", tenantID.String(), "admin")
+	if err := h.GetBillingSubscription(c); err != nil {
+		t.Fatalf("GetBillingSubscription: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+	validateResponse(t, http.MethodGet, "/api/billing/subscription", rec)
 }

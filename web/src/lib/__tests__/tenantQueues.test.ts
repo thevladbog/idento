@@ -23,6 +23,26 @@ describe('resolvedLimit', () => {
     expect(resolvedLimit(undefined, 'users')).toBe(-1);
     expect(resolvedLimit({}, 'users')).toBe(-1);
   });
+
+  it('adds an active boost total on top of the resolved plan limit', () => {
+    const sub: TenantStat['subscription'] = { plan: { limits: { attendees_per_event: 500 } } };
+    expect(resolvedLimit(sub, 'attendees_per_event', { attendees_per_event: 200 })).toBe(700);
+  });
+
+  it('adds an active boost total on top of a custom limit', () => {
+    const sub: TenantStat['subscription'] = { custom_limits: { users: 10 } };
+    expect(resolvedLimit(sub, 'users', { users: 5 })).toBe(15);
+  });
+
+  it('ignores boosts on an unlimited (-1) resolved limit', () => {
+    const sub: TenantStat['subscription'] = { plan: { limits: { attendees_per_event: -1 } } };
+    expect(resolvedLimit(sub, 'attendees_per_event', { attendees_per_event: 200 })).toBe(-1);
+  });
+
+  it('ignores a boost for an unrelated limit_key', () => {
+    const sub: TenantStat['subscription'] = { plan: { limits: { attendees_per_event: 500 } } };
+    expect(resolvedLimit(sub, 'attendees_per_event', { users: 200 })).toBe(500);
+  });
 });
 
 describe('trialsEndingWithinDays', () => {
@@ -97,6 +117,45 @@ describe('overLimitTenants', () => {
       { tenant: { id: '2' }, users_count: 3, subscription: { plan: { limits: { users: 10 } } } },
     ];
     expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
+  });
+
+  // Billing sweep b315272 exposes active_boost_totals on the tenant list --
+  // a tenant that would otherwise read as over-limit is NOT over-limit once
+  // its boost is added to the base plan limit (500 + 200 = 700 >= 600).
+  it('does not flag a tenant whose usage is within limit+boost', () => {
+    const tenants: TenantStat[] = [
+      {
+        tenant: { id: '1' },
+        max_attendees_per_event: 600,
+        subscription: { plan: { limits: { attendees_per_event: 500 } } },
+        active_boost_totals: { attendees_per_event: 200 },
+      },
+    ];
+    expect(overLimitTenants(tenants)).toEqual([]);
+  });
+
+  it('still flags a tenant whose usage exceeds even limit+boost', () => {
+    const tenants: TenantStat[] = [
+      {
+        tenant: { id: '1' },
+        max_attendees_per_event: 800,
+        subscription: { plan: { limits: { attendees_per_event: 500 } } },
+        active_boost_totals: { attendees_per_event: 200 },
+      },
+    ];
+    expect(overLimitTenants(tenants).map((t) => t.tenant?.id)).toEqual(['1']);
+  });
+
+  it('never flags an unlimited (-1) plan even with an active boost total', () => {
+    const tenants: TenantStat[] = [
+      {
+        tenant: { id: '1' },
+        max_attendees_per_event: 999999,
+        subscription: { plan: { limits: { attendees_per_event: -1 } } },
+        active_boost_totals: { attendees_per_event: 200 },
+      },
+    ];
+    expect(overLimitTenants(tenants)).toEqual([]);
   });
 });
 

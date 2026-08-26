@@ -230,6 +230,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo, mode string) {
 		api.GET("/billing/invoices", h.GetTenantInvoices)
 		api.POST("/billing/invoices", h.CreateTenantInvoice, billingInvoiceLimiter)
 		api.GET("/billing/invoices/:id", h.GetTenantInvoice)
+		api.GET("/billing/subscription", h.GetBillingSubscription)
 	}
 
 	// Super Admin routes (platform console) — SaaS-only surface

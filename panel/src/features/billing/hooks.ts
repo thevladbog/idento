@@ -53,3 +53,12 @@ export function useRequestInvoice() {
 export function useBillingInvoice(id: string) {
   return $api.useQuery("get", "/api/billing/invoices/{id}", { params: { path: { id } } });
 }
+
+export function useBillingSubscription() {
+  // retry: false — a 404 here means "this tenant has no subscription row",
+  // a normal, expected state (BillingSubscriptionCard renders a neutral
+  // "not found" line for it, see billing sweep b315272's
+  // GetBillingSubscription doc comment), not a transient failure worth
+  // react-query's default retry backoff. Same pattern as useBillingProfile.
+  return $api.useQuery("get", "/api/billing/subscription", {}, { retry: false });
+}
