@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f4f4f5;font-family:'Inter',system-ui,sans-serif;color:#09090b}
+a{color:#00935e;text-decoration:none}a:hover{color:#00714a}
+</style>
+</helmet>
+
+<section style="padding:36px 40px 10px;display:flex;flex-direction:column;gap:18px">
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <h2 style="margin:0;font-size:20px;font-weight:800;letter-spacing:-0.02em">Раунд 3 — система айдентики на базе <a href="#1e">1e</a></h2>
+    <span style="font-size:13px;color:#71717a">логотип · фавиконки · десктоп · маркетплейсы</span>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- 3a -->
+    <div id="3a" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:440px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#3a" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">3a</a>
+        <span style="font-size:13px;font-weight:700">Лого-система</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="grid-column:1/-1;background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:12px;padding:26px">
+          <svg width="40" height="40" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:30px;font-weight:800;letter-spacing:-0.025em">Idento</span>
+        </div>
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:20px">
+          <svg width="44" height="44" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:17px;font-weight:800;letter-spacing:-0.02em">Иденто</span>
+          <span style="font-size:10.5px;color:#a1a1aa;margin-top:-6px">вертикальный лекап</span>
+        </div>
+        <div style="background:#09090b;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:9px;padding:20px">
+          <svg width="26" height="26" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#09090b" stroke-width="3"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:19px;font-weight:800;letter-spacing:-0.02em;color:#fff">Idento</span>
+        </div>
+        <div style="grid-column:1/-1;background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:9px;padding:14px">
+          <svg width="22" height="22" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#09090b" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#09090b"></rect><circle cx="32" cy="30" r="6.5" fill="#09090b"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#09090b"></path><circle cx="50" cy="49" r="10" fill="#09090b" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:16px;font-weight:800;letter-spacing:-0.02em">Idento</span>
+          <span style="font-size:10.5px;color:#a1a1aa;margin-left:6px">монохром — документы, печать</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3b -->
+    <div id="3b" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:440px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#3b" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">3b</a>
+        <span style="font-size:13px;font-weight:700">Фавиконки — 3 уровня детализации</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 12px">
+          <svg width="72" height="72" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <svg width="48" height="48" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">48 px — полный знак</span>
+        </div>
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 12px">
+          <svg width="72" height="72" viewBox="0 0 64 64"><rect x="11" y="7" width="42" height="50" rx="11" fill="none" stroke="#00935e" stroke-width="6"></rect><circle cx="32" cy="28" r="8" fill="#00935e"></circle><path d="M20 49 a12 12 0 0 1 24 0 Z" fill="#00935e"></path><circle cx="51" cy="50" r="10.5" fill="#00935e" stroke="#fafafa" stroke-width="4"></circle><path d="M46.3 50 l3.2 3.2 L56 46.2" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <svg width="32" height="32" viewBox="0 0 64 64"><rect x="11" y="7" width="42" height="50" rx="11" fill="none" stroke="#00935e" stroke-width="6"></rect><circle cx="32" cy="28" r="8" fill="#00935e"></circle><path d="M20 49 a12 12 0 0 1 24 0 Z" fill="#00935e"></path><circle cx="51" cy="50" r="10.5" fill="#00935e" stroke="#fafafa" stroke-width="4"></circle><path d="M46.3 50 l3.2 3.2 L56 46.2" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">32 px — без прорези</span>
+        </div>
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px 12px">
+          <svg width="72" height="72" viewBox="0 0 64 64"><rect x="6" y="3" width="52" height="58" rx="14" fill="#00935e"></rect><circle cx="32" cy="25" r="9.5" fill="#fff"></circle><path d="M14 52 a18 18 0 0 1 36 0 Z" fill="#fff"></path></svg>
+          <svg width="16" height="16" viewBox="0 0 64 64"><rect x="6" y="3" width="52" height="58" rx="14" fill="#00935e"></rect><circle cx="32" cy="25" r="9.5" fill="#fff"></circle><path d="M14 52 a18 18 0 0 1 36 0 Z" fill="#fff"></path></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">16 px — заливка, силуэт</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;background:#f4f4f5;border-radius:8px 8px 0 0;padding:8px 12px;align-self:flex-start;border:1px solid #e4e4e7;border-bottom:none">
+        <svg width="14" height="14" viewBox="0 0 64 64"><rect x="6" y="3" width="52" height="58" rx="14" fill="#00935e"></rect><circle cx="32" cy="25" r="9.5" fill="#fff"></circle><path d="M14 52 a18 18 0 0 1 36 0 Z" fill="#fff"></path></svg>
+        <span style="font-size:11.5px;color:#3f3f46">Иденто — Панель организатора</span>
+        <span style="font-size:11px;color:#a1a1aa;margin-left:8px">✕</span>
+      </div>
+    </div>
+
+    <!-- 3c -->
+    <div id="3c" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:440px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#3c" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">3c</a>
+        <span style="font-size:13px;font-weight:700">Иконки десктоп-приложений</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:linear-gradient(180deg,#fafafa,#f0f0f1);border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 12px">
+          <svg width="88" height="88" viewBox="0 0 120 120"><rect x="6" y="6" width="108" height="108" rx="26" fill="#00935e"></rect><rect x="6" y="6" width="108" height="108" rx="26" fill="url(#none)" opacity="0"></rect><g transform="translate(28,28)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935e" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:11px;font-weight:600;color:#3f3f46">Idento Agent</span>
+          <span style="font-size:10.5px;color:#a1a1aa;margin-top:-6px">macOS · сквиркл с полями</span>
+        </div>
+        <div style="background:linear-gradient(180deg,#fafafa,#f0f0f1);border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 12px">
+          <svg width="88" height="88" viewBox="0 0 120 120"><rect x="0" y="0" width="120" height="120" rx="8" fill="#00935e"></rect><g transform="translate(26,26) scale(1.06)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935e" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:11px;font-weight:600;color:#3f3f46">Idento Agent</span>
+          <span style="font-size:10.5px;color:#a1a1aa;margin-top:-6px">Windows · без полей</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;background:#18181b;border-radius:10px;padding:10px 14px">
+        <svg width="20" height="20" viewBox="0 0 120 120"><rect x="6" y="6" width="108" height="108" rx="26" fill="#00935e"></rect><g transform="translate(28,28)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="6"></rect><circle cx="32" cy="28" r="8" fill="#fff"></circle><path d="M20 49 a12 12 0 0 1 24 0 Z" fill="#fff"></path></g></svg>
+        <span style="font-size:11px;color:#a1a1aa">в трее / доке — упрощённый знак без галочки</span>
+      </div>
+    </div>
+
+    <!-- 3d -->
+    <div id="3d" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:440px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#3d" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">3d</a>
+        <span style="font-size:13px;font-weight:700">Иконки для маркетплейсов</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 10px">
+          <svg width="76" height="76" viewBox="0 0 120 120"><rect x="0" y="0" width="120" height="120" rx="27" fill="#00935e"></rect><g transform="translate(26,26) scale(1.06)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935e" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">iOS · App Store</span>
+        </div>
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 10px">
+          <svg width="76" height="76" viewBox="0 0 120 120"><circle cx="60" cy="60" r="60" fill="#00935e"></circle><g transform="translate(29,29) scale(0.97)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935e" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">Android · adaptive circle</span>
+        </div>
+        <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 10px">
+          <svg width="76" height="76" viewBox="0 0 120 120"><rect x="0" y="0" width="120" height="120" rx="42" fill="#00935e"></rect><g transform="translate(28,28)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#fff"></rect><circle cx="32" cy="30" r="6.5" fill="#fff"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10" fill="#fff" stroke="#00935e" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#00935e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:10.5px;color:#a1a1aa">Android · squircle</span>
+        </div>
+      </div>
+      <div style="background:#f4f7f5;border:1px solid #e4ece7;border-radius:10px;padding:14px;display:flex;gap:18px;justify-content:center">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+          <svg width="56" height="56" viewBox="0 0 120 120"><rect x="0" y="0" width="120" height="120" rx="27" fill="#00935e"></rect><g transform="translate(26,26) scale(1.06)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="6"></rect><circle cx="32" cy="28" r="8" fill="#fff"></circle><path d="M20 49 a12 12 0 0 1 24 0 Z" fill="#fff"></path><circle cx="51" cy="50" r="10.5" fill="#fff" stroke="#00935e" stroke-width="4"></circle><path d="M46.3 50 l3.2 3.2 L56 46.2" fill="none" stroke="#00935e" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:10px;color:#3f3f46">Иденто Скан</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+          <svg width="56" height="56" viewBox="0 0 120 120"><rect x="0" y="0" width="120" height="120" rx="27" fill="#09090b"></rect><g transform="translate(26,26) scale(1.06)"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="6"></rect><circle cx="32" cy="28" r="8" fill="#fff"></circle><path d="M20 49 a12 12 0 0 1 24 0 Z" fill="#fff"></path><circle cx="51" cy="50" r="10.5" fill="#00935e" stroke="#09090b" stroke-width="3.5"></circle><path d="M46.3 50 l3.2 3.2 L56 46.2" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+          <span style="font-size:10px;color:#3f3f46">Киоск (тёмная)</span>
+        </div>
+        <span style="font-size:10.5px;color:#a1a1aa;align-self:center;max-width:140px;line-height:1.5">размер домашнего экрана — галочка читается, прорезь убрана</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:16px 40px 10px;display:flex;flex-direction:column;gap:18px;opacity:0.55">
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <h2 style="margin:0;font-size:20px;font-weight:800;letter-spacing:-0.02em">Раунд 2 — развитие <a href="#1a">1a</a> и <a href="#1e">1e</a></h2>
+    <span style="font-size:13px;color:#71717a">заливка vs контур · гибрид двух идей</span>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- 2a -->
+    <div id="2a" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#2a" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">2a</a>
+        <span style="font-size:13px;font-weight:700">Бейдж-галочка · доведённый</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#00935e"></rect><rect x="23" y="12" width="18" height="6.5" rx="3.25" fill="#fff"></rect><path d="M20.5 36 L28.5 44 L43.5 27" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#00935e"></rect><rect x="23" y="12" width="18" height="6.5" rx="3.25" fill="#fff"></rect><path d="M20.5 36 L28.5 44 L43.5 27" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#00935e"></rect><rect x="23" y="12" width="18" height="6.5" rx="3.25" fill="#fff"></rect><path d="M20.5 36 L28.5 44 L43.5 27" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#00935e"></rect><rect x="23" y="12" width="18" height="6.5" rx="3.25" fill="#fff"></rect><path d="M20.5 36 L28.5 44 L43.5 27" fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#00935e"></rect><path d="M20 34 L28.5 42.5 L44 24.5" fill="none" stroke="#fff" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="8" y="5" width="48" height="54" rx="13" fill="#fff"></rect><rect x="23" y="12" width="18" height="6.5" rx="3.25" fill="#09090b" opacity="0.85"></rect><path d="M20.5 36 L28.5 44 L43.5 27" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Пропорции 1a подтянуты: шире прорезь, жирнее галочка, оптический центр выровнен. В 16 px прорезь убирается.</p>
+    </div>
+
+    <!-- 2b -->
+    <div id="2b" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#2b" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">2b</a>
+        <span style="font-size:13px;font-weight:700">Бейдж-галочка · контур</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="12" fill="none" stroke="#00935e" stroke-width="5.5"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#00935e"></rect><path d="M22 35.5 L29.5 43 L42.5 28" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="12" fill="none" stroke="#00935e" stroke-width="5.5"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#00935e"></rect><path d="M22 35.5 L29.5 43 L42.5 28" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="12" fill="none" stroke="#00935e" stroke-width="5.5"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#00935e"></rect><path d="M22 35.5 L29.5 43 L42.5 28" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="12" fill="none" stroke="#00935e" stroke-width="6.5"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#00935e"></rect><path d="M22 35.5 L29.5 43 L42.5 28" fill="none" stroke="#00935e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="13" fill="none" stroke="#00935e" stroke-width="8"></rect><path d="M21 34 L29.5 42.5 L44 25" fill="none" stroke="#00935e" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="10" y="7" width="44" height="50" rx="12" fill="none" stroke="#fff" stroke-width="6.5"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#fff"></rect><path d="M22 35.5 L29.5 43 L42.5 28" fill="none" stroke="#00935e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Та же идея без заливки — легче и «инженернее», хорошо живёт рядом с текстом в шапке продукта.</p>
+    </div>
+
+    <!-- 2c -->
+    <div id="2c" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#2c" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">2c</a>
+        <span style="font-size:13px;font-weight:700">Бейдж участника · заливка</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="32" cy="29" r="7.5" fill="#fff"></circle><path d="M19 51 a13 13 0 0 1 26 0 Z" fill="#fff"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="32" cy="29" r="7.5" fill="#fff"></circle><path d="M19 51 a13 13 0 0 1 26 0 Z" fill="#fff"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="32" cy="29" r="7.5" fill="#fff"></circle><path d="M19 51 a13 13 0 0 1 26 0 Z" fill="#fff"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff"></rect><circle cx="32" cy="29" r="8" fill="#fff"></circle><path d="M18 51 a14 14 0 0 1 28 0 Z" fill="#fff"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><circle cx="32" cy="26" r="9" fill="#fff"></circle><path d="M16 52 a16 16 0 0 1 32 0 Z" fill="#fff"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#fff"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#09090b" opacity="0.85"></rect><circle cx="32" cy="29" r="8" fill="#00935e"></circle><path d="M18 51 a14 14 0 0 1 28 0 Z" fill="#00935e"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">1e в заливке, без угловой галочки: один силуэт, читается в любом размере. Спокойнее и «взрослее» контурного.</p>
+    </div>
+
+    <!-- 2d -->
+    <div id="2d" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#2d" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">2d</a>
+        <span style="font-size:13px;font-weight:700">Гибрид · участник + галочка</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="26" cy="29" r="7" fill="#fff"></circle><path d="M14 50 a12 12 0 0 1 24 0 Z" fill="#fff"></path><path d="M37 36 l5.5 5.5 L52.5 30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="26" cy="29" r="7" fill="#fff"></circle><path d="M14 50 a12 12 0 0 1 24 0 Z" fill="#fff"></path><path d="M37 36 l5.5 5.5 L52.5 30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><rect x="24" y="11" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><circle cx="26" cy="29" r="7" fill="#fff"></circle><path d="M14 50 a12 12 0 0 1 24 0 Z" fill="#fff"></path><path d="M37 36 l5.5 5.5 L52.5 30" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><circle cx="26" cy="27" r="8" fill="#fff"></circle><path d="M13 50 a13 13 0 0 1 26 0 Z" fill="#fff"></path><path d="M37 35 l6 6 L53.5 28.5" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#00935e"></rect><path d="M18 38 L28.5 48.5 L47 26" fill="none" stroke="#fff" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="5" width="46" height="54" rx="12" fill="#fff"></rect><circle cx="26" cy="27" r="8" fill="#00935e"></circle><path d="M13 50 a13 13 0 0 1 26 0 Z" fill="#00935e"></path><path d="M37 35 l6 6 L53.5 28.5" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Слияние 1a и 1e: участник слева, галочка справа — «гость отмечен». В 16 px деградирует до чистой галочки 2a.</p>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:16px 40px 36px;display:flex;flex-direction:column;gap:18px;opacity:0.55">
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <h2 style="margin:0;font-size:20px;font-weight:800;letter-spacing:-0.02em">Раунд 1 — 5 направлений</h2>
+    <span style="font-size:13px;color:#71717a">фирменный зелёный #00935E · Inter</span>
+  </div>
+  <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- 1a -->
+    <div id="1a" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#1a" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">1a</a>
+        <span style="font-size:13px;font-weight:700">Бейдж-галочка</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#00935e"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#ffffff" opacity="0.92"></rect><path d="M21.5 35 L29 42.5 L43 26.5" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#00935e"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><path d="M21.5 35 L29 42.5 L43 26.5" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#00935e"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#fff" opacity="0.92"></rect><path d="M21.5 35 L29 42.5 L43 26.5" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#00935e"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#fff"></rect><path d="M21.5 35 L29 42.5 L43 26.5" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#00935e"></rect><path d="M21.5 33 L29 41 L43 24" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="9" y="6" width="46" height="52" rx="12" fill="#fff"></rect><rect x="24" y="13" width="16" height="6" rx="3" fill="#09090b" opacity="0.85"></rect><path d="M21.5 35 L29 42.5 L43 26.5" fill="none" stroke="#00935e" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Бейдж с прорезью для ленты и галочка «отмечен». Буквально про продукт: бейдж напечатан, гость прошёл.</p>
+    </div>
+
+    <!-- 1b -->
+    <div id="1b" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#1b" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">1b</a>
+        <span style="font-size:13px;font-weight:700">QR-мишень</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="11" y="11" width="42" height="42" rx="12" fill="none" stroke="#00935e" stroke-width="7"></rect><rect x="25" y="25" width="14" height="14" rx="4.5" fill="#00935e"></rect></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="11" y="11" width="42" height="42" rx="12" fill="none" stroke="#00935e" stroke-width="7"></rect><rect x="25" y="25" width="14" height="14" rx="4.5" fill="#00935e"></rect></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="11" y="11" width="42" height="42" rx="12" fill="none" stroke="#00935e" stroke-width="7"></rect><rect x="25" y="25" width="14" height="14" rx="4.5" fill="#00935e"></rect></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="11" y="11" width="42" height="42" rx="12" fill="none" stroke="#00935e" stroke-width="8"></rect><rect x="25" y="25" width="14" height="14" rx="4.5" fill="#00935e"></rect></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="10" y="10" width="44" height="44" rx="12" fill="none" stroke="#00935e" stroke-width="9"></rect><rect x="24" y="24" width="16" height="16" rx="5" fill="#00935e"></rect></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="11" y="11" width="42" height="42" rx="12" fill="none" stroke="#fff" stroke-width="8"></rect><rect x="25" y="25" width="14" height="14" rx="4.5" fill="#00935e"></rect></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Опорный квадрат QR-кода — сканирование как ядро продукта. Максимально простой, идеален как фавиконка.</p>
+    </div>
+
+    <!-- 1c -->
+    <div id="1c" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#1c" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">1c</a>
+        <span style="font-size:13px;font-weight:700">Монограмма id</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#00935e"></rect><circle cx="22" cy="19" r="4.2" fill="#fff"></circle><rect x="18.5" y="27" width="7" height="19" rx="3.5" fill="#fff"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#fff" stroke-width="6"></circle><rect x="44.5" y="14" width="7" height="32" rx="3.5" fill="#fff"></rect></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#00935e"></rect><circle cx="22" cy="19" r="4.2" fill="#fff"></circle><rect x="18.5" y="27" width="7" height="19" rx="3.5" fill="#fff"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#fff" stroke-width="6"></circle><rect x="44.5" y="14" width="7" height="32" rx="3.5" fill="#fff"></rect></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#00935e"></rect><circle cx="22" cy="19" r="4.2" fill="#fff"></circle><rect x="18.5" y="27" width="7" height="19" rx="3.5" fill="#fff"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#fff" stroke-width="6"></circle><rect x="44.5" y="14" width="7" height="32" rx="3.5" fill="#fff"></rect></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#00935e"></rect><circle cx="22" cy="19" r="4.2" fill="#fff"></circle><rect x="18.5" y="27" width="7" height="19" rx="3.5" fill="#fff"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#fff" stroke-width="6"></circle><rect x="44.5" y="14" width="7" height="32" rx="3.5" fill="#fff"></rect></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#00935e"></rect><circle cx="22" cy="18" r="5" fill="#fff"></circle><rect x="18" y="27" width="8" height="19" rx="4" fill="#fff"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#fff" stroke-width="7"></circle><rect x="44" y="14" width="8" height="32" rx="4" fill="#fff"></rect></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="4" y="4" width="56" height="56" rx="15" fill="#fff"></rect><circle cx="22" cy="19" r="4.2" fill="#00935e"></circle><rect x="18.5" y="27" width="7" height="19" rx="3.5" fill="#00935e"></rect><circle cx="37.5" cy="36" r="7" fill="none" stroke="#00935e" stroke-width="6"></circle><rect x="44.5" y="14" width="7" height="32" rx="3.5" fill="#00935e"></rect></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Строчные «id» — identity, удостоверение. Работает и для кириллицы, и для латиницы, нейтрален к сценарию.</p>
+    </div>
+
+    <!-- 1d -->
+    <div id="1d" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#1d" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">1d</a>
+        <span style="font-size:13px;font-weight:700">Скан-рамка</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><g fill="none" stroke="#00935e" stroke-width="5.5" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><g fill="none" stroke="#00935e" stroke-width="5.5" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><g fill="none" stroke="#00935e" stroke-width="5.5" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><g fill="none" stroke="#00935e" stroke-width="6.5" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><g fill="none" stroke="#00935e" stroke-width="8" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><g fill="none" stroke="#fff" stroke-width="6.5" stroke-linecap="round"><path d="M22 10 h-6 a6 6 0 0 0 -6 6 v6"></path><path d="M42 10 h6 a6 6 0 0 1 6 6 v6"></path><path d="M54 42 v6 a6 6 0 0 1 -6 6 h-6"></path><path d="M10 42 v6 a6 6 0 0 0 6 6 h6"></path></g><path d="M23 33 L30.5 40.5 L42 26" fill="none" stroke="#00935e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Рамка сканера + подтверждение. «Навёл — отметил»: жест, который повторяется на входе тысячи раз за день.</p>
+    </div>
+
+    <!-- 1e -->
+    <div id="1e" style="background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:22px;width:316px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <a href="#1e" style="font-size:11px;font-weight:700;background:#09090b;color:#fff;border-radius:5px;padding:3px 7px">1e</a>
+        <span style="font-size:13px;font-weight:700">Бейдж участника</span>
+      </div>
+      <div style="background:#fafafa;border:1px solid #f1f1f3;border-radius:10px;display:grid;place-items:center;height:150px">
+        <svg width="88" height="88" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fafafa" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fff" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Idento</span></div>
+        <div style="display:flex;align-items:center;gap:9px"><svg width="26" height="26" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="5"></rect><rect x="26" y="14" width="12" height="4.5" rx="2.25" fill="#00935e"></rect><circle cx="32" cy="30" r="6.5" fill="#00935e"></circle><path d="M22 48 a10 10 0 0 1 20 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10" fill="#00935e" stroke="#fff" stroke-width="3.5"></circle><path d="M45.7 49 l3 3 L54.6 45.4" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="font-size:19px;font-weight:800;letter-spacing:-0.02em">Иденто</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <svg width="24" height="24" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#00935e" stroke-width="6"></rect><circle cx="32" cy="27" r="7.5" fill="#00935e"></circle><path d="M20 48 a12 12 0 0 1 24 0 Z" fill="#00935e"></path><circle cx="50" cy="49" r="10.5" fill="#00935e" stroke="#fff" stroke-width="4"></circle><path d="M45.3 49 l3.2 3.2 L55 45.2" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <svg width="16" height="16" viewBox="0 0 64 64"><rect x="10" y="6" width="44" height="52" rx="11" fill="none" stroke="#00935e" stroke-width="7"></rect><circle cx="32" cy="26" r="8.5" fill="#00935e"></circle><path d="M18 49 a14 14 0 0 1 28 0 Z" fill="#00935e"></path></svg>
+        <span style="width:44px;height:44px;border-radius:9px;background:#09090b;display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 64 64"><rect x="12" y="8" width="40" height="48" rx="10" fill="none" stroke="#fff" stroke-width="6"></rect><circle cx="32" cy="27" r="7.5" fill="#fff"></circle><path d="M20 48 a12 12 0 0 1 24 0 Z" fill="#fff"></path><circle cx="50" cy="49" r="10.5" fill="#00935e" stroke="#09090b" stroke-width="3"></circle><path d="M45.3 49 l3.2 3.2 L55 45.2" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span style="font-size:11px;color:#a1a1aa">24 / 16 / тёмный фон</span>
+      </div>
+      <p style="margin:0;font-size:12px;line-height:1.5;color:#71717a">Бейдж с фото участника и статусом «прошёл». Самый повествовательный; в мелком размере галочка убирается.</p>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+</body>
+</html>
